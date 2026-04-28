@@ -877,7 +877,7 @@ function renderFranchisees(){
     return;
   }
   tbody.innerHTML = rows.map(function(f){
-    return '<tr>' +
+    return '<tr data-rid="'+r.id+'">' +
       '<td><strong>'+esc(f.business_name)+'</strong></td>' +
       '<td>'+esc(f.owner_name)+'</td>' +
       '<td><span class="tier t-'+f.tier.toLowerCase()+'">'+f.tier+'</span></td>' +
@@ -1328,12 +1328,12 @@ async function loadRequests(){
   var roleLabels = {smf:'SMF',cf:'CF',uf:'UF',student:'Student'};
   var roleColors = {smf:'bp',cf:'ba',uf:'br',student:'bpu'};
   tbody.innerHTML = all.map(function(r){
-    // Store request in global map for safe access
+    // UUIDs are safe in onclick (hex + hyphens only, no quotes)
     window._reqMap = window._reqMap || {};
     window._reqMap[r.id] = r;
     var actionBtns = r.status === 'pending'
-      ? '<button class="btn-green btn-sm" style="margin-right:5px" data-approve="'+r.id+'">Approve</button>'+
-        '<button class="btn-s btn-sm" data-reject="'+r.id+'">Reject</button>'
+      ? '<button class="btn-green btn-sm" style="margin-right:5px" onclick="doApprove(this)">Approve</button> '+
+        '<button class="btn-s btn-sm" onclick="doReject(this)">Reject</button>'
       : r.status === 'approved'
         ? '<span class="badge ba">Approved</span>'
         : '<span class="badge bd">Rejected</span>';
@@ -1348,6 +1348,21 @@ async function loadRequests(){
       '<td style="text-align:center">'+actionBtns+'</td>'+
       '</tr>';
   }).join('');
+}
+
+function doApprove(btn){
+  var tr = btn.closest('tr');
+  var rid = tr ? tr.dataset.rid : null;
+  var req = rid && window._reqMap && window._reqMap[rid];
+  if(!req){ alert('Request data not found. Please refresh.'); return; }
+  approveRequest(req.id, req.email, req.full_name, req.role_requested);
+}
+
+function doReject(btn){
+  var tr = btn.closest('tr');
+  var rid = tr ? tr.dataset.rid : null;
+  if(!rid){ alert('Request not found. Please refresh.'); return; }
+  rejectRequest(rid);
 }
 
 async function approveRequest(id, email, name, role){
