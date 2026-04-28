@@ -621,7 +621,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 // ================================================================
 var SUPA_URL = 'https://frnnoxudtlvhyyoqdqzx.supabase.co';
 var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE';
-var sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+var sb = null; // initialized on load
 
 // ================================================================
 // STATE
@@ -643,10 +643,12 @@ async function doLogin(){
   var errEl = document.getElementById('login-err');
   errEl.style.display = 'none';
   if(!email || !pass){ showErr('Please enter email and password.'); return; }
+  if(!sb){ showErr('Platform not ready. Please refresh the page.'); return; }
 
   document.getElementById('login-btn').textContent = 'Signing in...';
   document.getElementById('login-btn').disabled = true;
 
+  try {
   var result = await sb.auth.signInWithPassword({ email, password: pass });
 
   document.getElementById('login-btn').textContent = 'Sign in';
@@ -654,6 +656,11 @@ async function doLogin(){
 
   if(result.error){ showErr(result.error.message); return; }
   if(result.data.user){ await initApp(result.data.user); }
+  } catch(err) {
+    document.getElementById('login-btn').textContent = 'Sign in';
+    document.getElementById('login-btn').disabled = false;
+    showErr('Error: ' + err.message);
+  }
 }
 
 function showErr(msg){
@@ -1267,6 +1274,7 @@ function closeRequestModal(){
 }
 
 async function submitRequest(){
+  if(!sb){ alert('Platform not ready. Please refresh.'); return; }
   var name  = document.getElementById('req-name').value.trim();
   var email = document.getElementById('req-email').value.trim();
   var phone = document.getElementById('req-phone').value.trim();
@@ -1455,9 +1463,26 @@ function showToast(msg, type){
 // AUTO LOGIN CHECK (if session exists)
 // ================================================================
 window.addEventListener('load', async function(){
-  var { data: { session } } = await sb.auth.getSession();
-  if(session && session.user){
-    await initApp(session.user);
+  try {
+    // Initialize Supabase client
+    if(typeof supabase === 'undefined'){
+      console.error('Supabase CDN failed to load');
+      document.getElementById('login-err').textContent = 'Platform loading failed. Please refresh the page.';
+      document.getElementById('login-err').style.display = 'block';
+      return;
+    }
+    sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+    console.log('Supabase initialized');
+    
+    // Check for existing session
+    var { data: { session } } = await sb.auth.getSession();
+    if(session && session.user){
+      await initApp(session.user);
+    }
+  } catch(err) {
+    console.error('Init error:', err);
+    document.getElementById('login-err').textContent = 'Error: ' + err.message + '. Please refresh.';
+    document.getElementById('login-err').style.display = 'block';
   }
 });
 </script>
