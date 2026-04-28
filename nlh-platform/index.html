@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>New Learning Horizons — Platform</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F6F3;--bg2:#FFFFFF;--bg3:#F0EEE9;--bg4:#E8E6E0;
+  --border:#E2E0D8;--border2:#D0CEC6;
+  --text:#1A1916;--text2:#5C5A54;--text3:#9C9A92;
+  --purple:#534AB7;--purple2:#3D35A0;--purple-bg:#EEEDFE;
+  --green:#1D7A4F;--green-bg:#E6F5ED;
+  --amber:#8A5200;--amber-bg:#FEF3E0;
+  --blue:#1A5FA8;--blue-bg:#EAF2FB;
+  --red:#A32D2D;--red-bg:#FCEAEA;
+  --r:10px;--r2:7px;--r3:5px;
+  --font:'DM Sans',system-ui,sans-serif;
+  --mono:'DM Mono',monospace;
+  --shadow:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 12px rgba(0,0,0,.1);
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;min-height:100vh}
+
+/* ── LOGIN ── */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:36px 40px;width:400px;box-shadow:var(--shadow-md)}
+.login-logo{display:flex;align-items:center;gap:11px;margin-bottom:28px}
+.login-icon{width:40px;height:40px;border-radius:10px;background:var(--purple);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700;flex-shrink:0}
+.login-brand{font-size:16px;font-weight:600;color:var(--text)}
+.login-brand-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.login-title{font-size:20px;font-weight:600;margin-bottom:6px}
+.login-sub{font-size:12px;color:var(--text3);margin-bottom:24px}
+.form-row{margin-bottom:14px}
+.form-row label{display:block;font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:500}
+.form-row input{width:100%;font-size:13px;padding:9px 12px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none;transition:border-color .12s}
+.form-row input:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(83,74,183,.1)}
+.btn-login{width:100%;background:var(--purple);color:#fff;border:none;padding:10px;border-radius:var(--r2);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);margin-top:4px;transition:background .12s}
+.btn-login:hover{background:var(--purple2)}
+.login-err{background:var(--red-bg);border:1px solid rgba(163,45,45,.2);color:var(--red);border-radius:var(--r2);padding:9px 12px;font-size:12px;margin-top:12px;display:none}
+.login-info{background:var(--blue-bg);border:1px solid rgba(26,95,168,.2);color:var(--blue);border-radius:var(--r2);padding:9px 12px;font-size:11px;margin-top:12px;line-height:1.5;font-family:var(--mono)}
+.login-toggle{text-align:center;margin-top:16px;font-size:12px;color:var(--text3)}
+.login-toggle a{color:var(--purple);cursor:pointer;text-decoration:none;font-weight:500}
+
+/* ── APP SHELL ── */
+.app{display:none;height:100vh;overflow:hidden;flex-direction:row}
+.app.show{display:flex}
+.sb{width:220px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.sb-logo{padding:18px 16px 14px;border-bottom:1px solid var(--border)}
+.sb-logo-row{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.sb-icon{width:30px;height:30px;border-radius:8px;background:var(--purple);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
+.sb-name{font-size:13px;font-weight:600;color:var(--text)}
+.sb-sub{font-size:10px;color:var(--text3)}
+.sb-role{font-size:10px;font-weight:500;padding:3px 9px;border-radius:20px;display:inline-block;font-family:var(--mono)}
+.nav-sect{font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;padding:12px 14px 5px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:var(--text2);border-radius:var(--r2);margin:0 8px 1px;transition:all .1s}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.on{background:var(--purple-bg);color:var(--purple);font-weight:500}
+.nav-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;opacity:.4}
+.nav-item.on .nav-dot{opacity:1}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:9px;font-weight:600;padding:1px 6px;border-radius:20px}
+.sb-foot{margin-top:auto;padding:12px;border-top:1px solid var(--border)}
+.signout-btn{width:100%;background:transparent;border:1px solid var(--border2);color:var(--text3);padding:7px;border-radius:var(--r2);font-size:11px;cursor:pointer;font-family:var(--font)}
+.signout-btn:hover{background:var(--bg3);color:var(--text)}
+.main{flex:1;overflow-y:auto;background:var(--bg)}
+
+/* ── PAGES ── */
+.pg{display:none;padding:22px 24px}
+.pg.on{display:block}
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:10px;flex-wrap:wrap}
+.pt{font-size:18px;font-weight:600;color:var(--text)}
+.ps{font-size:11px;color:var(--text3);margin-top:3px;font-family:var(--mono)}
+.mets{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.met{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:13px 15px;box-shadow:var(--shadow)}
+.ml{font-size:10px;color:var(--text3);margin-bottom:4px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.mv{font-size:22px;font-weight:600;color:var(--text)}
+.md{font-size:10px;margin-top:3px;font-family:var(--mono)}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:15px 17px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card:last-child{margin-bottom:0}
+.ch{font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:7px}
+
+/* ── TABLE ── */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{text-align:left;color:var(--text3);font-weight:500;padding:7px 11px;border-bottom:2px solid var(--border);font-family:var(--mono);font-size:10px;background:var(--bg3);white-space:nowrap}
+.tbl td{padding:9px 11px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+.tbl tr:hover td{background:#FAFAF8}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td.mono{font-family:var(--mono)}
+.tbl td.muted{color:var(--text3);font-family:var(--mono)}
+
+/* ── BADGES ── */
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:500;white-space:nowrap;font-family:var(--mono)}
+.ba{background:var(--green-bg);color:var(--green)}
+.bp{background:var(--amber-bg);color:var(--amber)}
+.br{background:var(--blue-bg);color:var(--blue)}
+.bd{background:var(--red-bg);color:var(--red)}
+.bpu{background:var(--purple-bg);color:var(--purple)}
+
+/* ── TIER TAGS ── */
+.tier{font-size:9px;font-weight:700;padding:2px 7px;border-radius:20px;font-family:var(--mono)}
+.t-smf{background:rgba(138,82,0,.15);color:var(--amber)}
+.t-cf{background:rgba(29,122,79,.15);color:var(--green)}
+.t-uf{background:rgba(26,95,168,.15);color:var(--blue)}
+
+/* ── BUTTONS ── */
+.btn-p{background:var(--purple);color:#fff;border:none;padding:8px 16px;border-radius:var(--r2);font-size:12px;cursor:pointer;font-family:var(--font);font-weight:500;transition:background .1s}
+.btn-p:hover{background:var(--purple2)}
+.btn-s{background:#fff;border:1px solid var(--border2);color:var(--text2);padding:8px 16px;border-radius:var(--r2);font-size:12px;cursor:pointer;font-family:var(--font)}
+.btn-s:hover{background:var(--bg3);color:var(--text)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-green{background:var(--green);color:#fff;border:none;padding:8px 16px;border-radius:var(--r2);font-size:12px;cursor:pointer;font-family:var(--font)}
+
+/* ── FORM ── */
+.fr{margin-bottom:12px}
+.fr label{display:block;font-size:10px;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;font-family:var(--mono)}
+.fr input,.fr select,.fr textarea{width:100%;font-size:12px;padding:8px 11px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none}
+.fr input:focus,.fr select:focus{border-color:var(--purple)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px}
+.search-inp{font-size:12px;padding:7px 11px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none;width:240px}
+.search-inp:focus{border-color:var(--purple)}
+
+/* ── NOTIF ── */
+.notif{border-radius:var(--r2);padding:10px 14px;font-size:11px;margin-bottom:14px;border:1px solid;line-height:1.6}
+.ni2{background:var(--blue-bg);border-color:rgba(26,95,168,.2);color:var(--blue)}
+.ng{background:var(--green-bg);border-color:rgba(29,122,79,.2);color:var(--green)}
+.nw{background:var(--amber-bg);border-color:rgba(138,82,0,.2);color:var(--amber)}
+
+/* ── PRICE INPUT ── */
+.price-inp{width:88px;font-size:12px;text-align:right;padding:5px 8px;border-radius:var(--r3);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--mono);outline:none}
+.price-inp:focus{border-color:var(--purple)}
+.price-inp.changed{border-color:var(--amber);background:var(--amber-bg)}
+.price-inp.zero{border-color:var(--red);background:var(--red-bg)}
+
+/* ── LOADING ── */
+.loading{text-align:center;padding:40px;color:var(--text3);font-family:var(--mono);font-size:12px}
+.spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#fff;padding:12px 20px;border-radius:var(--r2);font-size:12px;font-weight:500;box-shadow:var(--shadow-md);display:none;z-index:999;font-family:var(--font)}
+.toast.warn{background:var(--amber)}
+.toast.err{background:var(--red)}
+
+/* ── MODAL ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-bg.show{display:flex}
+.modal{background:#fff;border-radius:var(--r);padding:24px 26px;width:520px;max-width:92vw;box-shadow:var(--shadow-md);max-height:90vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:600;margin-bottom:4px}
+.modal-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:18px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+/* ── EMPTY STATE ── */
+.empty{text-align:center;padding:40px 20px;color:var(--text3);font-size:12px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<!-- ═══ LOGIN SCREEN ═══ -->
+<div class="login-wrap" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-icon">N</div>
+      <div>
+        <div class="login-brand">New Learning Horizons</div>
+        <div class="login-brand-sub">ISO 9001:2015 &middot; Est. 2008 &middot; Nagpur</div>
+      </div>
+    </div>
+    <div class="login-title" id="login-title">Sign in</div>
+    <div class="login-sub" id="login-sub">Enter your NLH platform credentials</div>
+    <div class="fr">
+      <label>Email address</label>
+      <input type="email" id="login-email" placeholder="you@nlhnagpur.info">
+    </div>
+    <div class="fr">
+      <label>Password</label>
+      <input type="password" id="login-pass" placeholder="Your password" onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+    <div class="fr" id="name-row" style="display:none">
+      <label>Full name</label>
+      <input type="text" id="login-name" placeholder="Your full name">
+    </div>
+    <button class="btn-login" id="login-btn" onclick="doLogin()">Sign in</button>
+    <div class="login-err" id="login-err"></div>
+    <div class="login-info" id="login-info">
+      First time? Click below to create your account. After signing up you can sign in immediately.
+    </div>
+    <div class="login-toggle">
+      <span id="toggle-text">No account? </span>
+      <a onclick="toggleMode()">Create account</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ APP SHELL ═══ -->
+<div class="app" id="app">
+
+  <!-- SIDEBAR -->
+  <div class="sb">
+    <div class="sb-logo">
+      <div class="sb-logo-row">
+        <div class="sb-icon">N</div>
+        <div>
+          <div class="sb-name">NLH Platform</div>
+          <div class="sb-sub">New Learning Horizons</div>
+        </div>
+      </div>
+      <span class="sb-role" id="role-badge"></span>
+      <div style="font-size:11px;color:var(--text2);margin-top:5px" id="user-name-display"></div>
+    </div>
+    <div id="sidebar-nav"></div>
+    <div class="sb-foot">
+      <button class="signout-btn" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div id="pg-dashboard" class="pg">
+      <div class="topbar">
+        <div>
+          <div class="pt" id="dash-title">Dashboard</div>
+          <div class="ps" id="dash-sub">Welcome back</div>
+        </div>
+      </div>
+      <div class="mets">
+        <div class="met"><div class="ml">Franchisees</div><div class="mv" id="d-franchise">-</div><div class="md" style="color:var(--blue)">Active</div></div>
+        <div class="met"><div class="ml">Students</div><div class="mv" id="d-students">-</div><div class="md" style="color:var(--green)">Enrolled</div></div>
+        <div class="met"><div class="ml">Pending orders</div><div class="mv" id="d-orders" style="color:var(--amber)">-</div><div class="md" style="color:var(--amber)">Awaiting dispatch</div></div>
+        <div class="met"><div class="ml">Total SKUs</div><div class="mv" id="d-skus">-</div><div class="md" style="color:var(--blue)">In catalogue</div></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="ch">Recent orders</div>
+          <div id="dash-orders"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+        </div>
+        <div class="card">
+          <div class="ch">Recent franchisees</div>
+          <div id="dash-franchisees"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FRANCHISEES -->
+    <div id="pg-franchisees" class="pg">
+      <div class="topbar">
+        <div>
+          <div class="pt">Franchisees</div>
+          <div class="ps">All registered franchise partners</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="search-inp" type="text" id="fr-search" placeholder="Search name or city..." oninput="renderFranchisees()">
+          <button class="btn-p btn-sm" onclick="openFranchiseeModal()">+ Add franchisee</button>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="tbl" id="fr-table">
+            <thead><tr>
+              <th>Business name</th><th>Owner</th><th>Tier</th>
+              <th>City</th><th>State</th><th>Phone</th><th>Status</th><th>Joined</th>
+            </tr></thead>
+            <tbody id="fr-tbody"><tr><td colspan="8" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ORDERS -->
+    <div id="pg-orders" class="pg">
+      <div class="topbar">
+        <div>
+          <div class="pt">Orders</div>
+          <div class="ps">Material orders &mdash; click any row to manage dispatch and invoice</div>
+        </div>
+        <div style="display:flex;gap:7px">
+          <button class="btn-s btn-sm" id="filter-all-btn" onclick="setOrderFilter('all')">All</button>
+          <button class="btn-s btn-sm" id="filter-pending-btn" onclick="setOrderFilter('pending')">Pending</button>
+          <button class="btn-s btn-sm" id="filter-invoiced-btn" onclick="setOrderFilter('invoiced')">Invoiced</button>
+          <button class="btn-s btn-sm" id="filter-closed-btn" onclick="setOrderFilter('closed')">Closed</button>
+          <button class="btn-p btn-sm" onclick="openOrderModal()">+ New order</button>
+        </div>
+      </div>
+      <div class="mets">
+        <div class="met"><div class="ml">Pending</div><div class="mv" id="o-pending" style="color:var(--amber)">-</div></div>
+        <div class="met"><div class="ml">Invoiced</div><div class="mv" id="o-invoiced" style="color:var(--blue)">-</div></div>
+        <div class="met"><div class="ml">Closed</div><div class="mv" id="o-closed" style="color:var(--green)">-</div></div>
+        <div class="met"><div class="ml">Total</div><div class="mv" id="o-total">-</div></div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th>Order ref</th><th>Placed by</th><th>Tier</th>
+              <th>Deliver to</th><th>Status</th><th>Invoice</th><th>Placed</th><th></th>
+            </tr></thead>
+            <tbody id="orders-tbody"><tr><td colspan="8" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- KIT PRICES -->
+    <div id="pg-prices" class="pg">
+      <div class="topbar">
+        <div>
+          <div class="pt">Kit price manager</div>
+          <div class="ps">Edit UF / CF / SMF rates &mdash; zero is allowed (shows as Price TBD) &mdash; all changes auto-logged</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="search-inp" type="text" id="price-search" placeholder="Search SKU..." oninput="renderPrices()">
+          <button class="btn-p" id="save-prices-btn" onclick="savePrices()" disabled style="opacity:.4">Save changes</button>
+        </div>
+      </div>
+      <div class="notif ni2">
+        Prices are live in the database. Changes here immediately affect what franchisees see when ordering.
+        Zero price = "Price TBD" in ordering system. All edits are logged automatically.
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th>Course / level</th><th>Type</th>
+              <th style="text-align:right">UF rate (&#8377;)</th>
+              <th style="text-align:right">CF rate (&#8377;)</th>
+              <th style="text-align:right">SMF rate (&#8377;)</th>
+              <th style="text-align:right">Student fee (&#8377;)</th>
+              <th style="text-align:center">Status</th>
+            </tr></thead>
+            <tbody id="prices-tbody"><tr><td colspan="7" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- STUDENTS -->
+    <div id="pg-students" class="pg">
+      <div class="topbar">
+        <div>
+          <div class="pt">Students</div>
+          <div class="ps">All enrolled students across all channels</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="search-inp" type="text" id="st-search" placeholder="Search student name..." oninput="renderStudents()">
+          <button class="btn-p btn-sm" onclick="openStudentModal()">+ Add student</button>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th>Name</th><th>Parent</th><th>Phone</th>
+              <th>City</th><th>Channel</th><th>Added</th>
+            </tr></thead>
+            <tbody id="st-tbody"><tr><td colspan="6" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- COURSES & SKUs -->
+    <div id="pg-courses" class="pg">
+      <div class="topbar">
+        <div>
+          <div class="pt">Courses &amp; SKUs</div>
+          <div class="ps">16 programs &middot; 57 level-wise SKUs &middot; all prices</div>
+        </div>
+        <input class="search-inp" type="text" id="course-search" placeholder="Search course..." oninput="renderCourses()">
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th>Group</th><th>Level</th><th>Age</th><th>Type</th>
+              <th style="text-align:right">UF rate</th>
+              <th style="text-align:right">CF rate</th>
+              <th style="text-align:right">SMF rate</th>
+              <th style="text-align:right">Student fee</th>
+              <th style="text-align:right">UF share</th>
+            </tr></thead>
+            <tbody id="courses-tbody"><tr><td colspan="9" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRICE HISTORY -->
+    <div id="pg-price-history" class="pg">
+      <div class="topbar">
+        <div><div class="pt">Price change log</div><div class="ps">Every kit price change with timestamp</div></div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead><tr>
+              <th>SKU</th><th>Changed by</th>
+              <th style="text-align:right">Old UF</th><th style="text-align:right">New UF</th>
+              <th style="text-align:right">Old CF</th><th style="text-align:right">New CF</th>
+              <th style="text-align:right">Old SMF</th><th style="text-align:right">New SMF</th>
+              <th>When</th>
+            </tr></thead>
+            <tbody id="history-tbody"><tr><td colspan="9" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ADD FRANCHISEE MODAL -->
+<div class="modal-bg" id="fr-modal">
+  <div class="modal">
+    <div class="modal-title">Add franchisee</div>
+    <div class="modal-sub">New franchise partner registration</div>
+    <div class="g2">
+      <div class="fr"><label>Business name</label><input type="text" id="m-biz" placeholder="Centre / business name"></div>
+      <div class="fr"><label>Owner name</label><input type="text" id="m-owner" placeholder="Owner full name"></div>
+    </div>
+    <div class="g3">
+      <div class="fr"><label>Tier</label>
+        <select id="m-tier">
+          <option value="UF">Unit Franchisee (UF)</option>
+          <option value="CF">City Franchisee (CF)</option>
+          <option value="SMF">State Master Franchisee (SMF)</option>
+        </select>
+      </div>
+      <div class="fr"><label>Phone</label><input type="text" id="m-phone" placeholder="Mobile number"></div>
+      <div class="fr"><label>Email</label><input type="email" id="m-email" placeholder="Email address"></div>
+    </div>
+    <div class="g3">
+      <div class="fr"><label>City</label><input type="text" id="m-city" placeholder="City"></div>
+      <div class="fr"><label>State</label><input type="text" id="m-state" placeholder="State"></div>
+      <div class="fr"><label>Enrollment fee (&#8377;)</label><input type="number" id="m-fee" placeholder="35000"></div>
+    </div>
+    <div class="fr"><label>Address</label><input type="text" id="m-addr" placeholder="Full address"></div>
+    <div class="modal-actions">
+      <button class="btn-s" onclick="closeFrModal()">Cancel</button>
+      <button class="btn-green" onclick="saveFranchisee()">Save franchisee</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD STUDENT MODAL -->
+<div class="modal-bg" id="st-modal">
+  <div class="modal">
+    <div class="modal-title">Add student</div>
+    <div class="modal-sub">New student enrollment</div>
+    <div class="g2">
+      <div class="fr"><label>Full name</label><input type="text" id="s-name" placeholder="Student full name"></div>
+      <div class="fr"><label>Parent name</label><input type="text" id="s-parent" placeholder="Parent / guardian name"></div>
+    </div>
+    <div class="g3">
+      <div class="fr"><label>Phone</label><input type="text" id="s-phone" placeholder="Contact number"></div>
+      <div class="fr"><label>City</label><input type="text" id="s-city" placeholder="City"></div>
+      <div class="fr"><label>Date of birth</label><input type="date" id="s-dob"></div>
+    </div>
+    <div class="g2">
+      <div class="fr"><label>Channel</label>
+        <select id="s-channel">
+          <option value="franchise">Franchisee centre</option>
+          <option value="own_centre">NLH own centre</option>
+          <option value="international">International (Zoom)</option>
+        </select>
+      </div>
+      <div class="fr"><label>Email</label><input type="email" id="s-email" placeholder="Email (optional)"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-s" onclick="closeStModal()">Cancel</button>
+      <button class="btn-green" onclick="saveStudent()">Save student</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD ORDER MODAL -->
+<div class="modal-bg" id="order-modal">
+  <div class="modal">
+    <div class="modal-title">New material order</div>
+    <div class="modal-sub">Place an order from NLH warehouse</div>
+    <div class="g2">
+      <div class="fr"><label>Ordered by (franchisee)</label>
+        <select id="o-placer" onchange="setOrderTier()"><option value="">Select franchisee...</option></select>
+      </div>
+      <div class="fr"><label>Tier</label>
+        <input type="text" id="o-tier" readonly placeholder="Auto-filled" style="background:var(--bg3)">
+      </div>
+    </div>
+    <div class="fr"><label>Deliver to address</label><input type="text" id="o-addr" placeholder="Delivery address"></div>
+    <div class="fr"><label>Notes</label><input type="text" id="o-notes" placeholder="Any special instructions"></div>
+    <div class="modal-actions">
+      <button class="btn-s" onclick="closeOrderModal()">Cancel</button>
+      <button class="btn-green" onclick="saveOrder()">Create order</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ================================================================
+// SUPABASE INIT
+// ================================================================
+var SUPA_URL = 'https://frnnoxudtlvhyyoqdqzx.supabase.co';
+var SUPA_KEY = 'sb_publishable_8yX58JPaU3UatK9N-RPkoA_8Cbdx63F';
+var sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// ================================================================
+// STATE
+// ================================================================
+var currentUser = null;
+var currentRole = null;
+var currentFranchiseeId = null;
+var allSkus = [];
+var priceChanges = {};
+var orderFilter = 'all';
+var isSignup = false;
+var franchiseeCache = [];
+
+// ================================================================
+// AUTH
+// ================================================================
+function toggleMode(){
+  isSignup = !isSignup;
+  document.getElementById('login-title').textContent = isSignup ? 'Create account' : 'Sign in';
+  document.getElementById('login-sub').textContent = isSignup ? 'Register for NLH platform access' : 'Enter your NLH platform credentials';
+  document.getElementById('login-btn').textContent = isSignup ? 'Create account' : 'Sign in';
+  document.getElementById('name-row').style.display = isSignup ? 'block' : 'none';
+  document.getElementById('toggle-text').textContent = isSignup ? 'Have an account? ' : 'No account? ';
+  document.querySelector('.login-toggle a').textContent = isSignup ? 'Sign in' : 'Create account';
+  document.getElementById('login-err').style.display = 'none';
+}
+
+async function doLogin(){
+  var email = document.getElementById('login-email').value.trim();
+  var pass = document.getElementById('login-pass').value;
+  var errEl = document.getElementById('login-err');
+  errEl.style.display = 'none';
+  if(!email || !pass){ showErr('Please enter email and password.'); return; }
+
+  document.getElementById('login-btn').textContent = isSignup ? 'Creating...' : 'Signing in...';
+  document.getElementById('login-btn').disabled = true;
+
+  var result;
+  if(isSignup){
+    var name = document.getElementById('login-name').value.trim() || email.split('@')[0];
+    result = await sb.auth.signUp({ email, password: pass });
+    if(!result.error && result.data.user){
+      // Insert into users table with admin role for first user
+      await sb.from('users').upsert({
+        email: email,
+        full_name: name,
+        role: 'admin'
+      }, { onConflict: 'email' });
+    }
+  } else {
+    result = await sb.auth.signInWithPassword({ email, password: pass });
+  }
+
+  document.getElementById('login-btn').textContent = isSignup ? 'Create account' : 'Sign in';
+  document.getElementById('login-btn').disabled = false;
+
+  if(result.error){
+    showErr(result.error.message);
+    return;
+  }
+  if(result.data.user){
+    await initApp(result.data.user);
+  }
+}
+
+function showErr(msg){
+  var el = document.getElementById('login-err');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function initApp(user){
+  currentUser = user;
+  // Look up role from users table
+  var { data } = await sb.from('users').select('*').eq('email', user.email).single();
+  if(data){
+    currentRole = data.role;
+    currentFranchiseeId = data.franchisee_id;
+  } else {
+    // Default to admin if user not in table yet
+    currentRole = 'admin';
+  }
+
+  // Show app
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.add('show');
+
+  // Set role badge
+  var roleBadge = document.getElementById('role-badge');
+  var roleColors = {
+    admin: 'background:var(--purple-bg);color:var(--purple)',
+    smf:   'background:var(--amber-bg);color:var(--amber)',
+    cf:    'background:var(--green-bg);color:var(--green)',
+    uf:    'background:var(--blue-bg);color:var(--blue)',
+    student: 'background:var(--bg4);color:var(--text3)'
+  };
+  roleBadge.style.cssText = roleColors[currentRole] || roleColors.admin;
+  roleBadge.textContent = currentRole.toUpperCase();
+  document.getElementById('user-name-display').textContent = data ? data.full_name : user.email;
+
+  buildSidebar();
+  loadDashboard();
+  showPage('dashboard');
+}
+
+async function signOut(){
+  await sb.auth.signOut();
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('login-screen').style.display = 'flex';
+  currentUser = null; currentRole = null;
+}
+
+// ================================================================
+// SIDEBAR
+// ================================================================
+var NAV_ITEMS = {
+  admin:[
+    {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
+    {id:'franchisees',  l:'Franchisees',      c:'#1D7A4F'},
+    {id:'orders',       l:'Orders',           c:'#8A5200'},
+    {id:'students',     l:'Students',         c:'#1A5FA8'},
+    {id:'courses',      l:'Courses & SKUs',   c:'#534AB7'},
+    {id:'prices',       l:'Kit prices',       c:'#1D7A4F'},
+    {id:'price-history',l:'Price change log', c:'#9C9A92'}
+  ],
+  smf:[
+    {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
+    {id:'orders',       l:'State orders',     c:'#8A5200'},
+    {id:'franchisees',  l:'My franchisees',   c:'#1D7A4F'},
+    {id:'courses',      l:'Course catalogue', c:'#534AB7'}
+  ],
+  cf:[
+    {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
+    {id:'orders',       l:'Orders',           c:'#8A5200'},
+    {id:'students',     l:'Students',         c:'#1A5FA8'},
+    {id:'courses',      l:'Course catalogue', c:'#534AB7'}
+  ],
+  uf:[
+    {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
+    {id:'orders',       l:'My orders',        c:'#8A5200'},
+    {id:'students',     l:'My students',      c:'#1A5FA8'},
+    {id:'courses',      l:'My courses',       c:'#534AB7'}
+  ]
+};
+
+function buildSidebar(){
+  var nav = document.getElementById('sidebar-nav');
+  nav.innerHTML = '';
+  var sect = document.createElement('div');
+  sect.className = 'nav-sect';
+  sect.textContent = 'Menu';
+  nav.appendChild(sect);
+  var items = NAV_ITEMS[currentRole] || NAV_ITEMS.admin;
+  items.forEach(function(item, i){
+    var d = document.createElement('div');
+    d.className = 'nav-item' + (i===0 ? ' on' : '');
+    d.dataset.id = item.id;
+    d.innerHTML = '<span class="nav-dot" style="background:'+item.c+'"></span>'+item.l;
+    (function(pid){
+      d.onclick = function(){
+        showPage(pid);
+        loadPageData(pid);
+      };
+    })(item.id);
+    nav.appendChild(d);
+  });
+}
+
+function showPage(id){
+  document.querySelectorAll('.pg').forEach(function(p){ p.classList.remove('on'); });
+  var pg = document.getElementById('pg-'+id);
+  if(pg) pg.classList.add('on');
+  document.querySelectorAll('.nav-item').forEach(function(n){
+    n.classList.toggle('on', n.dataset.id === id);
+  });
+}
+
+function loadPageData(id){
+  if(id==='dashboard')     loadDashboard();
+  if(id==='franchisees')   loadFranchisees();
+  if(id==='orders')        loadOrders();
+  if(id==='prices')        loadPrices();
+  if(id==='students')      loadStudents();
+  if(id==='courses')       loadCourses();
+  if(id==='price-history') loadPriceHistory();
+}
+
+// ================================================================
+// DASHBOARD
+// ================================================================
+async function loadDashboard(){
+  document.getElementById('dash-title').textContent =
+    { admin:'Admin dashboard', smf:'SMF dashboard', cf:'CF dashboard', uf:'UF dashboard' }[currentRole] || 'Dashboard';
+  document.getElementById('dash-sub').textContent =
+    'New Learning Horizons \u00B7 ' + new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+
+  var [fr, st, or_, sk] = await Promise.all([
+    sb.from('franchisees').select('id', {count:'exact', head:true}),
+    sb.from('students').select('id', {count:'exact', head:true}),
+    sb.from('orders').select('id', {count:'exact', head:true}).eq('status','pending'),
+    sb.from('skus').select('id', {count:'exact', head:true})
+  ]);
+
+  document.getElementById('d-franchise').textContent = fr.count || 0;
+  document.getElementById('d-students').textContent = st.count || 0;
+  document.getElementById('d-orders').textContent = or_.count || 0;
+  document.getElementById('d-skus').textContent = sk.count || 0;
+
+  // Recent orders
+  var { data: orders } = await sb.from('orders')
+    .select('order_ref, status, placer_tier, deliver_to, created_at')
+    .order('created_at', {ascending:false}).limit(5);
+  var oEl = document.getElementById('dash-orders');
+  if(!orders || !orders.length){
+    oEl.innerHTML = '<div class="empty">No orders yet</div>';
+  } else {
+    oEl.innerHTML = '<table class="tbl"><thead><tr><th>Ref</th><th>Tier</th><th>Status</th><th>Date</th></tr></thead><tbody>' +
+      orders.map(function(o){
+        return '<tr><td class="mono">'+o.order_ref+'</td><td><span class="tier t-'+o.placer_tier.toLowerCase()+'">'+o.placer_tier+'</span></td>' +
+          '<td>'+statusBadge(o.status)+'</td>' +
+          '<td class="muted">'+fmtDate(o.created_at)+'</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  // Recent franchisees
+  var { data: frs } = await sb.from('franchisees')
+    .select('business_name, tier, city, state, created_at')
+    .order('created_at', {ascending:false}).limit(5);
+  var fEl = document.getElementById('dash-franchisees');
+  if(!frs || !frs.length){
+    fEl.innerHTML = '<div class="empty">No franchisees yet</div>';
+  } else {
+    fEl.innerHTML = '<table class="tbl"><thead><tr><th>Business</th><th>Tier</th><th>City</th><th>Joined</th></tr></thead><tbody>' +
+      frs.map(function(f){
+        return '<tr><td>'+esc(f.business_name)+'</td><td><span class="tier t-'+f.tier.toLowerCase()+'">'+f.tier+'</span></td>' +
+          '<td>'+esc(f.city)+'</td><td class="muted">'+fmtDate(f.created_at)+'</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+}
+
+// ================================================================
+// FRANCHISEES
+// ================================================================
+async function loadFranchisees(){
+  var { data: frs } = await sb.from('franchisees')
+    .select('*').order('created_at', {ascending:false});
+  franchiseeCache = frs || [];
+  renderFranchisees();
+}
+
+function renderFranchisees(){
+  var q = (document.getElementById('fr-search').value || '').toLowerCase();
+  var rows = franchiseeCache.filter(function(f){
+    return !q || (f.business_name+' '+f.city+' '+f.owner_name).toLowerCase().includes(q);
+  });
+  var tbody = document.getElementById('fr-tbody');
+  if(!rows.length){
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No franchisees found'+(q?' for "'+q+'"':'')+'</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(f){
+    return '<tr>' +
+      '<td><strong>'+esc(f.business_name)+'</strong></td>' +
+      '<td>'+esc(f.owner_name)+'</td>' +
+      '<td><span class="tier t-'+f.tier.toLowerCase()+'">'+f.tier+'</span></td>' +
+      '<td>'+esc(f.city)+'</td>' +
+      '<td>'+esc(f.state)+'</td>' +
+      '<td class="mono">'+esc(f.phone)+'</td>' +
+      '<td>'+statusBadge(f.status)+'</td>' +
+      '<td class="muted">'+fmtDate(f.created_at)+'</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ================================================================
+// ORDERS
+// ================================================================
+var ordersCache = [];
+async function loadOrders(){
+  var { data } = await sb.from('orders')
+    .select('*').order('created_at', {ascending:false});
+  ordersCache = data || [];
+  var pending = ordersCache.filter(function(o){return o.status==='pending';}).length;
+  var invoiced = ordersCache.filter(function(o){return o.status==='invoiced';}).length;
+  var closed = ordersCache.filter(function(o){return o.status==='closed';}).length;
+  document.getElementById('o-pending').textContent = pending;
+  document.getElementById('o-invoiced').textContent = invoiced;
+  document.getElementById('o-closed').textContent = closed;
+  document.getElementById('o-total').textContent = ordersCache.length;
+  renderOrders();
+}
+
+function setOrderFilter(f){
+  orderFilter = f;
+  ['all','pending','invoiced','closed'].forEach(function(x){
+    var btn = document.getElementById('filter-'+x+'-btn');
+    if(btn) btn.className = 'btn-' + (x===f?'p':'s') + ' btn-sm';
+  });
+  renderOrders();
+}
+
+function renderOrders(){
+  var rows = orderFilter==='all' ? ordersCache :
+    ordersCache.filter(function(o){ return o.status===orderFilter; });
+  var tbody = document.getElementById('orders-tbody');
+  if(!rows.length){
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(o){
+    return '<tr>' +
+      '<td class="mono"><strong>'+esc(o.order_ref)+'</strong></td>' +
+      '<td>'+esc(o.deliver_to||'-')+'</td>' +
+      '<td><span class="tier t-'+(o.placer_tier||'uf').toLowerCase()+'">'+esc(o.placer_tier||'-')+'</span></td>' +
+      '<td>'+esc((o.deliver_to||'').substring(0,30))+'</td>' +
+      '<td>'+statusBadge(o.status)+'</td>' +
+      '<td class="mono">'+(o.invoice_no||'<span style="color:var(--text3)">Pending</span>')+'</td>' +
+      '<td class="muted">'+fmtDate(o.created_at)+'</td>' +
+      '<td>' +
+        (o.status==='pending' ?
+          '<button class="btn-p btn-sm" onclick="markInvoiced(\''+o.id+'\')">Generate invoice</button>' :
+        o.status==='invoiced' ?
+          '<button class="btn-green btn-sm" onclick="markClosed(\''+o.id+'\')">Mark paid</button>' :
+          '<span class="badge ba">Closed</span>') +
+      '</td></tr>';
+  }).join('');
+}
+
+async function markInvoiced(id){
+  var yr = new Date().getFullYear();
+  var { data:last } = await sb.from('orders').select('invoice_no').not('invoice_no','is',null).order('invoice_no',{ascending:false}).limit(1);
+  var nextNum = 1;
+  if(last && last.length && last[0].invoice_no) {
+    var parts = last[0].invoice_no.split('-');
+    nextNum = (parseInt(parts[parts.length-1])||0) + 1;
+  }
+  var invNo = 'INV-'+yr+'-'+String(nextNum).padStart(4,'0');
+  await sb.from('orders').update({status:'invoiced', invoice_no:invNo}).eq('id',id);
+  showToast('Invoice '+invNo+' generated');
+  loadOrders();
+}
+
+async function markClosed(id){
+  await sb.from('orders').update({status:'closed', paid_at: new Date().toISOString()}).eq('id',id);
+  showToast('Sale closed. Payment recorded.');
+  loadOrders();
+}
+
+// ================================================================
+// KIT PRICES
+// ================================================================
+async function loadPrices(){
+  var { data } = await sb.from('skus')
+    .select('*, courses(group_name, name, billing_type)')
+    .order('sort_order');
+  allSkus = data || [];
+  priceChanges = {};
+  document.getElementById('save-prices-btn').disabled = true;
+  document.getElementById('save-prices-btn').style.opacity = '0.4';
+  renderPrices();
+}
+
+function renderPrices(){
+  var q = (document.getElementById('price-search').value||'').toLowerCase();
+  var skus = q ? allSkus.filter(function(s){
+    return (s.courses.group_name+' '+s.level_name).toLowerCase().includes(q);
+  }) : allSkus;
+  var tbody = document.getElementById('prices-tbody');
+  if(!skus.length){ tbody.innerHTML='<tr><td colspan="7" class="empty">No SKUs found</td></tr>'; return; }
+  tbody.innerHTML = skus.map(function(s){
+    var hasChange = priceChanges[s.id];
+    var ufZero = (priceChanges[s.id]?priceChanges[s.id].uf:s.uf_rate)===0;
+    var cfZero = (priceChanges[s.id]?priceChanges[s.id].cf:s.cf_rate)===0;
+    var smfZero = (priceChanges[s.id]?priceChanges[s.id].smf:s.smf_rate)===0;
+    var ufVal = priceChanges[s.id] ? priceChanges[s.id].uf : s.uf_rate;
+    var cfVal = priceChanges[s.id] ? priceChanges[s.id].cf : s.cf_rate;
+    var smfVal = priceChanges[s.id] ? priceChanges[s.id].smf : s.smf_rate;
+    var badge = (ufZero||cfZero||smfZero) ? '<span class="badge bd">Price TBD</span>' :
+                hasChange ? '<span class="badge bp">Unsaved</span>' :
+                '<span class="badge ba">Saved</span>';
+    return '<tr style="'+(hasChange?'background:#FEF8F0':'')+(ufZero||cfZero||smfZero?'background:#FEF3F3':'')+'">' +
+      '<td><strong>'+esc(s.courses.group_name)+'</strong> \u2014 '+esc(s.level_name)+'</td>' +
+      '<td><span style="font-size:10px;padding:2px 7px;border-radius:20px;font-family:var(--mono);background:var(--bg3);color:var(--text3)">'+(s.courses.billing_type==='monthly'?'Per month':'Sessions')+'</span></td>' +
+      '<td style="text-align:right"><input class="price-inp'+(ufZero?' zero':hasChange?' changed':'')+'" type="number" min="0" value="'+ufVal+'" data-id="'+s.id+'" data-tier="uf" onchange="priceEdit(this)"></td>' +
+      '<td style="text-align:right"><input class="price-inp'+(cfZero?' zero':hasChange?' changed':'')+'" type="number" min="0" value="'+cfVal+'" data-id="'+s.id+'" data-tier="cf" onchange="priceEdit(this)"></td>' +
+      '<td style="text-align:right"><input class="price-inp'+(smfZero?' zero':hasChange?' changed':'')+'" type="number" min="0" value="'+smfVal+'" data-id="'+s.id+'" data-tier="smf" onchange="priceEdit(this)"></td>' +
+      '<td style="text-align:right;font-family:var(--mono);color:var(--blue)">&#8377;'+s.student_fee+'</td>' +
+      '<td style="text-align:center">'+badge+'</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function priceEdit(inp){
+  var id = inp.dataset.id;
+  var tier = inp.dataset.tier;
+  var val = Math.max(0, parseInt(inp.value)||0);
+  inp.value = val;
+  var sku = allSkus.find(function(s){return s.id===id;});
+  if(!priceChanges[id]){
+    priceChanges[id] = {uf:sku.uf_rate, cf:sku.cf_rate, smf:sku.smf_rate, sku:sku};
+  }
+  priceChanges[id][tier] = val;
+  inp.className = 'price-inp ' + (val===0?'zero':'changed');
+  var hasAny = Object.keys(priceChanges).length > 0;
+  var btn = document.getElementById('save-prices-btn');
+  var cnt = Object.keys(priceChanges).length;
+  btn.disabled = !hasAny;
+  btn.style.opacity = hasAny ? '1' : '0.4';
+  btn.textContent = hasAny ? 'Save '+cnt+' change'+(cnt!==1?'s':'') : 'Save changes';
+}
+
+async function savePrices(){
+  var ids = Object.keys(priceChanges);
+  if(!ids.length) return;
+  for(var i=0; i<ids.length; i++){
+    var id = ids[i];
+    var ch = priceChanges[id];
+    var sku = ch.sku;
+    // Log to history
+    await sb.from('kit_price_history').insert({
+      sku_id: id,
+      old_uf: sku.uf_rate, new_uf: ch.uf,
+      old_cf: sku.cf_rate, new_cf: ch.cf,
+      old_smf: sku.smf_rate, new_smf: ch.smf,
+      changed_by: 'NLH Admin'
+    });
+    // Update sku
+    await sb.from('skus').update({ uf_rate:ch.uf, cf_rate:ch.cf, smf_rate:ch.smf }).eq('id', id);
+  }
+  showToast('Saved '+ids.length+' price update'+(ids.length!==1?'s':''));
+  priceChanges = {};
+  loadPrices();
+}
+
+// ================================================================
+// STUDENTS
+// ================================================================
+var studentsCache = [];
+async function loadStudents(){
+  var { data } = await sb.from('students').select('*').order('created_at',{ascending:false});
+  studentsCache = data || [];
+  renderStudents();
+}
+
+function renderStudents(){
+  var q = (document.getElementById('st-search').value||'').toLowerCase();
+  var rows = q ? studentsCache.filter(function(s){
+    return (s.full_name+' '+(s.parent_name||'')).toLowerCase().includes(q);
+  }) : studentsCache;
+  var tbody = document.getElementById('st-tbody');
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="6" class="empty">No students yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(function(s){
+    var ch = {franchise:'Franchisee centre', own_centre:'NLH own centre', international:'International Zoom'};
+    return '<tr>' +
+      '<td><strong>'+esc(s.full_name)+'</strong></td>' +
+      '<td>'+esc(s.parent_name||'-')+'</td>' +
+      '<td class="mono">'+esc(s.phone||'-')+'</td>' +
+      '<td>'+esc(s.city||'-')+'</td>' +
+      '<td><span class="badge br">'+esc(ch[s.channel]||s.channel)+'</span></td>' +
+      '<td class="muted">'+fmtDate(s.created_at)+'</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ================================================================
+// COURSES
+// ================================================================
+async function loadCourses(){
+  var { data } = await sb.from('skus')
+    .select('*, courses(group_name, name, billing_type, age_min, age_max)')
+    .order('sort_order');
+  var q = '';
+  window._coursesData = data || [];
+  renderCourses();
+}
+
+function renderCourses(){
+  var q = (document.getElementById('course-search').value||'').toLowerCase();
+  var data = (window._coursesData||[]).filter(function(s){
+    return !q || (s.courses.group_name+' '+s.level_name).toLowerCase().includes(q);
+  });
+  var tbody = document.getElementById('courses-tbody');
+  if(!data.length){ tbody.innerHTML='<tr><td colspan="9" class="empty">No courses found</td></tr>'; return; }
+  tbody.innerHTML = data.map(function(s){
+    return '<tr>' +
+      '<td style="font-weight:500;color:var(--purple)">'+esc(s.courses.group_name)+'</td>' +
+      '<td>'+esc(s.level_name)+'</td>' +
+      '<td class="muted">'+(s.courses.age_min||'-')+'\u2013'+(s.courses.age_max||'-')+'</td>' +
+      '<td><span style="font-size:10px;padding:2px 7px;border-radius:20px;font-family:var(--mono);background:'+(s.courses.billing_type==='monthly'?'var(--green-bg)':'var(--blue-bg)')+';color:'+(s.courses.billing_type==='monthly'?'var(--green)':'var(--blue)')+'">'+esc(s.courses.billing_type)+'</span></td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+s.uf_rate+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+s.cf_rate+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+s.smf_rate+'</td>' +
+      '<td style="text-align:right;color:var(--blue);font-weight:500" class="mono">&#8377;'+s.student_fee+'</td>' +
+      '<td style="text-align:right;color:var(--green);font-weight:600" class="mono">&#8377;'+s.uf_share+'</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ================================================================
+// PRICE HISTORY
+// ================================================================
+async function loadPriceHistory(){
+  var { data } = await sb.from('kit_price_history')
+    .select('*, skus(level_name, courses(group_name))')
+    .order('changed_at', {ascending:false}).limit(100);
+  var tbody = document.getElementById('history-tbody');
+  if(!data||!data.length){ tbody.innerHTML='<tr><td colspan="9" class="empty">No price changes yet</td></tr>'; return; }
+  tbody.innerHTML = data.map(function(h){
+    var skuName = h.skus ? h.skus.courses.group_name+' \u2014 '+h.skus.level_name : '-';
+    function chg(o,n){ return o===n ? '<span style="color:var(--text3)">&#8377;'+n+'</span>' :
+      '<span style="color:var(--amber)">&#8377;'+o+'</span><span style="color:var(--text3);margin:0 3px">\u2192</span><span style="color:var(--green);font-weight:500">&#8377;'+n+'</span>'; }
+    return '<tr>' +
+      '<td>'+esc(skuName)+'</td>' +
+      '<td>'+esc(h.changed_by)+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+(h.old_uf||0)+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+(h.new_uf||0)+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+(h.old_cf||0)+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+(h.new_cf||0)+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+(h.old_smf||0)+'</td>' +
+      '<td style="text-align:right" class="mono">&#8377;'+(h.new_smf||0)+'</td>' +
+      '<td class="muted">'+fmtDate(h.changed_at)+'</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ================================================================
+// MODALS
+// ================================================================
+function openFranchiseeModal(){
+  document.getElementById('fr-modal').classList.add('show');
+}
+function closeFrModal(){ document.getElementById('fr-modal').classList.remove('show'); }
+
+async function saveFranchisee(){
+  var biz = document.getElementById('m-biz').value.trim();
+  var owner = document.getElementById('m-owner').value.trim();
+  var tier = document.getElementById('m-tier').value;
+  var phone = document.getElementById('m-phone').value.trim();
+  var email = document.getElementById('m-email').value.trim();
+  var city = document.getElementById('m-city').value.trim();
+  var state = document.getElementById('m-state').value.trim();
+  var fee = parseInt(document.getElementById('m-fee').value)||0;
+  var addr = document.getElementById('m-addr').value.trim();
+  if(!biz||!owner||!city||!state){ showToast('Please fill all required fields','warn'); return; }
+  var { error } = await sb.from('franchisees').insert({
+    business_name:biz, owner_name:owner, tier, phone, email,
+    city, state, address:addr, enrollment_fee:fee, status:'active'
+  });
+  if(error){ showToast('Error: '+error.message,'err'); return; }
+  showToast('Franchisee added successfully');
+  closeFrModal();
+  loadFranchisees();
+  loadDashboard();
+}
+
+function openStudentModal(){ document.getElementById('st-modal').classList.add('show'); }
+function closeStModal(){ document.getElementById('st-modal').classList.remove('show'); }
+
+async function saveStudent(){
+  var name = document.getElementById('s-name').value.trim();
+  var parent = document.getElementById('s-parent').value.trim();
+  var phone = document.getElementById('s-phone').value.trim();
+  var city = document.getElementById('s-city').value.trim();
+  var dob = document.getElementById('s-dob').value;
+  var channel = document.getElementById('s-channel').value;
+  var email = document.getElementById('s-email').value.trim();
+  if(!name){ showToast('Student name is required','warn'); return; }
+  var { error } = await sb.from('students').insert({
+    full_name:name, parent_name:parent, phone, city, dob:dob||null, channel, email:email||null
+  });
+  if(error){ showToast('Error: '+error.message,'err'); return; }
+  showToast('Student added successfully');
+  closeStModal();
+  loadStudents();
+  loadDashboard();
+}
+
+async function openOrderModal(){
+  var { data } = await sb.from('franchisees').select('id,business_name,tier').eq('status','active').order('business_name');
+  var sel = document.getElementById('o-placer');
+  sel.innerHTML = '<option value="">Select franchisee...</option>' +
+    (data||[]).map(function(f){
+      return '<option value="'+f.id+'" data-tier="'+f.tier+'">'+esc(f.business_name)+' ('+f.tier+')</option>';
+    }).join('');
+  document.getElementById('order-modal').classList.add('show');
+}
+function closeOrderModal(){ document.getElementById('order-modal').classList.remove('show'); }
+function setOrderTier(){
+  var sel = document.getElementById('o-placer');
+  var opt = sel.options[sel.selectedIndex];
+  document.getElementById('o-tier').value = opt.dataset.tier || '';
+}
+async function saveOrder(){
+  var placerId = document.getElementById('o-placer').value;
+  var tier = document.getElementById('o-tier').value;
+  var addr = document.getElementById('o-addr').value.trim();
+  var notes = document.getElementById('o-notes').value.trim();
+  if(!placerId){ showToast('Select a franchisee','warn'); return; }
+  var yr = new Date().getFullYear();
+  var { data:last } = await sb.from('orders').select('order_ref').order('created_at',{ascending:false}).limit(1);
+  var nextNum = 1;
+  if(last && last.length){ var p=last[0].order_ref.split('-'); nextNum=(parseInt(p[p.length-1])||0)+1; }
+  var ref = 'ORD-'+yr+'-'+String(nextNum).padStart(4,'0');
+  var { error } = await sb.from('orders').insert({
+    order_ref:ref, placer_id:placerId, placer_tier:tier,
+    status:'pending', deliver_to:addr, notes
+  });
+  if(error){ showToast('Error: '+error.message,'err'); return; }
+  showToast('Order '+ref+' created');
+  closeOrderModal();
+  loadOrders();
+  loadDashboard();
+}
+
+// ================================================================
+// UTILS
+// ================================================================
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function fmtDate(d){
+  if(!d) return '-';
+  return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+}
+function statusBadge(s){
+  var map = { active:'ba',pending:'bp',invoiced:'br',closed:'ba',expired:'bd',inactive:'bd',dispatched:'br' };
+  return '<span class="badge '+(map[s]||'bg2b')+'">'+s+'</span>';
+}
+function showToast(msg, type){
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast'+(type?' '+type:'');
+  t.style.display = 'block';
+  setTimeout(function(){ t.style.display='none'; }, 3000);
+}
+
+// ================================================================
+// AUTO LOGIN CHECK (if session exists)
+// ================================================================
+window.addEventListener('load', async function(){
+  var { data: { session } } = await sb.auth.getSession();
+  if(session && session.user){
+    await initApp(session.user);
+  }
+});
+</script>
+</body>
+</html>
