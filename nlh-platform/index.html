@@ -671,13 +671,27 @@ function showErr(msg){
 
 async function initApp(user){
   currentUser = user;
-  // Look up role from users table
-  var { data } = await sb.from('users').select('*').eq('email', user.email).single();
-  if(data){
-    currentRole = data.role;
-    currentFranchiseeId = data.franchisee_id;
-  } else {
-    // Default to admin if user not in table yet
+  
+  try {
+    // Look up role from users table
+    var { data, error } = await sb.from('users').select('*').eq('email', user.email).single();
+    console.log('User lookup:', data, error);
+    
+    if(data){
+      currentRole = data.role || 'admin';
+      currentFranchiseeId = data.franchisee_id;
+    } else {
+      // Not in users table yet - insert as admin
+      currentRole = 'admin';
+      // Auto-insert into users table
+      await sb.from('users').upsert({
+        email: user.email,
+        full_name: user.email.split('@')[0],
+        role: 'admin'
+      }, { onConflict: 'email' });
+    }
+  } catch(err) {
+    console.error('User lookup error:', err);
     currentRole = 'admin';
   }
 
@@ -688,15 +702,15 @@ async function initApp(user){
   // Set role badge
   var roleBadge = document.getElementById('role-badge');
   var roleColors = {
-    admin: 'background:var(--purple-bg);color:var(--purple)',
-    smf:   'background:var(--amber-bg);color:var(--amber)',
-    cf:    'background:var(--green-bg);color:var(--green)',
-    uf:    'background:var(--blue-bg);color:var(--blue)',
+    admin:   'background:var(--purple-bg);color:var(--purple)',
+    smf:     'background:var(--amber-bg);color:var(--amber)',
+    cf:      'background:var(--green-bg);color:var(--green)',
+    uf:      'background:var(--blue-bg);color:var(--blue)',
     student: 'background:var(--bg4);color:var(--text3)'
   };
   roleBadge.style.cssText = roleColors[currentRole] || roleColors.admin;
   roleBadge.textContent = currentRole.toUpperCase();
-  document.getElementById('user-name-display').textContent = data ? data.full_name : user.email;
+  document.getElementById('user-name-display').textContent = currentUser.email;
 
   buildSidebar();
   loadDashboard();
