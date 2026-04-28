@@ -1433,8 +1433,8 @@ function showCredentialsModal(name, email, pass, role){
         'Note: Copy this message and send it manually via WhatsApp to '+esc(email)+'. Automatic email sending will be available once a developer integrates SendGrid.'+
       '</div>'+
       '<div class="modal-actions">'+
-        '<button class="btn-s" data-close-cred="1">Close</button>'+
-        '<button class="btn-green" data-copy-cred="1">Copy message</button>'+
+        '<button class="btn-s" onclick="var m=document.getElementById(\"cred-modal\");if(m)m.remove()">Close</button>'+
+        '<button class="btn-green" onclick="copyCredentials()">Copy message</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(div);
