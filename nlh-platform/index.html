@@ -877,7 +877,7 @@ function renderFranchisees(){
     return;
   }
   tbody.innerHTML = rows.map(function(f){
-    return '<tr data-rid="'+r.id+'">' +
+    return '<tr>' +
       '<td><strong>'+esc(f.business_name)+'</strong></td>' +
       '<td>'+esc(f.owner_name)+'</td>' +
       '<td><span class="tier t-'+f.tier.toLowerCase()+'">'+f.tier+'</span></td>' +
@@ -1312,9 +1312,12 @@ async function submitRequest(){
 // ================================================================
 // ADMIN - MANAGE ACCESS REQUESTS
 // ================================================================
+var _reqData = []; // stores all request objects for safe access
+
 async function loadRequests(){
   var { data } = await sb.from('access_requests').select('*').order('created_at',{ascending:false});
   var all = data || [];
+  _reqData = all; // store for button access
   var pending  = all.filter(function(r){return r.status==='pending';});
   var approved = all.filter(function(r){return r.status==='approved';});
   var rejected = all.filter(function(r){return r.status==='rejected';});
@@ -1327,13 +1330,10 @@ async function loadRequests(){
   if(!all.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">No access requests yet</td></tr>'; return; }
   var roleLabels = {smf:'SMF',cf:'CF',uf:'UF',student:'Student'};
   var roleColors = {smf:'bp',cf:'ba',uf:'br',student:'bpu'};
-  tbody.innerHTML = all.map(function(r){
-    // UUIDs are safe in onclick (hex + hyphens only, no quotes)
-    window._reqMap = window._reqMap || {};
-    window._reqMap[r.id] = r;
+  tbody.innerHTML = all.map(function(r, idx){
     var actionBtns = r.status === 'pending'
-      ? '<button class="btn-green btn-sm" style="margin-right:5px" onclick="doApprove(this)">Approve</button> '+
-        '<button class="btn-s btn-sm" onclick="doReject(this)">Reject</button>'
+      ? '<button class="btn-green btn-sm" style="margin-right:5px" onclick="doApprove('+idx+')">Approve</button> '+
+        '<button class="btn-s btn-sm" onclick="doReject('+idx+')">Reject</button>'
       : r.status === 'approved'
         ? '<span class="badge ba">Approved</span>'
         : '<span class="badge bd">Rejected</span>';
@@ -1350,25 +1350,20 @@ async function loadRequests(){
   }).join('');
 }
 
-function doApprove(btn){
-  var tr = btn.closest('tr');
-  var rid = tr ? tr.dataset.rid : null;
-  var req = rid && window._reqMap && window._reqMap[rid];
-  if(!req){ alert('Request data not found. Please refresh.'); return; }
+function doApprove(idx){
+  var req = _reqData[idx];
+  if(!req){ loadRequests(); showToast('Please try again','warn'); return; }
   approveRequest(req.id, req.email, req.full_name, req.role_requested);
 }
 
-function doReject(btn){
-  var tr = btn.closest('tr');
-  var rid = tr ? tr.dataset.rid : null;
-  if(!rid){ alert('Request not found. Please refresh.'); return; }
-  rejectRequest(rid);
+function doReject(idx){
+  var req = _reqData[idx];
+  if(!req){ loadRequests(); showToast('Please try again','warn'); return; }
+  rejectRequest(req.id);
 }
 
 async function approveRequest(id, email, name, role){
-  var chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  var tmpPass = 'NLH@';
-  for(var i=0;i<6;i++) tmpPass += chars[Math.floor(Math.random()*chars.length)];
+  var tmpPass = 'NLH@123';
 
   var authResult = await sb.auth.signUp({
     email: email,
@@ -1410,11 +1405,11 @@ function showCredentialsModal(name, email, pass, role){
   var msg = [
     'Dear '+name+',',
     '',
-    'Your NLH Platform access has been approved.',
+    'Your NLH Platform access has been approved. Use your registered email and the password below to sign in.',
     '',
     'Login URL: https://nlh-platform.vercel.app',
     'Email: '+email,
-    'Password: '+tmpPass,
+    'Password: NLH@123  (please change after first login)',
     '',
     'Please change your password after your first login.',
     'Role: '+roleLabels[role],
