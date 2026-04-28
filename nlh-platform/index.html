@@ -1541,7 +1541,15 @@ window.addEventListener('load', async function(){
     // Check for existing session
     var { data: { session } } = await sb.auth.getSession();
     if(session && session.user){
-      await initApp(session.user);
+      // Verify user still exists in auth (handles deleted users)
+      var { data: { user }, error: userErr } = await sb.auth.getUser();
+      if(user && !userErr){
+        await initApp(user);
+      } else {
+        // Session invalid or user deleted - clear and show login
+        await sb.auth.signOut();
+        console.log('Cleared stale session');
+      }
     }
   } catch(err) {
     console.error('Init error:', err);
