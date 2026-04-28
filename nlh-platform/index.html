@@ -1315,6 +1315,18 @@ async function submitRequest(){
 // ================================================================
 var _reqData = []; // stores all request objects for safe access
 
+function closeCredModal(){
+  var m = document.getElementById('cred-modal');
+  if(m) m.remove();
+}
+function copyCredentials(){
+  var ta = document.getElementById('cred-text');
+  if(!ta) return;
+  ta.select();
+  document.execCommand('copy');
+  showToast('Credentials copied - paste into WhatsApp');
+}
+
 async function loadRequests(){
   var { data } = await sb.from('access_requests').select('*').order('created_at',{ascending:false});
   var all = data || [];
@@ -1458,19 +1470,14 @@ function showCredentialsModal(name, email, pass, role, emailSent){
         (emailSent ? '&#10003; Email sent automatically to '+esc(email)+'. You can also copy the message below to send via WhatsApp.' : 'Email could not be sent automatically. Please copy the message below and send via WhatsApp to '+esc(email)+'.')+
       '</div>'+
       '<div class="modal-actions">'+
-        '<button class="btn-s" onclick="var m=document.getElementById(\"cred-modal\");if(m)m.remove()">Close</button>'+
+        '<button class="btn-s" onclick="closeCredModal()">Close</button>'+
         '<button class="btn-green" onclick="copyCredentials()">Copy message</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(div);
 }
 
-function copyCredentials(){
-  var ta = document.getElementById('cred-text');
-  ta.select();
-  document.execCommand('copy');
-  showToast('Credentials copied - paste into WhatsApp');
-}
+// copyCredentials defined above
 
 // ================================================================
 // USERS
