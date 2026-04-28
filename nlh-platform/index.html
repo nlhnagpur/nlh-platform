@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>New Learning Horizons — Platform</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1386,7 +1387,9 @@ async function approveRequest(id, email, name, role){
     reviewed_at: new Date().toISOString()
   }).eq('id', id);
 
-  showCredentialsModal(name, email, tmpPass, role);
+  // Send email automatically
+  var emailSent = await sendApprovalEmail(name, email, role);
+  showCredentialsModal(name, email, tmpPass, role, emailSent);
   loadRequests();
 }
 
@@ -1400,7 +1403,29 @@ async function rejectRequest(id){
   loadRequests();
 }
 
-function showCredentialsModal(name, email, pass, role){
+async function sendApprovalEmail(name, toEmail, role){
+  var roleLabels = {smf:'State Master Franchisee', cf:'City Franchisee', uf:'Unit Franchisee', student:'Student'};
+  try {
+    if(typeof emailjs === 'undefined'){ return false; }
+    var result = await emailjs.send(
+      'service_lrmort8',
+      'template_vaiyd44',
+      {
+        to_name:   name,
+        to_email:  toEmail,
+        role:      roleLabels[role] || role,
+        login_url: 'https://nlh-platform.vercel.app',
+        password:  'NLH@123'
+      }
+    );
+    return result.status === 200;
+  } catch(err) {
+    console.error('EmailJS error:', err);
+    return false;
+  }
+}
+
+function showCredentialsModal(name, email, pass, role, emailSent){
   var roleLabels = {smf:'State Master Franchisee',cf:'City Franchisee',uf:'Unit Franchisee',student:'Student'};
   var msg = [
     'Dear '+name+',',
@@ -1429,8 +1454,8 @@ function showCredentialsModal(name, email, pass, role){
       '<div class="modal-title" style="color:var(--green)">&#10003; Access approved - credentials ready</div>'+
       '<div class="modal-sub">Copy the message below and send to '+esc(name)+' via WhatsApp or email</div>'+
       '<textarea id="cred-text" style="width:100%;height:200px;font-size:12px;padding:10px;border:1px solid var(--border2);border-radius:var(--r2);font-family:var(--mono);resize:none;background:var(--bg3);color:var(--text)">'+msg+'</textarea>'+
-      '<div style="background:var(--amber-bg);border:1px solid rgba(138,82,0,.2);color:var(--amber);border-radius:var(--r2);padding:9px 13px;font-size:11px;margin-top:10px;line-height:1.5">'+
-        'Note: Copy this message and send it manually via WhatsApp to '+esc(email)+'. Automatic email sending will be available once a developer integrates SendGrid.'+
+      '<div style="background:'+(emailSent ? 'var(--green-bg);border:1px solid rgba(29,122,79,.2);color:var(--green)' : 'var(--amber-bg);border:1px solid rgba(138,82,0,.2);color:var(--amber)')+';border-radius:var(--r2);padding:9px 13px;font-size:11px;margin-top:10px;line-height:1.5">'+
+        (emailSent ? '&#10003; Email sent automatically to '+esc(email)+'. You can also copy the message below to send via WhatsApp.' : 'Email could not be sent automatically. Please copy the message below and send via WhatsApp to '+esc(email)+'.')+
       '</div>'+
       '<div class="modal-actions">'+
         '<button class="btn-s" onclick="var m=document.getElementById(\"cred-modal\");if(m)m.remove()">Close</button>'+
@@ -1500,6 +1525,11 @@ window.addEventListener('load', async function(){
     }
     sb = supabase.createClient(SUPA_URL, SUPA_KEY);
     console.log('Supabase initialized');
+    // Init EmailJS
+    if(typeof emailjs !== 'undefined'){
+      emailjs.init('wzhs8NWYw5NU9tqLO');
+      console.log('EmailJS initialized');
+    }
     
     // Check for existing session
     var { data: { session } } = await sb.auth.getSession();
