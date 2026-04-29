@@ -1189,6 +1189,8 @@ function renderOrders(){
   }).join('');
 }
 
+function fmtAmt(n){ return Math.round(n||0).toLocaleString('en-IN'); }
+
 function doDownloadInvoice(btn){ var id = btn.dataset.orderid; if(id) downloadInvoice(id); }
 
 async function downloadInvoice(orderId){
@@ -1863,6 +1865,45 @@ function renderCart(){
   }).join('');
   var tot = document.getElementById('o-cart-total');
   if(tot) tot.textContent = '₹'+fmtAmt(total);
+}
+
+async function populateOrderFrom(tier, placerId){
+  var fromSel = document.getElementById('o-from');
+  fromSel.innerHTML = '<option value="">Select supplier...</option>';
+  var options = [];
+
+  if(tier === 'SMF'){
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  } else if(tier === 'CF'){
+    var { data: fr } = await sb.from('franchisees').select('parent_id').eq('id',placerId).single();
+    if(fr && fr.parent_id){
+      var { data: smf } = await sb.from('franchisees').select('id,business_name').eq('id',fr.parent_id).single();
+      if(smf) options.push({value:smf.id, label:'SMF: '+smf.business_name});
+    }
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  } else if(tier === 'UF'){
+    var { data: fr } = await sb.from('franchisees').select('parent_id').eq('id',placerId).single();
+    if(fr && fr.parent_id){
+      var { data: cf } = await sb.from('franchisees').select('id,business_name,parent_id').eq('id',fr.parent_id).single();
+      if(cf){
+        options.push({value:cf.id, label:'CF: '+cf.business_name});
+        if(cf.parent_id){
+          var { data: smf } = await sb.from('franchisees').select('id,business_name').eq('id',cf.parent_id).single();
+          if(smf) options.push({value:smf.id, label:'SMF: '+smf.business_name});
+        }
+      }
+    }
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  } else {
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  }
+
+  options.forEach(function(opt){
+    var o = document.createElement('option');
+    o.value = opt.value; o.textContent = opt.label;
+    fromSel.appendChild(o);
+  });
+  if(options.length === 1) fromSel.value = options[0].value;
 }
 
 async function openOrderModal(){
