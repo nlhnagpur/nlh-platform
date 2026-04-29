@@ -1138,18 +1138,46 @@ function renderOrders(){
           '<button class="btn-p btn-sm" onclick="markInvoiced(\''+o.id+'\')">Generate invoice</button>' :
         o.status==='invoiced' ?
           '<button class="btn-green btn-sm" onclick="markClosed(\''+o.id+'\')">Mark paid</button>' +
-          '<button class="btn-s btn-sm" onclick="downloadInvoice(\''+o.id+'\')">&#8595; PDF</button>'
+          '<button class="btn-s btn-sm" data-orderid="'+o.id+'" onclick="doDownloadInvoice(this)">&#8595; PDF</button>'
           :
           '<span class="badge ba">Closed</span>' +
-          '<button class="btn-s btn-sm" onclick="downloadInvoice(\''+o.id+'\')">&#8595; PDF</button>') +
+          '<button class="btn-s btn-sm" data-orderid="'+o.id+'" onclick="doDownloadInvoice(this)">&#8595; PDF</button>') +
       '</td></tr>';
   }).join('');
 }
 
-function downloadInvoice(orderId){
+function doDownloadInvoice(btn){ var id = btn.dataset.orderid; if(id) downloadInvoice(id); }
+
+async function downloadInvoice(orderId){
   var o = ordersCache.find(function(x){ return x.id === orderId; });
   if(!o){ showToast('Order not found','err'); return; }
   if(typeof window.jspdf === 'undefined'){ showToast('PDF library loading, please try again','warn'); return; }
+
+  // Fetch order items with SKU details
+  var { data: items } = await sb.from('order_items')
+    .select('*, skus(level_name, courses(group_name), sessions)')
+    .eq('order_id', orderId);
+  o.items = (items||[]).map(function(it){
+    return {
+      n: (it.skus ? it.skus.courses.group_name+' - '+it.skus.level_name : 'Item'),
+      sessions: it.skus ? it.skus.sessions : '-',
+      ordered_qty: it.ordered_qty,
+      sent_qty: it.sent_qty,
+      rate: it.rate,
+    };
+  });
+
+  // Also fetch franchisee details for bill-to
+  if(o.placer_id){
+    var { data: fr } = await sb.from('franchisees')
+      .select('owner_name,phone,email,address,city,state,pincode')
+      .eq('id', o.placer_id).single();
+    if(fr){
+      o.placer_phone = fr.phone;
+      o.placer_email = fr.email;
+      if(!o.deliver_to) o.deliver_to = fr.owner_name;
+    }
+  }
   var doc = new window.jspdf.jsPDF({ unit:'mm', format:'a4' });
   var W=210; var M=15;
 
@@ -1770,10 +1798,83 @@ async function openOrderModal(){
     var adminSel = document.getElementById('o-placer-sel');
     if(adminSel) adminSel.remove();
     // Pre-fill delivery address
-    document.getElementById('o-addr').value = (me.address?me.address+', ':'')+me.city+', '+me.state;
+    var parts = [];
+    if(me.address) parts.push(me.address);
+    if(me.city) parts.push(me.city);
+    if(me.pincode) parts.push(me.pincode);
+    if(me.state) parts.push(me.state);
+    document.getElementById('o-addr').value = parts.join(', ');
     await populateOrderFrom(placerTier, placerId);
   }
   document.getElementById('order-modal').classList.add('show');
+}
+
+// ── ORDER CART ────────────────────────────────────────────────
+var orderCart = []; // [{sku_id, name, rate, qty}]
+
+async function loadOrderSkus(tier){
+  // Load SKUs appropriate for the tier
+  var { data: skus } = await sb.from('skus')
+    .select('id, level_name, uf_rate, cf_rate, smf_rate, courses(group_name)')
+    .eq('is_active', true).order('sort_order');
+  var sel = document.getElementById('o-sku-pick');
+  if(!sel || !skus) return;
+  sel.innerHTML = '<option value="">Select SKU to add...</option>' +
+    skus.map(function(s){
+      var rate = tier==='SMF' ? s.smf_rate : tier==='CF' ? s.cf_rate : s.uf_rate;
+      var label = s.courses.group_name + ' — ' + s.level_name + ' (Rs ' + rate + ')';
+      return '<option value="'+s.id+'" data-name="'+esc(s.courses.group_name+' - '+s.level_name)+'" data-rate="'+rate+'">'+esc(label)+'</option>';
+    }).join('');
+}
+
+function addOrderItem(){
+  var sel = document.getElementById('o-sku-pick');
+  var qty = parseInt(document.getElementById('o-sku-qty').value)||1;
+  var opt = sel.options[sel.selectedIndex];
+  if(!opt.value){ showToast('Please select a SKU first','warn'); return; }
+  var skuId = opt.value;
+  var name  = opt.dataset.name;
+  var rate  = parseInt(opt.dataset.rate)||0;
+  // Check if already in cart
+  var existing = orderCart.find(function(x){ return x.sku_id===skuId; });
+  if(existing){ existing.qty += qty; }
+  else { orderCart.push({sku_id:skuId, name:name, rate:rate, qty:qty}); }
+  renderCart();
+  sel.value = '';
+  document.getElementById('o-sku-qty').value = 1;
+}
+
+function removeCartItem(idx){
+  orderCart.splice(idx,1);
+  renderCart();
+}
+
+function renderCart(){
+  var tbody = document.getElementById('o-cart-body');
+  if(!orderCart.length){
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No items added yet</td></tr>';
+    document.getElementById('o-cart-total').textContent = 'Rs 0';
+    return;
+  }
+  var total = 0;
+  tbody.innerHTML = orderCart.map(function(item, idx){
+    var lt = item.qty * item.rate;
+    total += lt;
+    return '<tr>' +
+      '<td>'+esc(item.name)+'</td>' +
+      '<td style="text-align:right;font-family:var(--mono)">'+item.rate+'</td>' +
+      '<td style="text-align:right"><input type="number" min="1" value="'+item.qty+'" style="width:56px;font-size:12px;padding:4px 6px;border-radius:var(--r3);border:1px solid var(--border2);text-align:center" onchange="updateCartQty('+idx+',this.value)"></td>' +
+      '<td style="text-align:right;font-family:var(--mono);font-weight:500">'+fmtAmt(lt)+'</td>' +
+      '<td style="text-align:center"><button onclick="removeCartItem('+idx+')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:2px 6px">&#x2715;</button></td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('o-cart-total').textContent = 'Rs ' + fmtAmt(total);
+}
+
+function updateCartQty(idx, val){
+  var q = Math.max(1, parseInt(val)||1);
+  orderCart[idx].qty = q;
+  renderCart();
 }
 
 async function populateOrderFrom(tier, placerId){
@@ -1844,17 +1945,36 @@ async function saveOrder(){
   if(last && last.length){ var p=last[0].order_ref.split('-'); nextNum=(parseInt(p[p.length-1])||0)+1; }
   var ref = 'ORD-'+yr+'-'+String(nextNum).padStart(4,'0');
   
-  var { error } = await sb.from('orders').insert({
+  if(!orderCart.length){ showToast('Please add at least one item to the order','warn'); return; }
+
+  var pin = document.getElementById('o-pin').value.trim();
+  var fullAddr = addr + (pin ? ', '+pin : '');
+
+  var { data: orderData, error } = await sb.from('orders').insert({
     order_ref: ref,
     placer_id: placerId,
     placer_tier: tier,
-    supplier: orderFrom,   // 'NLH' or franchisee UUID
+    supplier: orderFrom,
     status: 'pending',
-    deliver_to: addr,
+    deliver_to: fullAddr,
     notes: notes
-  });
+  }).select().single();
   if(error){ showToast('Error: '+error.message,'err'); return; }
-  showToast('Order '+ref+' created');
+
+  // Insert order items
+  var itemsToInsert = orderCart.map(function(item){
+    return {
+      order_id: orderData.id,
+      sku_id: item.sku_id,
+      ordered_qty: item.qty,
+      sent_qty: 0,
+      rate: item.rate,
+    };
+  });
+  var { error: itemErr } = await sb.from('order_items').insert(itemsToInsert);
+  if(itemErr){ showToast('Order created but items failed: '+itemErr.message,'warn'); }
+  else { showToast('Order '+ref+' created with '+orderCart.length+' item(s)'); }
+
   closeOrderModal();
   loadOrders();
   loadDashboard();
