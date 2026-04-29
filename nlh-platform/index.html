@@ -1103,7 +1103,8 @@ function renderFranchisees(){
 var ordersCache = [];
 async function loadOrders(){
   var { data } = await sb.from('orders')
-    .select('*').order('created_at', {ascending:false});
+    .select('*, franchisees(business_name, owner_name, city)')
+    .order('created_at', {ascending:false});
   ordersCache = data || [];
   var pending = ordersCache.filter(function(o){return o.status==='pending';}).length;
   var invoiced = ordersCache.filter(function(o){return o.status==='invoiced';}).length;
@@ -1135,7 +1136,7 @@ function renderOrders(){
   tbody.innerHTML = rows.map(function(o){
     return '<tr>' +
       '<td class="mono"><strong>'+esc(o.order_ref)+'</strong></td>' +
-      '<td>'+esc(o.deliver_to||'-')+'</td>' +
+      '<td style="font-size:12px">'+esc(o.franchisees ? (o.franchisees.business_name||o.franchisees.owner_name||'-') : '-')+'</td>' +
       '<td><span class="tier t-'+(o.placer_tier||'uf').toLowerCase()+'">'+esc(o.placer_tier||'-')+'</span></td>' +
       '<td>'+esc((o.deliver_to||'').substring(0,30))+'</td>' +
       '<td>'+statusBadge(o.status)+'</td>' +
@@ -1757,6 +1758,77 @@ async function saveStudent(){
   closeStModal();
   loadStudents();
   loadDashboard();
+}
+
+// ================================================================
+// ORDER CART
+// ================================================================
+var orderCart = [];
+
+async function loadOrderSkus(tier){
+  var { data: skus } = await sb.from('skus')
+    .select('id, level_name, uf_rate, cf_rate, smf_rate, courses(group_name, billing_type)')
+    .eq('is_active', true).order('sort_order');
+  var sel = document.getElementById('o-sku-pick');
+  if(!sel || !skus) return;
+  sel.innerHTML = '<option value="">Select SKU to add...</option>' +
+    skus.map(function(s){
+      var rate = tier==='SMF' ? s.smf_rate : tier==='CF' ? s.cf_rate : s.uf_rate;
+      var type = s.courses.billing_type === 'monthly' ? '/mo' : '';
+      var label = s.courses.group_name + ' — ' + s.level_name + '  (₹' + rate + type + ')';
+      return '<option value="'+s.id+'" data-name="'+esc(s.courses.group_name+' — '+s.level_name)+
+        '" data-rate="'+rate+'">'+esc(label)+'</option>';
+    }).join('');
+}
+
+function addOrderItem(){
+  var sel = document.getElementById('o-sku-pick');
+  var qty = Math.max(1, parseInt(document.getElementById('o-sku-qty').value)||1);
+  var opt = sel.options[sel.selectedIndex];
+  if(!opt || !opt.value){ showToast('Please select a SKU first','warn'); return; }
+  var existing = orderCart.find(function(x){ return x.sku_id===opt.value; });
+  if(existing){ existing.qty += qty; }
+  else { orderCart.push({sku_id:opt.value, name:opt.dataset.name, rate:parseInt(opt.dataset.rate)||0, qty:qty}); }
+  renderCart();
+  sel.value = '';
+  document.getElementById('o-sku-qty').value = 1;
+}
+
+function removeCartItem(idx){
+  orderCart.splice(idx,1);
+  renderCart();
+}
+
+function updateCartQty(idx, val){
+  orderCart[idx].qty = Math.max(1, parseInt(val)||1);
+  renderCart();
+}
+
+function renderCart(){
+  var tbody = document.getElementById('o-cart-body');
+  if(!tbody) return;
+  if(!orderCart.length){
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No items added — select a SKU above and click + Add</td></tr>';
+    var tot = document.getElementById('o-cart-total');
+    if(tot) tot.textContent = '₹0';
+    return;
+  }
+  var total = 0;
+  tbody.innerHTML = orderCart.map(function(item, idx){
+    var lt = item.qty * item.rate; total += lt;
+    return '<tr>' +
+      '<td style="font-size:12px">'+esc(item.name)+'</td>' +
+      '<td style="text-align:right;font-family:var(--mono);font-size:12px">₹'+item.rate+'</td>' +
+      '<td style="text-align:center"><input type="number" min="1" value="'+item.qty+
+        '" style="width:56px;font-size:12px;padding:4px 6px;border-radius:var(--r3);border:1px solid var(--border2);text-align:center" '+
+        'onchange="updateCartQty('+idx+',this.value)"></td>' +
+      '<td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:500">₹'+fmtAmt(lt)+'</td>' +
+      '<td style="text-align:center"><button onclick="removeCartItem('+idx+')" '+
+        'style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;line-height:1;padding:0 6px">&times;</button></td>' +
+    '</tr>';
+  }).join('');
+  var tot = document.getElementById('o-cart-total');
+  if(tot) tot.textContent = '₹'+fmtAmt(total);
 }
 
 async function openOrderModal(){
