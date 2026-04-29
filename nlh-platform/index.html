@@ -769,9 +769,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 
 <!-- ADD ORDER MODAL -->
 <div class="modal-bg" id="order-modal">
-  <div class="modal">
+  <div class="modal" style="width:660px;max-width:96vw">
     <div class="modal-title">New material order</div>
-    <div class="modal-sub" id="o-modal-sub">Place an order through the supply chain</div>
+    <div class="modal-sub">Place an order through the supply chain</div>
     <div class="g2">
       <div class="fr">
         <label>Ordered by</label>
@@ -785,12 +785,46 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
     </div>
     <div class="fr">
       <label>Order from</label>
-      <select id="o-from">
-        <option value="">Select supplier...</option>
-      </select>
+      <select id="o-from"><option value="">Select supplier...</option></select>
     </div>
-    <div class="fr"><label>Deliver to address</label><input type="text" id="o-addr" placeholder="Delivery address"></div>
-    <div class="fr"><label>Notes</label><input type="text" id="o-notes" placeholder="Any special instructions"></div>
+    <div class="fr"><label>Deliver to address (editable)</label>
+      <input type="text" id="o-addr" placeholder="Street address, area, city">
+    </div>
+    <div class="g3">
+      <div class="fr"><label>PIN code</label><input type="text" id="o-pin" placeholder="440001" maxlength="6"></div>
+      <div class="fr"><label>State</label><input type="text" id="o-state-display" placeholder="State"></div>
+      <div class="fr"><label>Notes</label><input type="text" id="o-notes" placeholder="Special instructions"></div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:500;color:var(--text)">Order items</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">Select SKU and qty then click + Add</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <select id="o-sku-pick" style="flex:1;font-size:12px;padding:7px 10px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font)">
+          <option value="">Select SKU to add...</option>
+        </select>
+        <input type="number" id="o-sku-qty" min="1" value="1" style="width:64px;font-size:12px;padding:7px 8px;border-radius:var(--r2);border:1px solid var(--border2);text-align:center;font-family:var(--font)">
+        <button class="btn-p btn-sm" onclick="addOrderItem()">+ Add</button>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;min-height:52px">
+        <table class="tbl" style="font-size:12px">
+          <thead><tr>
+            <th>SKU / Item</th>
+            <th style="text-align:right">Rate (&#8377;)</th>
+            <th style="text-align:center;width:80px">Qty</th>
+            <th style="text-align:right">Total</th>
+            <th style="width:32px"></th>
+          </tr></thead>
+          <tbody id="o-cart-body">
+            <tr><td colspan="5" class="empty">No items added yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;font-size:13px;font-weight:500">
+        Order total: <span id="o-cart-total" style="color:var(--purple);margin-left:8px;font-family:var(--mono)">&#8377;0</span>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn-s" onclick="closeOrderModal()">Cancel</button>
       <button class="btn-green" onclick="saveOrder()">Create order</button>
@@ -1881,7 +1915,7 @@ async function openOrderModal(){
     if(me.city) addrParts.push(me.city);
     document.getElementById('o-addr').value = addrParts.join(', ');
     document.getElementById('o-pin').value = '';
-    document.getElementById('o-state-display').value = me.state||'';
+    var stateEl = document.getElementById('o-state-display'); if(stateEl) stateEl.value = me.state||'';
     await populateOrderFrom(me.tier, me.id);
     await loadOrderSkus(me.tier);
   }
