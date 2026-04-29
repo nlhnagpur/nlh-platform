@@ -180,14 +180,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 
     <button class="btn-login" id="login-btn" onclick="doLogin()">Sign in</button>
     <div class="login-err" id="login-err"></div>
-    <div class="login-info" id="login-info">
-      Access is provided by NLH Admin. Contact Dhiral Panchmatia on 9373111311 to get your login.
+    <div style="background:var(--blue-bg);border:1px solid rgba(26,95,168,.25);border-radius:var(--r2);padding:12px 14px;font-size:12px;color:var(--blue);line-height:1.7;margin-top:10px">
+      <strong>First time here?</strong> You need to request access before you can sign in.<br>
+      Click <strong>"Request platform access"</strong> below, fill in your details, and NLH Admin will approve your account and send your login credentials.
     </div>
-    <div style="text-align:center;margin-top:14px">
-      <a onclick="showRequestForm()" style="font-size:12px;color:var(--purple);cursor:pointer;font-weight:500;text-decoration:none">
+    <div style="margin-top:14px">
+      <button onclick="showRequestForm()" style="width:100%;background:transparent;border:2px solid var(--purple);color:var(--purple);padding:9px;border-radius:var(--r2);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s" onmouseover="this.style.background='var(--purple)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--purple)'">
         Request platform access
-      </a>
-      <span style="font-size:11px;color:var(--text3);margin-left:6px">&middot; or call 9373111311</span>
+      </button>
+      <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--text3)">or call Dhiral Panchmatia &middot; 9373111311</div>
     </div>
   </div>
 </div>
@@ -655,7 +656,17 @@ async function doLogin(){
   document.getElementById('login-btn').textContent = 'Sign in';
   document.getElementById('login-btn').disabled = false;
 
-  if(result.error){ showErr(result.error.message); return; }
+  if(result.error){
+    var msg = result.error.message;
+    if(msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('credentials') || msg.toLowerCase().includes('not found')){
+      showErr('No account found for this email. Please click "Request platform access" below to register. NLH Admin will approve and send your login details.');
+    } else if(msg.toLowerCase().includes('email not confirmed')){
+      showErr('Your email is not confirmed. Please contact NLH Admin on 9373111311.');
+    } else {
+      showErr(msg);
+    }
+    return;
+  }
   if(result.data.user){ await initApp(result.data.user); }
   } catch(err) {
     document.getElementById('login-btn').textContent = 'Sign in';
