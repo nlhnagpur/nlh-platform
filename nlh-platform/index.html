@@ -301,10 +301,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
         <div class="fr"><label>Email address *</label><input type="email" id="ob-email" placeholder="Email address"></div>
       </div>
       <div class="fr"><label>Full address *</label><input type="text" id="ob-addr" placeholder="Door no., street, locality"></div>
-      <div class="g3">
+      <div class="g2">
         <div class="fr"><label id="ob-area-label">Area / locality *</label><input type="text" id="ob-area" placeholder="Area"></div>
         <div class="fr"><label>City *</label><input type="text" id="ob-city" placeholder="City"></div>
+      </div>
+      <div class="g2">
         <div class="fr"><label>State *</label><input type="text" id="ob-state" placeholder="State"></div>
+        <div class="fr"><label>PIN code *</label><input type="text" id="ob-pin" placeholder="e.g. 440001" maxlength="6"></div>
       </div>
       <div class="g2">
         <div class="fr"><label>Enrollment fee paid (&#8377;)</label><input type="number" id="ob-fee" placeholder="35000"></div>
@@ -337,9 +340,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
         <div class="fr"><label>Phone number *</label><input type="text" id="obs-phone" placeholder="Contact number"></div>
       </div>
       <div class="fr"><label>Full address</label><input type="text" id="obs-addr" placeholder="Full address"></div>
-      <div class="g2">
+      <div class="g3">
         <div class="fr"><label>Email</label><input type="email" id="obs-email" placeholder="Email address"></div>
         <div class="fr"><label>City</label><input type="text" id="obs-city" placeholder="City"></div>
+        <div class="fr"><label>PIN code</label><input type="text" id="obs-pin" placeholder="e.g. 440001" maxlength="6"></div>
       </div>
       <div class="g2">
         <div class="fr"><label>Enrollment channel *</label>
@@ -670,10 +674,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
       <div class="fr"><label>Email address *</label><input type="email" id="m-email" placeholder="Email address"></div>
     </div>
     <div class="fr"><label>Full address *</label><input type="text" id="m-addr" placeholder="Door no., street, locality"></div>
-    <div class="g3">
+    <div class="g2">
       <div class="fr"><label id="m-area-label">Area / locality *</label><input type="text" id="m-area" placeholder="Area / locality"></div>
       <div class="fr"><label id="m-city-label">City *</label><input type="text" id="m-city" placeholder="City"></div>
+    </div>
+    <div class="g2">
       <div class="fr"><label>State *</label><input type="text" id="m-state" placeholder="State"></div>
+      <div class="fr"><label>PIN code *</label><input type="text" id="m-pin" placeholder="e.g. 440001" maxlength="6"></div>
     </div>
     <div class="g2">
       <div class="fr"><label>Enrollment fee (&#8377;)</label><input type="number" id="m-fee" placeholder="35000"></div>
@@ -718,9 +725,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
       <div class="fr"><label>Phone number *</label><input type="text" id="s-phone" placeholder="Contact number"></div>
     </div>
     <div class="fr"><label>Full address</label><input type="text" id="s-addr" placeholder="Full address"></div>
-    <div class="g2">
+    <div class="g3">
       <div class="fr"><label>Email</label><input type="email" id="s-email" placeholder="Email (optional)"></div>
       <div class="fr"><label>City</label><input type="text" id="s-city" placeholder="City"></div>
+      <div class="fr"><label>PIN code</label><input type="text" id="s-pin" placeholder="e.g. 440001" maxlength="6"></div>
     </div>
     <div class="g2">
       <div class="fr"><label>Enrollment channel *</label>
@@ -1629,6 +1637,7 @@ async function saveFranchisee(){
     state: state,
     enrollment_fee: fee,
     gstin: gstin||null,
+    pincode: (document.getElementById('m-pin').value.trim())||null,
     parent_id: parentId||null,
     registered_courses: selectedCourses.length ? selectedCourses : null,
     status: 'active'
@@ -1714,6 +1723,7 @@ async function saveStudent(){
     email: email||null,
     address: addr||null,
     city: city||null,
+    pincode: (document.getElementById('s-pin') ? document.getElementById('s-pin').value.trim() : null)||null,
     dob: dob||null,
     channel: channel,
     franchisee_id: centreId||null
@@ -1750,13 +1760,14 @@ async function saveStudent(){
 }
 
 async function openOrderModal(){
+  try {
   // Reset cart
   orderCart = [];
   renderCart();
 
   if(currentRole === 'admin'){
     var { data: frs } = await sb.from('franchisees')
-      .select('id,business_name,tier,address,city,state,pincode,phone,email')
+      .select('id,business_name,tier,address,city,state,phone,email')
       .eq('status','active').order('tier').order('business_name');
     var disp = document.getElementById('o-placer-display');
     disp.style.display = 'none';
@@ -1767,7 +1778,7 @@ async function openOrderModal(){
     s.style.cssText = 'width:100%;font-size:12px;padding:8px 11px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none';
     s.innerHTML = '<option value="">Select franchisee placing order...</option>' +
       (frs||[]).map(function(f){
-        var addr = [f.address,f.city,f.pincode,f.state].filter(Boolean).join(', ');
+        var addr = [f.address,f.city,f.state].filter(Boolean).join(', ');
         return '<option value="'+f.id+'" data-tier="'+f.tier+'" data-name="'+esc(f.business_name)+'" data-addr="'+esc(addr)+'">'+
           esc(f.business_name)+' ('+f.tier+' - '+f.city+')</option>';
       }).join('');
@@ -1784,7 +1795,8 @@ async function openOrderModal(){
     await loadOrderSkus('UF');
   } else {
     if(!currentFranchiseeId){ showToast('No franchisee profile linked. Contact admin.','err'); return; }
-    var { data: me } = await sb.from('franchisees').select('*').eq('id',currentFranchiseeId).single();
+    var { data: me, error: meErr } = await sb.from('franchisees').select('id,business_name,owner_name,tier,address,city,state,phone,email,parent_id').eq('id',currentFranchiseeId).single();
+    if(meErr){ console.error('Franchisee load error:', meErr); showToast('Could not load your profile: '+meErr.message,'err'); return; }
     if(!me){ showToast('Franchisee profile not found','err'); return; }
     var disp = document.getElementById('o-placer-display');
     disp.style.display = '';
@@ -1796,12 +1808,13 @@ async function openOrderModal(){
     if(me.address) addrParts.push(me.address);
     if(me.city) addrParts.push(me.city);
     document.getElementById('o-addr').value = addrParts.join(', ');
-    document.getElementById('o-pin').value = me.pincode||'';
+    document.getElementById('o-pin').value = '';
     document.getElementById('o-state-display').value = me.state||'';
     await populateOrderFrom(me.tier, me.id);
     await loadOrderSkus(me.tier);
   }
   document.getElementById('order-modal').classList.add('show');
+  } catch(err){ console.error('openOrderModal error:', err); showToast('Error: '+err.message,'err'); }
 }
 function closeOrderModal(){
   document.getElementById('order-modal').classList.remove('show');
@@ -2104,6 +2117,7 @@ async function submitOBStudent(){
   var { data: stData, error } = await sb.from('students').insert({
     full_name: name, parent_name: parent, phone: phone,
     email: email||null, address: addr||null, city: city||null,
+    pincode: (document.getElementById('obs-pin') ? document.getElementById('obs-pin').value.trim() : null)||null,
     dob: dob||null, channel: channel, franchisee_id: centreId||null
   }).select().single();
   if(error){ errEl.textContent = 'Error: '+error.message; errEl.style.display = 'block'; return; }
