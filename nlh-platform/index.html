@@ -513,82 +513,118 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 
 <!-- ADD FRANCHISEE MODAL -->
 <div class="modal-bg" id="fr-modal">
-  <div class="modal">
-    <div class="modal-title">Add franchisee</div>
-    <div class="modal-sub">New franchise partner registration</div>
+  <div class="modal" style="width:600px;max-width:96vw">
+    <div class="modal-title">Franchise enrollment</div>
+    <div class="modal-sub">Register a new franchise partner — all fields marked * are required</div>
+
     <div class="g2">
-      <div class="fr"><label>Business name</label><input type="text" id="m-biz" placeholder="Centre / business name"></div>
-      <div class="fr"><label>Owner name</label><input type="text" id="m-owner" placeholder="Owner full name"></div>
-    </div>
-    <div class="g3">
-      <div class="fr"><label>Tier</label>
-        <select id="m-tier">
+      <div class="fr"><label>Franchise tier *</label>
+        <select id="m-tier" onchange="onTierChange()">
           <option value="UF">Unit Franchisee (UF)</option>
           <option value="CF">City Franchisee (CF)</option>
           <option value="SMF">State Master Franchisee (SMF)</option>
         </select>
       </div>
-      <div class="fr"><label>Phone</label><input type="text" id="m-phone" placeholder="Mobile number"></div>
-      <div class="fr"><label>Email</label><input type="email" id="m-email" placeholder="Email address"></div>
+      <div class="fr" id="m-parent-row">
+        <label id="m-parent-label">Reports to (CF) *</label>
+        <select id="m-parent"><option value="">Loading...</option></select>
+      </div>
     </div>
+
+    <div class="g2">
+      <div class="fr"><label>Owner full name *</label><input type="text" id="m-owner" placeholder="Owner / director name"></div>
+      <div class="fr"><label>Name of institute / centre</label><input type="text" id="m-biz" placeholder="Centre name (if any)"></div>
+    </div>
+    <div class="g2">
+      <div class="fr"><label>Phone number *</label><input type="text" id="m-phone" placeholder="Mobile number"></div>
+      <div class="fr"><label>Email address *</label><input type="email" id="m-email" placeholder="Email address"></div>
+    </div>
+    <div class="fr"><label>Full address *</label><input type="text" id="m-addr" placeholder="Door no., street, locality"></div>
     <div class="g3">
-      <div class="fr"><label>City</label><input type="text" id="m-city" placeholder="City"></div>
-      <div class="fr"><label>State</label><input type="text" id="m-state" placeholder="State"></div>
+      <div class="fr"><label id="m-area-label">Area / locality *</label><input type="text" id="m-area" placeholder="Area / locality"></div>
+      <div class="fr"><label id="m-city-label">City *</label><input type="text" id="m-city" placeholder="City"></div>
+      <div class="fr"><label>State *</label><input type="text" id="m-state" placeholder="State"></div>
+    </div>
+    <div class="g2">
       <div class="fr"><label>Enrollment fee (&#8377;)</label><input type="number" id="m-fee" placeholder="35000"></div>
+      <div class="fr"><label>GST number</label><input type="text" id="m-gstin" placeholder="GST (if applicable)"></div>
     </div>
-    <div class="fr"><label>Address</label><input type="text" id="m-addr" placeholder="Full address"></div>
+
+    <!-- Course selection — shown for UF only -->
+    <div id="m-courses-row" style="display:none">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;font-family:var(--mono)">Courses enrolled *</div>
+      <div id="m-courses-list" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-height:160px;overflow-y:auto;background:var(--bg3);border-radius:var(--r2);padding:10px;border:1px solid var(--border)"></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:5px;font-family:var(--mono)">SMF and CF have access to all courses automatically.</div>
+    </div>
+
     <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
-      <div style="font-size:11px;font-weight:500;color:var(--text);margin-bottom:10px">Login credentials for this franchisee</div>
+      <div style="font-size:11px;font-weight:500;color:var(--text);margin-bottom:8px">Login credentials</div>
       <div class="g2">
-        <div class="fr"><label>Login email</label><input type="email" id="m-login-email" placeholder="Their email address"></div>
-        <div class="fr"><label>Temporary password</label><input type="text" id="m-login-pass" placeholder="Min 6 characters" value="NLH@1234"></div>
+        <div class="fr"><label>Login email</label><input type="email" id="m-login-email" placeholder="Their email (for login)"></div>
+        <div class="fr"><label>Temporary password</label><input type="text" id="m-login-pass" value="NLH@123"></div>
       </div>
-      <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">
-        They will use these credentials to log in. Ask them to change their password after first login.
-      </div>
+      <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">Login email defaults to the email above if left blank. Password is NLH@123.</div>
     </div>
+
     <div class="modal-actions">
       <button class="btn-s" onclick="closeFrModal()">Cancel</button>
-      <button class="btn-green" onclick="saveFranchisee()">Save &amp; create login</button>
+      <button class="btn-green" onclick="saveFranchisee()">Enroll &amp; create login</button>
     </div>
   </div>
 </div>
 
 <!-- ADD STUDENT MODAL -->
 <div class="modal-bg" id="st-modal">
-  <div class="modal">
-    <div class="modal-title">Add student</div>
-    <div class="modal-sub">New student enrollment</div>
+  <div class="modal" style="width:600px;max-width:96vw">
+    <div class="modal-title">Student enrollment</div>
+    <div class="modal-sub">Register a new student — select their centre and courses</div>
+
     <div class="g2">
-      <div class="fr"><label>Full name</label><input type="text" id="s-name" placeholder="Student full name"></div>
-      <div class="fr"><label>Parent name</label><input type="text" id="s-parent" placeholder="Parent / guardian name"></div>
-    </div>
-    <div class="g3">
-      <div class="fr"><label>Phone</label><input type="text" id="s-phone" placeholder="Contact number"></div>
-      <div class="fr"><label>City</label><input type="text" id="s-city" placeholder="City"></div>
+      <div class="fr"><label>Student full name *</label><input type="text" id="s-name" placeholder="Student full name"></div>
       <div class="fr"><label>Date of birth</label><input type="date" id="s-dob"></div>
     </div>
     <div class="g2">
-      <div class="fr"><label>Channel</label>
-        <select id="s-channel">
+      <div class="fr"><label>Parent / guardian name *</label><input type="text" id="s-parent" placeholder="Parent name"></div>
+      <div class="fr"><label>Phone number *</label><input type="text" id="s-phone" placeholder="Contact number"></div>
+    </div>
+    <div class="fr"><label>Full address</label><input type="text" id="s-addr" placeholder="Full address"></div>
+    <div class="g2">
+      <div class="fr"><label>Email</label><input type="email" id="s-email" placeholder="Email (optional)"></div>
+      <div class="fr"><label>City</label><input type="text" id="s-city" placeholder="City"></div>
+    </div>
+    <div class="g2">
+      <div class="fr"><label>Enrollment channel *</label>
+        <select id="s-channel" onchange="onStudentChannelChange()">
           <option value="franchise">Franchisee centre</option>
           <option value="own_centre">NLH own centre</option>
           <option value="international">International (Zoom)</option>
         </select>
       </div>
-      <div class="fr"><label>Email</label><input type="email" id="s-email" placeholder="Email (optional)"></div>
-    </div>
-    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
-      <div style="font-size:11px;font-weight:500;color:var(--text);margin-bottom:10px">Student / parent login credentials</div>
-      <div class="g2">
-        <div class="fr"><label>Login email</label><input type="email" id="sl-email" placeholder="Parent email"></div>
-        <div class="fr"><label>Temporary password</label><input type="text" id="sl-pass" placeholder="Min 6 characters" value="NLH@1234"></div>
+      <div class="fr" id="s-centre-row">
+        <label>Centre (franchisee) *</label>
+        <select id="s-centre"><option value="">Loading...</option></select>
       </div>
-      <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">Leave email blank to skip login creation for this student.</div>
     </div>
+
+    <div style="margin-top:10px">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;font-family:var(--mono)">Courses enrolling for *</div>
+      <div id="s-courses-list" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-height:160px;overflow-y:auto;background:var(--bg3);border-radius:var(--r2);padding:10px;border:1px solid var(--border)">
+        <div style="color:var(--text3);font-size:11px">Loading courses...</div>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
+      <div style="font-size:11px;font-weight:500;color:var(--text);margin-bottom:8px">Parent login credentials</div>
+      <div class="g2">
+        <div class="fr"><label>Login email</label><input type="email" id="sl-email" placeholder="Parent email (for portal access)"></div>
+        <div class="fr"><label>Temporary password</label><input type="text" id="sl-pass" value="NLH@123"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">Leave blank to skip login creation. Defaults to email above.</div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn-s" onclick="closeStModal()">Cancel</button>
-      <button class="btn-green" onclick="saveStudent()">Save student</button>
+      <button class="btn-green" onclick="saveStudent()">Enroll student</button>
     </div>
   </div>
 </div>
@@ -597,14 +633,23 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 <div class="modal-bg" id="order-modal">
   <div class="modal">
     <div class="modal-title">New material order</div>
-    <div class="modal-sub">Place an order from NLH warehouse</div>
+    <div class="modal-sub" id="o-modal-sub">Place an order through the supply chain</div>
     <div class="g2">
-      <div class="fr"><label>Ordered by (franchisee)</label>
-        <select id="o-placer" onchange="setOrderTier()"><option value="">Select franchisee...</option></select>
+      <div class="fr">
+        <label>Ordered by</label>
+        <input type="text" id="o-placer-display" readonly style="background:var(--bg3);font-weight:500">
+        <input type="hidden" id="o-placer">
       </div>
-      <div class="fr"><label>Tier</label>
-        <input type="text" id="o-tier" readonly placeholder="Auto-filled" style="background:var(--bg3)">
+      <div class="fr">
+        <label>Tier</label>
+        <input type="text" id="o-tier" readonly style="background:var(--bg3)">
       </div>
+    </div>
+    <div class="fr">
+      <label>Order from</label>
+      <select id="o-from">
+        <option value="">Select supplier...</option>
+      </select>
     </div>
     <div class="fr"><label>Deliver to address</label><input type="text" id="o-addr" placeholder="Delivery address"></div>
     <div class="fr"><label>Notes</label><input type="text" id="o-notes" placeholder="Any special instructions"></div>
@@ -1307,89 +1352,228 @@ async function loadPriceHistory(){
 // ================================================================
 function openFranchiseeModal(){
   document.getElementById('fr-modal').classList.add('show');
+  onTierChange();
+  loadCourseCheckboxes('m-courses-list');
+}
+
+async function onTierChange(){
+  var tier = document.getElementById('m-tier').value;
+  var parentRow = document.getElementById('m-parent-row');
+  var parentLabel = document.getElementById('m-parent-label');
+  var parentSel = document.getElementById('m-parent');
+  var coursesRow = document.getElementById('m-courses-row');
+  var areaLabel = document.getElementById('m-area-label');
+  var cityLabel = document.getElementById('m-city-label');
+  var feeInput = document.getElementById('m-fee');
+
+  if(tier === 'SMF'){
+    parentRow.style.display = 'none';
+    coursesRow.style.display = 'none';
+    areaLabel.textContent = 'State HQ city *';
+    cityLabel.textContent = 'City *';
+    feeInput.placeholder = '150000';
+    feeInput.value = '150000';
+  } else if(tier === 'CF'){
+    parentRow.style.display = 'block';
+    parentLabel.textContent = 'Reports to SMF *';
+    coursesRow.style.display = 'none';
+    areaLabel.textContent = 'Area / locality *';
+    cityLabel.textContent = 'City *';
+    feeInput.placeholder = '75000';
+    feeInput.value = '75000';
+    // Load SMFs
+    var { data: smfs } = await sb.from('franchisees').select('id,business_name,city,state').eq('tier','SMF').eq('status','active').order('business_name');
+    parentSel.innerHTML = '<option value="">Select SMF...</option>' +
+      (smfs||[]).map(function(f){ return '<option value="'+f.id+'">'+esc(f.business_name)+' ('+f.city+', '+f.state+')</option>'; }).join('');
+  } else {
+    parentRow.style.display = 'block';
+    parentLabel.textContent = 'Reports to CF *';
+    coursesRow.style.display = 'block';
+    areaLabel.textContent = 'Area / locality *';
+    cityLabel.textContent = 'City *';
+    feeInput.placeholder = '35000';
+    feeInput.value = '35000';
+    // Load CFs
+    var { data: cfs } = await sb.from('franchisees').select('id,business_name,city,state').eq('tier','CF').eq('status','active').order('business_name');
+    parentSel.innerHTML = '<option value="">Select CF (or leave blank if none in city)</option>' +
+      (cfs||[]).map(function(f){ return '<option value="'+f.id+'">'+esc(f.business_name)+' ('+f.city+', '+f.state+')</option>'; }).join('');
+  }
+}
+
+async function loadCourseCheckboxes(containerId){
+  var { data: courses } = await sb.from('courses').select('id,group_name,name,billing_type').eq('is_active',true).order('sort_order');
+  var container = document.getElementById(containerId);
+  if(!container || !courses) return;
+  // Group by group_name, show one checkbox per group
+  var groups = {};
+  courses.forEach(function(c){
+    if(!groups[c.group_name]) groups[c.group_name] = c.id;
+  });
+  container.innerHTML = Object.keys(groups).map(function(g){
+    return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:var(--r3);background:#fff;border:1px solid var(--border)">' +
+      '<input type="checkbox" value="'+groups[g]+'" data-group="'+esc(g)+'" style="cursor:pointer"> '+esc(g)+'</label>';
+  }).join('');
 }
 function closeFrModal(){ document.getElementById('fr-modal').classList.remove('show'); }
 
 async function saveFranchisee(){
-  var biz = document.getElementById('m-biz').value.trim();
-  var owner = document.getElementById('m-owner').value.trim();
-  var tier = document.getElementById('m-tier').value;
-  var phone = document.getElementById('m-phone').value.trim();
-  var email = document.getElementById('m-email').value.trim();
-  var city = document.getElementById('m-city').value.trim();
-  var state = document.getElementById('m-state').value.trim();
-  var fee = parseInt(document.getElementById('m-fee').value)||0;
-  var addr = document.getElementById('m-addr').value.trim();
+  var owner  = document.getElementById('m-owner').value.trim();
+  var biz    = document.getElementById('m-biz').value.trim() || owner;
+  var tier   = document.getElementById('m-tier').value;
+  var phone  = document.getElementById('m-phone').value.trim();
+  var email  = document.getElementById('m-email').value.trim();
+  var addr   = document.getElementById('m-addr').value.trim();
+  var area   = document.getElementById('m-area').value.trim();
+  var city   = document.getElementById('m-city').value.trim();
+  var state  = document.getElementById('m-state').value.trim();
+  var fee    = parseInt(document.getElementById('m-fee').value)||0;
+  var gstin  = document.getElementById('m-gstin').value.trim();
+  var parentId = document.getElementById('m-parent') ? document.getElementById('m-parent').value : '';
   var loginEmail = document.getElementById('m-login-email').value.trim() || email;
-  var loginPass = document.getElementById('m-login-pass').value.trim() || 'NLH@1234';
-  if(!biz||!owner||!city||!state){ showToast('Please fill all required fields','warn'); return; }
-  if(!loginEmail){ showToast('Login email is required','warn'); return; }
-  if(loginPass.length < 6){ showToast('Password must be at least 6 characters','warn'); return; }
+  var loginPass  = document.getElementById('m-login-pass').value.trim() || 'NLH@123';
 
-  // 1. Insert franchisee record
-  var { data: frData, error: frErr } = await sb.from('franchisees').insert({
-    business_name:biz, owner_name:owner, tier, phone, email,
-    city, state, address:addr, enrollment_fee:fee, status:'active'
-  }).select().single();
-  if(frErr){ showToast('Error: '+frErr.message,'err'); return; }
+  if(!owner||!phone||!email||!city||!state){
+    showToast('Please fill all required fields (name, phone, email, city, state)','warn'); return;
+  }
+  if(tier==='UF' && !loginEmail){ showToast('Login email is required','warn'); return; }
 
-  // 2. Create auth user via Supabase signUp (uses service role workaround)
-  // We store credentials in users table for admin to manage
+  // Collect selected courses for UF
+  var selectedCourses = [];
+  if(tier==='UF'){
+    document.querySelectorAll('#m-courses-list input[type=checkbox]:checked').forEach(function(cb){
+      selectedCourses.push(cb.dataset.group);
+    });
+    if(!selectedCourses.length){ showToast('Please select at least one course for UF enrollment','warn'); return; }
+  }
+
   var roleMap = {SMF:'smf', CF:'cf', UF:'uf'};
-  var { error: uErr } = await sb.from('users').insert({
-    email: loginEmail,
-    full_name: owner,
-    role: roleMap[tier] || 'uf',
-    franchisee_id: frData.id
-  });
 
-  // 3. Try to create auth account
+  // Insert franchisee
+  var insertData = {
+    business_name: biz,
+    owner_name: owner,
+    tier: tier,
+    phone: phone,
+    email: email,
+    address: addr + (area ? ', '+area : ''),
+    city: city,
+    state: state,
+    enrollment_fee: fee,
+    gstin: gstin||null,
+    parent_id: parentId||null,
+    registered_courses: selectedCourses.length ? selectedCourses : null,
+    status: 'active'
+  };
+
+  var { data: frData, error: frErr } = await sb.from('franchisees').insert(insertData).select().single();
+  if(frErr){ showToast('Error saving franchisee: '+frErr.message,'err'); return; }
+
+  // Create login
+  await sb.from('users').upsert({
+    email: loginEmail, full_name: owner,
+    role: roleMap[tier]||'uf', franchisee_id: frData.id
+  }, {onConflict:'email'});
+
   var { error: authErr } = await sb.auth.signUp({
-    email: loginEmail,
-    password: loginPass,
+    email: loginEmail, password: loginPass,
     options: { data: { role: roleMap[tier]||'uf', franchisee_id: frData.id } }
   });
 
+  var msg = tier+' enrolled: '+owner;
+  if(tier==='UF') msg += ' | Courses: '+selectedCourses.join(', ');
   if(authErr && authErr.message !== 'User already registered'){
-    showToast('Franchisee saved but login creation failed: '+authErr.message,'warn');
+    showToast(msg+' (login creation failed: '+authErr.message+')','warn');
   } else {
-    showToast(tier+' franchisee added. Login: '+loginEmail+' / '+loginPass);
+    showToast(msg+' | Login: '+loginEmail);
   }
   closeFrModal();
   loadFranchisees();
   loadDashboard();
 }
 
-function openStudentModal(){ document.getElementById('st-modal').classList.add('show'); }
+async function openStudentModal(){
+  document.getElementById('st-modal').classList.add('show');
+  loadCourseCheckboxes('s-courses-list');
+  await loadStudentCentres();
+}
+
+async function loadStudentCentres(){
+  var { data: frs } = await sb.from('franchisees')
+    .select('id,business_name,tier,city').eq('status','active')
+    .order('tier').order('business_name');
+  var sel = document.getElementById('s-centre');
+  sel.innerHTML = '<option value="">Select centre...</option>' +
+    (frs||[]).map(function(f){
+      return '<option value="'+f.id+'">'+esc(f.business_name)+' ('+f.tier+' - '+f.city+')</option>';
+    }).join('');
+}
+
+function onStudentChannelChange(){
+  var ch = document.getElementById('s-channel').value;
+  document.getElementById('s-centre-row').style.display =
+    (ch==='franchise') ? 'block' : 'none';
+}
 function closeStModal(){ document.getElementById('st-modal').classList.remove('show'); }
 
 async function saveStudent(){
-  var name = document.getElementById('s-name').value.trim();
-  var parent = document.getElementById('s-parent').value.trim();
-  var phone = document.getElementById('s-phone').value.trim();
-  var city = document.getElementById('s-city').value.trim();
-  var dob = document.getElementById('s-dob').value;
+  var name    = document.getElementById('s-name').value.trim();
+  var parent  = document.getElementById('s-parent').value.trim();
+  var phone   = document.getElementById('s-phone').value.trim();
+  var email   = document.getElementById('s-email').value.trim();
+  var city    = document.getElementById('s-city').value.trim();
+  var addr    = document.getElementById('s-addr').value.trim();
+  var dob     = document.getElementById('s-dob').value;
   var channel = document.getElementById('s-channel').value;
-  var email = document.getElementById('s-email').value.trim();
-  var loginEmail = document.getElementById('sl-email').value.trim();
-  var loginPass = document.getElementById('sl-pass').value.trim();
-  if(!name){ showToast('Student name is required','warn'); return; }
+  var centreId = document.getElementById('s-centre').value;
+  var loginEmail = document.getElementById('sl-email').value.trim() || email;
+  var loginPass  = document.getElementById('sl-pass').value.trim() || 'NLH@123';
 
-  // Save student record
+  if(!name||!parent||!phone){ showToast('Please fill name, parent name and phone','warn'); return; }
+  if(channel==='franchise' && !centreId){ showToast('Please select the enrolling centre','warn'); return; }
+
+  // Get selected courses
+  var selectedCourses = [];
+  document.querySelectorAll('#s-courses-list input[type=checkbox]:checked').forEach(function(cb){
+    selectedCourses.push(cb.dataset.group);
+  });
+  if(!selectedCourses.length){ showToast('Please select at least one course','warn'); return; }
+
   var { data: stData, error } = await sb.from('students').insert({
-    full_name:name, parent_name:parent, phone, city, dob:dob||null, channel, email:email||null
+    full_name: name,
+    parent_name: parent,
+    phone: phone,
+    email: email||null,
+    address: addr||null,
+    city: city||null,
+    dob: dob||null,
+    channel: channel,
+    franchisee_id: centreId||null
   }).select().single();
   if(error){ showToast('Error: '+error.message,'err'); return; }
 
-  // Optionally create login
-  if(loginEmail && loginPass.length >= 6){
-    await sb.from('users').insert({
+  // Create enrollment records for each selected course
+  for(var i=0; i<selectedCourses.length; i++){
+    var { data: sku } = await sb.from('skus')
+      .select('id').eq('level_name', selectedCourses[i]).limit(1).single().catch(function(){ return {data:null}; });
+    if(sku){
+      await sb.from('enrollments').insert({
+        student_id: stData.id,
+        sku_id: sku.id,
+        franchisee_id: centreId||null,
+        status: 'active'
+      });
+    }
+  }
+
+  // Create login
+  if(loginEmail){
+    await sb.from('users').upsert({
       email: loginEmail, full_name: name, role: 'student', student_id: stData.id
-    });
+    }, {onConflict:'email'});
     await sb.auth.signUp({ email: loginEmail, password: loginPass });
-    showToast('Student added. Login: '+loginEmail+' / '+loginPass);
+    showToast('Student enrolled in '+selectedCourses.length+' course(s). Login: '+loginEmail);
   } else {
-    showToast('Student added successfully');
+    showToast('Student enrolled in '+selectedCourses.length+' course(s)');
   }
   closeStModal();
   loadStudents();
@@ -1397,34 +1581,136 @@ async function saveStudent(){
 }
 
 async function openOrderModal(){
-  var { data } = await sb.from('franchisees').select('id,business_name,tier').eq('status','active').order('business_name');
-  var sel = document.getElementById('o-placer');
-  sel.innerHTML = '<option value="">Select franchisee...</option>' +
-    (data||[]).map(function(f){
-      return '<option value="'+f.id+'" data-tier="'+f.tier+'">'+esc(f.business_name)+' ('+f.tier+')</option>';
-    }).join('');
+  // Determine who is placing the order
+  var placerName = '', placerId = '', placerTier = '';
+  
+  if(currentRole === 'admin'){
+    // Admin can place on behalf of any franchisee
+    var { data: frs } = await sb.from('franchisees').select('id,business_name,tier').eq('status','active').order('tier').order('business_name');
+    var sel = document.getElementById('o-placer');
+    sel.value = '';
+    var disp = document.getElementById('o-placer-display');
+    disp.value = 'Select below';
+    // Replace placer display with a select for admin
+    disp.style.display = 'none';
+    if(!document.getElementById('o-placer-sel')){
+      var s = document.createElement('select');
+      s.id = 'o-placer-sel';
+      s.className = 'fr';
+      s.style.cssText = 'width:100%;font-size:12px;padding:8px 11px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none';
+      s.innerHTML = '<option value="">Select franchisee...</option>' +
+        (frs||[]).map(function(f){
+          return '<option value="'+f.id+'" data-tier="'+f.tier+'" data-name="'+esc(f.business_name)+'">'+esc(f.business_name)+' ('+f.tier+')</option>';
+        }).join('');
+      s.onchange = function(){
+        var opt = s.options[s.selectedIndex];
+        document.getElementById('o-placer').value = opt.value;
+        document.getElementById('o-tier').value = opt.dataset.tier||'';
+        populateOrderFrom(opt.dataset.tier||'', opt.value);
+      };
+      disp.parentNode.insertBefore(s, disp.nextSibling);
+    }
+  } else {
+    // Franchisee places order themselves
+    if(!currentFranchiseeId){
+      showToast('No franchisee profile linked to your account. Contact admin.','err');
+      return;
+    }
+    var { data: me } = await sb.from('franchisees').select('*').eq('id',currentFranchiseeId).single();
+    if(!me){ showToast('Franchisee profile not found','err'); return; }
+    placerName = me.business_name;
+    placerId = me.id;
+    placerTier = me.tier;
+    document.getElementById('o-placer-display').value = placerName;
+    document.getElementById('o-placer-display').style.display = '';
+    document.getElementById('o-placer').value = placerId;
+    document.getElementById('o-tier').value = placerTier;
+    // Remove admin select if present
+    var adminSel = document.getElementById('o-placer-sel');
+    if(adminSel) adminSel.remove();
+    // Pre-fill delivery address
+    document.getElementById('o-addr').value = (me.address?me.address+', ':'')+me.city+', '+me.state;
+    await populateOrderFrom(placerTier, placerId);
+  }
   document.getElementById('order-modal').classList.add('show');
 }
-function closeOrderModal(){ document.getElementById('order-modal').classList.remove('show'); }
-function setOrderTier(){
-  var sel = document.getElementById('o-placer');
-  var opt = sel.options[sel.selectedIndex];
-  document.getElementById('o-tier').value = opt.dataset.tier || '';
+
+async function populateOrderFrom(tier, placerId){
+  var fromSel = document.getElementById('o-from');
+  fromSel.innerHTML = '<option value="">Select supplier...</option>';
+  var options = [];
+  
+  if(tier === 'SMF'){
+    // SMF orders from NLH only
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  } else if(tier === 'CF'){
+    // CF can order from their SMF parent or NLH directly
+    var { data: fr } = await sb.from('franchisees').select('parent_id').eq('id',placerId).single();
+    if(fr && fr.parent_id){
+      var { data: smf } = await sb.from('franchisees').select('id,business_name').eq('id',fr.parent_id).single();
+      if(smf) options.push({value:smf.id, label:'SMF: '+smf.business_name});
+    }
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  } else if(tier === 'UF'){
+    // UF orders from CF (parent), or SMF, or NLH
+    var { data: fr } = await sb.from('franchisees').select('parent_id').eq('id',placerId).single();
+    if(fr && fr.parent_id){
+      var { data: cf } = await sb.from('franchisees').select('id,business_name,parent_id').eq('id',fr.parent_id).single();
+      if(cf){
+        options.push({value:cf.id, label:'CF: '+cf.business_name});
+        if(cf.parent_id){
+          var { data: smf } = await sb.from('franchisees').select('id,business_name').eq('id',cf.parent_id).single();
+          if(smf) options.push({value:smf.id, label:'SMF: '+smf.business_name});
+        }
+      }
+    }
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  } else {
+    // Admin default
+    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
+  }
+  
+  options.forEach(function(opt){
+    var o = document.createElement('option');
+    o.value = opt.value;
+    o.textContent = opt.label;
+    fromSel.appendChild(o);
+  });
+  
+  // Auto-select first option if only one
+  if(options.length === 1) fromSel.value = options[0].value;
 }
+
+function closeOrderModal(){
+  document.getElementById('order-modal').classList.remove('show');
+  var adminSel = document.getElementById('o-placer-sel');
+  if(adminSel) adminSel.remove();
+  document.getElementById('o-placer-display').style.display = '';
+}
+
 async function saveOrder(){
   var placerId = document.getElementById('o-placer').value;
   var tier = document.getElementById('o-tier').value;
+  var orderFrom = document.getElementById('o-from').value;
   var addr = document.getElementById('o-addr').value.trim();
   var notes = document.getElementById('o-notes').value.trim();
-  if(!placerId){ showToast('Select a franchisee','warn'); return; }
+  if(!placerId){ showToast('Please select who is placing the order','warn'); return; }
+  if(!orderFrom){ showToast('Please select who to order from','warn'); return; }
+  
   var yr = new Date().getFullYear();
   var { data:last } = await sb.from('orders').select('order_ref').order('created_at',{ascending:false}).limit(1);
   var nextNum = 1;
   if(last && last.length){ var p=last[0].order_ref.split('-'); nextNum=(parseInt(p[p.length-1])||0)+1; }
   var ref = 'ORD-'+yr+'-'+String(nextNum).padStart(4,'0');
+  
   var { error } = await sb.from('orders').insert({
-    order_ref:ref, placer_id:placerId, placer_tier:tier,
-    status:'pending', deliver_to:addr, notes
+    order_ref: ref,
+    placer_id: placerId,
+    placer_tier: tier,
+    supplier: orderFrom,   // 'NLH' or franchisee UUID
+    status: 'pending',
+    deliver_to: addr,
+    notes: notes
   });
   if(error){ showToast('Error: '+error.message,'err'); return; }
   showToast('Order '+ref+' created');
