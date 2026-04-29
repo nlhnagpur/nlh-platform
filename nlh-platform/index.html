@@ -1750,179 +1750,59 @@ async function saveStudent(){
 }
 
 async function openOrderModal(){
-  // Determine who is placing the order
-  var placerName = '', placerId = '', placerTier = '';
-  
+  // Reset cart
+  orderCart = [];
+  renderCart();
+
   if(currentRole === 'admin'){
-    // Admin can place on behalf of any franchisee
-    var { data: frs } = await sb.from('franchisees').select('id,business_name,tier').eq('status','active').order('tier').order('business_name');
-    var sel = document.getElementById('o-placer');
-    sel.value = '';
+    var { data: frs } = await sb.from('franchisees')
+      .select('id,business_name,tier,address,city,state,pincode,phone,email')
+      .eq('status','active').order('tier').order('business_name');
     var disp = document.getElementById('o-placer-display');
-    disp.value = 'Select below';
-    // Replace placer display with a select for admin
     disp.style.display = 'none';
-    if(!document.getElementById('o-placer-sel')){
-      var s = document.createElement('select');
-      s.id = 'o-placer-sel';
-      s.className = 'fr';
-      s.style.cssText = 'width:100%;font-size:12px;padding:8px 11px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none';
-      s.innerHTML = '<option value="">Select franchisee...</option>' +
-        (frs||[]).map(function(f){
-          return '<option value="'+f.id+'" data-tier="'+f.tier+'" data-name="'+esc(f.business_name)+'">'+esc(f.business_name)+' ('+f.tier+')</option>';
-        }).join('');
-      s.onchange = function(){
-        var opt = s.options[s.selectedIndex];
-        document.getElementById('o-placer').value = opt.value;
-        document.getElementById('o-tier').value = opt.dataset.tier||'';
-        populateOrderFrom(opt.dataset.tier||'', opt.value);
-      };
-      disp.parentNode.insertBefore(s, disp.nextSibling);
-    }
+    var existing = document.getElementById('o-placer-sel');
+    if(existing) existing.remove();
+    var s = document.createElement('select');
+    s.id = 'o-placer-sel';
+    s.style.cssText = 'width:100%;font-size:12px;padding:8px 11px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none';
+    s.innerHTML = '<option value="">Select franchisee placing order...</option>' +
+      (frs||[]).map(function(f){
+        var addr = [f.address,f.city,f.pincode,f.state].filter(Boolean).join(', ');
+        return '<option value="'+f.id+'" data-tier="'+f.tier+'" data-name="'+esc(f.business_name)+'" data-addr="'+esc(addr)+'">'+
+          esc(f.business_name)+' ('+f.tier+' - '+f.city+')</option>';
+      }).join('');
+    s.onchange = async function(){
+      var opt = s.options[s.selectedIndex];
+      document.getElementById('o-placer').value = opt.value;
+      document.getElementById('o-tier').value = opt.dataset.tier||'';
+      if(opt.dataset.addr) document.getElementById('o-addr').value = opt.dataset.addr;
+      await populateOrderFrom(opt.dataset.tier||'', opt.value);
+      await loadOrderSkus(opt.dataset.tier||'UF');
+    };
+    disp.parentNode.insertBefore(s, disp.nextSibling);
+    // Load all SKUs (admin sees UF rates by default)
+    await loadOrderSkus('UF');
   } else {
-    // Franchisee places order themselves
-    if(!currentFranchiseeId){
-      showToast('No franchisee profile linked to your account. Contact admin.','err');
-      return;
-    }
+    if(!currentFranchiseeId){ showToast('No franchisee profile linked. Contact admin.','err'); return; }
     var { data: me } = await sb.from('franchisees').select('*').eq('id',currentFranchiseeId).single();
     if(!me){ showToast('Franchisee profile not found','err'); return; }
-    placerName = me.business_name;
-    placerId = me.id;
-    placerTier = me.tier;
-    document.getElementById('o-placer-display').value = placerName;
-    document.getElementById('o-placer-display').style.display = '';
-    document.getElementById('o-placer').value = placerId;
-    document.getElementById('o-tier').value = placerTier;
-    // Remove admin select if present
-    var adminSel = document.getElementById('o-placer-sel');
-    if(adminSel) adminSel.remove();
-    // Pre-fill delivery address
-    var parts = [];
-    if(me.address) parts.push(me.address);
-    if(me.city) parts.push(me.city);
-    if(me.pincode) parts.push(me.pincode);
-    if(me.state) parts.push(me.state);
-    document.getElementById('o-addr').value = parts.join(', ');
-    await populateOrderFrom(placerTier, placerId);
+    var disp = document.getElementById('o-placer-display');
+    disp.style.display = '';
+    disp.value = me.business_name;
+    document.getElementById('o-placer').value = me.id;
+    document.getElementById('o-tier').value = me.tier;
+    // Auto-fill address cleanly
+    var addrParts = [];
+    if(me.address) addrParts.push(me.address);
+    if(me.city) addrParts.push(me.city);
+    document.getElementById('o-addr').value = addrParts.join(', ');
+    document.getElementById('o-pin').value = me.pincode||'';
+    document.getElementById('o-state-display').value = me.state||'';
+    await populateOrderFrom(me.tier, me.id);
+    await loadOrderSkus(me.tier);
   }
   document.getElementById('order-modal').classList.add('show');
 }
-
-// ── ORDER CART ────────────────────────────────────────────────
-var orderCart = []; // [{sku_id, name, rate, qty}]
-
-async function loadOrderSkus(tier){
-  // Load SKUs appropriate for the tier
-  var { data: skus } = await sb.from('skus')
-    .select('id, level_name, uf_rate, cf_rate, smf_rate, courses(group_name)')
-    .eq('is_active', true).order('sort_order');
-  var sel = document.getElementById('o-sku-pick');
-  if(!sel || !skus) return;
-  sel.innerHTML = '<option value="">Select SKU to add...</option>' +
-    skus.map(function(s){
-      var rate = tier==='SMF' ? s.smf_rate : tier==='CF' ? s.cf_rate : s.uf_rate;
-      var label = s.courses.group_name + ' — ' + s.level_name + ' (Rs ' + rate + ')';
-      return '<option value="'+s.id+'" data-name="'+esc(s.courses.group_name+' - '+s.level_name)+'" data-rate="'+rate+'">'+esc(label)+'</option>';
-    }).join('');
-}
-
-function addOrderItem(){
-  var sel = document.getElementById('o-sku-pick');
-  var qty = parseInt(document.getElementById('o-sku-qty').value)||1;
-  var opt = sel.options[sel.selectedIndex];
-  if(!opt.value){ showToast('Please select a SKU first','warn'); return; }
-  var skuId = opt.value;
-  var name  = opt.dataset.name;
-  var rate  = parseInt(opt.dataset.rate)||0;
-  // Check if already in cart
-  var existing = orderCart.find(function(x){ return x.sku_id===skuId; });
-  if(existing){ existing.qty += qty; }
-  else { orderCart.push({sku_id:skuId, name:name, rate:rate, qty:qty}); }
-  renderCart();
-  sel.value = '';
-  document.getElementById('o-sku-qty').value = 1;
-}
-
-function removeCartItem(idx){
-  orderCart.splice(idx,1);
-  renderCart();
-}
-
-function renderCart(){
-  var tbody = document.getElementById('o-cart-body');
-  if(!orderCart.length){
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">No items added yet</td></tr>';
-    document.getElementById('o-cart-total').textContent = 'Rs 0';
-    return;
-  }
-  var total = 0;
-  tbody.innerHTML = orderCart.map(function(item, idx){
-    var lt = item.qty * item.rate;
-    total += lt;
-    return '<tr>' +
-      '<td>'+esc(item.name)+'</td>' +
-      '<td style="text-align:right;font-family:var(--mono)">'+item.rate+'</td>' +
-      '<td style="text-align:right"><input type="number" min="1" value="'+item.qty+'" style="width:56px;font-size:12px;padding:4px 6px;border-radius:var(--r3);border:1px solid var(--border2);text-align:center" onchange="updateCartQty('+idx+',this.value)"></td>' +
-      '<td style="text-align:right;font-family:var(--mono);font-weight:500">'+fmtAmt(lt)+'</td>' +
-      '<td style="text-align:center"><button onclick="removeCartItem('+idx+')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:2px 6px">&#x2715;</button></td>' +
-      '</tr>';
-  }).join('');
-  document.getElementById('o-cart-total').textContent = 'Rs ' + fmtAmt(total);
-}
-
-function updateCartQty(idx, val){
-  var q = Math.max(1, parseInt(val)||1);
-  orderCart[idx].qty = q;
-  renderCart();
-}
-
-async function populateOrderFrom(tier, placerId){
-  var fromSel = document.getElementById('o-from');
-  fromSel.innerHTML = '<option value="">Select supplier...</option>';
-  var options = [];
-  
-  if(tier === 'SMF'){
-    // SMF orders from NLH only
-    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
-  } else if(tier === 'CF'){
-    // CF can order from their SMF parent or NLH directly
-    var { data: fr } = await sb.from('franchisees').select('parent_id').eq('id',placerId).single();
-    if(fr && fr.parent_id){
-      var { data: smf } = await sb.from('franchisees').select('id,business_name').eq('id',fr.parent_id).single();
-      if(smf) options.push({value:smf.id, label:'SMF: '+smf.business_name});
-    }
-    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
-  } else if(tier === 'UF'){
-    // UF orders from CF (parent), or SMF, or NLH
-    var { data: fr } = await sb.from('franchisees').select('parent_id').eq('id',placerId).single();
-    if(fr && fr.parent_id){
-      var { data: cf } = await sb.from('franchisees').select('id,business_name,parent_id').eq('id',fr.parent_id).single();
-      if(cf){
-        options.push({value:cf.id, label:'CF: '+cf.business_name});
-        if(cf.parent_id){
-          var { data: smf } = await sb.from('franchisees').select('id,business_name').eq('id',cf.parent_id).single();
-          if(smf) options.push({value:smf.id, label:'SMF: '+smf.business_name});
-        }
-      }
-    }
-    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
-  } else {
-    // Admin default
-    options.push({value:'NLH', label:'NLH Warehouse (Head Office)'});
-  }
-  
-  options.forEach(function(opt){
-    var o = document.createElement('option');
-    o.value = opt.value;
-    o.textContent = opt.label;
-    fromSel.appendChild(o);
-  });
-  
-  // Auto-select first option if only one
-  if(options.length === 1) fromSel.value = options[0].value;
-}
-
 function closeOrderModal(){
   document.getElementById('order-modal').classList.remove('show');
   var adminSel = document.getElementById('o-placer-sel');
@@ -1948,7 +1828,8 @@ async function saveOrder(){
   if(!orderCart.length){ showToast('Please add at least one item to the order','warn'); return; }
 
   var pin = document.getElementById('o-pin').value.trim();
-  var fullAddr = addr + (pin ? ', '+pin : '');
+  var state = document.getElementById('o-state-display') ? document.getElementById('o-state-display').value.trim() : '';
+  var fullAddr = addr + (pin ? ', '+pin : '') + (state ? ', '+state : '');
 
   var { data: orderData, error } = await sb.from('orders').insert({
     order_ref: ref,
