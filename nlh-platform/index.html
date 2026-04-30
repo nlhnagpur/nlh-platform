@@ -1081,6 +1081,41 @@ function showErr(msg){
   el.style.display = 'block';
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// GLOBAL EVENT DELEGATION — handles all data-* attribute clicks
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('click', function(e){
+  try {
+    // Franchisee row click → open detail
+    var frRow = e.target.closest('tr[data-frid]');
+    if(frRow && !e.target.closest('button') && !e.target.closest('input') && !e.target.closest('select')){
+      openFranchiseeDetail(frRow.dataset.frid); return;
+    }
+    // Student row click → open detail
+    var stRow = e.target.closest('tr[data-stid]');
+    if(stRow && !e.target.closest('button') && !e.target.closest('input') && !e.target.closest('select')){
+      openStudentDetail(stRow.dataset.stid); return;
+    }
+    // Order action buttons
+    var invBtn = e.target.closest('button[data-inv]');
+    if(invBtn){ markInvoiced(invBtn.dataset.inv); return; }
+    var paidBtn = e.target.closest('button[data-paid]');
+    if(paidBtn){ markClosed(paidBtn.dataset.paid); return; }
+    var editBtn = e.target.closest('button[data-edit]');
+    if(editBtn){ openInvoiceEdit(editBtn.dataset.edit); return; }
+    // Approve/Reject access requests
+    var aprvBtn = e.target.closest('button[data-aprv]');
+    if(aprvBtn){ doApprove(aprvBtn.dataset.aprv); return; }
+    var rejBtn = e.target.closest('button[data-rej]');
+    if(rejBtn){ doReject(rejBtn.dataset.rej); return; }
+  } catch(err){
+    console.error('Event delegation error:', err);
+    if(typeof showToast === 'function') showToast('Error: '+err.message,'err');
+  }
+});
+
+
 async function initApp(user){
   currentUser = user;
   
