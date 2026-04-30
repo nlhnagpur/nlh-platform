@@ -406,10 +406,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
         </div>
       </div>
       <div class="mets">
-        <div class="met"><div class="ml">Franchisees</div><div class="mv" id="d-franchise">-</div><div class="md" style="color:var(--blue)">Active</div></div>
-        <div class="met"><div class="ml">Students</div><div class="mv" id="d-students">-</div><div class="md" style="color:var(--green)">Enrolled</div></div>
-        <div class="met"><div class="ml">Pending orders</div><div class="mv" id="d-orders" style="color:var(--amber)">-</div><div class="md" style="color:var(--amber)">Awaiting dispatch</div></div>
-        <div class="met"><div class="ml">Total SKUs</div><div class="mv" id="d-skus">-</div><div class="md" style="color:var(--blue)">In catalogue</div></div>
+        <div class="met" onclick="showPage('franchisees');loadFranchisees();" style="cursor:pointer;transition:all .12s" onmouseover="this.style.borderColor='var(--purple)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'"><div class="ml">Franchisees</div><div class="mv" id="d-franchise">-</div><div class="md" style="color:var(--blue)">Click to view all</div></div>
+        <div class="met" onclick="showPage('students');loadStudents();" style="cursor:pointer;transition:all .12s" onmouseover="this.style.borderColor='var(--green)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'"><div class="ml">Students</div><div class="mv" id="d-students">-</div><div class="md" style="color:var(--green)">Click to view all</div></div>
+        <div class="met" onclick="showPage('orders');loadOrders();setOrderFilter('pending');" style="cursor:pointer;transition:all .12s" onmouseover="this.style.borderColor='var(--amber)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'"><div class="ml">Pending orders</div><div class="mv" id="d-orders" style="color:var(--amber)">-</div><div class="md" style="color:var(--amber)">Click to view</div></div>
+        <div class="met" onclick="showPage('courses');loadCourses();" style="cursor:pointer;transition:all .12s" onmouseover="this.style.borderColor='var(--blue)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='var(--border)';this.style.transform='none'"><div class="ml">Total SKUs</div><div class="mv" id="d-skus">-</div><div class="md" style="color:var(--blue)">Click to view all</div></div>
       </div>
       <div class="g2">
         <div class="card">
@@ -732,37 +732,95 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
   </div>
 </div>
 
-<!-- INVOICE EDIT MODAL -->
+<!-- INVOICE EDIT MODAL — COMPLETE ORDER EDITOR -->
 <div class="modal-bg" id="inv-edit-modal">
-  <div class="modal" style="width:500px;max-width:96vw">
-    <div class="modal-title">Edit invoice / order</div>
-    <div class="modal-sub" id="inv-edit-sub">Update invoice details before download</div>
-    <div class="g2">
-      <div class="fr"><label>Invoice number</label><input type="text" id="inv-no" readonly style="background:var(--bg3);font-family:var(--mono)"></div>
-      <div class="fr"><label>Order ref</label><input type="text" id="inv-ref" readonly style="background:var(--bg3);font-family:var(--mono)"></div>
-    </div>
-    <div class="g2">
-      <div class="fr"><label>Courier charges (&#8377;)</label><input type="number" id="inv-courier" placeholder="0" min="0"></div>
-      <div class="fr"><label>AWB / tracking number</label><input type="text" id="inv-awb" placeholder="Tracking number"></div>
-    </div>
-    <div class="g2">
-      <div class="fr"><label>Payment mode</label>
-        <select id="inv-pmode">
-          <option value="">Not paid yet</option>
-          <option value="upi">UPI</option>
-          <option value="neft">NEFT / IMPS</option>
-          <option value="cash">Cash</option>
-          <option value="cheque">Cheque</option>
-          <option value="razorpay">Razorpay</option>
-        </select>
+  <div class="modal" style="width:780px;max-width:98vw;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+      <div>
+        <div class="modal-title">Edit invoice</div>
+        <div class="modal-sub" id="inv-edit-sub">Modify items, quantities, payment, and delivery details</div>
       </div>
-      <div class="fr"><label>Payment reference / UTR</label><input type="text" id="inv-pref" placeholder="UTR / transaction ID"></div>
+      <span id="inv-status-badge" class="badge"></span>
     </div>
-    <div class="fr"><label>Delivery address (editable)</label><input type="text" id="inv-addr"></div>
-    <div class="fr"><label>Notes</label><input type="text" id="inv-notes"></div>
+
+    <!-- Bill to section (read-only summary) -->
+    <div style="background:var(--bg3);border-radius:var(--r2);padding:12px 14px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:12px">
+      <div>
+        <div style="font-size:9px;color:var(--purple);text-transform:uppercase;letter-spacing:.06em;font-family:var(--mono);margin-bottom:4px">Bill to</div>
+        <div id="inv-billto-name" style="font-weight:500;font-size:13px"></div>
+        <div id="inv-billto-meta" style="color:var(--text3);font-size:11px;margin-top:2px"></div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--purple);text-transform:uppercase;letter-spacing:.06em;font-family:var(--mono);margin-bottom:4px">Invoice details</div>
+        <div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--text3)">Invoice no.</span><span style="font-family:var(--mono);font-weight:500" id="inv-no-display">-</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:2px"><span style="color:var(--text3)">Order ref</span><span style="font-family:var(--mono)" id="inv-ref-display">-</span></div>
+      </div>
+    </div>
+
+    <!-- ITEMS TABLE -->
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:500">Order items</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">Edit qty/rate inline · click &#10005; to remove</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--r2);overflow:hidden">
+        <table class="tbl" style="font-size:12px">
+          <thead><tr>
+            <th>SKU / Item</th>
+            <th style="text-align:right;width:80px">Ordered</th>
+            <th style="text-align:right;width:80px">Sent</th>
+            <th style="text-align:right;width:90px">Rate (&#8377;)</th>
+            <th style="text-align:right;width:90px">Total</th>
+            <th style="width:32px"></th>
+          </tr></thead>
+          <tbody id="inv-items-body"><tr><td colspan="6" class="empty">No items</td></tr></tbody>
+        </table>
+      </div>
+      <!-- Add new item row -->
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <select id="inv-add-sku" style="flex:1;font-size:12px;padding:7px 10px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;font-family:var(--font)">
+          <option value="">Add another SKU...</option>
+        </select>
+        <input type="number" id="inv-add-qty" min="1" value="1" style="width:64px;font-size:12px;padding:7px 8px;border-radius:var(--r2);border:1px solid var(--border2);text-align:center;font-family:var(--font)">
+        <button class="btn-p btn-sm" onclick="invAddItem()">+ Add</button>
+      </div>
+    </div>
+
+    <!-- TOTALS + DELIVERY + PAYMENT -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+      <div>
+        <div class="fr"><label>Delivery address (editable)</label><input type="text" id="inv-addr"></div>
+        <div class="g2">
+          <div class="fr"><label>Courier charges (&#8377;)</label><input type="number" id="inv-courier" min="0" value="0"></div>
+          <div class="fr"><label>AWB / tracking</label><input type="text" id="inv-awb"></div>
+        </div>
+        <div class="fr"><label>Notes</label><input type="text" id="inv-notes"></div>
+      </div>
+      <div>
+        <div style="background:var(--bg3);border-radius:var(--r2);padding:12px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span style="color:var(--text3)">Subtotal</span><span style="font-family:var(--mono);font-weight:500" id="inv-subtotal">&#8377;0</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span style="color:var(--text3)">Courier</span><span style="font-family:var(--mono)" id="inv-courier-display">&#8377;0</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);margin-bottom:6px"><span style="color:var(--text3)">GST (not applicable)</span><span style="color:var(--text3);font-family:var(--mono)">Nil</span></div>
+          <div style="background:var(--purple);border-radius:var(--r2);padding:8px 12px;display:flex;justify-content:space-between;align-items:center"><span style="color:#fff;font-size:12px;font-weight:500">Total</span><span style="color:#fff;font-family:var(--mono);font-weight:600;font-size:14px" id="inv-grandtotal">&#8377;0</span></div>
+        </div>
+        <div class="fr"><label>Payment mode</label>
+          <select id="inv-pmode">
+            <option value="">Not paid yet</option>
+            <option value="upi">UPI</option>
+            <option value="neft">NEFT / IMPS</option>
+            <option value="cash">Cash</option>
+            <option value="cheque">Cheque</option>
+            <option value="razorpay">Razorpay</option>
+          </select>
+        </div>
+        <div class="fr"><label>Payment reference / UTR</label><input type="text" id="inv-pref" placeholder="Transaction ID"></div>
+      </div>
+    </div>
+
     <input type="hidden" id="inv-order-id">
+    <input type="hidden" id="inv-tier">
     <div class="modal-actions">
-      <button class="btn-s" onclick="document.getElementById('inv-edit-modal').classList.remove('show')">Cancel</button>
+      <button class="btn-s" onclick="document.getElementById('inv-edit-modal').classList.remove('show')">Close</button>
       <button class="btn-p" onclick="saveInvoiceEdit(false)">Save changes</button>
       <button class="btn-green" onclick="saveInvoiceEdit(true)">Save &amp; download PDF</button>
     </div>
@@ -1242,7 +1300,7 @@ function renderFranchisees(){
     return;
   }
   tbody.innerHTML = rows.map(function(f){
-    return '<tr style="cursor:pointer" onclick="openFranchiseeDetail(\"'+f.id+'\")" title="Click to view/edit">' +
+    return '<tr style="cursor:pointer" data-frid="'+f.id+'" title="Click to view/edit">' +
       '<td><strong>'+esc(f.business_name)+'</strong></td>' +
       '<td>'+esc(f.owner_name)+'</td>' +
       '<td><span class="tier t-'+f.tier.toLowerCase()+'">'+f.tier+'</span></td>' +
@@ -1302,15 +1360,15 @@ function renderOrders(){
       '<td class="muted">'+fmtDate(o.created_at)+'</td>' +
       '<td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">' +
         (o.status==='pending' ?
-          '<button class="btn-p btn-sm" onclick="markInvoiced(\''+o.id+'\')">Generate invoice</button>' +
-          '<button class="btn-s btn-sm" onclick="openInvoiceEdit(\''+o.id+'\')">&#9998; Edit</button>'
+          '<button class="btn-p btn-sm" data-inv="'+o.id+'">Generate invoice</button>' +
+          '<button class="btn-s btn-sm" data-edit="'+o.id+'">&#9998; Edit</button>'
           :
         o.status==='invoiced' ?
-          '<button class="btn-green btn-sm" onclick="markClosed(\''+o.id+'\')">Mark paid</button>' +
-          '<button class="btn-s btn-sm" onclick="openInvoiceEdit(\''+o.id+'\')">&#9998; Edit</button>' +
+          '<button class="btn-green btn-sm" data-paid="'+o.id+'">Mark paid</button>' +
+          '<button class="btn-s btn-sm" data-edit="'+o.id+'">&#9998; Edit</button>' +
           '<button class="btn-s btn-sm" data-orderid="'+o.id+'" onclick="doDownloadInvoice(this)">&#8595; PDF</button>'
           :
-          '<button class="btn-s btn-sm" onclick="openInvoiceEdit(\''+o.id+'\')">&#9998; Edit</button>' +
+          '<button class="btn-s btn-sm" data-edit="'+o.id+'">&#9998; Edit</button>' +
           '<button class="btn-s btn-sm" data-orderid="'+o.id+'" onclick="doDownloadInvoice(this)">&#8595; PDF</button>') +
       '</td></tr>';
   }).join('');
@@ -1657,7 +1715,7 @@ function renderStudents(){
   if(!rows.length){ tbody.innerHTML='<tr><td colspan="6" class="empty">No students yet</td></tr>'; return; }
   tbody.innerHTML = rows.map(function(s){
     var ch = {franchise:'Franchisee centre', own_centre:'NLH own centre', international:'International Zoom'};
-    return '<tr style="cursor:pointer" onclick="openStudentDetail(\"'+s.id+'\")" title="Click to view/edit">' +
+    return '<tr style="cursor:pointer" data-stid="'+s.id+'" title="Click to view/edit">' +
       '<td><strong>'+esc(s.full_name)+'</strong></td>' +
       '<td>'+esc(s.parent_name||'-')+'</td>' +
       '<td class="mono">'+esc(s.phone||'-')+'</td>' +
@@ -2763,20 +2821,155 @@ async function saveStudentDetail(){
 // ================================================================
 // INVOICE EDIT MODAL
 // ================================================================
-function openInvoiceEdit(orderId){
+var invItems = [];      // current edit cart
+var invSkuMap = {};     // sku id → {name, sessions, rate}
+
+async function openInvoiceEdit(orderId){
   var o = ordersCache.find(function(x){ return x.id===orderId; });
-  if(!o) return;
+  if(!o){ showToast('Order not found','err'); return; }
+
   document.getElementById('inv-order-id').value = orderId;
-  document.getElementById('inv-no').value = o.invoice_no||'';
-  document.getElementById('inv-ref').value = o.order_ref||'';
+  document.getElementById('inv-tier').value = o.placer_tier||'UF';
+
+  // Status badge
+  var sBadge = document.getElementById('inv-status-badge');
+  sBadge.textContent = (o.status||'pending').toUpperCase();
+  sBadge.className = 'badge ' + (o.status==='closed' ? 'ba' : o.status==='invoiced' ? 'br' : 'bp');
+
+  // Header info
+  document.getElementById('inv-no-display').textContent = o.invoice_no||'Not generated yet';
+  document.getElementById('inv-ref-display').textContent = o.order_ref||'-';
+  document.getElementById('inv-edit-sub').textContent = 'Order '+(o.order_ref||'-')+' · '+(o.invoice_no||'no invoice yet');
+
+  // Bill to — fetch fresh franchisee details
+  var billName = '-', billMeta = '-';
+  if(o.placer_id){
+    var { data: fr } = await sb.from('franchisees')
+      .select('business_name,owner_name,tier,phone,email,city,state')
+      .eq('id', o.placer_id).single();
+    if(fr){
+      billName = fr.business_name || fr.owner_name;
+      billMeta = (fr.tier||'') + ' · ' + (fr.city||'') + ', ' + (fr.state||'') + ' · Ph: ' + (fr.phone||'-');
+    }
+  }
+  document.getElementById('inv-billto-name').textContent = billName;
+  document.getElementById('inv-billto-meta').textContent = billMeta;
+
+  // Form fields
   document.getElementById('inv-courier').value = o.courier_charges||0;
   document.getElementById('inv-awb').value = o.awb_number||'';
   document.getElementById('inv-pmode').value = o.payment_mode||'';
   document.getElementById('inv-pref').value = o.payment_ref||'';
   document.getElementById('inv-addr').value = o.deliver_to||'';
   document.getElementById('inv-notes').value = o.notes||'';
-  document.getElementById('inv-edit-sub').textContent = 'Order '+o.order_ref+' · '+o.invoice_no;
+
+  // Wire up courier change to update totals
+  document.getElementById('inv-courier').oninput = renderInvItems;
+
+  // Load existing order items
+  var { data: items } = await sb.from('order_items')
+    .select('*, skus(level_name, sessions, courses(group_name))')
+    .eq('order_id', orderId);
+  invItems = (items||[]).map(function(it){
+    return {
+      _id: it.id,                    // existing item id (for update)
+      sku_id: it.sku_id,
+      name: it.skus ? it.skus.courses.group_name+' — '+it.skus.level_name : 'Item',
+      sessions: it.skus ? (it.skus.sessions||'-') : '-',
+      ordered_qty: it.ordered_qty||0,
+      sent_qty: it.sent_qty||0,
+      rate: it.rate||0
+    };
+  });
+
+  // Load SKU dropdown for adding more items
+  var tier = o.placer_tier||'UF';
+  var { data: skus } = await sb.from('skus')
+    .select('id, level_name, sessions, uf_rate, cf_rate, smf_rate, courses(group_name, billing_type)')
+    .eq('is_active',true).order('sort_order');
+  var sel = document.getElementById('inv-add-sku');
+  sel.innerHTML = '<option value="">Add another SKU...</option>';
+  invSkuMap = {};
+  (skus||[]).forEach(function(s){
+    var rate = tier==='SMF'?s.smf_rate:tier==='CF'?s.cf_rate:s.uf_rate;
+    var name = s.courses.group_name+' — '+s.level_name;
+    invSkuMap[s.id] = { name: name, sessions: s.sessions||'-', rate: rate };
+    var opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = name + '  (₹' + rate + ')';
+    sel.appendChild(opt);
+  });
+
+  renderInvItems();
   document.getElementById('inv-edit-modal').classList.add('show');
+}
+
+function renderInvItems(){
+  var tbody = document.getElementById('inv-items-body');
+  if(!invItems.length){
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No items in this order</td></tr>';
+  } else {
+    tbody.innerHTML = invItems.map(function(it, idx){
+      var lt = (it.sent_qty>0 ? it.sent_qty : it.ordered_qty) * it.rate;
+      return '<tr>' +
+        '<td><div style="font-size:12px">'+esc(it.name)+'</div><div style="font-size:10px;color:var(--text3);font-family:var(--mono)">'+esc(it.sessions||'-')+'</div></td>' +
+        '<td style="text-align:right"><input type="number" min="0" value="'+it.ordered_qty+'" data-iidx="'+idx+'" data-ifield="ordered_qty" class="inv-input" style="width:64px;font-size:12px;padding:4px 6px;border-radius:var(--r3);border:1px solid var(--border2);text-align:center;font-family:var(--mono)"></td>' +
+        '<td style="text-align:right"><input type="number" min="0" value="'+it.sent_qty+'" data-iidx="'+idx+'" data-ifield="sent_qty" class="inv-input" style="width:64px;font-size:12px;padding:4px 6px;border-radius:var(--r3);border:1px solid var(--border2);text-align:center;font-family:var(--mono)"></td>' +
+        '<td style="text-align:right"><input type="number" min="0" value="'+it.rate+'" data-iidx="'+idx+'" data-ifield="rate" class="inv-input" style="width:78px;font-size:12px;padding:4px 6px;border-radius:var(--r3);border:1px solid var(--border2);text-align:right;font-family:var(--mono)"></td>' +
+        '<td style="text-align:right;font-family:var(--mono);font-weight:500">₹'+fmtAmt(lt)+'</td>' +
+        '<td style="text-align:center"><button data-iremove="'+idx+'" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 6px">&#10005;</button></td>' +
+        '</tr>';
+    }).join('');
+  }
+  // Wire up inputs
+  document.querySelectorAll('.inv-input').forEach(function(inp){
+    inp.oninput = function(){
+      var idx = parseInt(inp.dataset.iidx);
+      var field = inp.dataset.ifield;
+      invItems[idx][field] = Math.max(0, parseInt(inp.value)||0);
+      updateInvTotals();
+    };
+  });
+  document.querySelectorAll('[data-iremove]').forEach(function(btn){
+    btn.onclick = function(){
+      invItems.splice(parseInt(btn.dataset.iremove), 1);
+      renderInvItems();
+    };
+  });
+  updateInvTotals();
+}
+
+function updateInvTotals(){
+  var sub = invItems.reduce(function(s,it){
+    return s + (it.sent_qty>0?it.sent_qty:it.ordered_qty) * it.rate;
+  }, 0);
+  var courier = parseInt(document.getElementById('inv-courier').value)||0;
+  document.getElementById('inv-subtotal').textContent = '₹'+fmtAmt(sub);
+  document.getElementById('inv-courier-display').textContent = '₹'+fmtAmt(courier);
+  document.getElementById('inv-grandtotal').textContent = '₹'+fmtAmt(sub+courier);
+}
+
+function invAddItem(){
+  var sel = document.getElementById('inv-add-sku');
+  var qty = Math.max(1, parseInt(document.getElementById('inv-add-qty').value)||1);
+  if(!sel.value){ showToast('Please select a SKU','warn'); return; }
+  var info = invSkuMap[sel.value];
+  if(!info) return;
+  // Check if already in cart
+  var existing = invItems.find(function(x){ return x.sku_id===sel.value; });
+  if(existing){
+    existing.ordered_qty += qty;
+  } else {
+    invItems.push({
+      _id: null,
+      sku_id: sel.value,
+      name: info.name, sessions: info.sessions, rate: info.rate,
+      ordered_qty: qty, sent_qty: 0
+    });
+  }
+  sel.value = '';
+  document.getElementById('inv-add-qty').value = 1;
+  renderInvItems();
 }
 
 async function saveInvoiceEdit(andDownload){
@@ -2788,6 +2981,7 @@ async function saveInvoiceEdit(andDownload){
   var addr = document.getElementById('inv-addr').value.trim();
   var notes = document.getElementById('inv-notes').value.trim();
 
+  // 1. Update order
   var updateData = {
     courier_charges: courier,
     awb_number: awb||null,
@@ -2801,15 +2995,27 @@ async function saveInvoiceEdit(andDownload){
     updateData.paid_at = new Date().toISOString();
   }
   var { error } = await sb.from('orders').update(updateData).eq('id',id);
-  if(error){ showToast('Error: '+error.message,'err'); return; }
+  if(error){ showToast('Error updating order: '+error.message,'err'); return; }
 
-  // Update cache
-  var idx = ordersCache.findIndex(function(o){ return o.id===id; });
-  if(idx>=0) Object.assign(ordersCache[idx], updateData);
+  // 2. Delete all existing order items, re-insert from current cart
+  await sb.from('order_items').delete().eq('order_id', id);
+  if(invItems.length){
+    var rows = invItems.map(function(it){
+      return {
+        order_id: id,
+        sku_id: it.sku_id,
+        ordered_qty: it.ordered_qty,
+        sent_qty: it.sent_qty,
+        rate: it.rate
+      };
+    });
+    var { error: itemErr } = await sb.from('order_items').insert(rows);
+    if(itemErr){ showToast('Items error: '+itemErr.message,'err'); return; }
+  }
 
-  showToast('Order updated');
+  showToast('Invoice updated' + (invItems.length?' with '+invItems.length+' item(s)':''));
   document.getElementById('inv-edit-modal').classList.remove('show');
-  loadOrders();
+  await loadOrders();
   if(andDownload) downloadInvoice(id);
 }
 
