@@ -424,7 +424,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
   transition: transform 0.2s;
 }
 .dash-card:hover .dash-card-arrow { transform: rotate(45deg); }
-.dash-card-num { font-size: 32px; font-weight: 700; line-height: 1; margin-bottom: 4px; position: relative; }
+.dash-card-num { font-size: 28px; font-weight: 700; line-height: 1.05; margin-bottom: 4px; position: relative; word-break: break-word; }
 .dash-card-lbl { font-size: 13px; font-weight: 500; opacity: 0.9; position: relative; }
 .dash-card-sub { font-size: 11px; opacity: 0.7; margin-top: 8px; font-family: var(--mono); position: relative; }
 
@@ -1741,10 +1741,24 @@ async function loadDashboard(){
     var closed = (orAll.data||[]).filter(function(o){return o.status==='closed';}).length;
     document.getElementById('d-orders-sub').textContent = closed+' completed of '+totalOrds;
 
-    // Outstanding = orders invoiced but not closed
+    // Outstanding = total amount of orders invoiced but not closed
     var invoicedOrds = (orAll.data||[]).filter(function(o){return o.status==='invoiced';});
-    document.getElementById('d-outstanding').textContent = invoicedOrds.length;
-    document.getElementById('d-outstanding-sub').textContent = invoicedOrds.length ? 'Awaiting payment' : 'All paid up';
+    var outstandingTotal = 0;
+    if(invoicedOrds.length){
+      // Get all order_items for invoiced orders to calculate totals
+      var invoicedIds = invoicedOrds.map(function(o){return o.id;});
+      var { data: items } = await sb.from('order_items').select('order_id, ordered_qty, sent_qty, rate').in('order_id', invoicedIds);
+      (items||[]).forEach(function(it){
+        var q = it.sent_qty>0 ? it.sent_qty : it.ordered_qty;
+        outstandingTotal += q * (it.rate||0);
+      });
+      // Add courier charges from each invoice
+      invoicedOrds.forEach(function(o){
+        outstandingTotal += (o.courier_charges||0);
+      });
+    }
+    document.getElementById('d-outstanding').textContent = '\u20B9' + (typeof fmtAmt==='function'?fmtAmt(outstandingTotal):outstandingTotal);
+    document.getElementById('d-outstanding-sub').textContent = invoicedOrds.length ? invoicedOrds.length+' invoice(s) awaiting payment' : 'All paid up';
 
   } else {
     // ── FRANCHISEE: only their own data ────────────────────────
@@ -1775,9 +1789,20 @@ async function loadDashboard(){
     document.getElementById('d-orders').textContent = pendingCnt;
     document.getElementById('d-orders-sub').textContent = pendingCnt ? 'Awaiting dispatch' : 'No pending orders';
 
-    // Card 4: Outstanding payments (mine - invoiced orders)
-    document.getElementById('d-outstanding').textContent = invoicedCnt;
-    document.getElementById('d-outstanding-sub').textContent = invoicedCnt ? 'Pay to clear' : 'All paid up';
+    // Card 4: Outstanding payment amount (mine - invoiced orders)
+    var outstandingAmt = 0;
+    var invoicedFrOrds = ownOrders.filter(function(o){return o.status==='invoiced';});
+    if(invoicedFrOrds.length){
+      var invIds = invoicedFrOrds.map(function(o){return o.id;});
+      var { data: items } = await sb.from('order_items').select('order_id, ordered_qty, sent_qty, rate').in('order_id', invIds);
+      (items||[]).forEach(function(it){
+        var q = it.sent_qty>0 ? it.sent_qty : it.ordered_qty;
+        outstandingAmt += q * (it.rate||0);
+      });
+      invoicedFrOrds.forEach(function(o){ outstandingAmt += (o.courier_charges||0); });
+    }
+    document.getElementById('d-outstanding').textContent = '\u20B9' + (typeof fmtAmt==='function'?fmtAmt(outstandingAmt):outstandingAmt);
+    document.getElementById('d-outstanding-sub').textContent = invoicedCnt ? invoicedCnt+' invoice(s) to pay' : 'All paid up';
 
     // Re-label cards for franchisee view
     var card1Lbl = document.querySelector('.dash-card-1 .dash-card-lbl');
