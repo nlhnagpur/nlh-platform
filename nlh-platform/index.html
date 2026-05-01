@@ -892,7 +892,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
           <table class="tbl">
             <thead><tr>
               <th>Order ref</th><th>Placed by</th><th>Tier</th>
-              <th>Deliver to</th><th>Status</th><th>Invoice</th><th>Placed</th><th></th>
+              <th>Deliver to</th><th>Status</th><th>Invoice</th><th style="text-align:right">Amount</th><th>Placed</th><th></th>
             </tr></thead>
             <tbody id="orders-tbody"><tr><td colspan="8" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
           </table>
@@ -2031,13 +2031,20 @@ function renderFranchisees(){
 var ordersCache = [];
 async function loadOrders(){
   var query = sb.from('orders')
-    .select('*, franchisees!orders_placer_id_fkey(business_name, owner_name, city, phone)')
+    .select('*, franchisees!orders_placer_id_fkey(business_name, owner_name, city, phone), order_items(ordered_qty, sent_qty, rate)')
     .order('created_at', {ascending:false});
-  // Non-admin: only show their own orders
   if(currentRole !== 'admin' && currentFranchiseeId){
     query = query.eq('placer_id', currentFranchiseeId);
   }
   var { data } = await query;
+  // Calculate amount for each order
+  (data||[]).forEach(function(o){
+    var subtotal = (o.order_items||[]).reduce(function(s, it){
+      var q = it.sent_qty>0 ? it.sent_qty : it.ordered_qty;
+      return s + q * (it.rate||0);
+    }, 0);
+    o.amount_total = subtotal + (o.courier_charges||0);
+  });
   ordersCache = data || [];
   var pending = ordersCache.filter(function(o){return o.status==='pending';}).length;
   var invoiced = ordersCache.filter(function(o){return o.status==='invoiced';}).length;
@@ -2063,7 +2070,7 @@ function renderOrders(){
     ordersCache.filter(function(o){ return o.status===orderFilter; });
   var tbody = document.getElementById('orders-tbody');
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No orders</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(function(o){
@@ -2074,6 +2081,7 @@ function renderOrders(){
       '<td>'+esc((o.deliver_to||'').substring(0,30))+'</td>' +
       '<td>'+statusBadge(o.status)+'</td>' +
       '<td class="mono">'+(o.invoice_no||'<span style="color:var(--text3)">Pending</span>')+'</td>' +
+      '<td style="text-align:right;font-family:var(--mono);font-weight:500">'+(o.amount_total ? '\u20B9'+fmtAmt(o.amount_total) : '<span style="color:var(--text3)">-</span>')+'</td>' +
       '<td class="muted">'+fmtDate(o.created_at)+'</td>' +
       '<td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">' +
         (o.status==='pending' ?
