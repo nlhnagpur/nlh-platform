@@ -1150,6 +1150,41 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
   </div>
 </div>
 
+<!-- PAYMENT SUBMISSION MODAL -->
+<div class="modal-bg" id="pay-submit-modal">
+  <div class="modal" style="width:520px;max-width:96vw">
+    <div class="modal-title">Submit payment proof</div>
+    <div class="modal-sub" id="pay-submit-sub">Enter your payment details so the supplier can verify</div>
+
+    <div style="background:#FEF3C7;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:#854D0E">
+      Once submitted, the supplier will verify your payment and mark the invoice as paid.
+    </div>
+
+    <div class="g2">
+      <div class="fr"><label>Invoice number</label><input type="text" id="pay-inv-no" readonly style="background:var(--bg3);font-family:var(--mono)"></div>
+      <div class="fr"><label>Amount due (&#8377;)</label><input type="text" id="pay-amount" readonly style="background:var(--bg3);font-family:var(--mono);font-weight:600"></div>
+    </div>
+    <div class="fr"><label>Payment mode *</label>
+      <select id="pay-mode">
+        <option value="">Select payment method</option>
+        <option value="upi">UPI</option>
+        <option value="neft">NEFT / IMPS</option>
+        <option value="cash">Cash</option>
+        <option value="cheque">Cheque</option>
+        <option value="razorpay">Razorpay</option>
+      </select>
+    </div>
+    <div class="fr"><label>Transaction reference / UTR *</label><input type="text" id="pay-ref" placeholder="UTR / transaction ID / cheque number"></div>
+    <div class="fr"><label>Payment date</label><input type="date" id="pay-date"></div>
+    <div class="fr"><label>Notes (optional)</label><input type="text" id="pay-notes" placeholder="Any details about the payment"></div>
+    <input type="hidden" id="pay-order-id">
+    <div class="modal-actions">
+      <button class="btn-s" onclick="document.getElementById('pay-submit-modal').classList.remove('show')">Cancel</button>
+      <button class="btn-green" onclick="submitPaymentProof()">Submit payment proof</button>
+    </div>
+  </div>
+</div>
+
 <!-- INVOICE EDIT MODAL — COMPLETE ORDER EDITOR -->
 <div class="modal-bg" id="inv-edit-modal">
   <div class="modal" style="width:780px;max-width:98vw;max-height:92vh;overflow-y:auto">
@@ -1522,6 +1557,10 @@ document.addEventListener('click', function(e){
     if(paidBtn){ markClosed(paidBtn.dataset.paid); return; }
     var editBtn = e.target.closest('button[data-edit]');
     if(editBtn){ openInvoiceEdit(editBtn.dataset.edit); return; }
+    var paySubBtn = e.target.closest('button[data-paysub]');
+    if(paySubBtn){ openPaySubmit(paySubBtn.dataset.paysub); return; }
+    var verifyBtn = e.target.closest('button[data-verify]');
+    if(verifyBtn){ verifyPayment(verifyBtn.dataset.verify); return; }
     // Approve/Reject access requests
     var aprvBtn = e.target.closest('button[data-aprv]');
     if(aprvBtn){ doApprove(aprvBtn.dataset.aprv); return; }
@@ -1823,11 +1862,11 @@ async function loadDashboard(){
     oEl.innerHTML = '<div class="empty">No orders yet</div>';
   } else {
     oEl.innerHTML = recent.map(function(o){
-      var sCol = o.status==='closed' ? '#16A34A' : o.status==='invoiced' ? '#2563EB' : '#D97706';
+      var sCol = o.status==='closed' ? '#16A34A' : o.status==='invoiced' ? '#2563EB' : o.status==='payment_submitted' ? '#7C3AED' : '#D97706';
       var name = o.franchisees ? o.franchisees.business_name : (o.deliver_to||'-').substring(0,28);
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:0.5px solid var(--border);font-size:12px">'+
         '<div><div style="font-weight:500">'+esc(name)+'</div><div style="font-size:10px;color:var(--text3);font-family:var(--mono)">'+esc(o.order_ref)+' · '+esc(o.placer_tier||'-')+'</div></div>'+
-        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:10px;background:'+sCol+'15;color:'+sCol+';text-transform:uppercase">'+o.status+'</span><span style="font-size:10px;color:var(--text3)">'+fmtDate(o.created_at)+'</span></div>'+
+        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:10px;background:'+sCol+'15;color:'+sCol+';text-transform:uppercase">'+(o.status==='payment_submitted'?'Pending verify':o.status)+'</span><span style="font-size:10px;color:var(--text3)">'+fmtDate(o.created_at)+'</span></div>'+
         '</div>';
     }).join('');
   }
@@ -2065,6 +2104,108 @@ function setOrderFilter(f){
   renderOrders();
 }
 
+// ════════════════════════════════════════════════════════════════
+// PAYMENT SUBMISSION FLOW
+// ════════════════════════════════════════════════════════════════
+function openPaySubmit(orderId){
+  var o = ordersCache.find(function(x){ return x.id===orderId; });
+  if(!o) return;
+  document.getElementById('pay-order-id').value = orderId;
+  document.getElementById('pay-inv-no').value = o.invoice_no || o.order_ref;
+  document.getElementById('pay-amount').value = '\u20B9' + (typeof fmtAmt==='function'?fmtAmt(o.amount_total||0):(o.amount_total||0));
+  document.getElementById('pay-mode').value = '';
+  document.getElementById('pay-ref').value = '';
+  document.getElementById('pay-notes').value = '';
+  document.getElementById('pay-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('pay-submit-sub').textContent = 'Order ' + o.order_ref + ' · Submit your payment details for verification';
+  document.getElementById('pay-submit-modal').classList.add('show');
+}
+
+async function submitPaymentProof(){
+  var id = document.getElementById('pay-order-id').value;
+  var mode = document.getElementById('pay-mode').value;
+  var ref = document.getElementById('pay-ref').value.trim();
+  var date = document.getElementById('pay-date').value;
+  var notes = document.getElementById('pay-notes').value.trim();
+
+  if(!mode){ showToast('Please select payment mode','warn'); return; }
+  if(!ref){ showToast('Transaction reference is required','warn'); return; }
+
+  var update = {
+    status: 'payment_submitted',
+    payment_mode: mode,
+    payment_ref: ref,
+    paid_at: date ? new Date(date+'T12:00:00').toISOString() : new Date().toISOString()
+  };
+  if(notes){ update.notes = (update.notes ? update.notes+' | ' : '') + 'Payment note: '+notes; }
+
+  var { error } = await sb.from('orders').update(update).eq('id', id);
+  if(error){ showToast('Error: '+error.message, 'err'); return; }
+  showToast('Payment proof submitted. Supplier will verify and mark as paid.');
+  document.getElementById('pay-submit-modal').classList.remove('show');
+  await loadOrders();
+  await loadDashboard();
+}
+
+async function verifyPayment(orderId){
+  var o = ordersCache.find(function(x){ return x.id===orderId; });
+  if(!o) return;
+  var msg = 'Verify payment for '+o.order_ref+'?\n\nMode: '+(o.payment_mode||'-')+'\nRef: '+(o.payment_ref||'-')+'\n\nThis will mark the invoice as paid and close the order.';
+  if(!confirm(msg)) return;
+  var { error } = await sb.from('orders').update({
+    status: 'closed',
+    closed_at: new Date().toISOString()
+  }).eq('id', orderId);
+  if(error){ showToast('Error: '+error.message, 'err'); return; }
+  showToast('Payment verified. Order closed.');
+  await loadOrders();
+  await loadDashboard();
+}
+
+// Generate role-aware action buttons for an order row
+function getOrderActionButtons(o){
+  var isAdmin = currentRole === 'admin';
+  var isOwner = currentFranchiseeId && o.placer_id === currentFranchiseeId;
+  // Supplier = whoever fulfills the order (the one who dispatched). Admin always counts as supplier.
+  // For now: anyone who is not the placer, plus admin, can verify payment
+  var isSupplier = isAdmin || (currentFranchiseeId && o.supplier === currentFranchiseeId);
+
+  var btns = [];
+  // Edit + PDF available for invoiced/paid_submitted/closed
+  var pdfBtn = '<button class="btn-s btn-sm" data-orderid="'+o.id+'" onclick="doDownloadInvoice(this)">&#8595; PDF</button>';
+  var editBtn = '<button class="btn-s btn-sm" data-edit="'+o.id+'">&#9998; Edit</button>';
+
+  if(o.status === 'pending'){
+    if(isAdmin || isSupplier){
+      btns.push('<button class="btn-p btn-sm" data-inv="'+o.id+'">Generate invoice</button>');
+    }
+    btns.push(editBtn);
+  } else if(o.status === 'invoiced'){
+    // Owner submits payment proof. Supplier/admin can also mark paid directly.
+    if(isOwner){
+      btns.push('<button class="btn-green btn-sm" data-paysub="'+o.id+'">Submit payment</button>');
+    }
+    if(isAdmin || isSupplier){
+      btns.push('<button class="btn-p btn-sm" data-paid="'+o.id+'">Mark paid</button>');
+    }
+    btns.push(editBtn);
+    btns.push(pdfBtn);
+  } else if(o.status === 'payment_submitted'){
+    // Awaiting supplier verification
+    if(isAdmin || isSupplier){
+      btns.push('<button class="btn-green btn-sm" data-verify="'+o.id+'">Verify &amp; close</button>');
+    } else if(isOwner){
+      btns.push('<span class="badge ba" style="background:#FEF3C7;color:#854D0E">Awaiting verification</span>');
+    }
+    btns.push(editBtn);
+    btns.push(pdfBtn);
+  } else { // closed
+    btns.push(editBtn);
+    btns.push(pdfBtn);
+  }
+  return btns.join('');
+}
+
 function renderOrders(){
   var rows = orderFilter==='all' ? ordersCache :
     ordersCache.filter(function(o){ return o.status===orderFilter; });
@@ -2084,17 +2225,7 @@ function renderOrders(){
       '<td style="text-align:right;font-family:var(--mono);font-weight:500">'+(o.amount_total ? '\u20B9'+fmtAmt(o.amount_total) : '<span style="color:var(--text3)">-</span>')+'</td>' +
       '<td class="muted">'+fmtDate(o.created_at)+'</td>' +
       '<td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">' +
-        (o.status==='pending' ?
-          '<button class="btn-p btn-sm" data-inv="'+o.id+'">Generate invoice</button>' +
-          '<button class="btn-s btn-sm" data-edit="'+o.id+'">&#9998; Edit</button>'
-          :
-        o.status==='invoiced' ?
-          '<button class="btn-green btn-sm" data-paid="'+o.id+'">Mark paid</button>' +
-          '<button class="btn-s btn-sm" data-edit="'+o.id+'">&#9998; Edit</button>' +
-          '<button class="btn-s btn-sm" data-orderid="'+o.id+'" onclick="doDownloadInvoice(this)">&#8595; PDF</button>'
-          :
-          '<button class="btn-s btn-sm" data-edit="'+o.id+'">&#9998; Edit</button>' +
-          '<button class="btn-s btn-sm" data-orderid="'+o.id+'" onclick="doDownloadInvoice(this)">&#8595; PDF</button>') +
+        getOrderActionButtons(o) +
       '</td></tr>';
   }).join('');
 }
