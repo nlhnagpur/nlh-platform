@@ -2528,16 +2528,24 @@ async function onTierChange(){
   }
 }
 
-async function loadCourseCheckboxes(containerId){
+async function loadCourseCheckboxes(containerId, filterGroups){
   var { data: courses } = await sb.from('courses').select('id,group_name,name,billing_type').eq('is_active',true).order('sort_order');
   var container = document.getElementById(containerId);
   if(!container || !courses) return;
-  // Group by group_name, show one checkbox per group
   var groups = {};
   courses.forEach(function(c){
     if(!groups[c.group_name]) groups[c.group_name] = c.id;
   });
-  container.innerHTML = Object.keys(groups).map(function(g){
+  // Apply filter if provided
+  var keys = Object.keys(groups);
+  if(filterGroups && filterGroups.length){
+    keys = keys.filter(function(g){ return filterGroups.indexOf(g) >= 0; });
+  }
+  if(!keys.length){
+    container.innerHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;font-family:var(--mono);text-align:center;padding:8px">No registered courses available — please ask admin to register courses first.</div>';
+    return;
+  }
+  container.innerHTML = keys.map(function(g){
     return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:var(--r3);background:#fff;border:1px solid var(--border)">' +
       '<input type="checkbox" value="'+groups[g]+'" data-group="'+esc(g)+'" style="cursor:pointer"> '+esc(g)+'</label>';
   }).join('');
@@ -2622,8 +2630,31 @@ async function saveFranchisee(){
 
 async function openStudentModal(){
   document.getElementById('st-modal').classList.add('show');
-  loadCourseCheckboxes('s-courses-list');
-  await loadStudentCentres();
+  var isAdmin = currentRole === 'admin';
+  var channelEl = document.getElementById('s-channel');
+  var channelCol = channelEl ? channelEl.closest('.fr') : null;
+  var channelRow = channelCol ? channelCol.parentElement : null;  // .g2 wrapping channel + centre
+  var centreCol = document.getElementById('s-centre-row');
+
+  if(isAdmin){
+    // Admin: full controls — channel + centre
+    if(channelRow) channelRow.style.display = '';
+    if(centreCol) centreCol.style.display = '';
+    await loadStudentCentres();
+    await loadCourseCheckboxes('s-courses-list');
+  } else {
+    // Franchisee: hide entire channel/centre row — auto-set to own centre
+    if(channelEl) channelEl.value = 'franchise';
+    if(channelRow) channelRow.style.display = 'none';
+    document.getElementById('s-centre').value = currentFranchiseeId || '';
+    // Filter courses for UF
+    if(currentRole === 'uf' && currentFranchiseeId){
+      var { data: me } = await sb.from('franchisees').select('registered_courses').eq('id', currentFranchiseeId).single();
+      await loadCourseCheckboxes('s-courses-list', me ? me.registered_courses : null);
+    } else {
+      await loadCourseCheckboxes('s-courses-list');
+    }
+  }
 }
 
 async function loadStudentCentres(){
