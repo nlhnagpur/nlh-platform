@@ -789,25 +789,25 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 
       <!-- GRADIENT METRIC CARDS -->
       <div class="dash-cards">
-        <div class="dash-card dash-card-1" onclick="showPage('franchisees');loadFranchisees();">
+        <div class="dash-card dash-card-1" onclick="dashCardClick(1)">
           <div class="dash-card-top"><div class="dash-card-icon">🏢</div><div class="dash-card-arrow">↗</div></div>
           <div class="dash-card-num" id="d-franchise">-</div>
           <div class="dash-card-lbl">Franchisees</div>
           <div class="dash-card-sub" id="d-franchise-sub">Active partners</div>
         </div>
-        <div class="dash-card dash-card-2" onclick="showPage('students');loadStudents();">
+        <div class="dash-card dash-card-2" onclick="dashCardClick(2)">
           <div class="dash-card-top"><div class="dash-card-icon">🎓</div><div class="dash-card-arrow">↗</div></div>
           <div class="dash-card-num" id="d-students">-</div>
           <div class="dash-card-lbl">Students</div>
           <div class="dash-card-sub" id="d-students-sub">Total enrolled</div>
         </div>
-        <div class="dash-card dash-card-3" onclick="showPage('orders');loadOrders();setOrderFilter('pending');">
+        <div class="dash-card dash-card-3" onclick="dashCardClick(3)">
           <div class="dash-card-top"><div class="dash-card-icon">📦</div><div class="dash-card-arrow">↗</div></div>
           <div class="dash-card-num" id="d-orders">-</div>
           <div class="dash-card-lbl">Pending orders</div>
           <div class="dash-card-sub" id="d-orders-sub">Awaiting dispatch</div>
         </div>
-        <div class="dash-card dash-card-4" onclick="showPage('orders');loadOrders();setOrderFilter('invoiced');">
+        <div class="dash-card dash-card-4" onclick="dashCardClick(4)">
           <div class="dash-card-top"><div class="dash-card-icon">💰</div><div class="dash-card-arrow">↗</div></div>
           <div class="dash-card-num" id="d-outstanding">-</div>
           <div class="dash-card-lbl">Outstanding payments</div>
@@ -1686,6 +1686,28 @@ function loadPageData(id){
 // ================================================================
 // DASHBOARD
 // ================================================================
+// Role-aware dashboard card click handler
+function dashCardClick(cardNum){
+  var isAdmin = currentRole === 'admin';
+  if(cardNum === 1){
+    // Card 1: Franchisees (admin) | My orders (non-admin)
+    if(isAdmin){
+      showPage('franchisees'); loadFranchisees();
+    } else {
+      showPage('orders'); loadOrders();
+    }
+  } else if(cardNum === 2){
+    // Card 2: Students (admin and non-admin both go to students)
+    showPage('students'); loadStudents();
+  } else if(cardNum === 3){
+    // Card 3: Pending orders (filter pending)
+    showPage('orders'); loadOrders().then(function(){ setOrderFilter('pending'); });
+  } else if(cardNum === 4){
+    // Card 4: Outstanding payments (filter invoiced)
+    showPage('orders'); loadOrders().then(function(){ setOrderFilter('invoiced'); });
+  }
+}
+
 async function loadDashboard(){
   document.getElementById('dash-title').textContent = 'Welcome back!';
   var roleLabel = { admin:'NLH admin', smf:'State Master Franchisee', cf:'City Franchisee', uf:'Unit Franchisee', student:'Student' }[currentRole] || 'User';
