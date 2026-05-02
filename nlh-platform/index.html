@@ -1587,40 +1587,46 @@ async function initApp(user){
       currentRole = data.role || 'admin';
       currentFranchiseeId = data.franchisee_id;
     } else {
-      // Not in users table yet - insert as admin
-      currentRole = 'admin';
+      // Not in users table yet - default to staff
+      currentRole = 'staff';
       // Auto-insert into users table
       await sb.from('users').upsert({
         email: user.email,
         full_name: user.email.split('@')[0],
-        role: 'admin'
+        role: 'staff'
       }, { onConflict: 'email' });
     }
   } catch(err) {
     console.error('User lookup error:', err);
-    currentRole = 'admin';
+    currentRole = 'staff';
   }
 
-  // Show app
+  // Show app - hide landing + login, show app
+  document.getElementById('landing-screen').classList.remove('show');
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.add('show');
 
   // Set role badge
   var roleBadge = document.getElementById('role-badge');
   var roleColors = {
-    admin:   'background:var(--purple-bg);color:var(--purple)',
-    smf:     'background:var(--amber-bg);color:var(--amber)',
-    cf:      'background:var(--green-bg);color:var(--green)',
-    uf:      'background:var(--blue-bg);color:var(--blue)',
-    student: 'background:var(--bg4);color:var(--text3)'
+    owner:       'background:#1E40AF;color:#fff',
+    super_admin: 'background:#534AB7;color:#fff',
+    admin:       'background:#7C3AED;color:#fff',
+    manager:     'background:#0F766E;color:#fff',
+    staff:       'background:#64748B;color:#fff',
+    smf:         'background:var(--amber-bg);color:var(--amber)',
+    cf:          'background:var(--green-bg);color:var(--green)',
+    uf:          'background:var(--blue-bg);color:var(--blue)',
+    student:     'background:var(--bg4);color:var(--text3)'
   };
   roleBadge.style.cssText = roleColors[currentRole] || roleColors.admin;
-  roleBadge.textContent = currentRole.toUpperCase();
+  var roleLabelMap = {owner:'OWNER',super_admin:'SUPER ADMIN',admin:'ADMIN',manager:'MANAGER',staff:'STAFF',smf:'SMF',cf:'CF',uf:'UF',student:'STUDENT'};
+  roleBadge.textContent = roleLabelMap[currentRole] || currentRole.toUpperCase();
   document.getElementById('user-name-display').textContent = currentUser.email;
 
   // Check if user needs to complete onboarding
   var needsOnboarding = false;
-  if(currentRole !== 'admin'){
+  if(!isAdminRole(currentRole)){
     var hasProfile = (currentRole==='student') ? data && data.student_id : data && data.franchisee_id;
     if(!hasProfile) needsOnboarding = true;
   }
@@ -1649,8 +1655,10 @@ async function signOut(){
 // ================================================================
 // SIDEBAR
 // ================================================================
-var NAV_ITEMS = {
-  admin:[
+var ADMIN_ROLES = ['owner','super_admin','admin','manager','staff'];
+function isAdminRole(r){ return ADMIN_ROLES.indexOf(r) >= 0; }
+
+var adminNav = [
     {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
     {id:'franchisees',  l:'Franchisees',      c:'#1D7A4F'},
     {id:'orders',       l:'Orders',           c:'#8A5200'},
@@ -1659,25 +1667,51 @@ var NAV_ITEMS = {
     {id:'prices',       l:'Kit prices',       c:'#1D7A4F'},
     {id:'price-history',l:'Price change log', c:'#9C9A92'},
     {id:'users',        l:'Manage logins',    c:'#A32D2D'},
-    {id:'requests',     l:'Access requests',  c:'#A32D2D'}
-  ],
+    {id:'requests',     l:'Access requests',  c:'#534AB7'}
+];
+var managerNav = [
+    {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
+    {id:'franchisees',  l:'Franchisees',      c:'#1D7A4F'},
+    {id:'orders',       l:'Orders',           c:'#8A5200'},
+    {id:'students',     l:'Students',         c:'#1A5FA8'},
+    {id:'courses',      l:'Courses & SKUs',   c:'#534AB7'},
+    {id:'prices',       l:'Kit prices',       c:'#1D7A4F'}
+];
+var staffNav = [
+    {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
+    {id:'orders',       l:'Orders',           c:'#8A5200'},
+    {id:'students',     l:'Students',         c:'#1A5FA8'},
+    {id:'courses',      l:'Courses & SKUs',   c:'#534AB7'}
+];
+var NAV_ITEMS = {
+  owner: adminNav,
+  super_admin: adminNav,
+  admin: adminNav,
+  manager: managerNav,
+  staff: staffNav,
   smf:[
     {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
     {id:'orders',       l:'State orders',     c:'#8A5200'},
     {id:'franchisees',  l:'My franchisees',   c:'#1D7A4F'},
+    {id:'students',     l:'My students',      c:'#1A5FA8'},
     {id:'courses',      l:'Course catalogue', c:'#534AB7'}
   ],
   cf:[
     {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
-    {id:'orders',       l:'Orders',           c:'#8A5200'},
-    {id:'students',     l:'Students',         c:'#1A5FA8'},
-    {id:'courses',      l:'Course catalogue', c:'#534AB7'}
+    {id:'orders',       l:'City orders',      c:'#8A5200'},
+    {id:'franchisees',  l:'My franchisees',   c:'#1D7A4F'},
+    {id:'students',     l:'My students',      c:'#1A5FA8'},
+    {id:'courses',      l:'My courses',       c:'#534AB7'}
   ],
   uf:[
     {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
     {id:'orders',       l:'My orders',        c:'#8A5200'},
     {id:'students',     l:'My students',      c:'#1A5FA8'},
     {id:'courses',      l:'My courses',       c:'#534AB7'}
+  ],
+  student:[
+    {id:'dashboard',    l:'Dashboard',        c:'#534AB7'},
+    {id:'courses',      l:'My courses',       c:'#1A5FA8'}
   ]
 };
 
@@ -1730,7 +1764,7 @@ function loadPageData(id){
 // ================================================================
 // Role-aware dashboard card click handler
 function dashCardClick(cardNum){
-  var isAdmin = currentRole === 'admin';
+  var isAdmin = isAdminRole(currentRole);
   if(cardNum === 1){
     // Card 1: Franchisees (admin) | My orders (non-admin)
     if(isAdmin){
@@ -1752,12 +1786,12 @@ function dashCardClick(cardNum){
 
 async function loadDashboard(){
   document.getElementById('dash-title').textContent = 'Welcome back!';
-  var roleLabel = { admin:'NLH admin', smf:'State Master Franchisee', cf:'City Franchisee', uf:'Unit Franchisee', student:'Student' }[currentRole] || 'User';
+  var roleLabel = { owner:'Owner', super_admin:'Super Admin', admin:'Admin', manager:'Manager', staff:'Staff', smf:'State Master Franchisee', cf:'City Franchisee', uf:'Unit Franchisee', student:'Student' }[currentRole] || 'User';
   document.getElementById('dash-sub').textContent = roleLabel + ' dashboard · here is what is happening';
   var dateEl = document.getElementById('dash-date');
   if(dateEl) dateEl.textContent = new Date().toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'long', year:'numeric'});
 
-  var isAdmin = currentRole === 'admin';
+  var isAdmin = isAdminRole(currentRole);
 
   if(isAdmin){
     // ── ADMIN: full network view ───────────────────────────────
@@ -2082,7 +2116,7 @@ async function loadOrders(){
   var query = sb.from('orders')
     .select('*, franchisees!orders_placer_id_fkey(business_name, owner_name, city, phone), order_items(ordered_qty, sent_qty, rate)')
     .order('created_at', {ascending:false});
-  if(currentRole !== 'admin' && currentFranchiseeId){
+  if(!isAdminRole(currentRole) && currentFranchiseeId){
     query = query.eq('placer_id', currentFranchiseeId);
   }
   var { data } = await query;
@@ -2192,7 +2226,7 @@ async function markDispatched(orderId){
 
 // Role-aware action buttons. Uses timestamp flags for sub-states.
 function getOrderActionButtons(o){
-  var isAdmin = currentRole === 'admin';
+  var isAdmin = isAdminRole(currentRole);
   var isOwner = currentFranchiseeId && o.placer_id === currentFranchiseeId;
   var isSupplier = isAdmin || (currentFranchiseeId && o.supplier === currentFranchiseeId);
 
@@ -2882,7 +2916,7 @@ async function saveFranchisee(){
 
 async function openStudentModal(){
   document.getElementById('st-modal').classList.add('show');
-  var isAdmin = currentRole === 'admin';
+  var isAdmin = isAdminRole(currentRole);
   var channelEl = document.getElementById('s-channel');
   var channelCol = channelEl ? channelEl.closest('.fr') : null;
   var channelRow = channelCol ? channelCol.parentElement : null;  // .g2 wrapping channel + centre
@@ -3127,7 +3161,7 @@ async function openOrderModal(){
   orderCart = [];
   renderCart();
 
-  if(currentRole === 'admin'){
+  if(isAdminRole(currentRole)){
     var { data: frs } = await sb.from('franchisees')
       .select('id,business_name,tier,address,city,state,phone,email,registered_courses')
       .eq('status','active').order('tier').order('business_name');
