@@ -1536,6 +1536,10 @@ function showResetScreen(){
   var ob = document.getElementById('onboarding-screen'); if(ob) ob.style.display = 'none';
   var rs = document.getElementById('reset-screen');
   rs.style.display = 'flex';
+  // Clear any error/success messages
+  var e1 = document.getElementById('reset-err'); if(e1) e1.style.display = 'none';
+  var e2 = document.getElementById('reset-ok'); if(e2) e2.style.display = 'none';
+  console.log('Reset screen shown');
 }
 
 async function doResetPassword(){
@@ -4422,21 +4426,36 @@ window.addEventListener('load', async function(){
       console.log('EmailJS initialized');
     }
     
-    // Check for password reset token in URL
-    var hash = window.location.hash;
-    if(hash && (hash.includes('type=recovery') || hash.includes('access_token'))){
-      // Supabase recovery flow — exchange the token
-      var params = new URLSearchParams(hash.substring(1));
-      var accessToken = params.get('access_token');
-      var refreshToken = params.get('refresh_token');
-      var type = params.get('type');
-      if(type === 'recovery' && accessToken){
-        // Set the session from the recovery token
-        await sb.auth.setSession({ access_token: accessToken, refresh_token: refreshToken || '' });
-        // Clear the hash from URL
+    // Listen for Supabase auth state changes (detects password recovery)
+    var _recoveryDetected = false;
+    sb.auth.onAuthStateChange(function(event, session){
+      console.log('Auth event:', event);
+      if(event === 'PASSWORD_RECOVERY'){
+        _recoveryDetected = true;
+        // Clear URL hash
         history.replaceState(null, '', '/login');
         showResetScreen();
-        return;
+      }
+    });
+
+    // Also check URL hash manually (fallback)
+    var hash = window.location.hash;
+    if(hash && hash.includes('type=recovery')){
+      // Wait a moment for Supabase to process the token
+      await new Promise(function(r){ setTimeout(r, 1500); });
+      if(!_recoveryDetected){
+        // Manually try to set session
+        var params = new URLSearchParams(hash.substring(1));
+        var accessToken = params.get('access_token');
+        var refreshToken = params.get('refresh_token');
+        if(accessToken){
+          await sb.auth.setSession({ access_token: accessToken, refresh_token: refreshToken || '' });
+          history.replaceState(null, '', '/login');
+          showResetScreen();
+          return;
+        }
+      } else {
+        return; // Already handled by onAuthStateChange
       }
     }
 
@@ -4445,6 +4464,8 @@ window.addEventListener('load', async function(){
     if(session && session.user){
       var { data: { user }, error: userErr } = await sb.auth.getUser();
       if(user && !userErr){
+        // Don't enter app if password recovery is in progress
+        if(_recoveryDetected){ showResetScreen(); return; }
         await initApp(user);
         return;
       } else {
