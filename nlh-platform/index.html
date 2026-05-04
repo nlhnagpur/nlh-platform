@@ -1585,17 +1585,33 @@ function showForgotPassword(){
     if(!email) return;
   }
   if(!email.includes('@')){ showToast('Please enter a valid email','warn'); return; }
-  
+
+  showToast('Sending reset link to ' + email + '...');
+
+  // 1. Trigger Supabase password reset (generates the actual recovery token)
   sb.auth.resetPasswordForEmail(email, {
     redirectTo: 'https://nlh-platform.vercel.app/login'
-  }).then(function(result){
-    if(result.error){
-      showToast('Error: '+result.error.message, 'err');
-    } else {
-      showToast('Password reset link sent to '+email+'. Check your inbox.');
-    }
   });
+
+  // 2. Send instant branded notification via Brevo API
+  var resetEmailHtml = nlhEmailTemplate('Password Reset Request',
+    '<p>Dear user,</p>' +
+    '<p>We received a request to reset your password for the NLH Platform.</p>' +
+    '<p>A <strong>password reset link</strong> has been sent to your email. Please check your inbox (and spam/junk folder) — the link should arrive within 1-2 minutes.</p>' +
+    '<div style="background:#EDE9FE;padding:14px;border-radius:8px;margin:16px 0">' +
+      '<p style="margin:0;font-size:13px;color:#534AB7"><strong>What to do:</strong></p>' +
+      '<p style="margin:6px 0 0;font-size:13px;color:#333">1. Look for an email with subject <strong>"Reset Your Password"</strong></p>' +
+      '<p style="margin:4px 0 0;font-size:13px;color:#333">2. Click the <strong>Reset Password</strong> link in that email</p>' +
+      '<p style="margin:4px 0 0;font-size:13px;color:#333">3. You will be taken to the NLH Platform to set your new password</p>' +
+    '</div>' +
+    '<p>If you did not request this reset, please ignore this email. Your password will remain unchanged.</p>',
+    'This is an automated email from NLH Platform. Do not reply.'
+  );
+  sendBrevoEmail(email, '', 'Password Reset — NLH Platform', resetEmailHtml);
+
+  showToast('Password reset link sent to ' + email + '. Check your inbox!');
 }
+
 
 async function doLogin(){
   var email = document.getElementById('login-email').value.trim();
