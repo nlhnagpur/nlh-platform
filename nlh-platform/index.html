@@ -623,6 +623,31 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
   </div>
 </div>
 
+<!-- ═══ RESET PASSWORD SCREEN ═══ -->
+<div id="reset-screen" style="display:none;min-height:100vh;background:linear-gradient(135deg,#F0EEE9 0%,#E8E6F8 100%);font-family:var(--font);align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:36px;width:400px;max-width:92vw;box-shadow:0 12px 40px rgba(83,74,183,.12);border:1px solid var(--border)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="width:56px;height:56px;border-radius:14px;background:#534AB7;margin:0 auto 12px;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:26px">&#128272;</span>
+      </div>
+      <div style="font-size:20px;font-weight:600;color:var(--text)">Set new password</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:6px">Enter your new password below</div>
+    </div>
+    <div class="fr"><label>New password</label>
+      <input type="password" id="reset-pass1" placeholder="Minimum 6 characters" style="font-size:14px">
+    </div>
+    <div class="fr"><label>Confirm password</label>
+      <input type="password" id="reset-pass2" placeholder="Re-enter password" style="font-size:14px" onkeydown="if(event.key==='Enter') doResetPassword()">
+    </div>
+    <div id="reset-err" style="display:none;background:var(--red-bg);border:1px solid rgba(163,45,45,.2);color:var(--red);border-radius:var(--r2);padding:9px 12px;font-size:12px;margin-top:10px"></div>
+    <div id="reset-ok" style="display:none;background:#DCFCE7;border:1px solid rgba(22,163,74,.2);color:#15803D;border-radius:var(--r2);padding:9px 12px;font-size:12px;margin-top:10px"></div>
+    <button class="btn-login" onclick="doResetPassword()" style="width:100%;margin-top:14px;padding:11px">Update password</button>
+    <div style="text-align:center;margin-top:14px">
+      <a href="#" onclick="goToLogin();document.getElementById('reset-screen').style.display='none';return false;" style="font-size:12px;color:#534AB7;text-decoration:none;font-family:var(--font)">Back to login</a>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ ONBOARDING SCREEN ═══ -->
 <div id="onboarding-screen" style="display:none;min-height:100vh;background:var(--bg);font-family:var(--font)">
   <!-- Header -->
@@ -1501,6 +1526,54 @@ var franchiseeCache = [];
 // ════════════════════════════════════════════════════════════════
 // FORGOT PASSWORD FLOW (uses Supabase built-in)
 // ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+// PASSWORD RESET — detect token in URL and show reset form
+// ════════════════════════════════════════════════════════════════
+function showResetScreen(){
+  document.getElementById('landing-screen').classList.remove('show');
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.remove('show');
+  var ob = document.getElementById('onboarding-screen'); if(ob) ob.style.display = 'none';
+  var rs = document.getElementById('reset-screen');
+  rs.style.display = 'flex';
+}
+
+async function doResetPassword(){
+  var p1 = document.getElementById('reset-pass1').value;
+  var p2 = document.getElementById('reset-pass2').value;
+  var errEl = document.getElementById('reset-err');
+  var okEl = document.getElementById('reset-ok');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+
+  if(!p1 || p1.length < 6){
+    errEl.textContent = 'Password must be at least 6 characters.';
+    errEl.style.display = 'block'; return;
+  }
+  if(p1 !== p2){
+    errEl.textContent = 'Passwords do not match.';
+    errEl.style.display = 'block'; return;
+  }
+
+  var { error } = await sb.auth.updateUser({ password: p1 });
+  if(error){
+    errEl.textContent = 'Error: ' + error.message;
+    errEl.style.display = 'block';
+  } else {
+    okEl.textContent = 'Password updated successfully! Redirecting to login...';
+    okEl.style.display = 'block';
+    document.getElementById('reset-pass1').value = '';
+    document.getElementById('reset-pass2').value = '';
+    // Sign out and redirect to login after 2 seconds
+    setTimeout(async function(){
+      await sb.auth.signOut();
+      goToLogin();
+      document.getElementById('reset-screen').style.display = 'none';
+      showToast('Password updated. Please log in with your new password.');
+    }, 2000);
+  }
+}
+
 function showForgotPassword(){
   var email = document.getElementById('login-email').value.trim();
   if(!email){
@@ -4349,6 +4422,24 @@ window.addEventListener('load', async function(){
       console.log('EmailJS initialized');
     }
     
+    // Check for password reset token in URL
+    var hash = window.location.hash;
+    if(hash && (hash.includes('type=recovery') || hash.includes('access_token'))){
+      // Supabase recovery flow — exchange the token
+      var params = new URLSearchParams(hash.substring(1));
+      var accessToken = params.get('access_token');
+      var refreshToken = params.get('refresh_token');
+      var type = params.get('type');
+      if(type === 'recovery' && accessToken){
+        // Set the session from the recovery token
+        await sb.auth.setSession({ access_token: accessToken, refresh_token: refreshToken || '' });
+        // Clear the hash from URL
+        history.replaceState(null, '', '/login');
+        showResetScreen();
+        return;
+      }
+    }
+
     // Check for existing session
     var { data: { session } } = await sb.auth.getSession();
     if(session && session.user){
