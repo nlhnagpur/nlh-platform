@@ -3064,27 +3064,93 @@ async function onTierChange(){
 }
 
 async function loadCourseCheckboxes(containerId, filterGroups){
-  var { data: courses } = await sb.from('courses').select('id,group_name,name,billing_type').eq('is_active',true).order('sort_order');
+  // Load courses AND their SKU levels
+  var { data: skus } = await sb.from('skus')
+    .select('id, level_name, course_id, courses(group_name, name)')
+    .eq('is_active', true).order('sort_order');
   var container = document.getElementById(containerId);
-  if(!container || !courses) return;
+  if(!container || !skus) return;
+
+  // Group SKUs by course group_name
   var groups = {};
-  courses.forEach(function(c){
-    if(!groups[c.group_name]) groups[c.group_name] = c.id;
+  skus.forEach(function(s){
+    var gn = s.courses.group_name;
+    if(!groups[gn]) groups[gn] = [];
+    groups[gn].push({ id: s.id, level: s.level_name });
   });
-  // Apply filter if provided
+
   var keys = Object.keys(groups);
   if(filterGroups && filterGroups.length){
     keys = keys.filter(function(g){ return filterGroups.indexOf(g) >= 0; });
   }
   if(!keys.length){
-    container.innerHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;font-family:var(--mono);text-align:center;padding:8px">No registered courses available — please ask admin to register courses first.</div>';
+    container.innerHTML = '<div style="grid-column:1/-1;color:var(--text3);font-size:11px;font-family:var(--mono);text-align:center;padding:8px">No courses available.</div>';
     return;
   }
+
   container.innerHTML = keys.map(function(g){
-    return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:var(--r3);background:#fff;border:1px solid var(--border)">' +
-      '<input type="checkbox" value="'+groups[g]+'" data-group="'+esc(g)+'" style="cursor:pointer"> '+esc(g)+'</label>';
+    var levels = groups[g];
+    var hasMultipleLevels = levels.length > 1;
+    // Course checkbox + level dropdown
+    var levelSelect = '';
+    if(hasMultipleLevels){
+      levelSelect = '<select data-coursegroup="'+esc(g)+'" class="course-level-sel" style="font-size:10px;padding:2px 4px;border-radius:4px;border:1px solid var(--border2);margin-top:3px;width:100%;font-family:var(--font);display:none">' +
+        levels.map(function(l){ return '<option value="'+l.id+'">'+esc(l.level)+'</option>'; }).join('') +
+        '</select>';
+    } else {
+      levelSelect = '<input type="hidden" data-coursegroup="'+esc(g)+'" class="course-level-sel" value="'+levels[0].id+'">';
+    }
+
+    return '<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;cursor:pointer;padding:6px 8px;border-radius:var(--r3);background:#fff;border:1px solid var(--border);transition:all .12s">' +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+        '<input type="checkbox" value="'+levels[0].id+'" data-group="'+esc(g)+'" style="cursor:pointer" onchange="toggleLevelSelect(this)"> ' +
+        '<span style="font-weight:500">'+esc(g)+'</span>' +
+        (hasMultipleLevels ? '<span style="font-size:9px;color:var(--text3);font-family:var(--mono)">'+levels.length+' levels</span>' : '') +
+      '</div>' +
+      levelSelect +
+      '</label>';
   }).join('');
 }
+
+function toggleLevelSelect(cb){
+  var label = cb.closest('label');
+  var sel = label.querySelector('.course-level-sel');
+  if(sel && sel.tagName === 'SELECT'){
+    sel.style.display = cb.checked ? 'block' : 'none';
+    if(cb.checked){
+      // Highlight the card
+      label.style.borderColor = '#534AB7';
+      label.style.background = '#F5F3FF';
+    } else {
+      label.style.borderColor = 'var(--border)';
+      label.style.background = '#fff';
+    }
+  } else if(sel){
+    if(cb.checked){
+      label.style.borderColor = '#534AB7';
+      label.style.background = '#F5F3FF';
+    } else {
+      label.style.borderColor = 'var(--border)';
+      label.style.background = '#fff';
+    }
+  }
+}
+
+function getSelectedCourseLevels(containerId){
+  // Returns [{sku_id, group_name}] for all checked courses with their selected level
+  var container = document.getElementById(containerId);
+  if(!container) return [];
+  var results = [];
+  container.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb){
+    var label = cb.closest('label');
+    var sel = label.querySelector('.course-level-sel');
+    var skuId = sel ? (sel.tagName === 'SELECT' ? sel.value : sel.value) : cb.value;
+    results.push({ sku_id: skuId, group: cb.dataset.group });
+  });
+  return results;
+}
+
+
 function closeFrModal(){ document.getElementById('fr-modal').classList.remove('show'); }
 
 // ════════════════════════════════════════════════════════════════
@@ -3262,12 +3328,10 @@ async function saveStudent(){
   if(!name||!parent||!phone){ showToast('Please fill name, parent name and phone','warn'); return; }
   if(channel==='franchise' && !centreId){ showToast('Please select the enrolling centre','warn'); return; }
 
-  // Get selected courses
-  var selectedCourses = [];
-  document.querySelectorAll('#s-courses-list input[type=checkbox]:checked').forEach(function(cb){
-    selectedCourses.push(cb.dataset.group);
-  });
-  if(!selectedCourses.length){ showToast('Please select at least one course','warn'); return; }
+  // Get selected courses with levels
+  var selectedLevels = getSelectedCourseLevels('s-courses-list');
+  var selectedCourses = selectedLevels.map(function(x){ return x.group; });
+  if(!selectedLevels.length){ showToast('Please select at least one course','warn'); return; }
 
   var { data: stData, error } = await sb.from('students').insert({
     full_name: name,
@@ -3283,18 +3347,14 @@ async function saveStudent(){
   }).select().single();
   if(error){ showToast('Error: '+error.message,'err'); return; }
 
-  // Create enrollment records for each selected course
-  for(var i=0; i<selectedCourses.length; i++){
-    var { data: sku } = await sb.from('skus')
-      .select('id').eq('level_name', selectedCourses[i]).limit(1).single().catch(function(){ return {data:null}; });
-    if(sku){
-      await sb.from('enrollments').insert({
-        student_id: stData.id,
-        sku_id: sku.id,
-        franchisee_id: centreId||null,
-        status: 'active'
-      });
-    }
+  // Create enrollment records for each selected course level
+  for(var i=0; i<selectedLevels.length; i++){
+    await sb.from('enrollments').insert({
+      student_id: stData.id,
+      sku_id: selectedLevels[i].sku_id,
+      franchisee_id: centreId||null,
+      status: 'active'
+    });
   }
 
   // Create login
@@ -3824,11 +3884,9 @@ async function submitOBStudent(){
     errEl.style.display = 'block'; return;
   }
 
-  var selectedCourses = [];
-  document.querySelectorAll('#obs-courses-list input[type=checkbox]:checked').forEach(function(cb){
-    selectedCourses.push(cb.dataset.group);
-  });
-  if(!selectedCourses.length){
+  var selectedLevels = getSelectedCourseLevels('obs-courses-list');
+  var selectedCourses = selectedLevels.map(function(x){ return x.group; });
+  if(!selectedLevels.length){
     errEl.textContent = 'Please select at least one course';
     errEl.style.display = 'block'; return;
   }
@@ -3841,16 +3899,12 @@ async function submitOBStudent(){
   }).select().single();
   if(error){ errEl.textContent = 'Error: '+error.message; errEl.style.display = 'block'; return; }
 
-  // Create enrollment records
-  for(var i=0; i<selectedCourses.length; i++){
-    var { data: sku } = await sb.from('skus').select('id')
-      .eq('level_name', selectedCourses[i]).limit(1).maybeSingle();
-    if(sku){
-      await sb.from('enrollments').insert({
-        student_id: stData.id, sku_id: sku.id,
-        franchisee_id: centreId||null, status: 'active'
-      });
-    }
+  // Create enrollment records for selected levels
+  for(var i=0; i<selectedLevels.length; i++){
+    await sb.from('enrollments').insert({
+      student_id: stData.id, sku_id: selectedLevels[i].sku_id,
+      franchisee_id: centreId||null, status: 'active'
+    });
   }
 
   // Link user to student
