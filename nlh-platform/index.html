@@ -775,6 +775,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
           <div style="color:var(--text3);font-size:11px">Loading...</div>
         </div>
       </div>
+      <div class="g2" style="margin-top:10px">
+        <div class="fr"><label>Fee paid (&#8377;)</label><input type="number" id="obs-fee" placeholder="Amount paid" min="0"></div>
+        <div class="fr"><label>Payment mode</label>
+          <select id="obs-paymode">
+            <option value="">Select mode</option>
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="neft">NEFT / IMPS</option>
+            <option value="cheque">Cheque</option>
+            <option value="razorpay">Razorpay</option>
+          </select>
+        </div>
+      </div>
       <div id="ob-st-err" style="display:none;background:var(--red-bg);border:1px solid rgba(163,45,45,.2);color:var(--red);border-radius:var(--r2);padding:9px 12px;font-size:12px;margin-top:12px"></div>
       <div style="display:flex;justify-content:flex-end;margin-top:18px">
         <button class="btn-green" onclick="submitOBStudent()" style="padding:10px 28px;font-size:13px">Complete enrollment</button>
@@ -980,7 +993,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
           <table class="tbl">
             <thead><tr>
               <th>Name</th><th>Parent</th><th>Phone</th>
-              <th>City</th><th>Channel</th><th>Added</th>
+              <th>City</th><th>Courses</th><th>Fee paid</th><th>Channel</th><th>Added</th>
             </tr></thead>
             <tbody id="st-tbody"><tr><td colspan="6" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
           </table>
@@ -1421,6 +1434,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
       <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;font-family:var(--mono)">Courses enrolling for *</div>
       <div id="s-courses-list" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-height:160px;overflow-y:auto;background:var(--bg3);border-radius:var(--r2);padding:10px;border:1px solid var(--border)">
         <div style="color:var(--text3);font-size:11px">Loading courses...</div>
+      </div>
+    </div>
+    <div class="g2" style="margin-top:10px">
+      <div class="fr"><label>Fee paid (&#8377;)</label><input type="number" id="s-fee" placeholder="Amount paid" min="0"></div>
+      <div class="fr"><label>Payment mode</label>
+        <select id="s-paymode">
+          <option value="">Select mode</option>
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="neft">NEFT / IMPS</option>
+          <option value="cheque">Cheque</option>
+          <option value="razorpay">Razorpay</option>
+        </select>
       </div>
     </div>
 
@@ -2935,26 +2961,56 @@ async function savePrices(){
 // ================================================================
 var studentsCache = [];
 async function loadStudents(){
-  var { data } = await sb.from('students').select('*').order('created_at',{ascending:false});
+  var query = sb.from('students')
+    .select('*, enrollments(sku_id, status, fee_paid, skus(level_name, courses(group_name)))')
+    .order('created_at', {ascending:false});
+  // Non-admin: filter by franchisee
+  if(!isAdminRole(currentRole) && currentFranchiseeId){
+    query = query.eq('franchisee_id', currentFranchiseeId);
+  }
+  var { data } = await query;
+  // Summarize courses and fee for each student
+  (data||[]).forEach(function(s){
+    var courses = [];
+    var totalFee = 0;
+    (s.enrollments||[]).forEach(function(e){
+      if(e.skus && e.skus.courses){
+        var cn = e.skus.courses.group_name;
+        if(courses.indexOf(cn) < 0) courses.push(cn);
+      }
+      totalFee += (e.fee_paid||0);
+    });
+    s._courses = courses;
+    s._totalFee = totalFee;
+  });
   studentsCache = data || [];
   renderStudents();
 }
 
+
 function renderStudents(){
   var q = (document.getElementById('st-search').value||'').toLowerCase();
   var rows = q ? studentsCache.filter(function(s){
-    return (s.full_name+' '+(s.parent_name||'')).toLowerCase().includes(q);
+    return (s.full_name+' '+(s.parent_name||'')+' '+(s._courses||[]).join(' ')).toLowerCase().includes(q);
   }) : studentsCache;
   var tbody = document.getElementById('st-tbody');
-  if(!rows.length){ tbody.innerHTML='<tr><td colspan="6" class="empty">No students yet</td></tr>'; return; }
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">No students yet</td></tr>'; return; }
   tbody.innerHTML = rows.map(function(s){
     var ch = {franchise:'Franchisee centre', own_centre:'NLH own centre', international:'International Zoom'};
+    var courseList = (s._courses||[]).length ?
+      s._courses.map(function(cn){ return '<span style="display:inline-block;background:#EDE9FE;color:#534AB7;font-size:10px;padding:2px 6px;border-radius:8px;margin:1px">'+esc(cn)+'</span>'; }).join(' ') :
+      '<span style="color:var(--text3);font-size:11px">—</span>';
+    var feeDisplay = s._totalFee > 0 ?
+      '<span style="font-family:var(--mono);font-weight:500;color:var(--green)">₹'+fmtAmt(s._totalFee)+'</span>' :
+      '<span style="color:var(--text3);font-size:11px">—</span>';
     return '<tr style="cursor:pointer" data-stid="'+s.id+'" title="Click to view/edit">' +
       '<td><strong>'+esc(s.full_name)+'</strong></td>' +
       '<td>'+esc(s.parent_name||'-')+'</td>' +
       '<td class="mono">'+esc(s.phone||'-')+'</td>' +
       '<td>'+esc(s.city||'-')+'</td>' +
-      '<td><span class="badge br">'+esc(ch[s.channel]||s.channel)+'</span></td>' +
+      '<td style="max-width:200px">'+courseList+'</td>' +
+      '<td>'+feeDisplay+'</td>' +
+      '<td><span class="badge br" style="font-size:10px">'+esc(ch[s.channel]||s.channel)+'</span></td>' +
       '<td class="muted">'+fmtDate(s.created_at)+'</td>' +
       '</tr>';
   }).join('');
@@ -3355,13 +3411,18 @@ async function saveStudent(){
   }).select().single();
   if(error){ showToast('Error: '+error.message,'err'); return; }
 
-  // Create enrollment records for each selected course level
+  // Create enrollment records with fee
+  var stuFee = parseInt(document.getElementById('s-fee').value)||0;
+  var stuPayMode = document.getElementById('s-paymode') ? document.getElementById('s-paymode').value : '';
+  var feePerCourse = selectedLevels.length ? Math.round(stuFee / selectedLevels.length) : 0;
   for(var i=0; i<selectedLevels.length; i++){
     await sb.from('enrollments').insert({
       student_id: stData.id,
       sku_id: selectedLevels[i].sku_id,
       franchisee_id: centreId||null,
-      status: 'active'
+      status: 'active',
+      fee_paid: i===0 ? stuFee : 0,
+      payment_mode: stuPayMode||null
     });
   }
 
@@ -3918,11 +3979,15 @@ async function submitOBStudent(){
   }).select().single();
   if(error){ errEl.textContent = 'Error: '+error.message; errEl.style.display = 'block'; return; }
 
-  // Create enrollment records for selected levels
+  // Create enrollment records with fee
+  var obFee = parseInt(document.getElementById('obs-fee').value)||0;
+  var obPayMode = document.getElementById('obs-paymode') ? document.getElementById('obs-paymode').value : '';
   for(var i=0; i<selectedLevels.length; i++){
     await sb.from('enrollments').insert({
       student_id: stData.id, sku_id: selectedLevels[i].sku_id,
-      franchisee_id: centreId||null, status: 'active'
+      franchisee_id: centreId||null, status: 'active',
+      fee_paid: i===0 ? obFee : 0,
+      payment_mode: obPayMode||null
     });
   }
 
