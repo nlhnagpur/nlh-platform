@@ -517,10 +517,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
         <p style="margin-top: 10px;">9, Anjuman Shopping Complex,<br>Residency Road, Sadar, Nagpur - 440 001</p>
       </div>
       <div>
-        <h4>Contact</h4>
-        <a href="tel:9373111311">📞 9373111311</a>
-        <a href="mailto:dhiral@nlhnagpur.info">✉️ dhiral@nlhnagpur.info</a>
-        <a href="https://www.nlhnagpur.info" target="_blank">🌐 www.nlhnagpur.info</a>
+        <h4>Contact &amp; Support</h4>
+        <a href="tel:9373111311">Dhiral Panchmatia: 9373111311</a>
+        <a href="tel:9028006800">Rasesh Panchmatia: 9028006800</a>
+        <a href="tel:8669021866">Shivank Panchmatia: 8669021866</a>
+        <a href="mailto:admin@nlhnagpur.info">admin@nlhnagpur.info</a>
+        <a href="https://www.nlhnagpur.info" target="_blank">www.nlhnagpur.info</a>
       </div>
       <div>
         <h4>Programs</h4>
@@ -560,6 +562,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
     </div>
 
     <button class="btn-login" id="login-btn" onclick="doLogin()">Sign in</button>
+    <div style="text-align:center;margin-top:10px">
+      <a href="#" onclick="showForgotPassword();return false;" style="font-size:12px;color:#534AB7;text-decoration:none;font-family:var(--font)">Forgot password?</a>
+    </div>
     <div class="login-err" id="login-err"></div>
     <div style="background:var(--blue-bg);border:1px solid rgba(26,95,168,.25);border-radius:var(--r2);padding:12px 14px;font-size:12px;color:var(--blue);line-height:1.7;margin-top:10px">
       <strong>First time here?</strong> You need to request access before you can sign in.<br>
@@ -1492,6 +1497,29 @@ var franchiseeCache = [];
 // ================================================================
 // AUTH
 // ================================================================
+
+// ════════════════════════════════════════════════════════════════
+// FORGOT PASSWORD FLOW (uses Supabase built-in)
+// ════════════════════════════════════════════════════════════════
+function showForgotPassword(){
+  var email = document.getElementById('login-email').value.trim();
+  if(!email){
+    email = prompt('Enter your registered email address:');
+    if(!email) return;
+  }
+  if(!email.includes('@')){ showToast('Please enter a valid email','warn'); return; }
+  
+  sb.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://nlh-platform.vercel.app/login'
+  }).then(function(result){
+    if(result.error){
+      showToast('Error: '+result.error.message, 'err');
+    } else {
+      showToast('Password reset link sent to '+email+'. Check your inbox.');
+    }
+  });
+}
+
 async function doLogin(){
   var email = document.getElementById('login-email').value.trim();
   var pass = document.getElementById('login-pass').value;
@@ -1535,6 +1563,144 @@ function showErr(msg){
 }
 
 
+
+// ════════════════════════════════════════════════════════════════
+// BREVO EMAIL ENGINE
+// ════════════════════════════════════════════════════════════════
+var BREVO_KEY = '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';
+
+async function sendBrevoEmail(to, toName, subject, htmlContent){
+  try {
+    var response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': BREVO_KEY,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: 'New Learning Horizons', email: 'admin@nlhnagpur.info' },
+        to: [{ email: to, name: toName || to }],
+        subject: subject,
+        htmlContent: htmlContent
+      })
+    });
+    var data = await response.json();
+    if(response.ok){
+      console.log('Email sent:', data.messageId);
+      return { success: true, id: data.messageId };
+    } else {
+      console.error('Brevo error:', data);
+      return { success: false, error: data.message || 'Send failed' };
+    }
+  } catch(err){
+    console.error('Email error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+function nlhEmailTemplate(title, bodyHtml, footerNote){
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff">' +
+    '<div style="background:#534AB7;padding:20px 24px;text-align:center">' +
+      '<div style="color:#fff;font-size:18px;font-weight:bold">New Learning Horizons</div>' +
+      '<div style="color:#CCC9F8;font-size:11px;margin-top:4px">ISO 9001:2015 Certified · Enriching Children\'s Future</div>' +
+    '</div>' +
+    '<div style="padding:24px;color:#1A1916;font-size:14px;line-height:1.6">' +
+      '<div style="font-size:16px;font-weight:bold;color:#534AB7;margin-bottom:16px">' + title + '</div>' +
+      bodyHtml +
+    '</div>' +
+    '<div style="background:#F0EEE9;padding:16px 24px;font-size:11px;color:#5C5A54;text-align:center">' +
+      (footerNote ? '<div style="margin-bottom:8px">' + footerNote + '</div>' : '') +
+      '<div>New Learning Horizons · 9, Anjuman Shopping Complex, Residency Road, Sadar, Nagpur - 440 001</div>' +
+      '<div style="margin-top:4px">Ph: 9373111311 · admin@nlhnagpur.info · www.nlhnagpur.info</div>' +
+    '</div>' +
+  '</div>';
+}
+
+async function sendOrderConfirmation(order, franchiseeEmail, franchiseeName){
+  var subject = 'Order ' + order.order_ref + ' placed successfully — NLH';
+  var body = '<p>Dear ' + (franchiseeName||'Partner') + ',</p>' +
+    '<p>Your order <strong>' + order.order_ref + '</strong> has been placed successfully and is being processed.</p>' +
+    '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">' +
+      '<tr style="background:#F0EEE9"><td style="padding:8px;font-weight:bold">Order Ref</td><td style="padding:8px">' + order.order_ref + '</td></tr>' +
+      '<tr><td style="padding:8px;font-weight:bold">Status</td><td style="padding:8px">Pending</td></tr>' +
+      '<tr style="background:#F0EEE9"><td style="padding:8px;font-weight:bold">Delivery Address</td><td style="padding:8px">' + (order.deliver_to||'-') + '</td></tr>' +
+    '</table>' +
+    '<p>You will receive an invoice once the order is processed for dispatch.</p>';
+  var html = nlhEmailTemplate('Order Confirmation', body, 'You are receiving this because you placed an order on NLH Platform.');
+  return await sendBrevoEmail(franchiseeEmail, franchiseeName, subject, html);
+}
+
+async function sendInvoiceEmail(order, franchiseeEmail, franchiseeName, amount){
+  var subject = 'Invoice ' + (order.invoice_no||order.order_ref) + ' — NLH';
+  var body = '<p>Dear ' + (franchiseeName||'Partner') + ',</p>' +
+    '<p>Your invoice has been generated for order <strong>' + order.order_ref + '</strong>.</p>' +
+    '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">' +
+      '<tr style="background:#F0EEE9"><td style="padding:8px;font-weight:bold">Invoice No.</td><td style="padding:8px">' + (order.invoice_no||'-') + '</td></tr>' +
+      '<tr><td style="padding:8px;font-weight:bold">Order Ref</td><td style="padding:8px">' + order.order_ref + '</td></tr>' +
+      '<tr style="background:#F0EEE9"><td style="padding:8px;font-weight:bold">Amount</td><td style="padding:8px;font-weight:bold;color:#534AB7">Rs ' + (typeof fmtAmt==="function"?fmtAmt(amount):amount) + '</td></tr>' +
+    '</table>' +
+    '<p style="margin-top:16px"><strong>Payment details:</strong></p>' +
+    '<div style="background:#F0EEE9;padding:12px;border-radius:8px;font-size:13px">' +
+      'Bank: IDFC FIRST Bank, Nagpur - Byramji Town Branch<br>' +
+      'A/c: 10278096847 &nbsp;&nbsp; IFSC: IDFB0042504<br>' +
+      'UPI: newlearninghorizons@idfcbank' +
+    '</div>' +
+    '<p style="margin-top:16px">Please make the payment and submit the transaction reference via the NLH Platform.</p>';
+  var html = nlhEmailTemplate('Invoice Generated', body, 'Please retain this email for your records.');
+  return await sendBrevoEmail(franchiseeEmail, franchiseeName, subject, html);
+}
+
+async function sendPaymentReminder(order, franchiseeEmail, franchiseeName, amount){
+  var subject = 'Payment reminder — ' + (order.invoice_no||order.order_ref) + ' — NLH';
+  var body = '<p>Dear ' + (franchiseeName||'Partner') + ',</p>' +
+    '<p>This is a gentle reminder that payment is pending for invoice <strong>' + (order.invoice_no||order.order_ref) + '</strong>.</p>' +
+    '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">' +
+      '<tr style="background:#FEF3C7"><td style="padding:8px;font-weight:bold">Invoice No.</td><td style="padding:8px">' + (order.invoice_no||'-') + '</td></tr>' +
+      '<tr><td style="padding:8px;font-weight:bold">Amount Due</td><td style="padding:8px;font-weight:bold;color:#8A5200">Rs ' + (typeof fmtAmt==="function"?fmtAmt(amount):amount) + '</td></tr>' +
+    '</table>' +
+    '<p>Please make the payment at your earliest convenience and submit the transaction reference via the NLH Platform.</p>' +
+    '<div style="background:#F0EEE9;padding:12px;border-radius:8px;font-size:13px">' +
+      'Bank: IDFC FIRST Bank, Nagpur - Byramji Town Branch<br>' +
+      'A/c: 10278096847 &nbsp;&nbsp; IFSC: IDFB0042504<br>' +
+      'UPI: newlearninghorizons@idfcbank' +
+    '</div>';
+  var html = nlhEmailTemplate('Payment Reminder', body, 'This is an automated reminder from NLH Platform.');
+  return await sendBrevoEmail(franchiseeEmail, franchiseeName, subject, html);
+}
+
+async function sendPaymentVerified(order, franchiseeEmail, franchiseeName, amount){
+  var subject = 'Payment confirmed — ' + (order.invoice_no||order.order_ref) + ' — NLH';
+  var body = '<p>Dear ' + (franchiseeName||'Partner') + ',</p>' +
+    '<p>Your payment for invoice <strong>' + (order.invoice_no||order.order_ref) + '</strong> has been verified and confirmed. Thank you!</p>' +
+    '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">' +
+      '<tr style="background:#DCFCE7"><td style="padding:8px;font-weight:bold">Invoice No.</td><td style="padding:8px">' + (order.invoice_no||'-') + '</td></tr>' +
+      '<tr><td style="padding:8px;font-weight:bold">Amount Paid</td><td style="padding:8px;font-weight:bold;color:#1D7A4F">Rs ' + (typeof fmtAmt==="function"?fmtAmt(amount):amount) + '</td></tr>' +
+      '<tr style="background:#DCFCE7"><td style="padding:8px;font-weight:bold">Payment Mode</td><td style="padding:8px">' + (order.payment_mode||'-') + '</td></tr>' +
+      '<tr><td style="padding:8px;font-weight:bold">Reference</td><td style="padding:8px">' + (order.payment_ref||'-') + '</td></tr>' +
+    '</table>' +
+    '<p>Order status: <strong style="color:#1D7A4F">CLOSED</strong></p>';
+  var html = nlhEmailTemplate('Payment Confirmed', body, 'Thank you for your partnership with NLH.');
+  return await sendBrevoEmail(franchiseeEmail, franchiseeName, subject, html);
+}
+
+async function sendWelcomeEmail(email, name, role, password){
+  var subject = 'Welcome to NLH Platform — Your login credentials';
+  var roleLabel = {owner:'Owner',super_admin:'Super Admin',admin:'Admin',manager:'Manager',staff:'Staff',smf:'State Master Franchisee',cf:'City Franchisee',uf:'Unit Franchisee',student:'Student'}[role] || role;
+  var body = '<p>Dear ' + (name||'Partner') + ',</p>' +
+    '<p>Welcome to the New Learning Horizons platform! Your account has been created.</p>' +
+    '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">' +
+      '<tr style="background:#DBEAFE"><td style="padding:8px;font-weight:bold">Platform URL</td><td style="padding:8px"><a href="https://nlh-platform.vercel.app/login" style="color:#2563EB">nlh-platform.vercel.app/login</a></td></tr>' +
+      '<tr><td style="padding:8px;font-weight:bold">Email</td><td style="padding:8px">' + email + '</td></tr>' +
+      '<tr style="background:#DBEAFE"><td style="padding:8px;font-weight:bold">Password</td><td style="padding:8px;font-family:monospace;font-weight:bold">' + (password||'NLH@123') + '</td></tr>' +
+      '<tr><td style="padding:8px;font-weight:bold">Role</td><td style="padding:8px">' + roleLabel + '</td></tr>' +
+    '</table>' +
+    '<p>Please log in and complete your profile. We recommend changing your password after first login.</p>';
+  var html = nlhEmailTemplate('Welcome to NLH', body, 'You are receiving this because an account was created for you on NLH Platform.');
+  return await sendBrevoEmail(email, name, subject, html);
+}
+
+
 // ════════════════════════════════════════════════════════════════
 // GLOBAL EVENT DELEGATION — handles all data-* attribute clicks
 // ════════════════════════════════════════════════════════════════
@@ -1563,6 +1729,8 @@ document.addEventListener('click', function(e){
     if(verifyBtn){ verifyPayment(verifyBtn.dataset.verify); return; }
     var dispBtn = e.target.closest('button[data-disp]');
     if(dispBtn){ markDispatched(dispBtn.dataset.disp); return; }
+    var remindBtn = e.target.closest('button[data-remind]');
+    if(remindBtn){ sendReminder(remindBtn.dataset.remind); return; }
     // Approve/Reject access requests
     var aprvBtn = e.target.closest('button[data-aprv]');
     if(aprvBtn){ doApprove(aprvBtn.dataset.aprv); return; }
@@ -2193,6 +2361,21 @@ async function submitPaymentProof(){
   await loadDashboard();
 }
 
+
+async function sendReminder(orderId){
+  var o = ordersCache.find(function(x){return x.id===orderId;});
+  if(!o || !o.placer_id){ showToast('Order or franchisee not found','err'); return; }
+  var { data: fr } = await sb.from('franchisees').select('email,business_name').eq('id',o.placer_id).single();
+  if(!fr || !fr.email){ showToast('No email found for this franchisee','warn'); return; }
+  showToast('Sending reminder to '+fr.email+'...');
+  var result = await sendPaymentReminder(o, fr.email, fr.business_name, o.amount_total||0);
+  if(result.success){
+    showToast('Payment reminder sent to '+fr.email);
+  } else {
+    showToast('Failed: '+result.error, 'err');
+  }
+}
+
 async function verifyPayment(orderId){
   var o = ordersCache.find(function(x){ return x.id===orderId; });
   if(!o) return;
@@ -2205,6 +2388,14 @@ async function verifyPayment(orderId){
   }).eq('id', orderId);
   if(error){ showToast('Error: '+error.message, 'err'); return; }
   showToast('Payment verified. Order closed.');
+  // Send payment confirmation email
+  if(o.placer_id){
+    var { data: frInfo } = await sb.from('franchisees').select('email,business_name').eq('id',o.placer_id).single();
+    if(frInfo && frInfo.email){
+      sendPaymentVerified(o, frInfo.email, frInfo.business_name, o.amount_total||0)
+        .then(function(r){ if(r.success) showToast('Payment confirmation emailed'); });
+    }
+  }
   await loadOrders();
   await loadDashboard();
 }
@@ -2262,6 +2453,7 @@ function getOrderActionButtons(o){
     if(isAdmin || isSupplier){
       // Supplier can also record payment directly (override)
       btns.push('<button class="btn-s btn-sm" data-paid="'+o.id+'">Record payment</button>');
+      btns.push('<button class="btn-s btn-sm" data-remind="'+o.id+'" style="color:#8A5200" title="Send payment reminder email">📧 Remind</button>');
     }
   } else if(!paymentVerified){
     // Payment submitted, awaiting verification
@@ -3684,27 +3876,15 @@ async function rejectRequest(id){
   loadRequests();
 }
 
-async function sendApprovalEmail(name, toEmail, role){
-  var roleLabels = {smf:'State Master Franchisee', cf:'City Franchisee', uf:'Unit Franchisee', student:'Student'};
-  try {
-    if(typeof emailjs === 'undefined'){ return false; }
-    var result = await emailjs.send(
-      'service_trcbbui',
-      'template_vaiyd44',
-      {
-        to_name:   name,
-        to_email:  toEmail,
-        role:      roleLabels[role] || role,
-        login_url: 'https://nlh-platform.vercel.app',
-        password:  'NLH@123'
-      }
-    );
-    return result.status === 200;
-  } catch(err) {
-    console.error('EmailJS error:', err);
-    return false;
+async function sendApprovalEmail(email, name, role, password){
+  var result = await sendWelcomeEmail(email, name, role, password||'NLH@123');
+  if(result.success){
+    showToast('Welcome email sent to '+email);
+  } else {
+    showToast('Email failed: '+result.error, 'warn');
   }
 }
+
 
 function showCredentialsModal(name, email, pass, role, emailSent){
   var roleLabels = {smf:'State Master Franchisee',cf:'City Franchisee',uf:'Unit Franchisee',student:'Student'};
