@@ -1128,8 +1128,16 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
       </select>
     </div>
     <div id="frd-courses-section" style="display:none;margin-top:10px">
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;font-family:var(--mono)">Registered courses</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;font-family:var(--mono)">Registered courses (programs)</div>
       <div id="frd-courses-list" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-height:130px;overflow-y:auto;background:var(--bg3);border-radius:var(--r2);padding:10px;border:1px solid var(--border)"></div>
+    </div>
+    <div id="frd-levels-section" style="display:none;margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:10px;color:var(--purple);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mono);font-weight:600">Enabled kit levels (admin sets which levels UF can order)</div>
+        <button class="btn-s btn-sm" onclick="selectAllLevels()" style="font-size:10px">Select all</button>
+      </div>
+      <div id="frd-levels-list" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;max-height:200px;overflow-y:auto;background:#F5F3FF;border-radius:var(--r2);padding:10px;border:1px solid #C4B5FD"></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px;font-family:var(--mono)">Only checked levels will appear when this UF places a kit order.</div>
     </div>
     <input type="hidden" id="frd-id">
     <div style="background:var(--blue-bg);border:1px solid rgba(26,95,168,.2);color:var(--blue);border-radius:var(--r2);padding:9px 12px;font-size:11px;margin-top:12px" id="frd-orders-summary"></div>
@@ -3387,13 +3395,24 @@ async function loadOrderSkus(tier, registeredCourses){
   var sel = document.getElementById('o-sku-pick');
   if(!sel || !skus) return;
 
-  // Filter by registered courses ONLY when a UF is logged in placing their own order
-  // Admin always sees all SKUs even when ordering on behalf of a UF
+  // Filter SKUs for UF based on admin-enabled levels (registered_skus)
+  // If registered_skus exists, use that (specific levels). Otherwise fall back to registered_courses (groups).
+  // Admin always sees all SKUs.
   var filtered = skus;
-  if(currentRole === 'uf' && tier === 'UF' && registeredCourses && registeredCourses.length){
-    filtered = skus.filter(function(s){
-      return registeredCourses.indexOf(s.courses.group_name) >= 0;
-    });
+  if(currentRole === 'uf' && tier === 'UF'){
+    // Check if there's a registered_skus list (admin-set levels)
+    if(currentFranchiseeId){
+      var { data: myFr } = await sb.from('franchisees').select('registered_skus, registered_courses').eq('id', currentFranchiseeId).single();
+      if(myFr && myFr.registered_skus && myFr.registered_skus.length){
+        // Filter to admin-enabled SKU levels only
+        filtered = skus.filter(function(s){ return myFr.registered_skus.indexOf(s.id) >= 0; });
+      } else if(myFr && myFr.registered_courses && myFr.registered_courses.length){
+        // Fallback: filter by course groups
+        filtered = skus.filter(function(s){ return myFr.registered_courses.indexOf(s.courses.group_name) >= 0; });
+      }
+    } else if(registeredCourses && registeredCourses.length){
+      filtered = skus.filter(function(s){ return registeredCourses.indexOf(s.courses.group_name) >= 0; });
+    }
   }
 
   if(!filtered.length){
@@ -4008,7 +4027,7 @@ async function approveRequest(id, email, name, role){
   }).eq('id', id);
 
   // Send email automatically
-  var emailSent = await sendApprovalEmail(name, email, role);
+  var emailSent = await sendApprovalEmail(email, name, role);
   showCredentialsModal(name, email, tmpPass, role, emailSent);
   loadRequests();
 }
@@ -4024,11 +4043,19 @@ async function rejectRequest(id){
 }
 
 async function sendApprovalEmail(email, name, role, password){
-  var result = await sendWelcomeEmail(email, name, role, password||'NLH@123');
-  if(result.success){
-    showToast('Welcome email sent to '+email);
-  } else {
-    showToast('Email failed: '+result.error, 'warn');
+  try {
+    var result = await sendWelcomeEmail(email, name, role, password||'NLH@123');
+    if(result && result.success){
+      showToast('Welcome email sent to '+email);
+      return true;
+    } else {
+      showToast('Email failed: '+(result?result.error:'unknown'), 'warn');
+      return false;
+    }
+  } catch(err){
+    console.error('Email error:', err);
+    showToast('Email error: '+err.message, 'warn');
+    return false;
   }
 }
 
@@ -4116,6 +4143,35 @@ async function openFranchiseeDetail(id){
     cSection.style.display = 'none';
     document.getElementById('frd-courses-list').innerHTML = '';
   }
+  // Enabled levels section (UF only, admin view)
+  var levelsSection = document.getElementById('frd-levels-section');
+  if(fr.tier === 'UF' && isAdminRole(currentRole)){
+    levelsSection.style.display = 'block';
+    // Load all SKUs for registered courses
+    var regCourses = fr.registered_courses || [];
+    var { data: allSkus } = await sb.from('skus')
+      .select('id, level_name, courses(group_name)')
+      .eq('is_active', true).order('sort_order');
+    var filteredSkus = (allSkus||[]).filter(function(s){
+      return regCourses.indexOf(s.courses.group_name) >= 0;
+    });
+    var enabledSkus = fr.registered_skus || [];
+    var levelsContainer = document.getElementById('frd-levels-list');
+    if(filteredSkus.length){
+      levelsContainer.innerHTML = filteredSkus.map(function(s){
+        var checked = enabledSkus.indexOf(s.id) >= 0 ? ' checked' : '';
+        return '<label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;padding:4px 6px;border-radius:var(--r3);background:#fff;border:1px solid var(--border)">' +
+          '<input type="checkbox" class="frd-level-cb" value="'+s.id+'"'+checked+' style="cursor:pointer;accent-color:#534AB7"> ' +
+          '<span style="font-weight:500">'+esc(s.courses.group_name)+'</span>' +
+          '<span style="color:var(--text3);font-family:var(--mono)">— '+esc(s.level_name)+'</span></label>';
+      }).join('');
+    } else {
+      levelsContainer.innerHTML = '<div style="color:var(--text3);font-size:11px;text-align:center;padding:8px">No courses registered. Add courses above first.</div>';
+    }
+  } else {
+    levelsSection.style.display = 'none';
+  }
+
   // Orders summary
   var { data: ords } = await sb.from('orders').select('status').eq('placer_id',id);
   var os = ords||[];
@@ -4127,12 +4183,22 @@ async function openFranchiseeDetail(id){
   document.getElementById('fr-detail-modal').classList.add('show');
 }
 
+function selectAllLevels(){
+  document.querySelectorAll('.frd-level-cb').forEach(function(cb){ cb.checked = true; });
+}
+
 async function saveFranchiseeDetail(){
   var id = document.getElementById('frd-id').value;
   var courses = [];
   document.querySelectorAll('#frd-courses-list input[type=checkbox]:checked').forEach(function(cb){
     courses.push(cb.dataset.group);
   });
+  // Collect enabled SKU levels
+  var enabledSkuIds = [];
+  document.querySelectorAll('.frd-level-cb:checked').forEach(function(cb){
+    enabledSkuIds.push(cb.value);
+  });
+
   var { error } = await sb.from('franchisees').update({
     owner_name: document.getElementById('frd-owner').value.trim(),
     business_name: document.getElementById('frd-biz').value.trim(),
@@ -4145,7 +4211,8 @@ async function saveFranchiseeDetail(){
     gstin: document.getElementById('frd-gstin').value.trim()||null,
     enrollment_fee: parseInt(document.getElementById('frd-fee').value)||0,
     status: document.getElementById('frd-status').value,
-    registered_courses: courses.length ? courses : null
+    registered_courses: courses.length ? courses : null,
+    registered_skus: enabledSkuIds.length ? enabledSkuIds : null
   }).eq('id',id);
   if(error){ showToast('Error: '+error.message,'err'); return; }
   showToast('Franchisee updated');
