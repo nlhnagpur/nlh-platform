@@ -1141,9 +1141,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
       <div class="fr"><label>State</label><input type="text" id="frd-state"></div>
       <div class="fr"><label>PIN code</label><input type="text" id="frd-pin" maxlength="6"></div>
     </div>
-    <div class="g2">
-      <div class="fr"><label>GSTIN</label><input type="text" id="frd-gstin"></div>
-      <div class="fr"><label>Enrollment fee (&#8377;)</label><input type="number" id="frd-fee"></div>
+    <div style="background:#F5F3FF;border:1px solid #C4B5FD;border-radius:var(--r2);padding:12px;margin-top:4px">
+      <div style="font-size:10px;color:var(--purple);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mono);font-weight:600;margin-bottom:8px">Fee &amp; payment</div>
+      <div class="g3">
+        <div class="fr"><label>Enrollment fee (&#8377;)</label><input type="number" id="frd-fee"></div>
+        <div class="fr"><label>Amount paid (&#8377;)</label><input type="number" id="frd-fee-paid" min="0"></div>
+        <div class="fr"><label>GSTIN</label><input type="text" id="frd-gstin"></div>
+      </div>
     </div>
     <div class="fr"><label>Status</label>
       <select id="frd-status">
@@ -2409,9 +2413,30 @@ async function switchChartPeriod(btn, months){
 
 
 async function loadFranchisees(){
-  var { data: frs } = await sb.from('franchisees')
-    .select('*').order('created_at', {ascending:false});
-  franchiseeCache = frs || [];
+  var { data: allFrs } = await sb.from('franchisees')
+    .select('*').order('tier').order('business_name');
+
+  if(isAdminRole(currentRole)){
+    // Admin sees all franchisees
+    franchiseeCache = allFrs || [];
+  } else if(currentRole === 'smf' && currentFranchiseeId){
+    // SMF sees: CFs whose parent_id = SMF, and UFs whose parent chain goes through this SMF
+    var myId = currentFranchiseeId;
+    var cfs = (allFrs||[]).filter(function(f){ return f.tier==='CF' && f.parent_id===myId; });
+    var cfIds = cfs.map(function(f){ return f.id; });
+    var ufs = (allFrs||[]).filter(function(f){
+      return f.tier==='UF' && (f.parent_id===myId || cfIds.indexOf(f.parent_id)>=0);
+    });
+    franchiseeCache = cfs.concat(ufs);
+  } else if(currentRole === 'cf' && currentFranchiseeId){
+    // CF sees: only UFs whose parent_id = this CF
+    franchiseeCache = (allFrs||[]).filter(function(f){
+      return f.tier==='UF' && f.parent_id===currentFranchiseeId;
+    });
+  } else {
+    // UF sees nothing (or just themselves)
+    franchiseeCache = [];
+  }
   renderFranchisees();
 }
 
@@ -2450,7 +2475,24 @@ async function loadOrders(){
     .select('*, franchisees!orders_placer_id_fkey(business_name, owner_name, city, phone), order_items(ordered_qty, sent_qty, rate)')
     .order('created_at', {ascending:false});
   if(!isAdminRole(currentRole) && currentFranchiseeId){
-    query = query.eq('placer_id', currentFranchiseeId);
+    if(currentRole === 'smf'){
+      // SMF sees own orders + orders from CFs and UFs in their hierarchy
+      var { data: myCFs } = await sb.from('franchisees').select('id').eq('parent_id', currentFranchiseeId);
+      var childIds = [currentFranchiseeId];
+      (myCFs||[]).forEach(function(f){ childIds.push(f.id); });
+      var { data: myUFs } = await sb.from('franchisees').select('id').in('parent_id', childIds);
+      (myUFs||[]).forEach(function(f){ if(childIds.indexOf(f.id)<0) childIds.push(f.id); });
+      query = query.in('placer_id', childIds);
+    } else if(currentRole === 'cf'){
+      // CF sees own orders + UF orders where supplier = this CF
+      var { data: myUFs } = await sb.from('franchisees').select('id').eq('parent_id', currentFranchiseeId);
+      var childIds = [currentFranchiseeId];
+      (myUFs||[]).forEach(function(f){ childIds.push(f.id); });
+      query = query.in('placer_id', childIds);
+    } else {
+      // UF sees only own orders
+      query = query.eq('placer_id', currentFranchiseeId);
+    }
   }
   var { data } = await query;
   // Calculate amount for each order
@@ -3002,9 +3044,30 @@ async function loadStudents(){
   var query = sb.from('students')
     .select('*, enrollments(sku_id, status, fee_paid, skus(level_name, student_fee, courses(group_name)))')
     .order('created_at', {ascending:false});
-  // Non-admin: filter by franchisee
+  // Non-admin: filter by hierarchy
   if(!isAdminRole(currentRole) && currentFranchiseeId){
-    query = query.eq('franchisee_id', currentFranchiseeId);
+    if(currentRole === 'smf'){
+      // SMF: students at own centre + CFs under them + UFs under those CFs
+      var { data: myFrs } = await sb.from('franchisees')
+        .select('id').or('parent_id.eq.'+currentFranchiseeId);
+      var frIds = [currentFranchiseeId];
+      (myFrs||[]).forEach(function(f){ frIds.push(f.id); });
+      // Also get UFs under CFs
+      var { data: myUFs } = await sb.from('franchisees')
+        .select('id').in('parent_id', frIds);
+      (myUFs||[]).forEach(function(f){ if(frIds.indexOf(f.id)<0) frIds.push(f.id); });
+      query = query.in('franchisee_id', frIds);
+    } else if(currentRole === 'cf'){
+      // CF: students at own centre + UFs under them
+      var { data: myUFs } = await sb.from('franchisees')
+        .select('id').eq('parent_id', currentFranchiseeId);
+      var frIds = [currentFranchiseeId];
+      (myUFs||[]).forEach(function(f){ frIds.push(f.id); });
+      query = query.in('franchisee_id', frIds);
+    } else {
+      // UF: only own students
+      query = query.eq('franchisee_id', currentFranchiseeId);
+    }
   }
   var { data } = await query;
   // Summarize courses and fee for each student
@@ -3208,18 +3271,24 @@ function onCourseLevelChange(el){
 }
 
 function calcStudentFee(containerId){
-  // Sum student_fee for all selected course levels
+  // Sum student_fee ONLY for checked courses, using their SELECTED level
   var container = document.getElementById(containerId);
   if(!container) return 0;
   var total = 0;
   container.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb){
     var label = cb.closest('label');
-    var sel = label.querySelector('.course-level-sel');
-    var skuId = sel ? (sel.tagName==='SELECT' ? sel.value : sel.value) : cb.value;
-    // Look up student_fee from the skuFeeMap
-    if(window._skuFeeMap && window._skuFeeMap[skuId]){
-      total += window._skuFeeMap[skuId];
-    }
+    var selects = label.querySelectorAll('.course-level-sel');
+    var skuId = null;
+    selects.forEach(function(sel){
+      if(sel.tagName === 'SELECT'){
+        skuId = sel.value;  // Use the SELECTED level's SKU ID
+      } else if(sel.tagName === 'INPUT'){
+        skuId = sel.value;  // Hidden input for single-level courses
+      }
+    });
+    if(!skuId) skuId = cb.value;
+    var fee = (window._skuFeeMap && window._skuFeeMap[skuId]) ? parseInt(window._skuFeeMap[skuId]) : 0;
+    total += fee;
   });
   return total;
 }
@@ -4348,6 +4417,7 @@ async function openFranchiseeDetail(id){
   document.getElementById('frd-pin').value = fr.pincode||'';
   document.getElementById('frd-gstin').value = fr.gstin||'';
   document.getElementById('frd-fee').value = fr.enrollment_fee||0;
+  document.getElementById('frd-fee-paid').value = fr.fee_paid||0;
   document.getElementById('frd-status').value = fr.status||'active';
   // Show courses for UF
   var cSection = document.getElementById('frd-courses-section');
@@ -4430,6 +4500,7 @@ async function saveFranchiseeDetail(){
     pincode: document.getElementById('frd-pin').value.trim()||null,
     gstin: document.getElementById('frd-gstin').value.trim()||null,
     enrollment_fee: parseInt(document.getElementById('frd-fee').value)||0,
+    fee_paid: parseInt(document.getElementById('frd-fee-paid').value)||0,
     status: document.getElementById('frd-status').value,
     registered_courses: courses.length ? courses : null,
     registered_skus: enabledSkuIds.length ? enabledSkuIds : null
