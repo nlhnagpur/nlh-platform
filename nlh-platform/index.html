@@ -2931,17 +2931,40 @@ async function downloadInvoice(orderId){
 
 
 async function markInvoiced(id){
+  // Guard: prevent duplicate invoice
+  var { data: existing } = await sb.from('orders').select('invoice_no').eq('id', id).single();
+  if(existing && existing.invoice_no){
+    showToast('Invoice already generated: '+existing.invoice_no, 'warn');
+    return;
+  }
+  // Year-scoped sequential number
   var yr = new Date().getFullYear();
-  var { data:last } = await sb.from('orders').select('invoice_no').not('invoice_no','is',null).order('invoice_no',{ascending:false}).limit(1);
+  var { data: maxInv } = await sb.from('orders')
+    .select('invoice_no').not('invoice_no','is',null)
+    .ilike('invoice_no', 'INV-'+yr+'-%')
+    .order('invoice_no',{ascending:false}).limit(1);
   var nextNum = 1;
-  if(last && last.length && last[0].invoice_no) {
-    var parts = last[0].invoice_no.split('-');
+  if(maxInv && maxInv.length && maxInv[0].invoice_no){
+    var parts = maxInv[0].invoice_no.split('-');
     nextNum = (parseInt(parts[parts.length-1])||0) + 1;
   }
-  var invNo = 'INV-'+yr+'-'+String(nextNum).padStart(4,'0');
-  await sb.from('orders').update({status:'invoiced', invoice_no:invNo}).eq('id',id);
-  showToast('Invoice '+invNo+' generated');
-  loadOrders();
+  var inv = 'INV-'+yr+'-'+String(nextNum).padStart(4,'0');
+  // Atomic: only update if invoice_no still null
+  var { error } = await sb.from('orders').update({
+    invoice_no: inv, status: 'invoiced'
+  }).eq('id', id).is('invoice_no', null);
+  if(error){ showToast('Error: '+error.message, 'err'); return; }
+  showToast('Invoice generated: '+inv);
+  // Send invoice email
+  var invOrder = ordersCache.find(function(x){return x.id===id;});
+  if(invOrder && invOrder.placer_id){
+    var { data: frInfo } = await sb.from('franchisees').select('email,business_name').eq('id',invOrder.placer_id).single();
+    if(frInfo && frInfo.email){
+      sendInvoiceEmail({order_ref:invOrder.order_ref, invoice_no:inv}, frInfo.email, frInfo.business_name, invOrder.amount_total||0);
+    }
+  }
+  await loadOrders();
+  await loadDashboard();
 }
 
 async function markClosed(id){
@@ -3070,24 +3093,22 @@ async function loadStudents(){
     }
   }
   var { data } = await query;
-  // Summarize courses and fee for each student
+  // Summarize courses — fee read from student record
   (data||[]).forEach(function(s){
     var courses = [];
-    var totalFee = 0;
-    var totalPaid = 0;
+    var totalStudentFee = 0;
     (s.enrollments||[]).forEach(function(e){
       if(e.skus && e.skus.courses){
         var cn = e.skus.courses.group_name;
         if(courses.indexOf(cn) < 0) courses.push(cn);
       }
-      totalFee += (e.skus ? e.skus.student_fee||0 : 0);
-      totalPaid += (e.fee_paid||0);
+      totalStudentFee += (e.skus ? e.skus.student_fee||0 : 0);
     });
     s._courses = courses;
-    s._totalFee = totalFee;
-    s._totalPaid = totalPaid;
-    s._balance = totalFee - totalPaid;
+    s._totalFee = s.fee_paid || 0;
+    s._totalStudentFee = s.fee_total || totalStudentFee;
   });
+
   studentsCache = data || [];
   renderStudents();
 }
@@ -3633,18 +3654,27 @@ async function saveStudent(){
   }).select().single();
   if(error){ showToast('Error: '+error.message,'err'); return; }
 
-  // Create enrollment records with fee
+  // Save fee at student level (not per-enrollment)
   var stuFee = parseInt(document.getElementById('s-fee').value)||0;
+  var stuFeeTotal = parseInt(document.getElementById('s-fee-total').value)||0;
   var stuPayMode = document.getElementById('s-paymode') ? document.getElementById('s-paymode').value : '';
-  var feePerCourse = selectedLevels.length ? Math.round(stuFee / selectedLevels.length) : 0;
+  var stuPayStatus = document.getElementById('s-paystatus') ? document.getElementById('s-paystatus').value : 'unpaid';
+
+  // Update student record with fee info
+  await sb.from('students').update({
+    fee_total: stuFeeTotal,
+    fee_paid: stuFee,
+    payment_mode: stuPayMode||null,
+    payment_status: stuPayStatus
+  }).eq('id', stData.id);
+
+  // Create enrollment records (no fee duplication)
   for(var i=0; i<selectedLevels.length; i++){
     await sb.from('enrollments').insert({
       student_id: stData.id,
       sku_id: selectedLevels[i].sku_id,
       franchisee_id: centreId||null,
-      status: 'active',
-      fee_paid: i===0 ? stuFee : 0,
-      payment_mode: stuPayMode||null
+      status: 'active'
     });
   }
 
@@ -3879,9 +3909,17 @@ async function saveOrder(){
   if(!orderFrom){ showToast('Please select who to order from','warn'); return; }
   
   var yr = new Date().getFullYear();
-  var { data:last } = await sb.from('orders').select('order_ref').order('created_at',{ascending:false}).limit(1);
+  // Order number: find max numeric suffix for this year (safer than last created)
+  var { data:allRefs } = await sb.from('orders')
+    .select('order_ref')
+    .ilike('order_ref', 'ORD-'+yr+'-%')
+    .order('order_ref',{ascending:false})
+    .limit(1);
   var nextNum = 1;
-  if(last && last.length){ var p=last[0].order_ref.split('-'); nextNum=(parseInt(p[p.length-1])||0)+1; }
+  if(allRefs && allRefs.length && allRefs[0].order_ref){
+    var p = allRefs[0].order_ref.split('-');
+    nextNum = (parseInt(p[p.length-1])||0) + 1;
+  }
   var ref = 'ORD-'+yr+'-'+String(nextNum).padStart(4,'0');
   
   if(!orderCart.length){ showToast('Please add at least one item to the order','warn'); return; }
@@ -4203,15 +4241,24 @@ async function submitOBStudent(){
   }).select().single();
   if(error){ errEl.textContent = 'Error: '+error.message; errEl.style.display = 'block'; return; }
 
-  // Create enrollment records with fee
+  // Save fee at student level
   var obFee = parseInt(document.getElementById('obs-fee').value)||0;
+  var obFeeTotal = parseInt(document.getElementById('obs-fee-total').value)||0;
   var obPayMode = document.getElementById('obs-paymode') ? document.getElementById('obs-paymode').value : '';
+  var obPayStatus = obFee >= obFeeTotal ? 'paid' : (obFee > 0 ? 'part_paid' : 'unpaid');
+
+  await sb.from('students').update({
+    fee_total: obFeeTotal,
+    fee_paid: obFee,
+    payment_mode: obPayMode||null,
+    payment_status: obPayStatus
+  }).eq('id', stData.id);
+
+  // Create enrollment records (clean — no fee duplication)
   for(var i=0; i<selectedLevels.length; i++){
     await sb.from('enrollments').insert({
       student_id: stData.id, sku_id: selectedLevels[i].sku_id,
-      franchisee_id: centreId||null, status: 'active',
-      fee_paid: i===0 ? obFee : 0,
-      payment_mode: obPayMode||null
+      franchisee_id: centreId||null, status: 'active'
     });
   }
 
