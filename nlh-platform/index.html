@@ -1630,7 +1630,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 // ================================================================
 var SUPA_URL = 'https://frnnoxudtlvhyyoqdqzx.supabase.co';
 var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE';
-var sb = null; // initialized on load
+var sb = null;
+// Initialize Supabase immediately (don't wait for load event)
+try {
+  if(typeof supabase !== 'undefined'){
+    sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+  }
+} catch(e){ console.error('Supabase init error:', e); }
 
 // ================================================================
 // STATE
@@ -5058,20 +5064,17 @@ async function goToLogin(){
 
 window.addEventListener('load', async function(){
   try {
-    // Initialize Supabase client
-    if(typeof supabase === 'undefined'){
-      console.error('Supabase CDN failed to load');
-      document.getElementById('login-err').textContent = 'Platform loading failed. Please refresh the page.';
-      document.getElementById('login-err').style.display = 'block';
-      return;
+    // Ensure Supabase is ready (initialized above at parse time)
+    if(!sb){
+      if(typeof supabase !== 'undefined'){
+        sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+      } else {
+        document.getElementById('login-err').textContent = 'Platform loading failed. Please refresh the page.';
+        document.getElementById('login-err').style.display = 'block';
+        return;
+      }
     }
-    sb = supabase.createClient(SUPA_URL, SUPA_KEY);
-    console.log('Supabase initialized');
-    // Init EmailJS
-    if(typeof emailjs !== 'undefined'){
-      emailjs.init('wzhs8NWYw5NU9tqLO');
-      console.log('EmailJS initialized');
-    }
+    console.log('Platform ready');
     
     // Listen for Supabase auth state changes (detects password recovery)
     var _recoveryDetected = false;
