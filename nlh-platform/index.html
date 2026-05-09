@@ -1952,6 +1952,8 @@ document.addEventListener('click', function(e){
     if(dispBtn){ markDispatched(dispBtn.dataset.disp); return; }
     var remindBtn = e.target.closest('button[data-remind]');
     if(remindBtn){ sendReminder(remindBtn.dataset.remind); return; }
+    var reopenBtn = e.target.closest('button[data-reopen]');
+    if(reopenBtn){ reopenOrder(reopenBtn.dataset.reopen); return; }
     // Approve/Reject access requests
     var aprvBtn = e.target.closest('button[data-aprv]');
     if(aprvBtn){ doApprove(aprvBtn.dataset.aprv); return; }
@@ -2700,6 +2702,9 @@ function getOrderActionButtons(o){
   }
 
   if(o.status === 'closed'){
+    if(isAdmin){
+      btns.push('<button class="btn-s btn-sm" data-reopen="'+o.id+'" style="color:#8A5200" title="Reopen order and adjust payment">Reopen</button>');
+    }
     btns.push(editBtn);
     btns.push(pdfBtn);
     return btns.join('');
@@ -4965,11 +4970,13 @@ async function saveInvoiceEdit(andDownload){
     deliver_to: addr,
     notes: notes||null
   };
-  if(pmode && pref){
+  // Save payment mode and ref as info only — does NOT close the order
+  // Order closure happens only via "Record payment" or "Verify payment" buttons
+  if(pmode && pmode !== 'not_paid'){
     updateData.payment_mode = pmode;
+  }
+  if(pref){
     updateData.payment_ref = pref;
-    updateData.status = 'closed';
-    updateData.paid_at = new Date().toISOString();
   }
   var { error } = await sb.from('orders').update(updateData).eq('id',id);
   if(error){ showToast('Error updating order: '+error.message,'err'); return; }
@@ -5023,6 +5030,20 @@ function fmtDate(d){
   if(!d) return '-';
   return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 }
+async function reopenOrder(orderId){
+  if(!confirm('Reopen this order? This will set status back to Invoiced so you can adjust payment.')) return;
+  var { error } = await sb.from('orders').update({
+    status: 'invoiced',
+    amount_paid: 0,
+    payment_verified_at: null,
+    paid_at: null
+  }).eq('id', orderId);
+  if(error){ showToast('Error: '+error.message, 'err'); return; }
+  showToast('Order reopened. Use Record payment to set correct payment.');
+  await loadOrders();
+  await loadDashboard();
+}
+
 function orderPaymentBadge(o){
   var total = o.amount_total || 0;
   var paid = o.amount_paid || 0;
