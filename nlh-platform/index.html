@@ -1218,6 +1218,56 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
   </div>
 </div>
 
+<!-- RECORD PAYMENT MODAL (Admin/Supplier records payment received) -->
+<div class="modal-bg" id="record-pay-modal">
+  <div class="modal" style="width:560px;max-width:96vw">
+    <div class="modal-title">Record payment received</div>
+    <div class="modal-sub" id="rec-pay-sub">Record payment details for this invoice</div>
+
+    <div style="background:#F5F3FF;border:1px solid #C4B5FD;border-radius:8px;padding:14px;margin-bottom:14px">
+      <div class="g2" style="margin-bottom:8px">
+        <div><span style="font-size:10px;color:var(--text3);text-transform:uppercase;font-family:var(--mono)">Invoice</span><div style="font-weight:600;font-family:var(--mono)" id="rec-inv-no">-</div></div>
+        <div style="text-align:right"><span style="font-size:10px;color:var(--text3);text-transform:uppercase;font-family:var(--mono)">Order total</span><div style="font-weight:700;color:var(--purple);font-size:18px;font-family:var(--mono)" id="rec-total">-</div></div>
+      </div>
+    </div>
+
+    <div class="g2">
+      <div class="fr"><label>Amount received (&#8377;) *</label><input type="number" id="rec-amount" placeholder="Enter amount" min="0" oninput="updateRecPayStatus()"></div>
+      <div class="fr"><label>Payment status</label>
+        <select id="rec-paystatus">
+          <option value="paid">Fully paid</option>
+          <option value="part_paid">Part payment</option>
+          <option value="unpaid">Mark as unpaid</option>
+        </select>
+      </div>
+    </div>
+    <div class="g2">
+      <div class="fr"><label>Payment mode *</label>
+        <select id="rec-mode">
+          <option value="">Select mode</option>
+          <option value="upi">UPI</option>
+          <option value="neft">NEFT / IMPS</option>
+          <option value="cash">Cash</option>
+          <option value="cheque">Cheque</option>
+          <option value="razorpay">Razorpay</option>
+        </select>
+      </div>
+      <div class="fr"><label>Transaction ref / UTR</label><input type="text" id="rec-ref" placeholder="Reference number"></div>
+    </div>
+    <div class="g2">
+      <div class="fr"><label>Payment date</label><input type="date" id="rec-date"></div>
+      <div class="fr"><label>Balance remaining (&#8377;)</label><input type="number" id="rec-balance" readonly style="background:var(--bg3);font-weight:600;color:#A32D2D;font-family:var(--mono)"></div>
+    </div>
+    <div class="fr"><label>Notes</label><input type="text" id="rec-notes" placeholder="Any notes about this payment"></div>
+    <input type="hidden" id="rec-order-id">
+    <input type="hidden" id="rec-order-total">
+    <div class="modal-actions">
+      <button class="btn-s" onclick="document.getElementById('record-pay-modal').classList.remove('show')">Cancel</button>
+      <button class="btn-green" onclick="saveRecordPayment()">Save payment record</button>
+    </div>
+  </div>
+</div>
+
 <!-- PAYMENT SUBMISSION MODAL -->
 <div class="modal-bg" id="pay-submit-modal">
   <div class="modal" style="width:520px;max-width:96vw">
@@ -2967,11 +3017,115 @@ async function markInvoiced(id){
   await loadDashboard();
 }
 
-async function markClosed(id){
-  await sb.from('orders').update({status:'closed', paid_at: new Date().toISOString()}).eq('id',id);
-  showToast('Sale closed. Payment recorded.');
-  loadOrders();
+async // ════════════════════════════════════════════════════════════════
+// RECORD PAYMENT (Admin/Supplier records payment from franchisee)
+// ════════════════════════════════════════════════════════════════
+function openRecordPayment(orderId){
+  var o = ordersCache.find(function(x){ return x.id===orderId; });
+  if(!o) return;
+  document.getElementById('rec-order-id').value = orderId;
+  document.getElementById('rec-inv-no').textContent = o.invoice_no || o.order_ref;
+  var total = o.amount_total || 0;
+  document.getElementById('rec-total').textContent = '\u20B9' + (typeof fmtAmt==='function' ? fmtAmt(total) : total);
+  document.getElementById('rec-order-total').value = total;
+  document.getElementById('rec-amount').value = total;
+  document.getElementById('rec-balance').value = 0;
+  document.getElementById('rec-paystatus').value = 'paid';
+  document.getElementById('rec-mode').value = o.payment_mode || '';
+  document.getElementById('rec-ref').value = o.payment_ref || '';
+  document.getElementById('rec-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('rec-notes').value = '';
+  document.getElementById('rec-pay-sub').textContent = 'Record payment for ' + (o.invoice_no || o.order_ref) + ' from ' + (o.franchisees ? o.franchisees.business_name : 'franchisee');
+  document.getElementById('record-pay-modal').classList.add('show');
 }
+
+function updateRecPayStatus(){
+  var total = parseInt(document.getElementById('rec-order-total').value) || 0;
+  var amount = parseInt(document.getElementById('rec-amount').value) || 0;
+  var balance = total - amount;
+  document.getElementById('rec-balance').value = balance > 0 ? balance : 0;
+  var balEl = document.getElementById('rec-balance');
+  balEl.style.color = balance > 0 ? '#A32D2D' : '#1D7A4F';
+  // Auto-set status
+  var statusEl = document.getElementById('rec-paystatus');
+  if(amount <= 0) statusEl.value = 'unpaid';
+  else if(amount >= total) statusEl.value = 'paid';
+  else statusEl.value = 'part_paid';
+}
+
+async function saveRecordPayment(){
+  var orderId = document.getElementById('rec-order-id').value;
+  var amount = parseInt(document.getElementById('rec-amount').value) || 0;
+  var total = parseInt(document.getElementById('rec-order-total').value) || 0;
+  var mode = document.getElementById('rec-mode').value;
+  var ref = document.getElementById('rec-ref').value.trim();
+  var date = document.getElementById('rec-date').value;
+  var notes = document.getElementById('rec-notes').value.trim();
+  var payStatus = document.getElementById('rec-paystatus').value;
+
+  if(payStatus !== 'unpaid' && !mode){
+    showToast('Please select payment mode', 'warn'); return;
+  }
+
+  var update = {};
+  if(payStatus === 'paid'){
+    // Full payment — close the order
+    update = {
+      status: 'closed',
+      payment_mode: mode,
+      payment_ref: ref || null,
+      paid_at: date ? new Date(date+'T12:00:00').toISOString() : new Date().toISOString(),
+      payment_verified_at: new Date().toISOString()
+    };
+  } else if(payStatus === 'part_paid'){
+    // Part payment — stay invoiced, record what was received
+    update = {
+      payment_mode: mode,
+      payment_ref: ref ? (ref + ' (Part: \u20B9'+amount+')') : 'Part payment: \u20B9'+amount,
+      paid_at: date ? new Date(date+'T12:00:00').toISOString() : new Date().toISOString(),
+      payment_submitted_at: new Date().toISOString()
+    };
+    // Status stays invoiced — not closed until fully paid
+  } else {
+    // Mark unpaid — revert to invoiced, clear payment fields
+    update = {
+      payment_mode: null,
+      payment_ref: null,
+      paid_at: null,
+      payment_submitted_at: null,
+      payment_verified_at: null,
+      status: 'invoiced'
+    };
+  }
+
+  if(notes) update.notes = notes;
+
+  var { error } = await sb.from('orders').update(update).eq('id', orderId);
+  if(error){
+    showToast('Error: ' + error.message, 'err'); return;
+  }
+
+  var statusMsg = payStatus === 'paid' ? 'Fully paid. Order closed.' :
+    payStatus === 'part_paid' ? 'Part payment of \u20B9'+amount+' recorded. Balance: \u20B9'+(total-amount) :
+    'Marked as unpaid.';
+  showToast(statusMsg);
+  document.getElementById('record-pay-modal').classList.remove('show');
+
+  // Send email on full payment
+  if(payStatus === 'paid'){
+    var o = ordersCache.find(function(x){return x.id===orderId;});
+    if(o && o.placer_id){
+      var { data: frInfo } = await sb.from('franchisees').select('email,business_name').eq('id',o.placer_id).single();
+      if(frInfo && frInfo.email){
+        sendPaymentVerified(o, frInfo.email, frInfo.business_name, total);
+      }
+    }
+  }
+
+  await loadOrders();
+  await loadDashboard();
+}
+
 
 // ================================================================
 // KIT PRICES
@@ -3555,10 +3709,19 @@ async function saveFranchisee(){
     role: roleMap[tier]||'uf', franchisee_id: frData.id
   }, {onConflict:'email'});
 
+  // Create auth account without losing admin session
+  var { data: adminSession } = await sb.auth.getSession();
   var { error: authErr } = await sb.auth.signUp({
     email: loginEmail, password: loginPass,
     options: { data: { role: roleMap[tier]||'uf', franchisee_id: frData.id } }
   });
+  // Restore admin session (signUp switches the active session)
+  if(adminSession && adminSession.session){
+    await sb.auth.setSession({
+      access_token: adminSession.session.access_token,
+      refresh_token: adminSession.session.refresh_token
+    });
+  }
 
   var msg = tier+' enrolled: '+owner;
   if(tier==='UF') msg += ' | Courses: '+selectedCourses.join(', ');
@@ -3683,7 +3846,11 @@ async function saveStudent(){
     await sb.from('users').upsert({
       email: loginEmail, full_name: name, role: 'student', student_id: stData.id
     }, {onConflict:'email'});
+    var { data: admSess } = await sb.auth.getSession();
     await sb.auth.signUp({ email: loginEmail, password: loginPass });
+    if(admSess && admSess.session){
+      await sb.auth.setSession({ access_token: admSess.session.access_token, refresh_token: admSess.session.refresh_token });
+    }
     showToast('Student enrolled in '+selectedCourses.length+' course(s). Login: '+loginEmail);
   } else {
     showToast('Student enrolled in '+selectedCourses.length+' course(s)');
@@ -4341,11 +4508,16 @@ function doReject(idx){
 async function approveRequest(id, email, name, role){
   var tmpPass = 'NLH@123';
 
+  var { data: admSess } = await sb.auth.getSession();
   var authResult = await sb.auth.signUp({
     email: email,
     password: tmpPass,
     options: { data: { role: role } }
   });
+  // Restore admin session
+  if(admSess && admSess.session){
+    await sb.auth.setSession({ access_token: admSess.session.access_token, refresh_token: admSess.session.refresh_token });
+  }
   if(authResult.error && authResult.error.message !== 'User already registered'){
     showToast('Auth error: '+authResult.error.message,'err'); return;
   }
@@ -4877,7 +5049,7 @@ function goToLanding(){
   history.replaceState(null,'','/');
 }
 
-function goToLogin(){
+async function goToLogin(){
   document.getElementById('landing-screen').classList.remove('show');
   document.getElementById('login-screen').style.display = 'flex';
   var app = document.getElementById('app'); if(app) app.classList.remove('show');
