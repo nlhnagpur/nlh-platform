@@ -794,8 +794,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
               <option value="neft">NEFT / IMPS</option>
               <option value="cheque">Cheque</option>
               <option value="razorpay">Razorpay</option>
-              <option value="part_payment">Part Payment</option>
-              <option value="balance">Balance (unpaid)</option>
+              
+              
             </select>
           </div>
         </div>
@@ -948,7 +948,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
           <table class="tbl">
             <thead><tr>
               <th>Order ref</th><th>Placed by</th><th>Tier</th>
-              <th>Deliver to</th><th>Status</th><th>Invoice</th><th style="text-align:right">Amount</th><th>Placed</th><th></th>
+              <th>Deliver to</th><th>Status</th><th>Invoice</th><th style="text-align:right">Amount</th><th style="text-align:right">Paid</th><th>Payment</th><th>Placed</th><th></th>
             </tr></thead>
             <tbody id="orders-tbody"><tr><td colspan="8" class="loading"><span class="spinner"></span>Loading...</td></tr></tbody>
           </table>
@@ -1532,8 +1532,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
             <option value="neft">NEFT / IMPS</option>
             <option value="cheque">Cheque</option>
             <option value="razorpay">Razorpay</option>
-            <option value="part_payment">Part Payment</option>
-            <option value="balance">Balance (unpaid)</option>
           </select>
         </div>
       </div>
@@ -2558,6 +2556,8 @@ async function loadOrders(){
       return s + q * (it.rate||0);
     }, 0);
     o.amount_total = subtotal + (o.courier_charges||0);
+    o.amount_paid = o.amount_paid || 0;
+    o.amount_balance = o.amount_total - o.amount_paid;
   });
   ordersCache = data || [];
   var pending = ordersCache.filter(function(o){return o.status==='pending';}).length;
@@ -2607,9 +2607,12 @@ async function submitPaymentProof(){
   if(!ref){ showToast('Transaction reference is required','warn'); return; }
 
   // Status stays 'invoiced' — only payment_verified_at moves it to closed
+  var o = ordersCache.find(function(x){ return x.id===id; });
+  var orderTotal = o ? (o.amount_total||0) : 0;
   var update = {
     payment_mode: mode,
     payment_ref: ref,
+    amount_paid: orderTotal,
     paid_at: date ? new Date(date+'T12:00:00').toISOString() : new Date().toISOString(),
     payment_submitted_at: new Date().toISOString(),
     payment_verified_at: null
@@ -2751,7 +2754,7 @@ function renderOrders(){
     ordersCache.filter(function(o){ return o.status===orderFilter; });
   var tbody = document.getElementById('orders-tbody');
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">No orders</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">No orders</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(function(o){
@@ -2763,6 +2766,8 @@ function renderOrders(){
       '<td>'+orderStatusLabel(o)+'</td>' +
       '<td class="mono">'+(o.invoice_no||'<span style="color:var(--text3)">Pending</span>')+'</td>' +
       '<td style="text-align:right;font-family:var(--mono);font-weight:500">'+(o.amount_total ? '\u20B9'+fmtAmt(o.amount_total) : '<span style="color:var(--text3)">-</span>')+'</td>' +
+      '<td style="text-align:right;font-family:var(--mono);font-size:12px">'+(o.amount_paid > 0 ? '\u20B9'+fmtAmt(o.amount_paid) : '<span style="color:var(--text3)">-</span>')+'</td>' +
+      '<td>'+orderPaymentBadge(o)+'</td>' +
       '<td class="muted">'+fmtDate(o.created_at)+'</td>' +
       '<td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">' +
         getOrderActionButtons(o) +
@@ -3034,9 +3039,10 @@ function openRecordPayment(orderId){
   var total = o.amount_total || 0;
   document.getElementById('rec-total').textContent = '\u20B9' + (typeof fmtAmt==='function' ? fmtAmt(total) : total);
   document.getElementById('rec-order-total').value = total;
-  document.getElementById('rec-amount').value = total;
-  document.getElementById('rec-balance').value = 0;
-  document.getElementById('rec-paystatus').value = 'paid';
+  var prevPaid = o.amount_paid || 0;
+  document.getElementById('rec-amount').value = prevPaid > 0 ? prevPaid : total;
+  document.getElementById('rec-balance').value = prevPaid > 0 ? (total - prevPaid) : 0;
+  document.getElementById('rec-paystatus').value = prevPaid >= total ? 'paid' : (prevPaid > 0 ? 'part_paid' : 'paid');
   document.getElementById('rec-mode').value = o.payment_mode || '';
   document.getElementById('rec-ref').value = o.payment_ref || '';
   document.getElementById('rec-date').value = new Date().toISOString().split('T')[0];
@@ -3078,23 +3084,25 @@ async function saveRecordPayment(){
     // Full payment — close the order
     update = {
       status: 'closed',
+      amount_paid: total,
       payment_mode: mode,
       payment_ref: ref || null,
       paid_at: date ? new Date(date+'T12:00:00').toISOString() : new Date().toISOString(),
       payment_verified_at: new Date().toISOString()
     };
   } else if(payStatus === 'part_paid'){
-    // Part payment — stay invoiced, record what was received
+    // Part payment — record amount, stay invoiced until fully paid
     update = {
+      amount_paid: amount,
       payment_mode: mode,
-      payment_ref: ref ? (ref + ' (Part: \u20B9'+amount+')') : 'Part payment: \u20B9'+amount,
+      payment_ref: ref || null,
       paid_at: date ? new Date(date+'T12:00:00').toISOString() : new Date().toISOString(),
       payment_submitted_at: new Date().toISOString()
     };
-    // Status stays invoiced — not closed until fully paid
   } else {
-    // Mark unpaid — revert to invoiced, clear payment fields
+    // Mark unpaid — revert to invoiced, clear all payment fields
     update = {
+      amount_paid: 0,
       payment_mode: null,
       payment_ref: null,
       paid_at: null,
@@ -5015,6 +5023,17 @@ function fmtDate(d){
   if(!d) return '-';
   return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 }
+function orderPaymentBadge(o){
+  var total = o.amount_total || 0;
+  var paid = o.amount_paid || 0;
+  var bal = total - paid;
+  if(total <= 0) return '<span style="color:var(--text3);font-size:11px">-</span>';
+  if(o.status === 'closed' || bal <= 0) return '<span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:10px;background:#DCFCE7;color:#15803D">Paid</span>';
+  if(paid > 0) return '<span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:10px;background:#FEF3C7;color:#854D0E">Part \u20B9'+fmtAmt(bal)+' due</span>';
+  if(o.status === 'pending') return '<span style="color:var(--text3);font-size:11px">-</span>';
+  return '<span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:10px;background:#FEE2E2;color:#A32D2D">\u20B9'+fmtAmt(total)+' due</span>';
+}
+
 function orderStatusLabel(o){
   var s = o.status;
   if(s === 'closed') return '<span class="badge ba">Closed</span>';
