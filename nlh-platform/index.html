@@ -1374,17 +1374,33 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
           <div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);margin-bottom:6px"><span style="color:var(--text3)">GST (not applicable)</span><span style="color:var(--text3);font-family:var(--mono)">Nil</span></div>
           <div style="background:var(--purple);border-radius:var(--r2);padding:8px 12px;display:flex;justify-content:space-between;align-items:center"><span style="color:#fff;font-size:12px;font-weight:500">Total</span><span style="color:#fff;font-family:var(--mono);font-weight:600;font-size:14px" id="inv-grandtotal">&#8377;0</span></div>
         </div>
-        <div class="fr"><label>Payment mode</label>
-          <select id="inv-pmode">
-            <option value="">Not paid yet</option>
-            <option value="upi">UPI</option>
-            <option value="neft">NEFT / IMPS</option>
-            <option value="cash">Cash</option>
-            <option value="cheque">Cheque</option>
-            <option value="razorpay">Razorpay</option>
-          </select>
+        <div style="background:#F5F3FF;border:1px solid #C4B5FD;border-radius:8px;padding:12px;margin-top:8px">
+          <div style="font-size:10px;color:var(--purple);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mono);font-weight:600;margin-bottom:8px">Payment received</div>
+          <div class="g3">
+            <div class="fr"><label>Amount received (&#8377;)</label><input type="number" id="inv-amt-received" placeholder="0" min="0" oninput="updateInvPayBalance()"></div>
+            <div class="fr"><label>Balance (&#8377;)</label><input type="number" id="inv-balance" readonly style="background:#fff;font-weight:600;color:#A32D2D;font-family:var(--mono)"></div>
+            <div class="fr"><label>Payment status</label>
+              <select id="inv-paystatus">
+                <option value="unpaid">Unpaid</option>
+                <option value="part_paid">Part payment</option>
+                <option value="paid">Fully paid</option>
+              </select>
+            </div>
+          </div>
+          <div class="g2">
+            <div class="fr"><label>Payment mode</label>
+              <select id="inv-pmode">
+                <option value="">Select mode</option>
+                <option value="upi">UPI</option>
+                <option value="neft">NEFT / IMPS</option>
+                <option value="cash">Cash</option>
+                <option value="cheque">Cheque</option>
+                <option value="razorpay">Razorpay</option>
+              </select>
+            </div>
+            <div class="fr"><label>Payment reference / UTR</label><input type="text" id="inv-pref" placeholder="Transaction ID"></div>
+          </div>
         </div>
-        <div class="fr"><label>Payment reference / UTR</label><input type="text" id="inv-pref" placeholder="Transaction ID"></div>
       </div>
     </div>
 
@@ -4954,6 +4970,28 @@ function invAddItem(){
   renderInvItems();
 }
 
+function updateInvPayBalance(){
+  var total = invCalcTotal();
+  var received = parseInt(document.getElementById('inv-amt-received').value)||0;
+  var balance = total - received;
+  document.getElementById('inv-balance').value = balance > 0 ? balance : 0;
+  document.getElementById('inv-balance').style.color = balance > 0 ? '#A32D2D' : '#1D7A4F';
+  var statusEl = document.getElementById('inv-paystatus');
+  if(received <= 0) statusEl.value = 'unpaid';
+  else if(received >= total) statusEl.value = 'paid';
+  else statusEl.value = 'part_paid';
+}
+
+function invCalcTotal(){
+  var subtotal = 0;
+  invItems.forEach(function(it){
+    var q = it.sent_qty > 0 ? it.sent_qty : it.ordered_qty;
+    subtotal += q * (it.rate||0);
+  });
+  var courier = parseInt(document.getElementById('inv-courier').value)||0;
+  return subtotal + courier;
+}
+
 async function saveInvoiceEdit(andDownload){
   var id = document.getElementById('inv-order-id').value;
   var courier = parseInt(document.getElementById('inv-courier').value)||0;
@@ -4970,13 +5008,28 @@ async function saveInvoiceEdit(andDownload){
     deliver_to: addr,
     notes: notes||null
   };
-  // Save payment mode and ref as info only — does NOT close the order
-  // Order closure happens only via "Record payment" or "Verify payment" buttons
-  if(pmode && pmode !== 'not_paid'){
-    updateData.payment_mode = pmode;
-  }
-  if(pref){
-    updateData.payment_ref = pref;
+  // Save payment details including amount received
+  var invAmtReceived = parseInt(document.getElementById('inv-amt-received').value)||0;
+  var invPayStatus = document.getElementById('inv-paystatus').value;
+  
+  updateData.amount_paid = invAmtReceived;
+  if(pmode) updateData.payment_mode = pmode;
+  if(pref) updateData.payment_ref = pref;
+
+  if(invPayStatus === 'paid' && invAmtReceived > 0){
+    updateData.status = 'closed';
+    updateData.paid_at = new Date().toISOString();
+    updateData.payment_verified_at = new Date().toISOString();
+  } else if(invPayStatus === 'part_paid'){
+    updateData.paid_at = new Date().toISOString();
+    updateData.payment_submitted_at = new Date().toISOString();
+  } else if(invPayStatus === 'unpaid'){
+    updateData.amount_paid = 0;
+    updateData.payment_mode = null;
+    updateData.payment_ref = null;
+    updateData.paid_at = null;
+    updateData.payment_submitted_at = null;
+    updateData.payment_verified_at = null;
   }
   var { error } = await sb.from('orders').update(updateData).eq('id',id);
   if(error){ showToast('Error updating order: '+error.message,'err'); return; }
