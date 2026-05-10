@@ -1957,7 +1957,7 @@ document.addEventListener('click', function(e){
     var invBtn = e.target.closest('button[data-inv]');
     if(invBtn){ markInvoiced(invBtn.dataset.inv); return; }
     var paidBtn = e.target.closest('button[data-paid]');
-    if(paidBtn){ markClosed(paidBtn.dataset.paid); return; }
+    if(paidBtn){ openRecordPayment(paidBtn.dataset.paid); return; }
     var editBtn = e.target.closest('button[data-edit]');
     if(editBtn){ openInvoiceEdit(editBtn.dataset.edit); return; }
     var paySubBtn = e.target.closest('button[data-paysub]');
