@@ -3484,24 +3484,26 @@ function onCourseLevelChange(el){
 }
 
 function calcStudentFee(containerId){
-  // Sum student_fee ONLY for checked courses, using their SELECTED level
+  // Read fee directly from each selected option's data-fee attribute
   var container = document.getElementById(containerId);
   if(!container) return 0;
   var total = 0;
   container.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb){
     var label = cb.closest('label');
-    var selects = label.querySelectorAll('.course-level-sel');
-    var skuId = null;
-    selects.forEach(function(sel){
-      if(sel.tagName === 'SELECT'){
-        skuId = sel.value;  // Use the SELECTED level's SKU ID
-      } else if(sel.tagName === 'INPUT'){
-        skuId = sel.value;  // Hidden input for single-level courses
+    var sel = label.querySelector('select.course-level-sel');
+    if(sel){
+      // Multi-level course: read fee from selected option
+      var opt = sel.options[sel.selectedIndex];
+      var fee = parseInt(opt.getAttribute('data-fee'))||0;
+      total += fee;
+    } else {
+      // Single-level course: read fee from hidden input
+      var hidden = label.querySelector('input.course-level-sel');
+      if(hidden){
+        var fee = parseInt(hidden.getAttribute('data-fee'))||0;
+        total += fee;
       }
-    });
-    if(!skuId) skuId = cb.value;
-    var fee = (window._skuFeeMap && window._skuFeeMap[skuId]) ? parseInt(window._skuFeeMap[skuId]) : 0;
-    total += fee;
+    }
   });
   return total;
 }
