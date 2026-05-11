@@ -3471,13 +3471,16 @@ function updateFrBalance(){
 }
 
 function onCourseLevelChange(el){
-  // Find which container this belongs to and update the right fee field
-  var cont = el.closest('#s-courses-list');
-  if(cont){ recalcStudentFee('s-courses-list','s-fee-total'); return; }
-  cont = el.closest('#obs-courses-list');
-  if(cont){ recalcStudentFee('obs-courses-list','obs-fee-total'); return; }
-  cont = el.closest('#frd-courses-list');
-  if(cont) return; // franchisee courses don't need fee calc
+  // Walk up the DOM to find the courses container
+  var node = el.parentElement;
+  while(node && !node.id) node = node.parentElement;
+  if(!node) return;
+  var cid = node.id;
+  if(cid === 's-courses-list'){
+    recalcStudentFee('s-courses-list','s-fee-total');
+  } else if(cid === 'obs-courses-list'){
+    recalcStudentFee('obs-courses-list','obs-fee-total');
+  }
 }
 
 function calcStudentFee(containerId){
@@ -3565,7 +3568,7 @@ async function loadCourseCheckboxes(containerId, filterGroups){
     // Course checkbox + level dropdown
     var levelSelect = '';
     if(hasMultipleLevels){
-      levelSelect = '<select data-coursegroup="'+esc(g)+'" class="course-level-sel" onchange="onCourseLevelChange(this)" style="font-size:10px;padding:2px 4px;border-radius:4px;border:1px solid var(--border2);margin-top:3px;width:100%;font-family:var(--font);display:none" onchange="updateCourseFeeTotal(this)">' +
+      levelSelect = '<select data-coursegroup="'+esc(g)+'" class="course-level-sel" onclick="event.stopPropagation()" onchange="onCourseLevelChange(this)" style="font-size:10px;padding:2px 4px;border-radius:4px;border:1px solid var(--border2);margin-top:3px;width:100%;font-family:var(--font);display:none" onchange="updateCourseFeeTotal(this)">' +
         levels.map(function(l){ return '<option value="'+l.id+'" data-fee="'+l.fee+'">'+esc(l.level)+' (\u20B9'+l.fee+')</option>'; }).join('') +
         '</select>';
     } else {
