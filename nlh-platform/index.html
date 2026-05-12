@@ -1986,26 +1986,51 @@ async function initApp(user){
   currentUser = user;
   
   try {
-    // Look up role from users table
-    var { data, error } = await sb.from('users').select('*').eq('email', user.email).single();
+    // Look up role from users table (case-insensitive)
+    var { data, error } = await sb.from('users').select('*').ilike('email', user.email).single();
     console.log('User lookup:', data, error);
     
     if(data){
-      currentRole = data.role || 'admin';
+      currentRole = data.role || 'uf';
       currentFranchiseeId = data.franchisee_id;
+
+      // Auto-link franchisee_id if missing
+      if(!currentFranchiseeId && ['smf','cf','uf'].indexOf(currentRole) >= 0){
+        var { data: fr } = await sb.from('franchisees').select('id').ilike('email', user.email).single();
+        if(fr){
+          currentFranchiseeId = fr.id;
+          await sb.from('users').update({ franchisee_id: fr.id }).ilike('email', user.email);
+          console.log('Auto-linked franchisee_id:', fr.id);
+        }
+      }
     } else {
-      // Not in users table yet - default to staff
-      currentRole = 'staff';
-      // Auto-insert into users table
-      await sb.from('users').upsert({
-        email: user.email,
-        full_name: user.email.split('@')[0],
-        role: 'staff'
-      }, { onConflict: 'email' });
+      // Not in users table — check if they have a franchisee record
+      var { data: frMatch } = await sb.from('franchisees').select('id, tier').ilike('email', user.email).single();
+      if(frMatch){
+        // Found a franchisee — create user entry with correct role
+        var tierRole = {SMF:'smf', CF:'cf', UF:'uf'}[frMatch.tier] || 'uf';
+        currentRole = tierRole;
+        currentFranchiseeId = frMatch.id;
+        await sb.from('users').upsert({
+          email: user.email,
+          full_name: user.user_metadata ? user.user_metadata.full_name || user.email.split('@')[0] : user.email.split('@')[0],
+          role: tierRole,
+          franchisee_id: frMatch.id
+        }, { onConflict: 'email' });
+        console.log('Auto-created user from franchisee:', tierRole);
+      } else {
+        // No franchisee record either — check access_requests for approved role
+        currentRole = 'student';
+        await sb.from('users').upsert({
+          email: user.email,
+          full_name: user.user_metadata ? user.user_metadata.full_name || user.email.split('@')[0] : user.email.split('@')[0],
+          role: 'student'
+        }, { onConflict: 'email' });
+      }
     }
   } catch(err) {
     console.error('User lookup error:', err);
-    currentRole = 'staff';
+    currentRole = 'student';
   }
 
   // Show app - hide landing + login, show app
