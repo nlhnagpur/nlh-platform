@@ -3399,19 +3399,51 @@ function renderCourses(){
     return !q || (s.courses.group_name+' '+s.level_name).toLowerCase().includes(q);
   });
   var tbody = document.getElementById('courses-tbody');
-  if(!data.length){ tbody.innerHTML='<tr><td colspan="9" class="empty">No courses found</td></tr>'; return; }
+  var r = currentRole;
+  var admin = isAdminRole(r);
+
+  // Visibility rules:
+  // Admin: all columns
+  // SMF: own rate + student fee (no CF/UF rates)
+  // CF: own rate + student fee (no SMF/UF rates)
+  // UF: own rate + student fee (no CF/SMF rates)
+  // Student: student fee only (no kit rates)
+  var showUF  = admin;
+  var showCF  = admin;
+  var showSMF = admin;
+  var showShare = admin;
+  var showMyRate = !admin && r !== 'student';
+  var showStudentFee = true;
+
+  // Build header
+  var hdrRow = '<th>Group</th><th>Level</th><th>Age</th><th>Type</th>';
+  if(showMyRate) hdrRow += '<th style="text-align:right">My kit rate</th>';
+  if(showUF) hdrRow += '<th style="text-align:right">UF rate</th>';
+  if(showCF) hdrRow += '<th style="text-align:right">CF rate</th>';
+  if(showSMF) hdrRow += '<th style="text-align:right">SMF rate</th>';
+  if(showStudentFee) hdrRow += '<th style="text-align:right">Student fee</th>';
+  if(showShare) hdrRow += '<th style="text-align:right">UF share</th>';
+  document.querySelector('#pg-courses thead tr').innerHTML = hdrRow;
+
+  var colCount = 4 + (showMyRate?1:0) + (showUF?1:0) + (showCF?1:0) + (showSMF?1:0) + (showStudentFee?1:0) + (showShare?1:0);
+
+  if(!data.length){ tbody.innerHTML='<tr><td colspan="'+colCount+'" class="empty">No courses found</td></tr>'; return; }
+
   tbody.innerHTML = data.map(function(s){
-    return '<tr>' +
+    var myRate = r==='smf' ? s.smf_rate : r==='cf' ? s.cf_rate : s.uf_rate;
+    var row = '<tr>' +
       '<td style="font-weight:500;color:var(--purple)">'+esc(s.courses.group_name)+'</td>' +
       '<td>'+esc(s.level_name)+'</td>' +
       '<td class="muted">'+(s.courses.age_min||'-')+'\u2013'+(s.courses.age_max||'-')+'</td>' +
-      '<td><span style="font-size:10px;padding:2px 7px;border-radius:20px;font-family:var(--mono);background:'+(s.courses.billing_type==='monthly'?'var(--green-bg)':'var(--blue-bg)')+';color:'+(s.courses.billing_type==='monthly'?'var(--green)':'var(--blue)')+'">'+esc(s.courses.billing_type)+'</span></td>' +
-      '<td style="text-align:right" class="mono col-uf-rate">\u20B9'+(isAdmin ? s.uf_rate : myRate)+'</td>' +
-      '<td style="text-align:right" class="mono">&#8377;'+s.cf_rate+'</td>' +
-      '<td style="text-align:right" class="mono">&#8377;'+s.smf_rate+'</td>' +
-      '<td style="text-align:right;color:var(--blue);font-weight:500" class="mono">&#8377;'+s.student_fee+'</td>' +
-      '<td style="text-align:right;color:var(--green);font-weight:600;display:'+(isAdmin?'':'none')+'" class="mono">&#8377;'+s.uf_share+'</td>' +
-      '</tr>';
+      '<td><span style="font-size:10px;padding:2px 7px;border-radius:20px;font-family:var(--mono);background:'+(s.courses.billing_type==='monthly'?'var(--green-bg)':'var(--blue-bg)')+';color:'+(s.courses.billing_type==='monthly'?'var(--green)':'var(--blue)')+'">'+esc(s.courses.billing_type)+'</span></td>';
+    if(showMyRate) row += '<td style="text-align:right;font-weight:600" class="mono">\u20B9'+myRate+'</td>';
+    if(showUF) row += '<td style="text-align:right" class="mono">\u20B9'+s.uf_rate+'</td>';
+    if(showCF) row += '<td style="text-align:right" class="mono">\u20B9'+s.cf_rate+'</td>';
+    if(showSMF) row += '<td style="text-align:right" class="mono">\u20B9'+s.smf_rate+'</td>';
+    if(showStudentFee) row += '<td style="text-align:right;color:var(--blue);font-weight:500" class="mono">\u20B9'+s.student_fee+'</td>';
+    if(showShare) row += '<td style="text-align:right;color:var(--green);font-weight:600" class="mono">\u20B9'+s.uf_share+'</td>';
+    row += '</tr>';
+    return row;
   }).join('');
 }
 
