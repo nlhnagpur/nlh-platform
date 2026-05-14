@@ -89,7 +89,7 @@ export default function DashboardPage({ onNavigate }) {
       sb.from('franchisees').select('tier'),
       sb.from('students').select('id', { count: 'exact', head: true }),
       sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      sb.from('orders').select('id, status, placer_id, courier_charges, created_at, franchisees(business_name)'),
+      sb.from('orders').select('id, status, placer_id, grand_total, amount_paid, courier_charges, created_at, franchisees(business_name)'),
     ])
 
     setFranchiseeCount(fr.count || 0)
@@ -105,24 +105,12 @@ export default function DashboardPage({ onNavigate }) {
 
     const allOrders = orAll.data || []
 
-    // outstanding: sum courier_charges + order_items rates for invoiced orders
-    const invoicedIds = allOrders
+    // outstanding: sum of (grand_total - amount_paid) for invoiced/payment_submitted orders
+    const totalOutstanding = allOrders
       .filter(function(o) { return o.status === 'invoiced' || o.status === 'payment_submitted' })
-      .map(function(o) { return o.id })
-
-    let totalOutstanding = allOrders
-      .filter(function(o) { return invoicedIds.includes(o.id) })
-      .reduce(function(sum, o) { return sum + (o.courier_charges || 0) }, 0)
-
-    if (invoicedIds.length > 0) {
-      const { data: items } = await sb
-        .from('order_items')
-        .select('ordered_qty, rate')
-        .in('order_id', invoicedIds)
-      if (items) {
-        items.forEach(function(it) { totalOutstanding += (it.ordered_qty || 0) * (it.rate || 0) })
-      }
-    }
+      .reduce(function(sum, o) {
+        return sum + Math.max(0, (o.grand_total || 0) - (o.amount_paid || 0))
+      }, 0)
     setOutstanding(totalOutstanding)
 
     // recent orders (last 10)
@@ -151,7 +139,7 @@ export default function DashboardPage({ onNavigate }) {
     if (!currentFranchiseeId) return
     const { data: ownOrds } = await sb
       .from('orders')
-      .select('id, status, courier_charges, created_at')
+      .select('id, status, grand_total, amount_paid, courier_charges, created_at')
       .eq('placer_id', currentFranchiseeId)
 
     const orders = ownOrds || []
@@ -163,21 +151,11 @@ export default function DashboardPage({ onNavigate }) {
     const pending = orders.filter(function(o) { return o.status === 'pending' }).length
     setOwnPending(pending)
 
-    const invoicedOrds = orders.filter(function(o) {
-      return o.status === 'invoiced' || o.status === 'payment_submitted'
-    })
-    let outstanding = invoicedOrds.reduce(function(s, o) { return s + (o.courier_charges || 0) }, 0)
-
-    const invoicedIds = invoicedOrds.map(function(o) { return o.id })
-    if (invoicedIds.length > 0) {
-      const { data: items } = await sb
-        .from('order_items')
-        .select('ordered_qty, rate')
-        .in('order_id', invoicedIds)
-      if (items) {
-        items.forEach(function(it) { outstanding += (it.ordered_qty || 0) * (it.rate || 0) })
-      }
-    }
+    const outstanding = orders
+      .filter(function(o) { return o.status === 'invoiced' || o.status === 'payment_submitted' })
+      .reduce(function(sum, o) {
+        return sum + Math.max(0, (o.grand_total || 0) - (o.amount_paid || 0))
+      }, 0)
     setOwnOutstanding(outstanding)
     buildChartData(orders)
   }

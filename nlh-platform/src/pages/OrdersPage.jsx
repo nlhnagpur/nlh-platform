@@ -347,8 +347,10 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
   const [franchisees, setFranchisees] = useState([])
-  const [skus, setSkus] = useState([])
+  const [allSkus, setAllSkus] = useState([])       // full list (admin)
+  const [visibleSkus, setVisibleSkus] = useState([]) // filtered by registration
   const [placerId, setPlacerId] = useState(isAdmin ? '' : currentFranchiseeId)
+  const [placerTier, setPlacerTier] = useState('')  // UF / CF / SMF
   const [deliverTo, setDeliverTo] = useState('')
   const [lines, setLines] = useState([{ sku_id: '', qty: 1 }])
   const [loading, setLoading] = useState(true)
@@ -356,12 +358,33 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
 
   useEffect(function () {
     async function loadData() {
-      const [fRes, sRes] = await Promise.all([
-        sb.from('franchisees').select('id, business_name, tier').order('business_name'),
-        sb.from('skus').select('id, level_name, uf_rate').order('sort_order'),
-      ])
-      setFranchisees(fRes.data || [])
-      setSkus(sRes.data || [])
+      if (isAdmin) {
+        const [fRes, sRes] = await Promise.all([
+          sb.from('franchisees').select('id, business_name, tier, registered_courses').order('business_name'),
+          sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate, course_id').order('sort_order'),
+        ])
+        setFranchisees(fRes.data || [])
+        setAllSkus(sRes.data || [])
+        setVisibleSkus(sRes.data || []) // admin sees all
+      } else {
+        // Non-admin: fetch own franchisee record + filtered SKUs
+        const [frRes, sRes] = await Promise.all([
+          sb.from('franchisees').select('id, tier, registered_courses').eq('id', currentFranchiseeId).single(),
+          sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate, course_id').order('sort_order'),
+        ])
+        const allS = sRes.data || []
+        setAllSkus(allS)
+        if (frRes.data) {
+          setPlacerTier(frRes.data.tier || 'UF')
+          const regCourses = frRes.data.registered_courses || []
+          // UF can only order for their registered courses; SMF/CF see all
+          if (frRes.data.tier === 'UF' && regCourses.length > 0) {
+            setVisibleSkus(allS.filter(function (s) { return regCourses.includes(s.course_id) }))
+          } else {
+            setVisibleSkus(allS)
+          }
+        }
+      }
       setLoading(false)
     }
     loadData()
@@ -384,11 +407,26 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     })
   }
 
+  // Get tier-appropriate rate for a SKU
+  function rateForSku(sku, tier) {
+    if (!sku) return 0
+    if (tier === 'CF')  return sku.cf_rate  || 0
+    if (tier === 'SMF') return sku.smf_rate || 0
+    return sku.uf_rate || 0
+  }
+
+  // When admin selects a franchisee, update tier (admin sees all SKUs regardless)
+  function handleFranchiseeChange(fid) {
+    setPlacerId(fid)
+    const fr = franchisees.find(function (f) { return f.id === fid })
+    if (fr) setPlacerTier(fr.tier || 'UF')
+  }
+
   function calcTotal() {
     return lines.reduce(function (sum, line) {
-      const sku = skus.find(function (s) { return s.id === line.sku_id })
+      const sku = allSkus.find(function (s) { return s.id === line.sku_id })
       if (!sku) return sum
-      return sum + (sku.uf_rate * (parseInt(line.qty, 10) || 0))
+      return sum + (rateForSku(sku, placerTier) * (parseInt(line.qty, 10) || 0))
     }, 0)
   }
 
@@ -399,7 +437,11 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     if (validLines.length === 0) { showToast('Add at least one SKU.'); return }
 
     setSaving(true)
-    const orderRef = 'ORD-' + Date.now()
+
+    // Generate sequential order ref from DB
+    const { data: refData } = await sb.rpc('next_order_ref')
+    const orderRef = refData || ('ORD-' + Date.now())
+
     const total = calcTotal()
 
     const { data: orderData, error: orderErr } = await sb
@@ -407,6 +449,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
       .insert({
         order_ref: orderRef,
         placer_id: fid,
+        placer_tier: placerTier || 'UF',
         deliver_to: deliverTo.trim(),
         grand_total: total,
         status: 'pending',
@@ -421,13 +464,13 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     }
 
     const itemRows = validLines.map(function (line) {
-      const sku = skus.find(function (s) { return s.id === line.sku_id })
+      const sku = allSkus.find(function (s) { return s.id === line.sku_id })
       return {
         order_id: orderData.id,
         sku_id: line.sku_id,
         ordered_qty: parseInt(line.qty, 10),
         sent_qty: 0,
-        rate: sku ? sku.uf_rate : 0,
+        rate: rateForSku(sku, placerTier),
       }
     })
 
@@ -456,7 +499,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
               {isAdmin && (
                 <div className="fr">
                   <label>Franchisee</label>
-                  <select value={placerId} onChange={function (e) { setPlacerId(e.target.value) }}>
+                  <select value={placerId} onChange={function (e) { handleFranchiseeChange(e.target.value) }}>
                     <option value="">— Select franchisee —</option>
                     {franchisees.map(function (f) {
                       return (
@@ -486,8 +529,9 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                   <span></span>
                 </div>
                 {lines.map(function (line, idx) {
-                  const sku = skus.find(function (s) { return s.id === line.sku_id })
-                  const lineAmt = sku ? sku.uf_rate * (parseInt(line.qty, 10) || 0) : 0
+                  const sku = allSkus.find(function (s) { return s.id === line.sku_id })
+                  const skuRate = rateForSku(sku, placerTier)
+                  const lineAmt = sku ? skuRate * (parseInt(line.qty, 10) || 0) : 0
                   return (
                     <div key={idx} className="order-line">
                       <select
@@ -495,10 +539,11 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                         onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }}
                       >
                         <option value="">— Select SKU —</option>
-                        {skus.map(function (s) {
+                        {visibleSkus.map(function (s) {
+                          const rate = rateForSku(s, placerTier)
                           return (
                             <option key={s.id} value={s.id}>
-                              {s.level_name}
+                              {s.level_name}{rate ? ' — ₹' + rate : ''}
                             </option>
                           )
                         })}
@@ -510,7 +555,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                         onChange={function (e) { updateLine(idx, 'qty', e.target.value) }}
                         style={{ width: 70 }}
                       />
-                      <span>{sku ? fmtAmt(sku.uf_rate) : '—'}</span>
+                      <span>{sku ? fmtAmt(skuRate) : '—'}</span>
                       <span>{fmtAmt(lineAmt)}</span>
                       <button
                         className="btn btn-sm btn-danger"
@@ -922,9 +967,9 @@ export default function OrdersPage() {
                 <th>Order Ref</th>
                 <th>Invoice No</th>
                 {isAdmin && <th>Franchisee</th>}
-                <th>Amount</th>
+                <th>Total</th>
+                <th>Paid</th>
                 <th>Status</th>
-                <th>Payment</th>
                 <th>Actions</th>
                 <th>Date</th>
               </tr>
@@ -939,12 +984,14 @@ export default function OrdersPage() {
                       <td>
                         {order.placer
                           ? <span><TierBadge tier={order.placer.tier} /> {order.placer.business_name}</span>
-                          : <span className="muted">{order.placer_id}</span>}
+                          : <span className="muted">{order.placer_tier}</span>}
                       </td>
                     )}
-                    <td>₹{fmtAmt(order.amount_paid || 0)}</td>
+                    <td className="mono">₹{fmtAmt(order.grand_total || 0)}</td>
+                    <td className="mono" style={{ color: order.amount_paid > 0 ? 'var(--green)' : 'var(--text3)' }}>
+                      ₹{fmtAmt(order.amount_paid || 0)}
+                    </td>
                     <td><StatusBadge status={order.status} /></td>
-                    <td><PaymentBadge order={order} /></td>
                     <td>{renderActions(order)}</td>
                     <td className="muted">{fmtDate(order.created_at)}</td>
                   </tr>
@@ -991,6 +1038,7 @@ export default function OrdersPage() {
       {showNewOrder && (
         <NewOrderModal
           currentFranchiseeId={currentFranchiseeId}
+          currentRole={currentRole}
           isAdmin={isAdmin}
           onClose={function () { setShowNewOrder(false) }}
           onSaved={async function () { setShowNewOrder(false); await loadOrders() }}

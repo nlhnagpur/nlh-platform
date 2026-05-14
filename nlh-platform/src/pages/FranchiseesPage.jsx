@@ -276,6 +276,13 @@ function AddFranchiseeModal({ onClose, onSaved }) {
     const tempPass = genTempPass()
 
     try {
+      // SMF and CF automatically get all courses; UF starts with none
+      let defaultCourses = null
+      if (form.tier === 'SMF' || form.tier === 'CF') {
+        const { data: allCrs } = await sb.from('courses').select('id').eq('is_active', true)
+        defaultCourses = (allCrs || []).map(c => c.id)
+      }
+
       // Insert franchisee
       const { data: fr, error: frErr } = await sb.from('franchisees').insert({
         business_name: form.name.trim(),
@@ -286,6 +293,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         tier: form.tier,
         parent_id: form.parent_id || null,
         status: 'active',
+        registered_courses: defaultCourses,
       }).select().single()
 
       if (frErr) { showToast('Failed to create franchisee: ' + frErr.message, 'err'); setSaving(false); return }
