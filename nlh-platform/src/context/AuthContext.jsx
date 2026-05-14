@@ -15,9 +15,11 @@ export function AuthProvider({ children }) {
     setCurrentUser(user)
     let role = 'student'
     let franchiseeId = null
+    console.log('[initApp] start — email:', user.email)
 
     try {
-      const { data } = await sb.from('users').select('*').ilike('email', user.email).single()
+      const { data, error: userErr } = await sb.from('users').select('*').ilike('email', user.email).single()
+      console.log('[initApp] users query →', { data, error: userErr })
 
       if (data) {
         role = data.role || 'uf'
@@ -55,6 +57,7 @@ export function AuthProvider({ children }) {
       role = 'student'
     }
 
+    console.log('[initApp] resolved →', { role, franchiseeId })
     setCurrentRole(role)
     setCurrentFranchiseeId(franchiseeId)
 

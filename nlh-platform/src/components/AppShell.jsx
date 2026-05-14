@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import Sidebar from './Sidebar'
+import DebugOverlay from './DebugOverlay'
 import DashboardPage from '../pages/DashboardPage'
 import FranchiseesPage from '../pages/FranchiseesPage'
 import OrdersPage from '../pages/OrdersPage'
@@ -33,6 +34,7 @@ export default function AppShell() {
       <div className="main">
         <PageComponent onNavigate={setCurrentPage} />
       </div>
+      <DebugOverlay />
     </div>
   )
 }
