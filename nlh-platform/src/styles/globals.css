@@ -325,3 +325,148 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
   .dash-cards{grid-template-columns:repeat(2,1fr)}
   .dash-charts,.dash-bottom{grid-template-columns:1fr}
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   NEW LANDING PAGE  (.lp-*)
+   Yellow/blue wave-split hero — matches NLH reference design
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Root wrapper ── */
+.lp-wrap{min-height:100vh;background:#fff;font-family:'DM Sans',system-ui,-apple-system,sans-serif;overflow-x:hidden}
+
+/* ── Hero block ── */
+.lp-hero{position:relative;background:#FFD234;min-height:680px;overflow:hidden}
+
+/* ── Wave SVG ── */
+.lp-wave{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+
+/* ── NLH Brand Logo Box ── */
+.nlh-logo-box{display:inline-block;border:2.5px solid #1A237E;border-radius:6px;padding:7px 14px;background:rgba(255,255,255,0.18);backdrop-filter:blur(4px);line-height:1.25;min-width:170px}
+.nlh-logo-estd{font-size:10px;font-weight:500;color:#1A237E;letter-spacing:.06em;margin-bottom:3px}
+.nlh-logo-lines{display:flex;flex-direction:column;gap:0}
+.nlh-logo-new{font-size:11px;font-style:italic;color:#1A237E;font-weight:400;letter-spacing:.1em}
+.nlh-logo-learning{font-size:18px;font-weight:700;color:#1A237E;letter-spacing:.04em;line-height:1.1}
+.nlh-logo-horizons{font-size:13px;font-weight:800;color:#1A237E;letter-spacing:.14em;text-transform:uppercase}
+.nlh-logo-iso{font-size:9px;color:#1565C0;font-weight:600;letter-spacing:.08em;margin-top:5px;border-top:1px solid rgba(26,35,126,.25);padding-top:4px}
+.nlh-logo-tag{font-size:8.5px;color:#1A237E;opacity:.7;margin-top:2px;font-style:italic}
+
+/* ── Nav ── */
+.lp-nav{position:relative;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:20px 5vw}
+.lp-nav-actions{display:flex;gap:10px;align-items:center}
+.lp-nav-signin{padding:9px 22px;border-radius:30px;font-size:13px;font-weight:500;cursor:pointer;border:2px solid #1A237E;background:transparent;color:#1A237E;font-family:inherit;transition:all .2s}
+.lp-nav-signin:hover{background:#1A237E;color:#fff}
+.lp-nav-req{padding:9px 22px;border-radius:30px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#1565C0;color:#fff;font-family:inherit;box-shadow:0 4px 14px rgba(21,101,192,.35);transition:all .2s}
+.lp-nav-req:hover{background:#1A237E;transform:translateY(-1px);box-shadow:0 6px 20px rgba(21,101,192,.45)}
+
+/* ── Hero body ── */
+.lp-body{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1fr;gap:0;max-width:1440px;margin:0 auto;padding:20px 5vw 0;align-items:flex-end;min-height:560px}
+
+/* ── Left side (yellow) ── */
+.lp-left{position:relative;padding-bottom:60px}
+
+/* ── Twinkling stars ── */
+.lp-star{position:absolute;color:#1A237E;opacity:.55;animation:lp-twinkle 2s ease-in-out infinite alternate}
+@keyframes lp-twinkle{from{opacity:.3;transform:scale(.9)}to{opacity:.8;transform:scale(1.15)}}
+
+/* ── Headline ── */
+.lp-h1{font-size:clamp(36px,4.5vw,58px);font-weight:800;line-height:1.1;margin:0 0 14px;letter-spacing:-.02em}
+.lp-h1-navy{color:#1A237E;display:block}
+.lp-h1-blue{color:#1565C0;display:block}
+
+/* ── Subtitle ── */
+.lp-sub{font-size:15px;color:#37474F;line-height:1.7;margin:0 0 26px;max-width:400px}
+
+/* ── Feature icons ── */
+.lp-feats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:28px;max-width:400px}
+.lp-feat{text-align:center}
+.lp-feat-ring{width:52px;height:52px;margin:0 auto 7px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.lp-feat-lbl{font-size:10.5px;font-weight:600;color:#1A237E;line-height:1.35;white-space:pre-line}
+
+/* ── CTA button ── */
+.lp-cta{display:inline-flex;align-items:center;gap:10px;padding:14px 28px;background:#1565C0;color:#fff;border:none;border-radius:30px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;box-shadow:0 8px 24px rgba(21,101,192,.35);transition:all .2s}
+.lp-cta:hover{background:#1A237E;transform:translateY(-2px);box-shadow:0 12px 32px rgba(21,101,192,.45)}
+.lp-cta-arrow{display:inline-flex;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.22);align-items:center;justify-content:center;font-size:15px}
+
+/* ── Paper plane ── */
+.lp-plane{position:absolute;bottom:44%;right:0;opacity:.7;animation:lp-float 3.5s ease-in-out infinite alternate;pointer-events:none}
+@keyframes lp-float{from{transform:translateY(0) rotate(-4deg)}to{transform:translateY(-14px) rotate(4deg)}}
+
+/* ── Right side (blue) ── */
+.lp-right{position:relative;height:560px}
+
+/* ── Sun ── */
+.lp-sun{position:absolute;top:4%;right:8%;animation:lp-spin 18s linear infinite;transform-origin:center}
+@keyframes lp-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+/* ── Clouds ── */
+.lp-cloud{position:absolute;animation:lp-drift 7s ease-in-out infinite alternate;pointer-events:none}
+@keyframes lp-drift{from{transform:translateX(0)}to{transform:translateX(18px)}}
+
+/* ── Speech bubble ── */
+.lp-bubble{position:absolute;top:22%;left:6%;filter:drop-shadow(0 6px 16px rgba(0,0,0,.12))}
+.lp-bubble-star{position:absolute;top:-8px;right:-4px;font-size:14px;color:#FFD234;animation:lp-twinkle 1.8s ease-in-out infinite alternate}
+
+/* ── Floating badges ── */
+.lp-badge{position:absolute;width:40px;height:40px;border-radius:50%;background:#DBEAFE;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.12);animation:lp-float 4s ease-in-out infinite alternate}
+
+/* ── Kids illustration ── */
+.lp-kids{position:absolute;bottom:0;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:flex-end;padding-bottom:8px}
+.lp-kid-wrap{display:flex;flex-direction:column;align-items:center;position:relative}
+.lp-kid-emoji{font-size:52px;line-height:1;filter:drop-shadow(0 4px 6px rgba(0,0,0,.15))}
+.lp-kid-item{font-size:18px;position:absolute;bottom:48px;right:-8px;animation:lp-float 3s ease-in-out infinite alternate}
+
+/* ── Desk surface ── */
+.lp-desk{position:absolute;bottom:0;left:0;right:0;height:28px;background:rgba(30,64,175,.22);border-radius:4px 4px 0 0}
+
+/* ── Book stack ── */
+.lp-books{position:absolute;bottom:28px;right:8%;display:flex;flex-direction:column;gap:3px;align-items:flex-end}
+.lp-book{width:56px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;letter-spacing:.08em;box-shadow:2px 2px 6px rgba(0,0,0,.2)}
+
+/* ── Bottom bar ── */
+.lp-bar{position:relative;z-index:2;background:#fff;display:flex;align-items:center;justify-content:center;gap:0;padding:16px 5vw;box-shadow:0 -2px 0 rgba(0,0,0,.04)}
+.lp-bar-item{display:flex;align-items:center;gap:10px;padding:6px 28px}
+.lp-bar-div{width:1px;height:32px;background:#E5E7EB}
+.lp-bar-icon{font-size:20px}
+.lp-bar-txt{font-size:14px;font-weight:600;color:#1F2937}
+
+/* ── Courses section ── */
+.lp-section{max-width:1200px;margin:0 auto;padding:72px 5vw}
+.lp-section-h2{font-size:clamp(28px,3vw,40px);font-weight:700;color:#1A237E;text-align:center;margin:0 0 10px;letter-spacing:-.02em}
+.lp-section-sub{font-size:15px;color:#6B7280;text-align:center;margin:0 auto 44px;max-width:540px;line-height:1.6}
+.lp-courses{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}
+.lp-course-card{background:#fff;border-radius:18px;padding:24px;text-align:center;border:1px solid rgba(0,0,0,.06);box-shadow:0 2px 8px rgba(0,0,0,.05);transition:all .2s;cursor:pointer}
+.lp-course-card:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.09)}
+.lp-course-icon{width:64px;height:64px;margin:0 auto 14px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:30px}
+.lp-course-card h3{font-size:15px;font-weight:600;color:#1F2937;margin:0 0 6px}
+.lp-course-card p{font-size:12px;color:#6B7280;margin:0;line-height:1.5}
+
+/* ── CTA section ── */
+.lp-cta-section{background:linear-gradient(135deg,#1565C0 0%,#1A237E 100%);border-radius:28px;padding:56px 48px;text-align:center;color:#fff;position:relative;overflow:hidden}
+.lp-cta-section::before{content:'';position:absolute;top:-80px;right:-80px;width:260px;height:260px;background:radial-gradient(circle,#FFD234 0%,transparent 70%);opacity:.35}
+.lp-cta-section h2{font-size:clamp(24px,2.6vw,34px);margin:0 0 10px;color:#fff;font-weight:700;position:relative}
+.lp-cta-section p{font-size:15px;opacity:.88;margin:0 0 26px;position:relative}
+.lp-cta-white{background:#fff;color:#1565C0;padding:14px 32px;border-radius:30px;font-size:15px;font-weight:600;cursor:pointer;border:none;font-family:inherit;display:inline-flex;align-items:center;gap:8px;position:relative;box-shadow:0 8px 24px rgba(0,0,0,.18);transition:all .2s}
+.lp-cta-white:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(0,0,0,.24)}
+
+/* ── Footer ── */
+.lp-footer{background:#1F2937;color:#9CA3AF;padding:44px 5vw 24px}
+.lp-footer-inner{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px}
+.lp-footer h4{font-size:14px;color:#fff;margin:0 0 14px;font-weight:600}
+.lp-footer p,.lp-footer a{font-size:13px;line-height:1.75;color:#9CA3AF;text-decoration:none;display:block}
+.lp-footer a:hover{color:#fff}
+.lp-footer-bottom{max-width:1200px;margin:32px auto 0;padding-top:22px;border-top:1px solid #374151;text-align:center;font-size:12px}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .lp-body{grid-template-columns:1fr;min-height:auto}
+  .lp-right{height:340px}
+  .lp-h1{font-size:34px}
+  .lp-feats{max-width:100%}
+  .lp-left{padding-bottom:32px}
+  .lp-bar{flex-wrap:wrap;gap:10px}
+  .lp-bar-div{display:none}
+  .lp-footer-inner{grid-template-columns:1fr 1fr;gap:28px}
+  .lp-cta-section{padding:36px 24px}
+  .lp-wave{display:none}
+  .lp-hero{background:linear-gradient(180deg,#FFD234 0%,#38BDF8 100%)}
+}
