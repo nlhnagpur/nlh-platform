@@ -38,20 +38,20 @@ export default function PriceHistoryPage() {
     )
   }
 
-  if (loading) return <div className="page-loading">Loading history…</div>
+  if (loading) return <div className="loading"><span className="spinner" />Loading history…</div>
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="pg">
+      <div className="topbar">
         <h2>Price Change History</h2>
         <span className="badge">{history.length} records</span>
       </div>
 
       {history.length === 0 ? (
-        <div className="empty-state">No price changes recorded yet.</div>
+        <div className="empty">No price changes recorded yet.</div>
       ) : (
-        <div className="table-wrap">
-          <table className="data-table">
+        <div className="card" style={{padding:0,overflow:"hidden"}}>
+          <table className="tbl">
             <thead>
               <tr>
                 <th>Date</th>

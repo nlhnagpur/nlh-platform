@@ -107,11 +107,11 @@ export default function PricesPage() {
 
   const changedCount = Object.keys(priceChanges).length
 
-  if (loading) return <div className="page-loading">Loading prices…</div>
+  if (loading) return <div className="loading"><span className="spinner" />Loading prices…</div>
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="pg">
+      <div className="topbar">
         <h2>Kit Prices</h2>
         <button
           className="btn-p"
@@ -122,8 +122,8 @@ export default function PricesPage() {
         </button>
       </div>
 
-      <div className="table-wrap">
-        <table className="data-table">
+      <div className="card" style={{padding:0,overflow:"hidden"}}>
+        <table className="tbl">
           <thead>
             <tr>
               <th>Course</th>

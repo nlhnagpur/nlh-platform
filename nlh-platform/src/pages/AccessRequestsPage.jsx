@@ -161,11 +161,11 @@ export default function AccessRequestsPage() {
     return r.status === filterStatus
   })
 
-  if (loading) return <div className="page-loading">Loading access requests…</div>
+  if (loading) return <div className="loading"><span className="spinner" />Loading access requests…</div>
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="pg">
+      <div className="topbar">
         <h2>Access Requests</h2>
         <span className="badge">{requests.filter(function (r) { return r.status === 'pending' }).length} pending</span>
       </div>
@@ -187,10 +187,10 @@ export default function AccessRequestsPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="empty-state">No {filterStatus === 'all' ? '' : filterStatus} requests found.</div>
+        <div className="empty">No {filterStatus === 'all' ? '' : filterStatus} requests found.</div>
       ) : (
-        <div className="table-wrap">
-          <table className="data-table">
+        <div className="card" style={{padding:0,overflow:"hidden"}}>
+          <table className="tbl">
             <thead>
               <tr>
                 <th>Name</th>

@@ -117,7 +117,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
           {enrollments.length > 0 && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <strong>Enrolled Courses</strong>
-              <table className="data-table" style={{ marginTop: 8 }}>
+              <table className="tbl" style={{ marginTop: 8 }}>
                 <thead>
                   <tr><th>Course</th><th>Level / SKU</th></tr>
                 </thead>
@@ -385,12 +385,12 @@ export default function StudentsPage() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="pg">
+      <div className="topbar">
         <h1>Students</h1>
-        <div className="page-actions">
+        <div style={{display:"flex",gap:8}}>
           <input
-            className="search-input"
+            className="search-inp"
             placeholder="Search name / parent / phone…"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -404,7 +404,7 @@ export default function StudentsPage() {
       {loading ? (
         <div className="loading">Loading students…</div>
       ) : (
-        <table className="data-table">
+        <table className="tbl">
           <thead>
             <tr>
               <th>Name</th>
@@ -425,7 +425,7 @@ export default function StudentsPage() {
               const balance = (s.fee_total || 0) - (s.fee_paid || 0)
               const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.name).filter(Boolean))]
               return (
-                <tr key={s.id} className="clickable-row" onClick={() => setSelected(s)}>
+                <tr key={s.id} style={{cursor:"pointer"}} onClick={() => setSelected(s)}>
                   <td><strong>{s.name}</strong></td>
                   <td>{s.parent_name || '—'}</td>
                   <td>

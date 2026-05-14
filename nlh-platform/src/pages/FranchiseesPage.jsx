@@ -405,22 +405,26 @@ export default function FranchiseesPage() {
   const [showAdd, setShowAdd] = useState(false)
 
   useEffect(() => {
+    if (currentRole === null) return  // wait until auth resolves
     async function load() {
       setLoading(true)
       let q = sb.from('franchisees').select('*').order('name')
       if (!admin) {
+        if (!currentFranchiseeId) { setLoading(false); return }
         q = q.eq('parent_id', currentFranchiseeId)
       }
-      const [{ data: frs }, { data: courses }] = await Promise.all([
+      const [frResult, courseResult] = await Promise.all([
         q,
         sb.from('courses').select('id,name').order('name'),
       ])
-      setFranchisees(frs || [])
-      setAllCourses(courses || [])
+      if (frResult.error) console.error('Franchisees load error:', frResult.error)
+      if (courseResult.error) console.error('Courses load error:', courseResult.error)
+      setFranchisees(frResult.data || [])
+      setAllCourses(courseResult.data || [])
       setLoading(false)
     }
     load()
-  }, [admin, currentFranchiseeId])
+  }, [admin, currentRole, currentFranchiseeId])
 
   const filtered = franchisees.filter(f => {
     const q = search.toLowerCase()
@@ -438,62 +442,57 @@ export default function FranchiseesPage() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <h1>Franchisees</h1>
-        <div className="page-actions">
+    <div className="pg">
+      <div className="topbar">
+        <div>
+          <div className="pt">Franchisees</div>
+          <div className="ps">{franchisees.length} partner{franchisees.length !== 1 ? 's' : ''} in network</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
           <input
-            className="search-input"
+            className="search-inp"
             placeholder="Search name / city / state…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
           {admin && (
-            <button className="btn-p" onClick={() => setShowAdd(true)}>
-              + Add Franchisee
-            </button>
+            <button className="btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>
           )}
         </div>
       </div>
 
       {loading ? (
-        <div className="loading">Loading franchisees…</div>
+        <div className="loading"><span className="spinner" />Loading…</div>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Tier</th>
-              <th>State</th>
-              <th>City</th>
-              <th>Phone</th>
-              <th>Status</th>
-              <th>Fee Paid</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr><td colSpan={8} className="empty">No franchisees found</td></tr>
-            )}
-            {filtered.map(f => (
-              <tr key={f.id} className="clickable-row" onClick={() => setSelected(f)}>
-                <td><strong>{f.name}</strong></td>
-                <td><TierBadge tier={f.tier} /></td>
-                <td>{f.state || '—'}</td>
-                <td>{f.city || '—'}</td>
-                <td>{f.phone || '—'}</td>
-                <td><StatusBadge status={f.status} /></td>
-                <td>₹{fmtAmt(f.fee_paid)}</td>
-                <td>
-                  <button className="btn-s btn-sm" onClick={e => { e.stopPropagation(); setSelected(f) }}>
-                    View
-                  </button>
-                </td>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Name</th><th>Tier</th><th>State</th><th>City</th>
+                <th>Phone</th><th>Status</th><th>Fee Paid</th><th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text3)' }}>No franchisees found</td></tr>
+              )}
+              {filtered.map(f => (
+                <tr key={f.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(f)}>
+                  <td><strong>{f.name}</strong></td>
+                  <td><TierBadge tier={f.tier} /></td>
+                  <td>{f.state || '—'}</td>
+                  <td>{f.city || '—'}</td>
+                  <td>{f.phone || '—'}</td>
+                  <td><StatusBadge status={f.status} /></td>
+                  <td>₹{fmtAmt(f.fee_paid)}</td>
+                  <td>
+                    <button className="btn-s btn-sm" onClick={e => { e.stopPropagation(); setSelected(f) }}>View</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {selected && (

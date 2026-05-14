@@ -2,9 +2,41 @@ import React, { useState, useEffect } from 'react'
 import { jsPDF } from 'jspdf'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
-import { fmtAmt, fmtDate, showToast, orderStatusLabel, orderPaymentBadge } from '../utils'
+import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
+
+// JSX badge components (replaces HTML-string utils)
+function StatusBadge({ status }) {
+  const map = {
+    pending:           { cls: 'bp',  txt: 'Pending' },
+    invoiced:          { cls: 'br',  txt: 'Invoiced' },
+    payment_submitted: { cls: 'bpu', txt: 'Pmt Submitted' },
+    verified:          { cls: 'ba',  txt: 'Verified' },
+    closed:            { cls: 'ba',  txt: 'Closed' },
+    part_paid:         { cls: 'bp',  txt: 'Part Paid' },
+  }
+  const s = map[status] || { cls: 'bd', txt: status || '—' }
+  return <span className={'badge ' + s.cls}>{s.txt}</span>
+}
+
+function PaymentBadge({ order }) {
+  if (!order.amount_paid) return null
+  if (order.payment_verified_at)  return <span className="badge ba">Paid ✓</span>
+  if (order.payment_submitted_at) return <span className="badge bpu">Pmt Submitted</span>
+  return <span className="badge bp">Part Paid</span>
+}
+
+function TierBadge({ tier }) {
+  if (!tier) return null
+  const cls = { SMF: 't-smf', CF: 't-cf', UF: 't-uf' }[tier] || ''
+  return <span className={'tier ' + cls}>{tier}</span>
+}
+
+const FILTER_LABELS = {
+  all: 'All', pending: 'Pending', invoiced: 'Invoiced',
+  payment_submitted: 'Pmt Submitted', closed: 'Closed',
+}
 
 // ---------------------------------------------------------------------------
 // PaySubmitModal — franchisee submits payment proof
@@ -851,42 +883,39 @@ export default function OrdersPage() {
     )
   }
 
-  if (loading) return <div className="page-loading">Loading orders…</div>
+  if (loading) return <div className="loading"><span className="spinner" />Loading orders…</div>
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <h2>Orders</h2>
-        <button className="btn-p" onClick={function () { setShowNewOrder(true) }}>
-          + New Order
-        </button>
+    <div className="pg">
+      <div className="topbar">
+        <div>
+          <div className="pt">Orders</div>
+          <div className="ps">Manage and track all kit orders</div>
+        </div>
+        <button className="btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>
       </div>
 
-      <div className="page-toolbar">
-        <div className="filter-tabs">
-          {ORDER_FILTERS.map(function (f) {
-            const label = f === 'all' ? 'All' : orderStatusLabel(f)
-            return (
-              <button
-                key={f}
-                className={'filter-tab' + (orderFilter === f ? ' active' : '')}
-                onClick={function () { setOrderFilter(f) }}
-              >
-                {label}
-                {filterCounts[f] > 0 && (
-                  <span className="tab-count">{filterCounts[f]}</span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+      {/* Filter tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {ORDER_FILTERS.map(function (f) {
+          const active = orderFilter === f
+          return (
+            <button
+              key={f}
+              className={active ? 'btn-p btn-sm' : 'btn-s btn-sm'}
+              onClick={function () { setOrderFilter(f) }}
+            >
+              {FILTER_LABELS[f]}{filterCounts[f] > 0 ? ' (' + filterCounts[f] + ')' : ''}
+            </button>
+          )
+        })}
       </div>
 
       {filtered.length === 0 ? (
-        <div className="empty-state">No orders found.</div>
+        <div className="empty">No orders found.</div>
       ) : (
-        <div className="table-wrap">
-          <table className="data-table orders-table">
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="tbl">
             <thead>
               <tr>
                 <th>Order Ref</th>
@@ -904,28 +933,19 @@ export default function OrdersPage() {
                 return (
                   <tr key={order.id}>
                     <td className="mono">{order.order_ref}</td>
-                    <td className="mono">{order.invoice_no || <span className="text-muted">—</span>}</td>
+                    <td className="mono">{order.invoice_no || '—'}</td>
                     {isAdmin && (
                       <td>
-                        {order.placer ? (
-                          <span>
-                            <span className="badge badge-sm">{order.placer.tier}</span>{' '}
-                            {order.placer.name}
-                          </span>
-                        ) : (
-                          <span className="text-muted">{order.placer_id}</span>
-                        )}
+                        {order.placer
+                          ? <span><TierBadge tier={order.placer.tier} /> {order.placer.name}</span>
+                          : <span className="muted">{order.placer_id}</span>}
                       </td>
                     )}
-                    <td>{fmtAmt(order.total_amount || 0)}</td>
-                    <td>
-                      <span className={'badge status-' + order.status}>
-                        {orderStatusLabel(order.status)}
-                      </span>
-                    </td>
-                    <td>{orderPaymentBadge(order)}</td>
+                    <td>₹{fmtAmt(order.amount_paid || 0)}</td>
+                    <td><StatusBadge status={order.status} /></td>
+                    <td><PaymentBadge order={order} /></td>
                     <td>{renderActions(order)}</td>
-                    <td className="text-muted">{fmtDate(order.created_at)}</td>
+                    <td className="muted">{fmtDate(order.created_at)}</td>
                   </tr>
                 )
               })}

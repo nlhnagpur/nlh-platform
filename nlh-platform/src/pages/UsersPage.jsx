@@ -56,11 +56,11 @@ export default function UsersPage() {
     )
   })
 
-  if (loading) return <div className="page-loading">Loading users…</div>
+  if (loading) return <div className="loading"><span className="spinner" />Loading users…</div>
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="pg">
+      <div className="topbar">
         <h2>Users</h2>
         <span className="badge">{users.length} total</span>
       </div>
@@ -76,10 +76,10 @@ export default function UsersPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="empty-state">No users found.</div>
+        <div className="empty">No users found.</div>
       ) : (
-        <div className="table-wrap">
-          <table className="data-table">
+        <div className="card" style={{padding:0,overflow:"hidden"}}>
+          <table className="tbl">
             <thead>
               <tr>
                 <th>Email</th>

@@ -84,12 +84,12 @@ export default function CoursesPage() {
   }))
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="pg">
+      <div className="topbar">
         <h1>Courses &amp; SKUs</h1>
-        <div className="page-actions">
+        <div style={{display:"flex",gap:8}}>
           <input
-            className="search-input"
+            className="search-inp"
             placeholder="Search course / group / level…"
             value={search}
             onChange={e => setSearch(e.target.value)}
