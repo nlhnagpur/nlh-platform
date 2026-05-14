@@ -2059,8 +2059,13 @@ async function initApp(user){
   // Check if user needs to complete onboarding
   var needsOnboarding = false;
   if(!isAdminRole(currentRole)){
-    var hasProfile = (currentRole==='student') ? data && data.student_id : data && data.franchisee_id;
-    if(!hasProfile) needsOnboarding = true;
+    if(currentRole === 'student'){
+      var hasProfile = data && data.student_id;
+      if(!hasProfile) needsOnboarding = true;
+    } else {
+      // For franchisee roles: check currentFranchiseeId (may have been auto-linked above)
+      if(!currentFranchiseeId) needsOnboarding = true;
+    }
   }
 
   if(needsOnboarding){
