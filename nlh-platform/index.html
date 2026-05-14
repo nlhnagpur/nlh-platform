@@ -1028,9 +1028,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
           <table class="tbl">
             <thead><tr>
               <th>Group</th><th>Level</th><th>Age</th><th>Type</th>
-              <th style="text-align:right">UF rate</th>
-              <th style="text-align:right">CF rate</th>
-              <th style="text-align:right">SMF rate</th>
+              <th style="text-align:right" class="col-uf-rate">Kit rate</th>
+              <th style="text-align:right" class="col-cf-rate">CF rate</th>
+              <th style="text-align:right" class="col-smf-rate">SMF rate</th>
               <th style="text-align:right">Student fee</th>
               <th style="text-align:right">UF share</th>
             </tr></thead>
@@ -3380,7 +3380,15 @@ async function loadCourses(){
   var { data } = await sb.from('skus')
     .select('*, courses(group_name, name, billing_type, age_min, age_max)')
     .order('sort_order');
-  var q = '';
+  
+  // Filter for franchisee roles
+  if(currentRole === 'uf' && currentFranchiseeId){
+    var { data: myFr } = await sb.from('franchisees').select('registered_courses').eq('id', currentFranchiseeId).single();
+    if(myFr && myFr.registered_courses && myFr.registered_courses.length){
+      data = (data||[]).filter(function(s){ return myFr.registered_courses.indexOf(s.courses.group_name) >= 0; });
+    }
+  }
+  
   window._coursesData = data || [];
   renderCourses();
 }
@@ -3398,11 +3406,11 @@ function renderCourses(){
       '<td>'+esc(s.level_name)+'</td>' +
       '<td class="muted">'+(s.courses.age_min||'-')+'\u2013'+(s.courses.age_max||'-')+'</td>' +
       '<td><span style="font-size:10px;padding:2px 7px;border-radius:20px;font-family:var(--mono);background:'+(s.courses.billing_type==='monthly'?'var(--green-bg)':'var(--blue-bg)')+';color:'+(s.courses.billing_type==='monthly'?'var(--green)':'var(--blue)')+'">'+esc(s.courses.billing_type)+'</span></td>' +
-      '<td style="text-align:right" class="mono">&#8377;'+s.uf_rate+'</td>' +
+      '<td style="text-align:right" class="mono col-uf-rate">\u20B9'+(isAdmin ? s.uf_rate : myRate)+'</td>' +
       '<td style="text-align:right" class="mono">&#8377;'+s.cf_rate+'</td>' +
       '<td style="text-align:right" class="mono">&#8377;'+s.smf_rate+'</td>' +
       '<td style="text-align:right;color:var(--blue);font-weight:500" class="mono">&#8377;'+s.student_fee+'</td>' +
-      '<td style="text-align:right;color:var(--green);font-weight:600" class="mono">&#8377;'+s.uf_share+'</td>' +
+      '<td style="text-align:right;color:var(--green);font-weight:600;display:'+(isAdmin?'':'none')+'" class="mono">&#8377;'+s.uf_share+'</td>' +
       '</tr>';
   }).join('');
 }
