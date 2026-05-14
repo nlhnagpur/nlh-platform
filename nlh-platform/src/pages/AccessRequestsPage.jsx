@@ -17,11 +17,11 @@ function CredentialsModal({ email, password, onClose }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="modal-header">
+        <div className="ch">
           <h3>Login Credentials Created</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
         </div>
-        <div className="modal-body">
+        <div >
           <p className="text-muted" style={{ marginBottom: 16 }}>
             Share these credentials with the new user. They should change their password on first login.
           </p>
@@ -34,11 +34,11 @@ function CredentialsModal({ email, password, onClose }) {
             <span className="cred-val mono">{password}</span>
           </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={handleCopy}>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={handleCopy}>
             {copied ? 'Copied!' : 'Copy Credentials'}
           </button>
-          <button className="btn btn-primary" onClick={onClose}>Done</button>
+          <button className="btn-p" onClick={onClose}>Done</button>
         </div>
       </div>
     </div>
@@ -224,7 +224,7 @@ export default function AccessRequestsPage() {
                       {req.status === 'pending' && (
                         <div className="btn-group">
                           <button
-                            className="btn btn-sm btn-primary"
+                            className="btn-p btn-sm"
                             disabled={!!actionLoading}
                             onClick={function () { handleApprove(req) }}
                           >

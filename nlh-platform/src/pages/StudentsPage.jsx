@@ -65,11 +65,11 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 640 }}>
-        <div className="modal-header">
+        <div className="ch">
           <span>{student.name}</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
+        <div >
           <div className="form-grid">
             <label>Student Name *
               <input value={form.name} onChange={field('name')} disabled={!admin} />
@@ -135,9 +135,9 @@ function StudentDetailModal({ student, onClose, onSaved }) {
         </div>
 
         {admin && (
-          <div className="modal-footer">
+          <div className="modal-actions">
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-p" onClick={save} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
@@ -270,11 +270,11 @@ function AddStudentModal({ onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 640 }}>
-        <div className="modal-header">
+        <div className="ch">
           <span>Add Student</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
+        <div >
           <div className="form-grid">
             <label>Student Name *
               <input value={form.name} onChange={field('name')} placeholder="Full name" />
@@ -329,9 +329,9 @@ function AddStudentModal({ onClose, onSaved }) {
             </div>
           )}
         </div>
-        <div className="modal-footer">
+        <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>
+          <button className="btn-p" onClick={save} disabled={saving}>
             {saving ? 'Adding…' : 'Add Student'}
           </button>
         </div>
@@ -395,7 +395,7 @@ export default function StudentsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+          <button className="btn-p" onClick={() => setShowAdd(true)}>
             + Add Student
           </button>
         </div>
@@ -439,7 +439,7 @@ export default function StudentsPage() {
                   <td style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</td>
                   <td><StatusBadge status={s.status} /></td>
                   <td>
-                    <button className="btn btn-sm" onClick={e => { e.stopPropagation(); setSelected(s) }}>
+                    <button className="btn-s btn-sm" onClick={e => { e.stopPropagation(); setSelected(s) }}>
                       View
                     </button>
                   </td>

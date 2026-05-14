@@ -99,7 +99,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 680 }}>
-        <div className="modal-header">
+        <div className="ch">
           <span>{franchisee.name} <TierBadge tier={franchisee.tier} /></span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
@@ -112,7 +112,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
           ))}
         </div>
 
-        <div className="modal-body">
+        <div >
 
           {tab === 'info' && (
             <div className="form-grid">
@@ -217,9 +217,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         </div>
 
         {admin && (tab === 'info' || tab === 'courses') && (
-          <div className="modal-footer">
+          <div className="modal-actions">
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-p" onClick={save} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
@@ -335,11 +335,11 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 560 }}>
-        <div className="modal-header">
+        <div className="ch">
           <span>Add Franchisee</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
+        <div >
           <div className="form-grid">
             <label>Name *
               <input value={form.name} onChange={field('name')} placeholder="Full name" />
@@ -380,9 +380,9 @@ function AddFranchiseeModal({ onClose, onSaved }) {
             A login account will be created and a welcome email with temp password will be sent.
           </p>
         </div>
-        <div className="modal-footer">
+        <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>
+          <button className="btn-p" onClick={save} disabled={saving}>
             {saving ? 'Creating…' : 'Create Franchisee'}
           </button>
         </div>
@@ -449,7 +449,7 @@ export default function FranchiseesPage() {
             onChange={e => setSearch(e.target.value)}
           />
           {admin && (
-            <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+            <button className="btn-p" onClick={() => setShowAdd(true)}>
               + Add Franchisee
             </button>
           )}
@@ -486,7 +486,7 @@ export default function FranchiseesPage() {
                 <td><StatusBadge status={f.status} /></td>
                 <td>₹{fmtAmt(f.fee_paid)}</td>
                 <td>
-                  <button className="btn btn-sm" onClick={e => { e.stopPropagation(); setSelected(f) }}>
+                  <button className="btn-s btn-sm" onClick={e => { e.stopPropagation(); setSelected(f) }}>
                     View
                   </button>
                 </td>

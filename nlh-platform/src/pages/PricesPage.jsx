@@ -114,7 +114,7 @@ export default function PricesPage() {
       <div className="page-header">
         <h2>Kit Prices</h2>
         <button
-          className="btn btn-primary"
+          className="btn-p"
           onClick={handleSave}
           disabled={saving || changedCount === 0}
         >

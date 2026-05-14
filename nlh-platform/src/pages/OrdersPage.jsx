@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { jsPDF } from 'jspdf'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
@@ -38,12 +38,12 @@ function PaySubmitModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="modal-header">
+        <div className="ch">
           <h3>Submit Payment Proof</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
         </div>
-        <div className="modal-body">
-          <div className="form-group">
+        <div >
+          <div className="fr">
             <label>Payment Mode</label>
             <select value={mode} onChange={function (e) { setMode(e.target.value) }}>
               <option value="UPI">UPI</option>
@@ -52,7 +52,7 @@ function PaySubmitModal({ order, onClose, onSaved }) {
               <option value="Cheque">Cheque</option>
             </select>
           </div>
-          <div className="form-group">
+          <div className="fr">
             <label>UTR / Reference Number</label>
             <input
               type="text"
@@ -62,9 +62,9 @@ function PaySubmitModal({ order, onClose, onSaved }) {
             />
           </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={handleSubmit} disabled={saving}>
             {saving ? 'Submitting…' : 'Submit Payment'}
           </button>
         </div>
@@ -100,12 +100,12 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="modal-header">
+        <div className="ch">
           <h3>Record Payment</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
         </div>
-        <div className="modal-body">
-          <div className="form-group">
+        <div >
+          <div className="fr">
             <label>Amount Paid (₹)</label>
             <input
               type="number"
@@ -116,9 +116,9 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
           </div>
           <p className="text-muted">Order total: {fmtAmt(order.total_amount || 0)}</p>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -157,12 +157,12 @@ function DispatchModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="modal-header">
+        <div className="ch">
           <h3>Mark Dispatched</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
         </div>
-        <div className="modal-body">
-          <div className="form-group">
+        <div >
+          <div className="fr">
             <label>Courier Name</label>
             <input
               type="text"
@@ -171,7 +171,7 @@ function DispatchModal({ order, onClose, onSaved }) {
               onChange={function (e) { setCourier(e.target.value) }}
             />
           </div>
-          <div className="form-group">
+          <div className="fr">
             <label>AWB / Tracking Number</label>
             <input
               type="text"
@@ -181,9 +181,9 @@ function DispatchModal({ order, onClose, onSaved }) {
             />
           </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Mark Dispatched'}
           </button>
         </div>
@@ -247,11 +247,11 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}>
-        <div className="modal-header">
+        <div className="ch">
           <h3>Edit Invoice — {order.order_ref}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
         </div>
-        <div className="modal-body">
+        <div >
           {loading ? (
             <div className="text-muted">Loading items…</div>
           ) : (
@@ -289,7 +289,7 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
               </tbody>
             </table>
           )}
-          <div className="form-group" style={{ marginTop: 16 }}>
+          <div className="fr" style={{ marginTop: 16 }}>
             <label>Courier Charges (₹)</label>
             <input
               type="number"
@@ -299,9 +299,9 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
             />
           </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving || loading}>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={handleSave} disabled={saving || loading}>
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
@@ -412,17 +412,17 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}>
-        <div className="modal-header">
+        <div className="ch">
           <h3>New Order</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
         </div>
-        <div className="modal-body">
+        <div >
           {loading ? (
             <div className="text-muted">Loading…</div>
           ) : (
             <>
               {isAdmin && (
-                <div className="form-group">
+                <div className="fr">
                   <label>Franchisee</label>
                   <select value={placerId} onChange={function (e) { setPlacerId(e.target.value) }}>
                     <option value="">— Select franchisee —</option>
@@ -436,7 +436,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                   </select>
                 </div>
               )}
-              <div className="form-group">
+              <div className="fr">
                 <label>Deliver To (address)</label>
                 <textarea
                   rows={2}
@@ -490,7 +490,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                     </div>
                   )
                 })}
-                <button className="btn btn-sm btn-secondary" onClick={addLine} style={{ marginTop: 8 }}>
+                <button className="btn-s btn-sm" onClick={addLine} style={{ marginTop: 8 }}>
                   + Add SKU
                 </button>
               </div>
@@ -500,9 +500,9 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
             </>
           )}
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || loading}>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={handleSubmit} disabled={saving || loading}>
             {saving ? 'Placing Order…' : 'Place Order'}
           </button>
         </div>
@@ -763,7 +763,7 @@ export default function OrdersPage() {
         {/* pending → Mark Invoiced (admin only) */}
         {order.status === 'pending' && isAdmin && (
           <button
-            className="btn btn-sm btn-primary"
+            className="btn-p btn-sm"
             disabled={busy}
             onClick={function () { handleMarkInvoiced(order) }}
           >
@@ -774,7 +774,7 @@ export default function OrdersPage() {
         {/* invoiced → franchisee can submit payment */}
         {order.status === 'invoiced' && !isAdmin && (
           <button
-            className="btn btn-sm btn-primary"
+            className="btn-p btn-sm"
             onClick={function () { setPaySubmitOrder(order) }}
           >
             Submit Payment
@@ -784,17 +784,17 @@ export default function OrdersPage() {
         {/* invoiced → admin: record payment, reminder, edit invoice */}
         {order.status === 'invoiced' && isAdmin && (
           <>
-            <button className="btn btn-sm btn-secondary" onClick={function () { setRecordPayOrder(order) }}>
+            <button className="btn-s btn-sm" onClick={function () { setRecordPayOrder(order) }}>
               Record Payment
             </button>
             <button
-              className="btn btn-sm btn-secondary"
+              className="btn-s btn-sm"
               disabled={busy}
               onClick={function () { handleSendReminder(order) }}
             >
               {isActing(order.id, 'reminder') ? '…' : 'Send Reminder'}
             </button>
-            <button className="btn btn-sm btn-secondary" onClick={function () { setEditInvoiceOrder(order) }}>
+            <button className="btn-s btn-sm" onClick={function () { setEditInvoiceOrder(order) }}>
               Edit Invoice
             </button>
           </>
@@ -803,7 +803,7 @@ export default function OrdersPage() {
         {/* payment_submitted → admin: verify */}
         {order.status === 'payment_submitted' && isAdmin && (
           <button
-            className="btn btn-sm btn-primary"
+            className="btn-p btn-sm"
             disabled={busy}
             onClick={function () { handleVerifyPayment(order) }}
           >
@@ -814,7 +814,7 @@ export default function OrdersPage() {
         {/* closed → admin: reopen */}
         {order.status === 'closed' && isAdmin && (
           <button
-            className="btn btn-sm btn-secondary"
+            className="btn-s btn-sm"
             disabled={busy}
             onClick={function () { handleReopen(order) }}
           >
@@ -825,7 +825,7 @@ export default function OrdersPage() {
         {/* closed or invoiced → download invoice */}
         {['invoiced', 'payment_submitted', 'closed'].includes(order.status) && (
           <button
-            className="btn btn-sm btn-secondary"
+            className="btn-s btn-sm"
             onClick={function () { handleDownloadInvoice(order) }}
           >
             Download Invoice
@@ -835,7 +835,7 @@ export default function OrdersPage() {
         {/* any → mark dispatched if not yet dispatched */}
         {!order.dispatched_at && (
           <button
-            className="btn btn-sm btn-secondary"
+            className="btn-s btn-sm"
             onClick={function () { setDispatchOrder(order) }}
           >
             Mark Dispatched
@@ -857,7 +857,7 @@ export default function OrdersPage() {
     <div className="page">
       <div className="page-header">
         <h2>Orders</h2>
-        <button className="btn btn-primary" onClick={function () { setShowNewOrder(true) }}>
+        <button className="btn-p" onClick={function () { setShowNewOrder(true) }}>
           + New Order
         </button>
       </div>
