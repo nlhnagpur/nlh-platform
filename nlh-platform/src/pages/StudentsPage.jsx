@@ -24,12 +24,12 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const admin = isAdminRole(currentRole)
 
   const [form, setForm] = useState({
-    name: student.name || '',
+    full_name: student.full_name || '',
     parent_name: student.parent_name || '',
     dob: student.dob || '',
     phone: student.phone || '',
     address: student.address || '',
-    status: student.status || 'active',
+    payment_status: student.payment_status || '',
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
   })
@@ -46,12 +46,11 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   async function save() {
     setSaving(true)
     const payload = {
-      name: form.name.trim(),
+      full_name: form.full_name.trim(),
       parent_name: form.parent_name.trim(),
       dob: form.dob || null,
       phone: form.phone.trim(),
       address: form.address.trim(),
-      status: form.status,
       fee_total: form.fee_total === '' ? null : Number(form.fee_total),
       fee_paid: form.fee_paid === '' ? null : Number(form.fee_paid),
     }
@@ -66,13 +65,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 640 }}>
         <div className="ch">
-          <span>{student.name}</span>
+          <span>{student.full_name}</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
         <div >
           <div className="form-grid">
             <label>Student Name *
-              <input value={form.name} onChange={field('name')} disabled={!admin} />
+              <input value={form.full_name} onChange={field('full_name')} disabled={!admin} />
             </label>
             <label>Parent / Guardian
               <input value={form.parent_name} onChange={field('parent_name')} disabled={!admin} />
@@ -86,11 +85,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             <label className="col-span-2">Address
               <input value={form.address} onChange={field('address')} disabled={!admin} />
             </label>
-            <label>Status
-              <select value={form.status} onChange={field('status')} disabled={!admin}>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+            <label>Payment Status
+              <select value={form.payment_status} onChange={field('payment_status')} disabled={!admin}>
+                <option value="">—</option>
                 <option value="pending">Pending</option>
+                <option value="partial">Partial</option>
+                <option value="paid">Paid</option>
+                <option value="none">None</option>
               </select>
             </label>
           </div>
@@ -125,7 +126,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                   {enrollments.map(en => (
                     <tr key={en.id}>
                       <td>{en.skus?.courses?.name || '—'}</td>
-                      <td>{en.skus?.name || '—'}</td>
+                      <td>{en.skus?.level_name || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -154,7 +155,7 @@ function AddStudentModal({ onClose, onSaved }) {
   const admin = isAdminRole(currentRole)
 
   const [form, setForm] = useState({
-    name: '', parent_name: '', dob: '', phone: '', address: '',
+    full_name: '', parent_name: '', dob: '', phone: '', address: '',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
   const [ufList, setUfList] = useState([])
@@ -165,11 +166,11 @@ function AddStudentModal({ onClose, onSaved }) {
 
   useEffect(() => {
     // Load UF franchisees for centre dropdown
-    sb.from('franchisees').select('id,name,city').eq('tier', 'UF').eq('status', 'active').order('name')
+    sb.from('franchisees').select('id,business_name,city').eq('tier', 'UF').eq('status', 'active').order('business_name')
       .then(({ data }) => setUfList(data || []))
 
     // Load all SKUs grouped by course
-    sb.from('skus').select('id,name,student_fee,course_id,courses(id,name,group_name)').order('course_id').order('level')
+    sb.from('skus').select('id,level_name,student_fee,course_id,courses(id,name,group_name)').order('course_id').order('sort_order')
       .then(({ data }) => {
         if (!data) return
         const grouped = []
@@ -200,7 +201,7 @@ function AddStudentModal({ onClose, onSaved }) {
   }
 
   async function save() {
-    if (!form.name.trim()) { showToast('Student name is required', 'warn'); return }
+    if (!form.full_name.trim()) { showToast('Student name is required', 'warn'); return }
     if (!form.franchisee_id) { showToast('Please select a centre (UF)', 'warn'); return }
 
     setSaving(true)
@@ -209,13 +210,13 @@ function AddStudentModal({ onClose, onSaved }) {
     try {
       // Insert student
       const { data: st, error: stErr } = await sb.from('students').insert({
-        name: form.name.trim(),
+        full_name: form.full_name.trim(),
         parent_name: form.parent_name.trim(),
         dob: form.dob || null,
         phone: form.phone.trim(),
         address: form.address.trim(),
         franchisee_id: form.franchisee_id,
-        status: 'active',
+        is_active: true,
         fee_total: feeTotal,
         fee_paid: 0,
         payment_status: feeTotal > 0 ? 'pending' : 'none',
@@ -249,7 +250,7 @@ function AddStudentModal({ onClose, onSaved }) {
           })
           await sb.from('users').upsert({
             email: loginEmail,
-            full_name: form.name.trim(),
+            full_name: form.full_name.trim(),
             role: 'student',
             franchisee_id: form.franchisee_id,
           }, { onConflict: 'email' })
@@ -277,7 +278,7 @@ function AddStudentModal({ onClose, onSaved }) {
         <div >
           <div className="form-grid">
             <label>Student Name *
-              <input value={form.name} onChange={field('name')} placeholder="Full name" />
+              <input value={form.full_name} onChange={field('full_name')} placeholder="Full name" />
             </label>
             <label>Parent / Guardian
               <input value={form.parent_name} onChange={field('parent_name')} placeholder="Parent name" />
@@ -295,7 +296,7 @@ function AddStudentModal({ onClose, onSaved }) {
               <select value={form.franchisee_id} onChange={field('franchisee_id')} disabled={!admin && !!currentFranchiseeId}>
                 <option value="">— Select Centre —</option>
                 {ufList.map(uf => (
-                  <option key={uf.id} value={uf.id}>{uf.name} ({uf.city})</option>
+                  <option key={uf.id} value={uf.id}>{uf.business_name} ({uf.city})</option>
                 ))}
               </select>
             </label>
@@ -313,7 +314,7 @@ function AddStudentModal({ onClose, onSaved }) {
                     return (
                       <label key={sku.id} className="checkbox-item">
                         <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
-                        {sku.name}
+                        {sku.level_name}
                         {sku.student_fee ? <span className="hint"> ₹{fmtAmt(sku.student_fee)}</span> : null}
                       </label>
                     )
@@ -357,8 +358,8 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, enrollments(id, sku_id, skus(name, courses(name)))')
-        .order('name')
+        .select('*, enrollments(id, sku_id, skus(level_name, courses(name)))')
+        .order('full_name')
       if (!admin) {
         if (!currentFranchiseeId) { setLoading(false); return }
         q = q.eq('franchisee_id', currentFranchiseeId)
@@ -373,7 +374,7 @@ export default function StudentsPage() {
 
   const filtered = students.filter(s => {
     const q = search.toLowerCase()
-    return !q || s.name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
+    return !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
   })
 
   function handleSaved(updated) {
@@ -382,7 +383,7 @@ export default function StudentsPage() {
   }
 
   function handleAdded(st) {
-    setStudents(ss => [...ss, { ...st, enrollments: [] }].sort((a, b) => a.name.localeCompare(b.name)))
+    setStudents(ss => [...ss, { ...st, enrollments: [] }].sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '')))
     setShowAdd(false)
   }
 
@@ -428,7 +429,7 @@ export default function StudentsPage() {
               const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.name).filter(Boolean))]
               return (
                 <tr key={s.id} style={{cursor:"pointer"}} onClick={() => setSelected(s)}>
-                  <td><strong>{s.name}</strong></td>
+                  <td><strong>{s.full_name}</strong></td>
                   <td>{s.parent_name || '—'}</td>
                   <td>
                     {courseNames.length === 0
@@ -446,7 +447,7 @@ export default function StudentsPage() {
                   <td>₹{fmtAmt(s.fee_total)}</td>
                   <td>₹{fmtAmt(s.fee_paid)}</td>
                   <td style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</td>
-                  <td><StatusBadge status={s.status} /></td>
+                  <td><StatusBadge status={s.payment_status} /></td>
                   <td>
                     <button className="btn-s btn-sm" onClick={e => { e.stopPropagation(); setSelected(s) }}>
                       View

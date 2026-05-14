@@ -14,7 +14,7 @@ export default function PriceHistoryPage() {
     setLoading(true)
     const { data, error } = await sb
       .from('kit_price_history')
-      .select('*, skus(name, courses(name))')
+      .select('*, skus(level_name, courses(name))')
       .order('changed_at', { ascending: false })
       .limit(200)
     if (error) {
@@ -68,7 +68,7 @@ export default function PriceHistoryPage() {
                 return (
                   <tr key={row.id}>
                     <td className="mono">{fmtDate(row.changed_at)}</td>
-                    <td>{row.skus?.name || row.sku_id}</td>
+                    <td>{row.skus?.level_name || row.sku_id}</td>
                     <td>{row.skus?.courses?.name || '—'}</td>
                     <td>{rateChange(row.old_uf_rate, row.new_uf_rate)}</td>
                     <td>{rateChange(row.old_cf_rate, row.new_cf_rate)}</td>

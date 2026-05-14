@@ -20,7 +20,7 @@ export default function PricesPage() {
       .from('skus')
       .select('*, courses(name, group_name)')
       .order('course_id')
-      .order('level')
+      .order('sort_order')
     if (error) {
       showToast('Failed to load SKUs: ' + error.message)
     } else {
@@ -141,7 +141,7 @@ export default function PricesPage() {
                 <tr key={sku.id}>
                   <td>{sku.courses?.name || '—'}</td>
                   <td>{sku.courses?.group_name || '—'}</td>
-                  <td className="mono">{sku.name || 'Level ' + sku.level}</td>
+                  <td className="mono">{sku.level_name || '—'}</td>
                   <td>
                     <input
                       type="number"

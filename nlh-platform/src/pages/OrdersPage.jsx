@@ -146,7 +146,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
               onChange={function (e) { setAmountPaid(e.target.value) }}
             />
           </div>
-          <p className="text-muted">Order total: {fmtAmt(order.total_amount || 0)}</p>
+          <p className="muted">Order total: ₹{fmtAmt(order.grand_total || 0)}</p>
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
@@ -164,7 +164,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 function DispatchModal({ order, onClose, onSaved }) {
   const [awb, setAwb] = useState(order.awb_number || '')
-  const [courier, setCourier] = useState(order.courier_name || '')
+  const [courier, setCourier] = useState(order.courier_partner || '')
   const [saving, setSaving] = useState(false)
 
   async function handleSave() {
@@ -173,7 +173,7 @@ function DispatchModal({ order, onClose, onSaved }) {
       .from('orders')
       .update({
         awb_number: awb.trim(),
-        courier_name: courier.trim(),
+        courier_partner: courier.trim(),
         dispatched_at: new Date().toISOString(),
       })
       .eq('id', order.id)
@@ -240,7 +240,7 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
   async function loadItems() {
     const { data, error } = await sb
       .from('order_items')
-      .select('*, skus(name)')
+      .select('*, skus(level_name)')
       .eq('order_id', order.id)
     if (error) {
       showToast('Failed to load items: ' + error.message)
@@ -301,7 +301,7 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
                 {items.map(function (item) {
                   return (
                     <tr key={item.id}>
-                      <td>{item.skus?.name || item.sku_id}</td>
+                      <td>{item.skus?.level_name || item.sku_id}</td>
                       <td>{item.ordered_qty}</td>
                       <td>
                         <input
@@ -357,8 +357,8 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
   useEffect(function () {
     async function loadData() {
       const [fRes, sRes] = await Promise.all([
-        sb.from('franchisees').select('id, name, tier').order('name'),
-        sb.from('skus').select('id, name, uf_rate').order('name'),
+        sb.from('franchisees').select('id, business_name, tier').order('business_name'),
+        sb.from('skus').select('id, level_name, uf_rate').order('sort_order'),
       ])
       setFranchisees(fRes.data || [])
       setSkus(sRes.data || [])
@@ -408,7 +408,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
         order_ref: orderRef,
         placer_id: fid,
         deliver_to: deliverTo.trim(),
-        total_amount: total,
+        grand_total: total,
         status: 'pending',
       })
       .select()
@@ -461,7 +461,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                     {franchisees.map(function (f) {
                       return (
                         <option key={f.id} value={f.id}>
-                          [{f.tier}] {f.name}
+                          [{f.tier}] {f.business_name}
                         </option>
                       )
                     })}
@@ -498,7 +498,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                         {skus.map(function (s) {
                           return (
                             <option key={s.id} value={s.id}>
-                              {s.name}
+                              {s.level_name}
                             </option>
                           )
                         })}
@@ -570,7 +570,7 @@ function generateInvoicePDF(order, items) {
   doc.text('Invoice No: ' + (order.invoice_no || 'N/A'), 14, 50)
   doc.text('Order Ref: ' + (order.order_ref || ''), 14, 57)
   doc.text('Date: ' + fmtDate(order.created_at), 14, 64)
-  doc.text('Franchisee: ' + (order.placer?.name || order.placer_id || ''), 14, 71)
+  doc.text('Franchisee: ' + (order.placer?.business_name || order.placer_id || ''), 14, 71)
   if (order.deliver_to) {
     doc.text('Deliver To: ' + order.deliver_to, 14, 78)
   }
@@ -592,7 +592,7 @@ function generateInvoicePDF(order, items) {
   for (const item of items) {
     const amt = (item.sent_qty || 0) * (item.rate || 0)
     subtotal += amt
-    doc.text(String(item.skus?.name || item.sku_id || ''), 14, y)
+    doc.text(String(item.skus?.level_name || item.sku_id || ''), 14, y)
     doc.text(String(item.ordered_qty || 0), 90, y)
     doc.text(String(item.sent_qty || 0), 120, y)
     doc.text('₹' + fmtAmt(item.rate || 0), 145, y)
@@ -664,7 +664,7 @@ export default function OrdersPage() {
     if (isAdmin) {
       query = sb
         .from('orders')
-        .select('*, placer:franchisees!orders_placer_id_fkey(name, tier, email)')
+        .select('*, placer:franchisees!orders_placer_id_fkey(business_name, tier, email)')
         .order('created_at', { ascending: false })
     } else {
       query = sb
@@ -766,7 +766,7 @@ export default function OrdersPage() {
   async function handleDownloadInvoice(order) {
     const { data: items, error } = await sb
       .from('order_items')
-      .select('*, skus(name)')
+      .select('*, skus(level_name)')
       .eq('order_id', order.id)
     if (error) {
       showToast('Failed to load items: ' + error.message)
@@ -938,7 +938,7 @@ export default function OrdersPage() {
                     {isAdmin && (
                       <td>
                         {order.placer
-                          ? <span><TierBadge tier={order.placer.tier} /> {order.placer.name}</span>
+                          ? <span><TierBadge tier={order.placer.tier} /> {order.placer.business_name}</span>
                           : <span className="muted">{order.placer_id}</span>}
                       </td>
                     )}

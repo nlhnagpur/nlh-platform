@@ -89,7 +89,7 @@ export default function DashboardPage({ onNavigate }) {
       sb.from('franchisees').select('tier'),
       sb.from('students').select('id', { count: 'exact', head: true }),
       sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      sb.from('orders').select('id, status, placer_id, courier_charges, created_at, franchisees(name)'),
+      sb.from('orders').select('id, status, placer_id, courier_charges, created_at, franchisees(business_name)'),
     ])
 
     setFranchiseeCount(fr.count || 0)
@@ -134,7 +134,7 @@ export default function DashboardPage({ onNavigate }) {
     // top franchisees by order count
     const countMap = {}
     allOrders.forEach(function(o) {
-      const name = o.franchisees?.name || 'Unknown'
+      const name = o.franchisees?.business_name || 'Unknown'
       countMap[name] = (countMap[name] || 0) + 1
     })
     const topList = Object.entries(countMap)
@@ -476,7 +476,7 @@ export default function DashboardPage({ onNavigate }) {
                       <td className="mono" style={{ fontSize: 11 }}>#{String(o.id).slice(0, 8)}</td>
                       {isAdmin && (
                         <td style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {o.franchisees?.name || '—'}
+                          {o.franchisees?.business_name || '—'}
                         </td>
                       )}
                       <td>{orderStatusBadge(o.status)}</td>

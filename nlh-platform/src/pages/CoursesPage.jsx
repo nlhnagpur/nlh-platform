@@ -24,7 +24,7 @@ export default function CoursesPage() {
         .from('skus')
         .select('*, courses(id, name, group_name)')
         .order('course_id')
-        .order('level')
+        .order('sort_order')
 
       if (error) {
         showToast('Failed to load courses: ' + error.message, 'err')
@@ -71,7 +71,7 @@ export default function CoursesPage() {
     const q = search.toLowerCase()
     return (
       !q ||
-      s.name?.toLowerCase().includes(q) ||
+      s.level_name?.toLowerCase().includes(q) ||
       s.courses?.name?.toLowerCase().includes(q) ||
       s.courses?.group_name?.toLowerCase().includes(q)
     )
@@ -129,7 +129,7 @@ export default function CoursesPage() {
                     <span className="tag">{sku.courses?.group_name || '—'}</span>
                   </td>
                 ) : null}
-                <td className="sku-name-cell">{sku.name || '—'}</td>
+                <td className="sku-name-cell">{sku.level_name || '—'}</td>
                 <td>
                   {sku.uf_rate != null
                     ? <span className="mono">₹{fmtAmt(sku.uf_rate)}</span>

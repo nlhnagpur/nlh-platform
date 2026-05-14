@@ -35,7 +35,7 @@ export default function OnboardingPage() {
     async function loadParents() {
       const parentTier = frTier === 'UF' ? 'CF' : frTier === 'CF' ? 'SMF' : null
       if (!parentTier) { setParents([]); return }
-      const { data } = await sb.from('franchisees').select('id, name, city, state').eq('tier', parentTier).eq('status', 'active').order('name')
+      const { data } = await sb.from('franchisees').select('id, business_name, city, state').eq('tier', parentTier).eq('status', 'active').order('business_name')
       setParents(data || [])
     }
     loadParents()
@@ -45,7 +45,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (step !== 'student') return
     async function loadCentres() {
-      const { data } = await sb.from('franchisees').select('id, name, city').eq('tier', 'UF').eq('status', 'active').order('name')
+      const { data } = await sb.from('franchisees').select('id, business_name, city').eq('tier', 'UF').eq('status', 'active').order('business_name')
       setCentres(data || [])
     }
     loadCentres()
@@ -58,7 +58,7 @@ export default function OnboardingPage() {
     setFrSaving(true)
     try {
       const { data: fr, error } = await sb.from('franchisees').insert({
-        name: frName, email: frEmail, phone: frPhone,
+        business_name: frName, email: frEmail, phone: frPhone,
         state: frState, city: frCity, address: frAddress,
         tier: frTier, status: 'active',
         parent_id: frParentId || null,
@@ -85,9 +85,9 @@ export default function OnboardingPage() {
     setStSaving(true)
     try {
       const { data: st, error } = await sb.from('students').insert({
-        name: stName, parent_name: stParent, phone: stPhone,
+        full_name: stName, parent_name: stParent, phone: stPhone,
         dob: stDob || null, address: stAddress,
-        franchisee_id: stCentre, status: 'active',
+        franchisee_id: stCentre, is_active: true,
         fee_total: 0, fee_paid: 0,
       }).select().single()
       if (error) throw error
@@ -183,7 +183,7 @@ export default function OnboardingPage() {
                   <select value={frParentId} onChange={e => setFrParentId(e.target.value)}>
                     <option value="">— Select —</option>
                     {parents.map(p => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.city || p.state})</option>
+                      <option key={p.id} value={p.id}>{p.business_name} ({p.city || p.state})</option>
                     ))}
                   </select>
                 </div>
@@ -228,7 +228,7 @@ export default function OnboardingPage() {
                 <select value={stCentre} onChange={e => setStCentre(e.target.value)}>
                   <option value="">— Select your centre —</option>
                   {centres.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} — {c.city}</option>
+                    <option key={c.id} value={c.id}>{c.business_name} — {c.city}</option>
                   ))}
                 </select>
               </div>

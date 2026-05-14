@@ -31,7 +31,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
   const [tab, setTab] = useState('info')
   const [form, setForm] = useState({
-    name: franchisee.name || '',
+    name: franchisee.business_name || '',
     email: franchisee.email || '',
     phone: franchisee.phone || '',
     city: franchisee.city || '',
@@ -61,7 +61,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
       setOrders(data || [])
     }
     if (t === 'students') {
-      const { data } = await sb.from('students').select('id,name,status,fee_total,fee_paid').eq('franchisee_id', franchisee.id).order('name').limit(50)
+      const { data } = await sb.from('students').select('id,full_name,payment_status,fee_total,fee_paid').eq('franchisee_id', franchisee.id).order('full_name').limit(50)
       setStudents(data || [])
     }
   }
@@ -75,7 +75,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   async function save() {
     setSaving(true)
     const payload = {
-      name: form.name.trim(),
+      business_name: form.name.trim(),
       phone: form.phone.trim(),
       city: form.city.trim(),
       state: form.state.trim(),
@@ -100,7 +100,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 680 }}>
         <div className="ch">
-          <span>{franchisee.name} <TierBadge tier={franchisee.tier} /></span>
+          <span>{franchisee.business_name} <TierBadge tier={franchisee.tier} /></span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
 
@@ -202,8 +202,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 {students.length === 0 && <tr><td colSpan={5} className="empty">No students</td></tr>}
                 {students.map(s => (
                   <tr key={s.id}>
-                    <td>{s.name}</td>
-                    <td><StatusBadge status={s.status} /></td>
+                    <td>{s.full_name}</td>
+                    <td><StatusBadge status={s.payment_status} /></td>
                     <td>₹{fmtAmt(s.fee_total)}</td>
                     <td>₹{fmtAmt(s.fee_paid)}</td>
                     <td style={{ color: (s.fee_total - s.fee_paid) > 0 ? 'var(--red)' : 'var(--green)' }}>
@@ -248,7 +248,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
     if (!form.tier) return
     const parentTier = form.tier === 'CF' ? 'SMF' : form.tier === 'UF' ? 'CF' : null
     if (!parentTier) { setParentOptions([]); return }
-    sb.from('franchisees').select('id,name,city,state').eq('tier', parentTier).eq('status', 'active').order('name')
+    sb.from('franchisees').select('id,business_name,city,state').eq('tier', parentTier).eq('status', 'active').order('business_name')
       .then(({ data }) => setParentOptions(data || []))
   }, [form.tier])
 
@@ -265,9 +265,9 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       const val = form.tier === 'SMF' ? form.state.trim() : form.city.trim()
       if (!val) { showToast(`${col} is required for ${form.tier}`, 'warn'); return }
       const { data: existing } = await sb.from('franchisees')
-        .select('id,name').eq('tier', form.tier).ilike(col, val).eq('status', 'active')
+        .select('id,business_name').eq('tier', form.tier).ilike(col, val).eq('status', 'active')
       if (existing && existing.length > 0) {
-        showToast(`An active ${form.tier} already exists for ${val}: ${existing[0].name}`, 'warn')
+        showToast(`An active ${form.tier} already exists for ${val}: ${existing[0].business_name}`, 'warn')
         return
       }
     }
@@ -278,7 +278,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
     try {
       // Insert franchisee
       const { data: fr, error: frErr } = await sb.from('franchisees').insert({
-        name: form.name.trim(),
+        business_name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
         city: form.city.trim(),
@@ -363,7 +363,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
                   <option value="">— Select —</option>
                   {parentOptions.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.name} ({form.tier === 'CF' ? p.state : p.city})
+                      {p.business_name} ({form.tier === 'CF' ? p.state : p.city})
                     </option>
                   ))}
                 </select>
@@ -408,7 +408,7 @@ export default function FranchiseesPage() {
     if (currentRole === null) return  // wait until auth resolves
     async function load() {
       setLoading(true)
-      let q = sb.from('franchisees').select('*').order('name')
+      let q = sb.from('franchisees').select('*').order('business_name')
       if (!admin) {
         if (!currentFranchiseeId) { setLoading(false); return }
         q = q.eq('parent_id', currentFranchiseeId)
@@ -428,7 +428,7 @@ export default function FranchiseesPage() {
 
   const filtered = franchisees.filter(f => {
     const q = search.toLowerCase()
-    return !q || f.name?.toLowerCase().includes(q) || f.city?.toLowerCase().includes(q) || f.state?.toLowerCase().includes(q)
+    return !q || f.business_name?.toLowerCase().includes(q) || f.city?.toLowerCase().includes(q) || f.state?.toLowerCase().includes(q)
   })
 
   function handleSaved(updated) {
@@ -437,7 +437,7 @@ export default function FranchiseesPage() {
   }
 
   function handleAdded(fr) {
-    setFranchisees(fs => [...fs, fr].sort((a, b) => a.name.localeCompare(b.name)))
+    setFranchisees(fs => [...fs, fr].sort((a, b) => (a.business_name || '').localeCompare(b.business_name || '')))
     setShowAdd(false)
   }
 
@@ -478,7 +478,7 @@ export default function FranchiseesPage() {
               )}
               {filtered.map(f => (
                 <tr key={f.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(f)}>
-                  <td><strong>{f.name}</strong></td>
+                  <td><strong>{f.business_name}</strong></td>
                   <td><TierBadge tier={f.tier} /></td>
                   <td>{f.state || '—'}</td>
                   <td>{f.city || '—'}</td>
