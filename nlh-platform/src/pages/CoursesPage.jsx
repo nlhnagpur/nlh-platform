@@ -15,6 +15,7 @@ export default function CoursesPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
+    if (currentRole === null) return   // wait for auth to resolve
     async function load() {
       setLoading(true)
 
@@ -63,7 +64,7 @@ export default function CoursesPage() {
     }
 
     load()
-  }, [admin, currentFranchiseeId])
+  }, [admin, currentRole, currentFranchiseeId])
 
   // Filter by search
   const filtered = rows.filter(s => {

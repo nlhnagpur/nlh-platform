@@ -353,21 +353,23 @@ export default function StudentsPage() {
   const [showAdd, setShowAdd] = useState(false)
 
   useEffect(() => {
+    if (currentRole === null) return   // wait for auth to resolve
     async function load() {
       setLoading(true)
       let q = sb.from('students')
         .select('*, enrollments(id, sku_id, skus(name, courses(name)))')
         .order('name')
       if (!admin) {
+        if (!currentFranchiseeId) { setLoading(false); return }
         q = q.eq('franchisee_id', currentFranchiseeId)
       }
       const { data, error } = await q
-      if (error) showToast('Failed to load students: ' + error.message, 'err')
+      if (error) { console.error('Students load error:', error); showToast('Failed to load students: ' + error.message, 'err') }
       setStudents(data || [])
       setLoading(false)
     }
     load()
-  }, [admin, currentFranchiseeId])
+  }, [admin, currentRole, currentFranchiseeId])
 
   const filtered = students.filter(s => {
     const q = search.toLowerCase()
@@ -430,8 +432,15 @@ export default function StudentsPage() {
                   <td>{s.parent_name || '—'}</td>
                   <td>
                     {courseNames.length === 0
-                      ? <span className="hint">None</span>
-                      : courseNames.map(cn => <span key={cn} className="tag">{cn}</span>)
+                      ? <span style={{color:'var(--text3)'}}>None</span>
+                      : courseNames.map(cn => (
+                          <span key={cn} style={{
+                            display:'inline-block', background:'var(--bg3)',
+                            border:'1px solid var(--border)', borderRadius:20,
+                            fontSize:10, padding:'1px 8px', marginRight:3,
+                            fontFamily:'var(--mono)'
+                          }}>{cn}</span>
+                        ))
                     }
                   </td>
                   <td>₹{fmtAmt(s.fee_total)}</td>

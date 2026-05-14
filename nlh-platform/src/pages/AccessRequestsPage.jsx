@@ -22,16 +22,16 @@ function CredentialsModal({ email, password, onClose }) {
           <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
         </div>
         <div >
-          <p className="text-muted" style={{ marginBottom: 16 }}>
+          <p style={{ color:'var(--text2)', fontSize:12, marginBottom: 16 }}>
             Share these credentials with the new user. They should change their password on first login.
           </p>
-          <div className="cred-row">
-            <span className="cred-label">Email</span>
-            <span className="cred-val mono">{email}</span>
+          <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
+            <span style={{ fontSize:11, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.05em' }}>Email</span>
+            <span style={{ fontFamily:'var(--mono)', fontSize:12 }}>{email}</span>
           </div>
-          <div className="cred-row">
-            <span className="cred-label">Temp Password</span>
-            <span className="cred-val mono">{password}</span>
+          <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0' }}>
+            <span style={{ fontSize:11, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.05em' }}>Temp Password</span>
+            <span style={{ fontFamily:'var(--mono)', fontSize:12 }}>{password}</span>
           </div>
         </div>
         <div className="modal-actions">
@@ -53,9 +53,9 @@ const TYPE_LABELS = {
 }
 
 const STATUS_CLASS = {
-  pending: 'badge badge-orange',
-  approved: 'badge badge-green',
-  rejected: 'badge badge-red',
+  pending: 'badge bp',
+  approved: 'badge ba',
+  rejected: 'badge bd',
 }
 
 export default function AccessRequestsPage() {
@@ -170,20 +170,18 @@ export default function AccessRequestsPage() {
         <span className="badge">{requests.filter(function (r) { return r.status === 'pending' }).length} pending</span>
       </div>
 
-      <div className="page-toolbar">
-        <div className="filter-tabs">
-          {['pending', 'approved', 'rejected', 'all'].map(function (s) {
-            return (
-              <button
-                key={s}
-                className={'filter-tab' + (filterStatus === s ? ' active' : '')}
-                onClick={function () { setFilterStatus(s) }}
-              >
-                {s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            )
-          })}
-        </div>
+      <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+        {['pending', 'approved', 'rejected', 'all'].map(function (s) {
+          return (
+            <button
+              key={s}
+              className={filterStatus === s ? 'btn-p btn-sm' : 'btn-s btn-sm'}
+              onClick={function () { setFilterStatus(s) }}
+            >
+              {s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          )
+        })}
       </div>
 
       {filtered.length === 0 ? (
@@ -212,7 +210,7 @@ export default function AccessRequestsPage() {
                     <td className="mono">{req.email}</td>
                     <td className="mono">{req.phone || '—'}</td>
                     <td>{TYPE_LABELS[req.type] || req.type}</td>
-                    <td className="text-muted">
+                    <td className="muted">
                       {[req.state, req.city].filter(Boolean).join(' / ') || '—'}
                     </td>
                     <td>
@@ -222,7 +220,7 @@ export default function AccessRequestsPage() {
                     </td>
                     <td>
                       {req.status === 'pending' && (
-                        <div className="btn-group">
+                        <div style={{ display:'flex', gap:6 }}>
                           <button
                             className="btn-p btn-sm"
                             disabled={!!actionLoading}
@@ -231,16 +229,17 @@ export default function AccessRequestsPage() {
                             {approvingThis ? 'Approving…' : 'Approve'}
                           </button>
                           <button
-                            className="btn btn-sm btn-danger"
+                            className="btn-s btn-sm"
                             disabled={!!actionLoading}
                             onClick={function () { handleReject(req) }}
+                            style={{ color:'var(--red)', borderColor:'var(--red)' }}
                           >
                             {rejectingThis ? 'Rejecting…' : 'Reject'}
                           </button>
                         </div>
                       )}
                       {req.status !== 'pending' && (
-                        <span className="text-muted">—</span>
+                        <span style={{color:'var(--text3)'}}>—</span>
                       )}
                     </td>
                   </tr>

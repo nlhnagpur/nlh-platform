@@ -654,6 +654,7 @@ export default function OrdersPage() {
   const [showNewOrder, setShowNewOrder] = useState(false)
 
   useEffect(function () {
+    if (currentRole === null) return   // wait for auth to resolve
     loadOrders()
   }, [currentRole, currentFranchiseeId])
 
@@ -791,7 +792,7 @@ export default function OrdersPage() {
   function renderActions(order) {
     const busy = actionLoading && actionLoading.startsWith(order.id)
     return (
-      <div className="btn-group">
+      <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
         {/* pending → Mark Invoiced (admin only) */}
         {order.status === 'pending' && isAdmin && (
           <button
@@ -874,7 +875,7 @@ export default function OrdersPage() {
           </button>
         )}
         {order.dispatched_at && (
-          <span className="text-muted" style={{ fontSize: 12 }}>
+          <span style={{ color:'var(--text3)', fontSize: 12 }}>
             Dispatched {fmtDate(order.dispatched_at)}
             {order.awb_number ? ' · ' + order.awb_number : ''}
           </span>

@@ -15,12 +15,12 @@ const ROLE_LABELS = {
 }
 
 function roleBadgeClass(role) {
-  if (['owner', 'super_admin'].includes(role)) return 'badge badge-purple'
-  if (['admin', 'manager', 'staff'].includes(role)) return 'badge badge-blue'
-  if (role === 'smf') return 'badge badge-green'
-  if (role === 'cf') return 'badge badge-teal'
-  if (role === 'uf') return 'badge badge-orange'
-  return 'badge'
+  if (['owner', 'super_admin'].includes(role)) return 'badge bpu'
+  if (['admin', 'manager', 'staff'].includes(role)) return 'badge br'
+  if (role === 'smf') return 'badge bp'
+  if (role === 'cf') return 'badge ba'
+  if (role === 'uf') return 'badge br'
+  return 'badge bd'
 }
 
 export default function UsersPage() {
@@ -65,7 +65,7 @@ export default function UsersPage() {
         <span className="badge">{users.length} total</span>
       </div>
 
-      <div className="page-toolbar">
+      <div style={{ marginBottom: 14 }}>
         <input
           type="search"
           className="search-inp"
@@ -94,7 +94,7 @@ export default function UsersPage() {
                 return (
                   <tr key={user.id}>
                     <td className="mono">{user.email}</td>
-                    <td>{user.full_name || <span className="text-muted">—</span>}</td>
+                    <td>{user.full_name || <span className="muted">—</span>}</td>
                     <td>
                       <span className={roleBadgeClass(user.role)}>
                         {ROLE_LABELS[user.role] || user.role}
@@ -103,7 +103,7 @@ export default function UsersPage() {
                     <td className="mono text-muted">
                       {user.franchisee_id || '—'}
                     </td>
-                    <td className="text-muted">{fmtDate(user.created_at)}</td>
+                    <td className="muted">{fmtDate(user.created_at)}</td>
                   </tr>
                 )
               })}

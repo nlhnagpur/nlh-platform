@@ -26,12 +26,12 @@ export default function PriceHistoryPage() {
   }
 
   function rateChange(oldVal, newVal) {
-    if (oldVal === newVal) return <span className="text-muted">No change</span>
+    if (oldVal === newVal) return <span style={{color:'var(--text3)'}}>No change</span>
     const diff = newVal - oldVal
     return (
       <span>
         {fmtAmt(oldVal)} → {fmtAmt(newVal)}{' '}
-        <span className={diff > 0 ? 'text-green' : 'text-red'}>
+        <span style={{ color: diff > 0 ? 'var(--green)' : 'var(--red)' }}>
           ({diff > 0 ? '+' : ''}{fmtAmt(diff)})
         </span>
       </span>
@@ -73,7 +73,7 @@ export default function PriceHistoryPage() {
                     <td>{rateChange(row.old_uf_rate, row.new_uf_rate)}</td>
                     <td>{rateChange(row.old_cf_rate, row.new_cf_rate)}</td>
                     <td>{rateChange(row.old_smf_rate, row.new_smf_rate)}</td>
-                    <td className="text-muted">{row.changed_by}</td>
+                    <td className="muted">{row.changed_by}</td>
                   </tr>
                 )
               })}

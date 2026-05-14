@@ -65,12 +65,14 @@ export default function DashboardPage({ onNavigate }) {
   // ── data load ──────────────────────────────────────────────────────────
 
   useEffect(function() {
+    if (currentRole === null) return   // wait for auth to resolve
     async function load() {
       setLoading(true)
       try {
         if (isAdmin) {
           await loadAdminData()
         } else {
+          if (!currentFranchiseeId) { setLoading(false); return }
           await loadFranchiseeData()
         }
       } catch (err) {
@@ -79,7 +81,7 @@ export default function DashboardPage({ onNavigate }) {
       setLoading(false)
     }
     load()
-  }, [isAdmin, currentFranchiseeId])
+  }, [currentRole, isAdmin, currentFranchiseeId])
 
   async function loadAdminData() {
     const [fr, frAll, st, or_, orAll] = await Promise.all([
