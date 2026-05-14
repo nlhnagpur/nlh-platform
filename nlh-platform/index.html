@@ -1648,7 +1648,7 @@ var sb = null;
 // Initialize Supabase immediately (don't wait for load event)
 try {
   if(typeof supabase !== 'undefined'){
-    sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+    sb = supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { detectSessionInUrl: false } });
   }
 } catch(e){ console.error('Supabase init error:', e); }
 
@@ -1722,7 +1722,7 @@ async function doResetPassword(){
   }
 }
 
-function showForgotPassword(){
+async function showForgotPassword(){
   var email = document.getElementById('login-email').value.trim();
   if(!email){
     email = prompt('Enter your registered email address:');
@@ -1733,9 +1733,13 @@ function showForgotPassword(){
   showToast('Sending reset link to ' + email + '...');
 
   // 1. Trigger Supabase password reset (generates the actual recovery token)
-  sb.auth.resetPasswordForEmail(email, {
+  var { error: resetErr } = await sb.auth.resetPasswordForEmail(email, {
     redirectTo: 'https://nlh-platform.vercel.app/login'
   });
+  if(resetErr){
+    showToast('Could not send reset email: ' + resetErr.message, 'err');
+    return;
+  }
 
   // 2. Send instant branded notification via Brevo API
   var resetEmailHtml = nlhEmailTemplate('Password Reset Request',
@@ -1804,31 +1808,20 @@ function showErr(msg){
 // ════════════════════════════════════════════════════════════════
 // BREVO EMAIL ENGINE
 // ════════════════════════════════════════════════════════════════
-var BREVO_KEY = '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';
-
 async function sendBrevoEmail(to, toName, subject, htmlContent){
   try {
-    var response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    var response = await fetch('/api/send-email', {
       method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'api-key': BREVO_KEY,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        sender: { name: 'New Learning Horizons', email: 'admin@nlhnagpur.info' },
-        to: [{ email: to, name: toName || to }],
-        subject: subject,
-        htmlContent: htmlContent
-      })
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ to: to, toName: toName, subject: subject, htmlContent: htmlContent })
     });
     var data = await response.json();
     if(response.ok){
-      console.log('Email sent:', data.messageId);
-      return { success: true, id: data.messageId };
+      console.log('Email sent:', data.id);
+      return { success: true, id: data.id };
     } else {
       console.error('Brevo error:', data);
-      return { success: false, error: data.message || 'Send failed' };
+      return { success: false, error: data.error || 'Send failed' };
     }
   } catch(err){
     console.error('Email error:', err);
@@ -5245,7 +5238,7 @@ window.addEventListener('load', async function(){
     // Ensure Supabase is ready (initialized above at parse time)
     if(!sb){
       if(typeof supabase !== 'undefined'){
-        sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+        sb = supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { detectSessionInUrl: false } });
       } else {
         document.getElementById('login-err').textContent = 'Platform loading failed. Please refresh the page.';
         document.getElementById('login-err').style.display = 'block';
@@ -5266,7 +5259,21 @@ window.addEventListener('load', async function(){
       }
     });
 
-    // Also check URL hash manually (fallback)
+    // Check for PKCE recovery code in query string (Supabase v2 default flow)
+    var urlParams = new URLSearchParams(window.location.search);
+    var pkceCode = urlParams.get('code');
+    if(pkceCode){
+      try {
+        var { data: pkceData, error: pkceErr } = await sb.auth.exchangeCodeForSession(pkceCode);
+        history.replaceState(null, '', '/login');
+        if(!pkceErr && pkceData && pkceData.session){
+          showResetScreen();
+          return;
+        }
+      } catch(e){ console.error('PKCE exchange error:', e); }
+    }
+
+    // Also check URL hash manually (fallback for implicit flow)
     var hash = window.location.hash;
     if(hash && hash.includes('type=recovery')){
       // Wait a moment for Supabase to process the token
