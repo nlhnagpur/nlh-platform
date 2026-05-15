@@ -34,6 +34,7 @@ export default async function handler(req, res) {
     if (response.ok) {
       return res.status(200).json({ success: true, id: data.messageId });
     }
+    console.error('Brevo error', response.status, JSON.stringify(data));
     return res.status(response.status).json({ success: false, error: data.message || 'Send failed' });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
