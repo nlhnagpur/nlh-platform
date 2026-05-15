@@ -32,19 +32,31 @@ function numToWords(num) {
 
 export default function InvoiceView({ order, onClose }) {
   const [items, setItems] = useState([])
+  const [placer, setPlacer] = useState(order.placer || order.franchisees || null)
   const [loading, setLoading] = useState(true)
   const printRef = useRef(null)
 
   useEffect(function() {
-    async function loadItems() {
-      const { data } = await sb.from('order_items')
+    async function loadData() {
+      // Load line items
+      const { data: itemData } = await sb.from('order_items')
         .select('*, skus(level_name, uf_rate, cf_rate, smf_rate, courses(group_name))')
         .eq('order_id', order.id)
-      setItems(data || [])
+      setItems(itemData || [])
+
+      // Always fetch full franchisee details so address is never missing
+      if (order.placer_id) {
+        const { data: frData } = await sb.from('franchisees')
+          .select('business_name, tier, email, city, state, phone, address')
+          .eq('id', order.placer_id)
+          .single()
+        if (frData) setPlacer(frData)
+      }
+
       setLoading(false)
     }
-    loadItems()
-  }, [order.id])
+    loadData()
+  }, [order.id, order.placer_id])
 
   function handlePrint() {
     const el = printRef.current
@@ -70,7 +82,7 @@ export default function InvoiceView({ order, onClose }) {
     win.document.close()
   }
 
-  const fr = order.franchisees || order.placer || {}
+  const fr = placer || {}
   const subtotal = items.reduce(function(sum, item) {
     return sum + (item.rate || 0) * (item.ordered_qty || 0)
   }, 0)
@@ -220,9 +232,13 @@ export default function InvoiceView({ order, onClose }) {
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#F59E0B' }}></div>
                 <div style={{ font:'700 8.5px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:7 }}>Bill to</div>
                 <div style={{ font:'700 14px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2, marginBottom:5 }}>{fr.business_name || '—'}</div>
-                <div style={{ font:'500 10px "DM Mono",monospace', color:'#5C5A54', lineHeight:1.55 }}>
-                  {fr.city && <span>{fr.city}{fr.state ? ', ' + fr.state : ''}</span>}
-                  {fr.phone && <><br/>{fr.phone}</>}
+                <div style={{ font:'500 10px "DM Mono",monospace', color:'#5C5A54', lineHeight:1.7 }}>
+                  {fr.address && <div>📍 {fr.address}</div>}
+                  {(fr.city || fr.state) && (
+                    <div>{[fr.city, fr.state].filter(Boolean).join(', ')}</div>
+                  )}
+                  {fr.phone && <div>☎️ {fr.phone}</div>}
+                  {fr.email && <div>✉️ {fr.email}</div>}
                 </div>
                 <div style={{ marginTop:8, paddingTop:7, borderTop:'1px dashed rgba(0,0,0,.12)', display:'flex', gap:10, flexWrap:'wrap', font:'600 9px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.06em' }}>
                   <span style={{ background:'rgba(217,119,6,.18)', color:'#D97706', padding:'2px 8px', borderRadius:20, fontWeight:700 }}>{fr.tier || order.placer_tier || 'UF'}</span>

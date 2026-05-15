@@ -1196,25 +1196,26 @@ export default function OrdersPage() {
     setLoading(true)
     let data, error
 
+    const PLACER_FIELDS = 'business_name, tier, email, city, state, phone, address'
     if (isAdmin) {
       // Admins see all orders with placer info
       ;({ data, error } = await sb
         .from('orders')
-        .select('*, placer:franchisees!orders_placer_id_fkey(business_name, tier, email)')
+        .select('*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + ')')
         .order('created_at', { ascending: false }))
     } else if (currentRole === 'smf' || currentRole === 'cf') {
       // SMF / CF see own orders + all orders from their sub-network
       const treeIds = await getTreeIds(currentFranchiseeId)
       ;({ data, error } = await sb
         .from('orders')
-        .select('*, placer:franchisees!orders_placer_id_fkey(business_name, tier, email)')
+        .select('*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + ')')
         .in('placer_id', treeIds.length > 0 ? treeIds : [currentFranchiseeId])
         .order('created_at', { ascending: false }))
     } else {
       // UF sees only their own orders
       ;({ data, error } = await sb
         .from('orders')
-        .select('*')
+        .select('*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + ')')
         .eq('placer_id', currentFranchiseeId)
         .order('created_at', { ascending: false }))
     }
