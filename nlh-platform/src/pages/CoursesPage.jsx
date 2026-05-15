@@ -13,6 +13,7 @@ export default function CoursesPage() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [expandedProgram, setExpandedProgram] = useState(null)
 
   useEffect(() => {
     if (currentRole === null) return   // wait for auth to resolve
@@ -154,28 +155,92 @@ export default function CoursesPage() {
         ) : courseCards.length === 0 ? (
           <div className="empty">No programs available.</div>
         ) : (
-          <div className="progs-grid">
-            {courseCards.map(function (c, idx) {
-              const tone = (idx % 8) + 1
-              const tones = TONE_BG[tone]
-              const em = PROGRAM_EMOJIS[idx % PROGRAM_EMOJIS.length]
-              return (
-                <div key={c.id} className="progs-card">
-                  <div className="progs-bgbar" style={{ background: TONE_GRADIENT[tone] }}></div>
-                  <span className="progs-active"><span className="d"></span>Active</span>
-                  <div className="progs-em pe-" style={{ background: tones.bg, color: tones.color, marginTop: 18 }}>{em}</div>
-                  <div className="progs-name">{c.groupName}</div>
-                  <div className="progs-ages" style={{ marginTop: 4 }}>{c.skuCount} level{c.skuCount !== 1 ? 's' : ''}</div>
-                  <div className="progs-meta">
-                    <div className="progs-meta-i">
-                      <div className="progs-meta-num">{c.skuCount}</div>
-                      <div className="progs-meta-lbl">SKUs</div>
+          <>
+            <div className="progs-grid">
+              {courseCards.map(function (c, idx) {
+                const tone = (idx % 8) + 1
+                const tones = TONE_BG[tone]
+                const em = PROGRAM_EMOJIS[idx % PROGRAM_EMOJIS.length]
+                const isOpen = expandedProgram === c.groupName
+                return (
+                  <div
+                    key={c.groupName}
+                    className={'progs-card' + (isOpen ? ' active' : '')}
+                    onClick={function () { setExpandedProgram(isOpen ? null : c.groupName) }}
+                  >
+                    <div className="progs-bgbar" style={{ background: TONE_GRADIENT[tone] }}></div>
+                    <span className="progs-active"><span className="d"></span>Active</span>
+                    <div className="progs-em pe-" style={{ background: tones.bg, color: tones.color, marginTop: 18 }}>{em}</div>
+                    <div className="progs-name">{c.groupName}</div>
+                    <div className="progs-ages" style={{ marginTop: 4 }}>{c.skuCount} level{c.skuCount !== 1 ? 's' : ''}</div>
+                    <div className="progs-meta">
+                      <div className="progs-meta-i">
+                        <div className="progs-meta-num">{c.skuCount}</div>
+                        <div className="progs-meta-lbl">SKUs</div>
+                      </div>
+                      <div style={{ alignSelf: 'center', font: '600 10px var(--mono)', color: isOpen ? 'var(--purple)' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                        {isOpen ? '▲ Hide' : '▼ Levels'}
+                      </div>
                     </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Levels drawer — shown below the grid when a program is selected */}
+            {expandedProgram && (function () {
+              const idx = courseCards.findIndex(function (c) { return c.groupName === expandedProgram })
+              const tone = ((idx >= 0 ? idx : 0) % 8) + 1
+              const tones = TONE_BG[tone]
+              const levelSkus = rows.filter(function (s) {
+                return (s.courses?.group_name || s.courses?.name) === expandedProgram
+              })
+              return (
+                <div className="progs-levels" style={{ borderTop: '3px solid ' + tones.color }}>
+                  <div className="progs-levels-h">
+                    <div className="progs-levels-title">
+                      <span style={{ background: tones.bg, color: tones.color, borderRadius: 10, padding: '4px 10px', font: '700 11px var(--mono)', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                        {expandedProgram}
+                      </span>
+                      <span style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>{levelSkus.length} level{levelSkus.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <button className="progs-levels-close" onClick={function () { setExpandedProgram(null) }}>✕ Close</button>
+                  </div>
+                  <div className="tbl-scroll">
+                    <table className="big-tbl">
+                      <thead>
+                        <tr>
+                          <th style={{ width: 32 }}>#</th>
+                          <th>Level / SKU</th>
+                          <th style={{ textAlign: 'right' }}>UF Rate</th>
+                          <th style={{ textAlign: 'right' }}>CF Rate</th>
+                          <th style={{ textAlign: 'right' }}>SMF Rate</th>
+                          <th style={{ textAlign: 'right' }}>Student Fee</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {levelSkus.map(function (sku, i) {
+                          return (
+                            <tr key={sku.id}>
+                              <td style={{ font: '600 10px var(--mono)', color: 'var(--text3)' }}>{String(i + 1).padStart(2, '0')}</td>
+                              <td>
+                                <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{sku.level_name || '—'}</div>
+                                <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.04em' }}>{sku.id.slice(0, 8).toUpperCase()}</div>
+                              </td>
+                              <td style={{ textAlign: 'right' }} className="mono">{sku.uf_rate != null ? '₹' + fmtAmt(sku.uf_rate) : '—'}</td>
+                              <td style={{ textAlign: 'right' }} className="mono">{sku.cf_rate != null ? '₹' + fmtAmt(sku.cf_rate) : '—'}</td>
+                              <td style={{ textAlign: 'right' }} className="mono">{sku.smf_rate != null ? '₹' + fmtAmt(sku.smf_rate) : '—'}</td>
+                              <td style={{ textAlign: 'right' }} className="mono">{sku.student_fee != null ? '₹' + fmtAmt(sku.student_fee) : '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )
-            })}
-          </div>
+            })()}
+          </>
         )}
 
         {/* SKU table below cards if search active */}
