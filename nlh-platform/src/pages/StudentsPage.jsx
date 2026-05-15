@@ -151,6 +151,24 @@ function StudentDetailModal({ student, onClose, onSaved }) {
 
 // ── AddStudentModal ────────────────────────────────────────────────────────────
 
+// Tiers that can operate as student-enrolment centres
+const CENTRE_TIERS = ['UF', 'CF', 'SMF', 'NLH']
+
+// Derive the SKU filter for a given franchisee record.
+// Returns:
+//   null            — no centre selected; show nothing
+//   'all'           — unrestricted centre (NLH HO, CF/SMF with no explicit list)
+//   { skuIds }      — filter to specific SKU IDs
+//   { courseIds }   — filter to specific course IDs
+function deriveFilter(fr) {
+  if (!fr) return null
+  const skus    = fr.registered_skus    || []
+  const courses = fr.registered_courses || []
+  if (skus.length > 0)    return { skuIds: skus }
+  if (courses.length > 0) return { courseIds: courses }
+  return 'all'  // NLH HO or CF/SMF with no explicit restriction
+}
+
 function AddStudentModal({ onClose, onSaved }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
@@ -162,50 +180,65 @@ function AddStudentModal({ onClose, onSaved }) {
   })
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
-  const [regCourseIds, setRegCourseIds] = useState(null) // null = loading; [] = none; [...] = filtered
+  // null = no centre chosen yet; 'all' = show everything; {skuIds} or {courseIds} = filtered
+  const [regFilter, setRegFilter] = useState(null)
   const [selectedSkus, setSelectedSkus] = useState([])
   const [feeTotal, setFeeTotal] = useState(0)
   const [saving, setSaving] = useState(false)
 
+  const FR_FIELDS = 'id,business_name,city,tier,registered_courses,registered_skus'
+
   useEffect(() => {
     async function loadCentres() {
       if (admin) {
+        // Admin sees all active centres across every tier
         const { data } = await sb.from('franchisees')
-          .select('id,business_name,city,tier,registered_courses')
-          .eq('tier', 'UF').eq('status', 'active').order('business_name')
+          .select(FR_FIELDS)
+          .in('tier', CENTRE_TIERS)
+          .eq('status', 'active')
+          .order('tier').order('business_name')
         setCentreList(data || [])
       } else if (isMasterFr) {
+        // SMF: self + CF children + UF grandchildren
+        // CF:  self + UF children
         const descendantIds = await getDescendantIds(currentFranchiseeId)
         const [selfRes, descRes] = await Promise.all([
-          sb.from('franchisees').select('id,business_name,city,tier,registered_courses').eq('id', currentFranchiseeId).single(),
+          sb.from('franchisees').select(FR_FIELDS).eq('id', currentFranchiseeId).single(),
           descendantIds.length > 0
-            ? sb.from('franchisees').select('id,business_name,city,tier,registered_courses').in('id', descendantIds).eq('status', 'active').order('business_name')
+            ? sb.from('franchisees').select(FR_FIELDS).in('id', descendantIds).eq('status', 'active').order('business_name')
             : { data: [] },
         ])
         const self = selfRes.data ? [selfRes.data] : []
-        const ufDescendants = (descRes.data || []).filter(f => f.tier === 'UF')
-        setCentreList([...self, ...ufDescendants])
+        // Include ALL descendant tiers (CF + UF), not just UF
+        const descendants = (descRes.data || []).filter(f => CENTRE_TIERS.includes(f.tier))
+        setCentreList([...self, ...descendants])
       } else {
-        // UF: fetch own registered_courses to filter SKUs
+        // UF: fixed to their own centre — load their SKU filter immediately
         const { data } = await sb.from('franchisees')
-          .select('registered_courses').eq('id', currentFranchiseeId).single()
-        setRegCourseIds(data?.registered_courses || [])
+          .select('registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
+        setRegFilter(deriveFilter(data))
       }
     }
     loadCentres()
 
-    // Load all SKUs once, grouped by course category (group_name)
+    // Load all SKUs once, sorted by curriculum order
     sb.from('skus').select('id,level_name,student_fee,course_id,courses(group_name)').order('sort_order')
-      .then(({ data }) => {
-        setAllSkus(data || [])
-      })
+      .then(({ data }) => { setAllSkus(data || []) })
   }, [])
 
   // Build filtered + grouped SKU list for display
-  function buildGroups(courseIdFilter) {
-    const filtered = (courseIdFilter === null || courseIdFilter === undefined)
-      ? []  // no centre selected yet — show nothing
-      : (courseIdFilter.length === 0 ? [] : allSkus.filter(s => courseIdFilter.includes(s.course_id)))
+  function buildGroups() {
+    if (!regFilter) return []
+    let filtered
+    if (regFilter === 'all') {
+      filtered = allSkus
+    } else if (regFilter.skuIds) {
+      filtered = allSkus.filter(s => regFilter.skuIds.includes(s.id))
+    } else if (regFilter.courseIds) {
+      filtered = allSkus.filter(s => regFilter.courseIds.includes(s.course_id))
+    } else {
+      filtered = []
+    }
     const map = {}
     filtered.forEach(function (sku) {
       const g = sku.courses?.group_name || 'Other'
@@ -223,9 +256,9 @@ function AddStudentModal({ onClose, onSaved }) {
     setForm(f => ({ ...f, franchisee_id: fid }))
     setSelectedSkus([])
     setFeeTotal(0)
-    if (!fid) { setRegCourseIds(null); return }
+    if (!fid) { setRegFilter(null); return }
     const fr = centreList.find(function (c) { return c.id === fid })
-    setRegCourseIds(fr?.registered_courses || [])
+    setRegFilter(deriveFilter(fr))
   }
 
   function toggleSku(sku) {
@@ -239,7 +272,7 @@ function AddStudentModal({ onClose, onSaved }) {
 
   async function save() {
     if (!form.full_name.trim()) { showToast('Student name is required', 'warn'); return }
-    if (!form.franchisee_id) { showToast('Please select a centre (UF)', 'warn'); return }
+    if (!form.franchisee_id) { showToast('Please select a centre', 'warn'); return }
 
     setSaving(true)
     const tempPass = genTempPass()
@@ -337,8 +370,8 @@ function AddStudentModal({ onClose, onSaved }) {
                   <option value="">— Select Centre —</option>
                   {centreList.map(c => (
                     <option key={c.id} value={c.id}>
-                      [{c.tier}] {c.business_name}{c.city ? ' (' + c.city + ')' : ''}
-                      {c.id === currentFranchiseeId && isMasterFr ? ' — your centre' : ''}
+                      [{c.tier}] {c.business_name}{c.city ? ' · ' + c.city : ''}
+                      {c.id === currentFranchiseeId && isMasterFr ? ' (your centre)' : ''}
                     </option>
                   ))}
                 </select>
@@ -351,11 +384,11 @@ function AddStudentModal({ onClose, onSaved }) {
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
             <strong>Course Enrolment</strong>
             <p className="hint">Select SKU levels to enrol. Student fee is calculated automatically.</p>
-            {(admin || isMasterFr) && !form.franchisee_id ? (
+            {!regFilter ? (
               <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 4 }}>Select a centre first to see available courses.</p>
-            ) : buildGroups(regCourseIds).length === 0 ? (
+            ) : buildGroups().length === 0 ? (
               <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 4 }}>No courses registered for this centre.</p>
-            ) : buildGroups(regCourseIds).map(group => (
+            ) : buildGroups().map(group => (
               <div key={group.name} style={{ marginBottom: 12 }}>
                 <div className="course-group-header">{group.name}</div>
                 <div className="checkbox-grid">

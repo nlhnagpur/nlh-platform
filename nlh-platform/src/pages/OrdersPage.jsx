@@ -31,7 +31,7 @@ function PaymentBadge({ order }) {
 
 function TierBadge({ tier }) {
   if (!tier) return null
-  const cls = { SMF: 't-smf', CF: 't-cf', UF: 't-uf' }[tier] || ''
+  const cls = { NLH: 't-nlh', SMF: 't-smf', CF: 't-cf', UF: 't-uf' }[tier] || ''
   return <span className={'tier ' + cls}>{tier}</span>
 }
 
@@ -262,7 +262,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   function updateNewItemSku(idx, skuId) {
     const sku = allSkus.find(function (s) { return s.id === skuId })
     const tier = order.placer_tier || 'UF'
-    const rate = sku ? ({ UF: sku.uf_rate, CF: sku.cf_rate, SMF: sku.smf_rate }[tier] || sku.uf_rate || 0) : 0
+    const rate = sku ? (rateForSku(sku, tier)) : 0
     setItems(function (prev) {
       return prev.map(function (it, i) {
         if (i !== idx) return it
@@ -347,9 +347,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                 </thead>
                 <tbody>
                   {items.map(function (item, idx) {
-                    const defaultRate = item.skus
-                      ? ({ UF: item.skus.uf_rate, CF: item.skus.cf_rate, SMF: item.skus.smf_rate }[order.placer_tier] || item.skus.uf_rate || 0)
-                      : 0
+                    const defaultRate = item.skus ? rateForSku(item.skus, order.placer_tier) : 0
                     const isNew = !item.id
                     return (
                       <tr key={item.id || ('new-' + idx)} style={isNew ? { background: 'var(--bg3)' } : {}}>
@@ -492,10 +490,11 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   const [saving, setSaving] = useState(false)
 
   // Tier-appropriate default rate for a SKU
+  // NLH Head Office is treated at SMF rate (highest dealer rate)
   function rateForSku(sku, tier) {
     if (!sku) return 0
-    if (tier === 'CF')  return sku.cf_rate  || 0
-    if (tier === 'SMF') return sku.smf_rate || 0
+    if (tier === 'CF')               return sku.cf_rate  || 0
+    if (tier === 'SMF' || tier === 'NLH') return sku.smf_rate || 0
     return sku.uf_rate || 0
   }
 
