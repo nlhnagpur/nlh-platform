@@ -240,8 +240,8 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
 
   async function loadData() {
     const [itemsRes, skusRes] = await Promise.all([
-      sb.from('order_items').select('*, skus(level_name, uf_rate, cf_rate, smf_rate, courses(name))').eq('order_id', order.id),
-      isAdmin ? sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate, courses(name)').order('sort_order') : { data: [] },
+      sb.from('order_items').select('*, skus(level_name, uf_rate, cf_rate, smf_rate, courses(group_name))').eq('order_id', order.id),
+      isAdmin ? sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate, courses(group_name)').order('sort_order') : { data: [] },
     ])
     if (itemsRes.error) showToast('Failed to load items: ' + itemsRes.error.message)
     else setItems(itemsRes.data || [])
@@ -360,10 +360,9 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                               style={{ width: '100%', fontSize: 13 }}
                             >
                               <option value="">— Select SKU —</option>
-                              <option value="">— Select SKU —</option>
                               {Object.entries(
                                 allSkus.reduce(function (acc, s) {
-                                  const c = s.courses?.name || 'Other'
+                                  const c = s.courses?.group_name || 'Other'
                                   if (!acc[c]) acc[c] = []
                                   acc[c].push(s)
                                   return acc
@@ -380,8 +379,8 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                             </select>
                           ) : (
                             <>
-                              {item.skus?.courses?.name && (
-                                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 1 }}>{item.skus.courses.name}</div>
+                              {item.skus?.courses?.group_name && (
+                                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 1 }}>{item.skus.courses.group_name}</div>
                               )}
                               <div style={{ fontWeight: 500 }}>{item.skus?.level_name || item.sku_id}</div>
                               {item.rate !== defaultRate && defaultRate > 0 && (
@@ -508,7 +507,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     async function loadData() {
       // SKUs always loaded for everyone
       const sRes = await sb.from('skus')
-        .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id, courses(name)')
+        .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id, courses(group_name)')
         .order('sort_order')
       const allS = sRes.data || []
       setAllSkus(allS)
@@ -745,7 +744,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                         <option value="">-- Select SKU --</option>
                         {Object.entries(
                           visibleSkus.reduce(function (acc, s) {
-                            const c = s.courses?.name || 'Other'
+                            const c = s.courses?.group_name || 'Other'
                             if (!acc[c]) acc[c] = []
                             acc[c].push(s)
                             return acc
@@ -997,7 +996,7 @@ async function generateInvoicePDF(order, items) {
     const rY = y + 5.5
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); tc(...TDK)
     const skuLabel = item.skus
-      ? (item.skus.courses?.name ? item.skus.courses.name + ' — ' + item.skus.level_name : item.skus.level_name)
+      ? (item.skus.courses?.group_name ? item.skus.courses.group_name + ' — ' + item.skus.level_name : item.skus.level_name)
       : (item.sku_id || '')
     doc.text(doc.splitTextToSize(skuLabel, 70)[0], cSku, rY)
 
@@ -1310,7 +1309,7 @@ export default function OrdersPage() {
   async function handleDownloadInvoice(order) {
     const { data: items, error } = await sb
       .from('order_items')
-      .select('*, skus(level_name, courses(name))')
+      .select('*, skus(level_name, courses(group_name))')
       .eq('order_id', order.id)
     if (error) {
       showToast('Failed to load items: ' + error.message)

@@ -126,7 +126,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                 <tbody>
                   {enrollments.map(en => (
                     <tr key={en.id}>
-                      <td>{en.skus?.courses?.name || '—'}</td>
+                      <td>{en.skus?.courses?.group_name || '—'}</td>
                       <td>{en.skus?.level_name || '—'}</td>
                     </tr>
                   ))}
@@ -389,7 +389,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, enrollments(id, sku_id, skus(level_name, courses(name)))')
+        .select('*, enrollments(id, sku_id, skus(level_name, courses(group_name)))')
         .order('full_name')
 
       if (admin) {
@@ -467,7 +467,7 @@ export default function StudentsPage() {
             )}
             {filtered.map(s => {
               const balance = (s.fee_total || 0) - (s.fee_paid || 0)
-              const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.name).filter(Boolean))]
+              const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean))]
               return (
                 <tr key={s.id} style={{cursor:"pointer"}} onClick={() => setSelected(s)}>
                   <td><strong>{s.full_name}</strong></td>
