@@ -378,38 +378,62 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
   const [franchisees, setFranchisees] = useState([])
-  const [allSkus, setAllSkus] = useState([])       // full list (admin)
-  const [visibleSkus, setVisibleSkus] = useState([]) // filtered by registration
+  const [allSkus, setAllSkus] = useState([])
+  const [visibleSkus, setVisibleSkus] = useState([])
   const [placerId, setPlacerId] = useState(isAdmin ? '' : currentFranchiseeId)
-  const [placerTier, setPlacerTier] = useState('')  // UF / CF / SMF
+  const [placerTier, setPlacerTier] = useState('')
   const [deliverTo, setDeliverTo] = useState('')
-  const [lines, setLines] = useState([{ sku_id: '', qty: 1 }])
+  // Each line: { sku_id, qty, rate }  — rate is editable per line
+  const [lines, setLines] = useState([{ sku_id: '', qty: 1, rate: 0 }])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+
+  // Tier-appropriate default rate for a SKU
+  function rateForSku(sku, tier) {
+    if (!sku) return 0
+    if (tier === 'CF')  return sku.cf_rate  || 0
+    if (tier === 'SMF') return sku.smf_rate || 0
+    return sku.uf_rate || 0
+  }
+
+  // Build a delivery address string from franchisee fields
+  function buildAddress(fr) {
+    return [fr.address, fr.city, fr.state].filter(Boolean).join(', ')
+  }
 
   useEffect(function () {
     async function loadData() {
       if (isAdmin) {
         const [fRes, sRes] = await Promise.all([
-          sb.from('franchisees').select('id, business_name, tier, registered_courses').order('business_name'),
-          sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate, course_id').order('sort_order'),
+          sb.from('franchisees')
+            .select('id, business_name, tier, registered_courses, address, city, state')
+            .order('business_name'),
+          sb.from('skus')
+            .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id')
+            .order('sort_order'),
         ])
         setFranchisees(fRes.data || [])
         setAllSkus(sRes.data || [])
-        setVisibleSkus(sRes.data || []) // admin sees all
+        setVisibleSkus(sRes.data || [])
       } else {
-        // Non-admin: fetch own franchisee record + filtered SKUs
         const [frRes, sRes] = await Promise.all([
-          sb.from('franchisees').select('id, tier, registered_courses').eq('id', currentFranchiseeId).single(),
-          sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate, course_id').order('sort_order'),
+          sb.from('franchisees')
+            .select('id, tier, registered_courses, address, city, state')
+            .eq('id', currentFranchiseeId)
+            .single(),
+          sb.from('skus')
+            .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id')
+            .order('sort_order'),
         ])
         const allS = sRes.data || []
         setAllSkus(allS)
         if (frRes.data) {
-          setPlacerTier(frRes.data.tier || 'UF')
-          const regCourses = frRes.data.registered_courses || []
-          // UF can only order for their registered courses; SMF/CF see all
-          if (frRes.data.tier === 'UF' && regCourses.length > 0) {
+          const fr = frRes.data
+          setPlacerTier(fr.tier || 'UF')
+          // Auto-fill own delivery address
+          setDeliverTo(buildAddress(fr))
+          const regCourses = fr.registered_courses || []
+          if (fr.tier === 'UF' && regCourses.length > 0) {
             setVisibleSkus(allS.filter(function (s) { return regCourses.includes(s.course_id) }))
           } else {
             setVisibleSkus(allS)
@@ -422,7 +446,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
   }, [])
 
   function addLine() {
-    setLines(function (prev) { return [...prev, { sku_id: '', qty: 1 }] })
+    setLines(function (prev) { return [...prev, { sku_id: '', qty: 1, rate: 0 }] })
   }
 
   function removeLine(idx) {
@@ -433,31 +457,39 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     setLines(function (prev) {
       return prev.map(function (line, i) {
         if (i !== idx) return line
-        return { ...line, [field]: val }
+        const updated = { ...line, [field]: val }
+        // When SKU changes, auto-populate rate from tier default
+        if (field === 'sku_id') {
+          const sku = allSkus.find(function (s) { return s.id === val })
+          updated.rate = rateForSku(sku, placerTier)
+        }
+        return updated
       })
     })
   }
 
-  // Get tier-appropriate rate for a SKU
-  function rateForSku(sku, tier) {
-    if (!sku) return 0
-    if (tier === 'CF')  return sku.cf_rate  || 0
-    if (tier === 'SMF') return sku.smf_rate || 0
-    return sku.uf_rate || 0
-  }
-
-  // When admin selects a franchisee, update tier (admin sees all SKUs regardless)
+  // When admin picks a franchisee: auto-fill address + update tier + refresh line rates
   function handleFranchiseeChange(fid) {
     setPlacerId(fid)
     const fr = franchisees.find(function (f) { return f.id === fid })
-    if (fr) setPlacerTier(fr.tier || 'UF')
+    if (!fr) return
+    const tier = fr.tier || 'UF'
+    setPlacerTier(tier)
+    setDeliverTo(buildAddress(fr))
+    // Refresh rates on existing lines for the new tier
+    setLines(function (prev) {
+      return prev.map(function (line) {
+        if (!line.sku_id) return line
+        const sku = allSkus.find(function (s) { return s.id === line.sku_id })
+        return { ...line, rate: rateForSku(sku, tier) }
+      })
+    })
   }
 
   function calcTotal() {
     return lines.reduce(function (sum, line) {
-      const sku = allSkus.find(function (s) { return s.id === line.sku_id })
-      if (!sku) return sum
-      return sum + (rateForSku(sku, placerTier) * (parseInt(line.qty, 10) || 0))
+      if (!line.sku_id) return sum
+      return sum + ((parseInt(line.rate, 10) || 0) * (parseInt(line.qty, 10) || 0))
     }, 0)
   }
 
@@ -468,11 +500,8 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     if (validLines.length === 0) { showToast('Add at least one SKU.'); return }
 
     setSaving(true)
-
-    // Generate sequential order ref from DB
     const { data: refData } = await sb.rpc('next_order_ref')
     const orderRef = refData || ('ORD-' + Date.now())
-
     const total = calcTotal()
 
     const { data: orderData, error: orderErr } = await sb
@@ -485,8 +514,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
         grand_total: total,
         status: 'pending',
       })
-      .select()
-      .single()
+      .select().single()
 
     if (orderErr) {
       showToast('Failed to create order: ' + orderErr.message)
@@ -495,13 +523,12 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     }
 
     const itemRows = validLines.map(function (line) {
-      const sku = allSkus.find(function (s) { return s.id === line.sku_id })
       return {
         order_id: orderData.id,
         sku_id: line.sku_id,
         ordered_qty: parseInt(line.qty, 10),
         sent_qty: 0,
-        rate: rateForSku(sku, placerTier),
+        rate: parseInt(line.rate, 10) || 0,
       }
     })
 
@@ -520,18 +547,18 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
       <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>New Order</h3>
-          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
+          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>x</button>
         </div>
-        <div >
+        <div>
           {loading ? (
-            <div className="text-muted">Loading…</div>
+            <div className="muted">Loading...</div>
           ) : (
             <>
               {isAdmin && (
                 <div className="fr">
                   <label>Franchisee</label>
                   <select value={placerId} onChange={function (e) { handleFranchiseeChange(e.target.value) }}>
-                    <option value="">— Select franchisee —</option>
+                    <option value="">-- Select franchisee --</option>
                     {franchisees.map(function (f) {
                       return (
                         <option key={f.id} value={f.id}>
@@ -542,68 +569,103 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
                   </select>
                 </div>
               )}
+
               <div className="fr">
-                <label>Deliver To (address)</label>
+                <label>
+                  Deliver To
+                  {deliverTo && <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 11, marginLeft: 6 }}>(auto-filled from franchisee record — edit if needed)</span>}
+                </label>
                 <textarea
                   rows={2}
                   value={deliverTo}
                   onChange={function (e) { setDeliverTo(e.target.value) }}
-                  placeholder="Delivery address…"
+                  placeholder="Delivery address..."
                 />
               </div>
-              <div className="order-lines">
-                <div className="order-lines-header">
-                  <span>SKU</span>
-                  <span>Qty</span>
-                  <span>Rate</span>
-                  <span>Amount</span>
-                  <span></span>
+
+              {/* SKU lines */}
+              <div style={{ marginTop: 12 }}>
+                {/* Column headers */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px 100px 90px 32px', gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>SKU</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Qty</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Rate (Rs)</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', textAlign: 'right' }}>Amount</span>
+                  <span />
                 </div>
+
                 {lines.map(function (line, idx) {
                   const sku = allSkus.find(function (s) { return s.id === line.sku_id })
-                  const skuRate = rateForSku(sku, placerTier)
-                  const lineAmt = sku ? skuRate * (parseInt(line.qty, 10) || 0) : 0
+                  const defaultRate = rateForSku(sku, placerTier)
+                  const lineRate = parseInt(line.rate, 10) || 0
+                  const lineAmt = lineRate * (parseInt(line.qty, 10) || 0)
+                  const isOverridden = sku && lineRate !== defaultRate
+
                   return (
-                    <div key={idx} className="order-line">
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 72px 100px 90px 32px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
                       <select
                         value={line.sku_id}
                         onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }}
                       >
-                        <option value="">— Select SKU —</option>
+                        <option value="">-- Select SKU --</option>
                         {visibleSkus.map(function (s) {
-                          const rate = rateForSku(s, placerTier)
                           return (
-                            <option key={s.id} value={s.id}>
-                              {s.level_name}{rate ? ' — ₹' + rate : ''}
-                            </option>
+                            <option key={s.id} value={s.id}>{s.level_name}</option>
                           )
                         })}
                       </select>
+
                       <input
-                        type="number"
-                        min={1}
-                        value={line.qty}
+                        type="number" min={1} value={line.qty}
                         onChange={function (e) { updateLine(idx, 'qty', e.target.value) }}
-                        style={{ width: 70 }}
                       />
-                      <span>{sku ? fmtAmt(skuRate) : '—'}</span>
-                      <span>{fmtAmt(lineAmt)}</span>
+
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="number" min={0} value={line.rate}
+                          onChange={function (e) { updateLine(idx, 'rate', e.target.value) }}
+                          style={{ width: '100%', fontWeight: 600, borderColor: isOverridden ? 'var(--amber, #F59E0B)' : undefined }}
+                          title={isOverridden ? 'Overriding default rate of Rs ' + defaultRate : 'Default rate for tier'}
+                        />
+                        {isOverridden && (
+                          <span
+                            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#B45309', cursor: 'pointer' }}
+                            title={'Reset to Rs ' + defaultRate}
+                            onClick={function () { updateLine(idx, 'rate', defaultRate) }}
+                          >
+                            reset
+                          </span>
+                        )}
+                      </div>
+
+                      <span style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600 }}>
+                        {fmtAmt(lineAmt)}
+                      </span>
+
                       <button
-                        className="btn btn-sm btn-danger"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, padding: 0 }}
                         onClick={function () { removeLine(idx) }}
                         disabled={lines.length === 1}
                       >
-                        ×
+                        x
                       </button>
                     </div>
                   )
                 })}
-                <button className="btn-s btn-sm" onClick={addLine} style={{ marginTop: 8 }}>
+
+                <button className="btn-s btn-sm" onClick={addLine} style={{ marginTop: 6 }}>
                   + Add SKU
                 </button>
               </div>
-              <div className="order-total">
-                Total: <strong>{fmtAmt(calcTotal())}</strong>
+
+              {/* Total */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>Order Total</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--purple)' }}>
+                    Rs {fmtAmt(calcTotal())}
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -611,7 +673,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={handleSubmit} disabled={saving || loading}>
-            {saving ? 'Placing Order…' : 'Place Order'}
+            {saving ? 'Placing Order...' : 'Place Order'}
           </button>
         </div>
       </div>
