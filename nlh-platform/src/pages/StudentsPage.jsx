@@ -447,78 +447,130 @@ export default function StudentsPage() {
     setShowAdd(false)
   }
 
+  // Tone index per course name (cycle through 8 tones)
+  const courseList = [...new Set(students.flatMap(s => (s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean)))]
+  function courseTone(name) {
+    const idx = courseList.indexOf(name)
+    return (idx % 8) + 1
+  }
+
   return (
     <div className="pg">
-      <div className="topbar">
-        <h1>Students</h1>
-        <div style={{display:"flex",gap:8}}>
+      {/* Topbar */}
+      <header className="tb">
+        <div className="crumb">Operations <span className="sep">›</span> <b>Students</b></div>
+        <div className="tb-r">
           <input
-            className="search-inp"
-            placeholder="Search name / parent / phone…"
+            className="search tb-search"
+            placeholder="Search students by name or parent…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={function (e) { setSearch(e.target.value) }}
           />
-          <button className="btn-p" onClick={() => setShowAdd(true)}>
-            + Add Student
-          </button>
+          <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Enrol Student</button>
         </div>
-      </div>
+      </header>
 
-      {loading ? (
-        <div className="loading">Loading students…</div>
-      ) : (
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Parent</th>
-              <th>Courses Enrolled</th>
-              <th>Fee Total</th>
-              <th>Fee Paid</th>
-              <th>Balance</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr><td colSpan={8} className="empty">No students found</td></tr>
-            )}
-            {filtered.map(s => {
-              const balance = (s.fee_total || 0) - (s.fee_paid || 0)
-              const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean))]
-              return (
-                <tr key={s.id} style={{cursor:"pointer"}} onClick={() => setSelected(s)}>
-                  <td><strong>{s.full_name}</strong></td>
-                  <td>{s.parent_name || '—'}</td>
-                  <td>
-                    {courseNames.length === 0
-                      ? <span style={{color:'var(--text3)'}}>None</span>
-                      : courseNames.map(cn => (
-                          <span key={cn} style={{
-                            display:'inline-block', background:'var(--bg3)',
-                            border:'1px solid var(--border)', borderRadius:20,
-                            fontSize:10, padding:'1px 8px', marginRight:3,
-                            fontFamily:'var(--mono)'
-                          }}>{cn}</span>
-                        ))
-                    }
-                  </td>
-                  <td>₹{fmtAmt(s.fee_total)}</td>
-                  <td>₹{fmtAmt(s.fee_paid)}</td>
-                  <td style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</td>
-                  <td><StatusBadge status={s.payment_status} /></td>
-                  <td>
-                    <button className="btn-s btn-sm" onClick={e => { e.stopPropagation(); setSelected(s) }}>
-                      View
-                    </button>
-                  </td>
+      <div className="content">
+        {/* Page header */}
+        <div className="ph">
+          <div className="ph-l">
+            <div className="ph-eyebrow"><span className="dot"></span>Enrollment</div>
+            <h1 className="ph-title">Students</h1>
+            <div className="ph-sub">
+              <b>{students.length} students</b> enrolled across all centres.
+            </div>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="mini-stats">
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🎓</div>
+            <div className="mini-num">{students.length}</div>
+            <div className="mini-lbl">Total enrolled</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>📚</div>
+            <div className="mini-num">{courseList.length}</div>
+            <div className="mini-lbl">Programs offered</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
+            <div className="mini-num">{students.filter(s => s.payment_status === 'paid').length}</div>
+            <div className="mini-lbl">Fee paid</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--red-bg)' }}>⏳</div>
+            <div className="mini-num">{students.filter(s => s.payment_status === 'pending').length}</div>
+            <div className="mini-lbl">Fee pending</div>
+          </div>
+        </div>
+
+        {/* Students table */}
+        {loading ? (
+          <div className="loading">Loading students…</div>
+        ) : (
+          <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
+            <table className="big-tbl">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Parent</th>
+                  <th>Courses</th>
+                  <th style={{ textAlign: 'right' }}>Fee Total</th>
+                  <th style={{ textAlign: 'right' }}>Fee Paid</th>
+                  <th style={{ textAlign: 'right' }}>Balance</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      )}
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={8} className="empty">No students found</td></tr>
+                )}
+                {filtered.map(function (s) {
+                  const balance = (s.fee_total || 0) - (s.fee_paid || 0)
+                  const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean))]
+                  return (
+                    <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelected(s) }}>
+                      <td>
+                        <div className="placer-cell">
+                          <div className="placer-av" style={{ background: 'var(--purple)' }}>
+                            {(s.full_name || '').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="placer-name">{s.full_name}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ color: 'var(--text2)' }}>{s.parent_name || '—'}</td>
+                      <td>
+                        {courseNames.length === 0
+                          ? <span style={{ color: 'var(--text3)' }}>None</span>
+                          : courseNames.map(function (cn) {
+                            return (
+                              <span key={cn} className={'stu-chip stu-chip-' + courseTone(cn)}>{cn}</span>
+                            )
+                          })
+                        }
+                      </td>
+                      <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(s.fee_total)}</div></td>
+                      <td style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</div></td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</div>
+                      </td>
+                      <td><StatusBadge status={s.payment_status} /></td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button className="row-action" onClick={function (e) { e.stopPropagation(); setSelected(s) }}>View</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {selected && (
         <StudentDetailModal
@@ -537,3 +589,4 @@ export default function StudentsPage() {
     </div>
   )
 }
+

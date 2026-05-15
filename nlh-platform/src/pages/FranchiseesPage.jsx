@@ -506,59 +506,162 @@ export default function FranchiseesPage() {
     setShowAdd(false)
   }
 
+  const [tierFilter, setTierFilter] = useState('all')
+
+  const tierFiltered = filtered.filter(function (f) {
+    if (tierFilter === 'all') return true
+    return (f.tier || '').toLowerCase() === tierFilter
+  })
+
+  const counts = {
+    all: filtered.length,
+    smf: filtered.filter(function (f) { return f.tier === 'SMF' }).length,
+    cf:  filtered.filter(function (f) { return f.tier === 'CF' }).length,
+    uf:  filtered.filter(function (f) { return f.tier === 'UF' }).length,
+  }
+
+  // Avatar color by tier
+  function tierColor(tier) {
+    return { SMF: '#F59E0B', CF: '#16A34A', UF: '#2563EB' }[tier] || '#534AB7'
+  }
+
+  function frInitials(name) {
+    return (name || '').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
+  }
+
   return (
     <div className="pg">
-      <div className="topbar">
-        <div>
-          <div className="pt">Franchisees</div>
-          <div className="ps">{franchisees.length} partner{franchisees.length !== 1 ? 's' : ''} in network</div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+      {/* Topbar */}
+      <header className="tb">
+        <div className="crumb">Operations <span className="sep">›</span> <b>Franchisees</b></div>
+        <div className="tb-r">
           <input
-            className="search-inp"
-            placeholder="Search name / city / state…"
+            className="search tb-search"
+            placeholder="Search by name, owner, or city…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={function (e) { setSearch(e.target.value) }}
           />
           {admin && (
-            <button className="btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>
+            <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>
           )}
         </div>
-      </div>
+      </header>
 
-      {loading ? (
-        <div className="loading"><span className="spinner" />Loading…</div>
-      ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Name</th><th>Tier</th><th>State</th><th>City</th>
-                <th>Phone</th><th>Status</th><th>Fee Paid</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text3)' }}>No franchisees found</td></tr>
-              )}
-              {filtered.map(f => (
-                <tr key={f.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(f)}>
-                  <td><strong>{f.business_name}</strong></td>
-                  <td><TierBadge tier={f.tier} /></td>
-                  <td>{f.state || '—'}</td>
-                  <td>{f.city || '—'}</td>
-                  <td>{f.phone || '—'}</td>
-                  <td><StatusBadge status={f.status} /></td>
-                  <td>₹{fmtAmt(f.fee_paid)}</td>
-                  <td>
-                    <button className="btn-s btn-sm" onClick={e => { e.stopPropagation(); setSelected(f) }}>View</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="content">
+        {/* Page header */}
+        <div className="ph">
+          <div className="ph-l">
+            <div className="ph-eyebrow"><span className="dot"></span>Network</div>
+            <h1 className="ph-title">Franchisees</h1>
+            <div className="ph-sub">
+              <b>{franchisees.length} partner{franchisees.length !== 1 ? 's' : ''}</b> in your network.
+              Organised by tier: SMF · CF · UF.
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* Mini stats */}
+        <div className="mini-stats">
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🏢</div>
+            <div className="mini-num">{franchisees.length}</div>
+            <div className="mini-lbl">Total partners</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>🌟</div>
+            <div className="mini-num">{counts.smf}</div>
+            <div className="mini-lbl">SMF · State Master</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>🏙️</div>
+            <div className="mini-num">{counts.cf}</div>
+            <div className="mini-lbl">CF · City</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--blue-bg)' }}>📍</div>
+            <div className="mini-num">{counts.uf}</div>
+            <div className="mini-lbl">UF · Urban</div>
+          </div>
+        </div>
+
+        {/* Toolbar with search + tier filter */}
+        <div className="fr-toolbar">
+          <input
+            className="fr-search"
+            placeholder="Search by business name, city…"
+            value={search}
+            onChange={function (e) { setSearch(e.target.value) }}
+          />
+          <div className="fr-tabs">
+            {[
+              { id: 'all', l: 'All' },
+              { id: 'smf', l: 'SMF' },
+              { id: 'cf',  l: 'CF'  },
+              { id: 'uf',  l: 'UF'  },
+            ].map(function (t) {
+              return (
+                <button
+                  key={t.id}
+                  className={'fr-tab ' + (tierFilter === t.id ? 'on' : '')}
+                  onClick={function () { setTierFilter(t.id) }}
+                >
+                  {t.l} <span className="ct">{counts[t.id]}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Franchisee cards grid */}
+        {loading ? (
+          <div className="loading"><span className="spinner" />Loading…</div>
+        ) : tierFiltered.length === 0 ? (
+          <div className="empty">No franchisees found.</div>
+        ) : (
+          <div className="fr-grid">
+            {tierFiltered.map(function (f) {
+              const tier = (f.tier || 'UF').toLowerCase()
+              return (
+                <div key={f.id} className={'fr-card ' + tier} onClick={function () { setSelected(f) }}>
+                  <div className="fr-head">
+                    <div className="fr-av" style={{ background: tierColor(f.tier) }}>
+                      {frInitials(f.business_name)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="fr-name">{f.business_name}</div>
+                      <div className="fr-loc">{[f.city, f.state].filter(Boolean).join(' · ')}</div>
+                      <div className="fr-badge-row">
+                        <TierBadge tier={f.tier} />
+                        {f.phone && <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{f.phone}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="fr-stat-row">
+                    <div className="fr-stat">
+                      <div className="fr-stat-num">{f.fee_paid > 0 ? '₹' + fmtAmt(f.fee_paid) : '—'}</div>
+                      <div className="fr-stat-lbl">Fee paid</div>
+                    </div>
+                    <div className="fr-stat">
+                      <div className="fr-stat-num">{(f.registered_courses || []).length}</div>
+                      <div className="fr-stat-lbl">Courses</div>
+                    </div>
+                    <div className="fr-stat">
+                      <div className="fr-stat-num">{f.status || '—'}</div>
+                      <div className="fr-stat-lbl">Status</div>
+                    </div>
+                  </div>
+                  <div className="fr-card-foot">
+                    <div className="fr-since">{f.city || f.state || '—'}</div>
+                    <div className={'fr-active ' + (f.status !== 'active' ? 'fr-dormant' : '')}>
+                      <span className="d"></span>{f.status === 'active' ? 'Active' : (f.status || 'Unknown')}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {selected && (
         <FranchiseeDetailModal
@@ -578,3 +681,4 @@ export default function FranchiseesPage() {
     </div>
   )
 }
+

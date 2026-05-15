@@ -8,18 +8,18 @@ import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import InvoiceView from '../components/InvoiceView'
 
-// JSX badge components (replaces HTML-string utils)
+// JSX badge components
 function StatusBadge({ status }) {
   const map = {
-    pending:           { cls: 'bp',  txt: 'Pending' },
-    invoiced:          { cls: 'br',  txt: 'Invoiced' },
-    payment_submitted: { cls: 'bpu', txt: 'Pmt Submitted' },
-    verified:          { cls: 'ba',  txt: 'Verified' },
-    closed:            { cls: 'ba',  txt: 'Closed' },
-    part_paid:         { cls: 'bp',  txt: 'Part Paid' },
+    pending:           { cls: 'bdg-pend', txt: 'pending' },
+    invoiced:          { cls: 'bdg-inv',  txt: 'invoiced' },
+    payment_submitted: { cls: 'bdg-pmt',  txt: 'pmt submitted' },
+    verified:          { cls: 'bdg-paid', txt: 'verified' },
+    closed:            { cls: 'bdg-paid', txt: 'closed' },
+    part_paid:         { cls: 'bdg-pmt',  txt: 'part paid' },
   }
-  const s = map[status] || { cls: 'bd', txt: status || '—' }
-  return <span className={'badge ' + s.cls}>{s.txt}</span>
+  const s = map[status] || { cls: '', txt: status || '—' }
+  return <span className={'bdg ' + s.cls}><span className="d"></span>{s.txt}</span>
 }
 
 function PaymentBadge({ order }) {
@@ -1337,92 +1337,43 @@ export default function OrdersPage() {
   function renderActions(order) {
     const busy = actionLoading && actionLoading.startsWith(order.id)
     return (
-      <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-        {/* pending → Mark Invoiced (admin only) */}
+      <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {order.status === 'pending' && isAdmin && (
-          <button
-            className="btn-p btn-sm"
-            disabled={busy}
-            onClick={function () { handleMarkInvoiced(order) }}
-          >
-            {isActing(order.id, 'invoice') ? '…' : 'Mark Invoiced'}
+          <button className="row-action primary" disabled={busy} onClick={function () { handleMarkInvoiced(order) }}>
+            {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
           </button>
         )}
-
-        {/* invoiced → franchisee can submit payment */}
         {order.status === 'invoiced' && !isAdmin && (
-          <button
-            className="btn-p btn-sm"
-            onClick={function () { setPaySubmitOrder(order) }}
-          >
-            Submit Payment
-          </button>
+          <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
         )}
-
-        {/* invoiced → admin: record payment, reminder, edit invoice */}
         {order.status === 'invoiced' && isAdmin && (
           <>
-            <button className="btn-s btn-sm" onClick={function () { setRecordPayOrder(order) }}>
-              Record Payment
+            <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
+            <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
+              {isActing(order.id, 'reminder') ? '…' : 'Remind'}
             </button>
-            <button
-              className="btn-s btn-sm"
-              disabled={busy}
-              onClick={function () { handleSendReminder(order) }}
-            >
-              {isActing(order.id, 'reminder') ? '…' : 'Send Reminder'}
-            </button>
-            <button className="btn-s btn-sm" onClick={function () { setEditInvoiceOrder(order) }}>
-              Edit Invoice
-            </button>
+            <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
           </>
         )}
-
-        {/* payment_submitted → admin: verify */}
         {order.status === 'payment_submitted' && isAdmin && (
-          <button
-            className="btn-p btn-sm"
-            disabled={busy}
-            onClick={function () { handleVerifyPayment(order) }}
-          >
-            {isActing(order.id, 'verify') ? '…' : 'Verify Payment'}
+          <button className="row-action primary" disabled={busy} onClick={function () { handleVerifyPayment(order) }}>
+            {isActing(order.id, 'verify') ? '…' : 'Verify'}
           </button>
         )}
-
-        {/* closed → admin: reopen */}
         {order.status === 'closed' && isAdmin && (
-          <button
-            className="btn-s btn-sm"
-            disabled={busy}
-            onClick={function () { handleReopen(order) }}
-          >
+          <button className="row-action" disabled={busy} onClick={function () { handleReopen(order) }}>
             {isActing(order.id, 'reopen') ? '…' : 'Reopen'}
           </button>
         )}
-
-        {/* closed or invoiced → view/download invoice */}
         {['invoiced', 'payment_submitted', 'closed'].includes(order.status) && (
-          <button
-            className="btn-s btn-sm"
-            onClick={function () { setInvoiceViewOrder(order) }}
-          >
-            📄 Invoice
-          </button>
+          <button className="row-action" onClick={function () { setInvoiceViewOrder(order) }}>PDF</button>
         )}
-
-        {/* any → mark dispatched if not yet dispatched */}
         {!order.dispatched_at && (
-          <button
-            className="btn-s btn-sm"
-            onClick={function () { setDispatchOrder(order) }}
-          >
-            Mark Dispatched
-          </button>
+          <button className="row-action" onClick={function () { setDispatchOrder(order) }}>Dispatch</button>
         )}
         {order.dispatched_at && (
-          <span style={{ color:'var(--text3)', fontSize: 12 }}>
-            Dispatched {fmtDate(order.dispatched_at)}
-            {order.awb_number ? ' | ' + order.awb_number : ''}
+          <span style={{ color: 'var(--text3)', fontSize: 11, fontFamily: 'var(--mono)' }}>
+            {order.awb_number || 'Dispatched'}
           </span>
         )}
       </div>
@@ -1431,76 +1382,112 @@ export default function OrdersPage() {
 
   if (loading) return <div className="loading"><span className="spinner" />Loading orders…</div>
 
+  const statusPillMap = [
+    { id: 'all',               l: 'All',           cls: 'all' },
+    { id: 'pending',           l: 'Pending',        cls: 'pending' },
+    { id: 'invoiced',          l: 'Invoiced',       cls: 'inv' },
+    { id: 'payment_submitted', l: 'Pmt Submitted',  cls: 'pmt' },
+    { id: 'closed',            l: 'Closed',         cls: 'closed' },
+  ]
+
   return (
     <div className="pg">
-      <div className="topbar">
-        <div>
-          <div className="pt">Orders</div>
-          <div className="ps">Manage and track all kit orders</div>
+      {/* Topbar */}
+      <header className="tb">
+        <div className="crumb">Operations <span className="sep">›</span> <b>Orders</b></div>
+        <div className="tb-r">
+          <input className="search tb-search" placeholder="Search by order ref or franchisee…" readOnly />
+          <button className="btn btn-s">Export CSV</button>
+          <button className="btn btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>
         </div>
-        <button className="btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>
-      </div>
+      </header>
 
-      {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {ORDER_FILTERS.map(function (f) {
-          const active = orderFilter === f
-          return (
-            <button
-              key={f}
-              className={active ? 'btn-p btn-sm' : 'btn-s btn-sm'}
-              onClick={function () { setOrderFilter(f) }}
-            >
-              {FILTER_LABELS[f]}{filterCounts[f] > 0 ? ' (' + filterCounts[f] + ')' : ''}
-            </button>
-          )
-        })}
-      </div>
+      <div className="content">
+        {/* Page header */}
+        <div className="ph">
+          <div className="ph-l">
+            <div className="ph-eyebrow"><span className="dot"></span>Operations</div>
+            <h1 className="ph-title">Orders</h1>
+            <div className="ph-sub">
+              Tracking <b>{orders.length} orders</b>.{' '}
+              <b>{filterCounts['pending']} pending invoice</b> · total active orders across all centres.
+            </div>
+          </div>
+        </div>
 
-      {filtered.length === 0 ? (
-        <div className="empty">No orders found.</div>
-      ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Order Ref</th>
-                <th>Invoice No</th>
-                {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && <th>Franchisee</th>}
-                <th>Total</th>
-                <th>Paid</th>
-                <th>Status</th>
-                <th>Actions</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(function (order) {
-                return (
-                  <tr key={order.id}>
-                    <td className="mono">{order.order_ref}</td>
-                    <td className="mono">{order.invoice_no || '—'}</td>
-                    {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && (
-                      <td>
-                        {order.placer
-                          ? <span><TierBadge tier={order.placer.tier} /> {order.placer.business_name}</span>
-                          : <span className="muted">{order.placer_tier}</span>}
+        {/* Status pills filter */}
+        <div className="status-pills">
+          {statusPillMap.map(function (s) {
+            return (
+              <button
+                key={s.id}
+                className={'sp ' + (orderFilter === s.id ? ('on ' + s.cls) : '')}
+                onClick={function () { setOrderFilter(s.id) }}
+              >
+                {s.l} <span className="ct">{filterCounts[s.id]}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Orders table */}
+        {filtered.length === 0 ? (
+          <div className="empty">No orders found.</div>
+        ) : (
+          <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
+            <table className="big-tbl">
+              <thead>
+                <tr>
+                  <th>Order Ref</th>
+                  <th>Invoice No</th>
+                  {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && <th>Franchisee</th>}
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Total</th>
+                  <th style={{ textAlign: 'right' }}>Paid</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(function (order) {
+                  return (
+                    <tr key={order.id}>
+                      <td className="mono" style={{ color: 'var(--purple)', fontWeight: 600 }}>{order.order_ref}</td>
+                      <td className="mono">{order.invoice_no || '—'}</td>
+                      {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && (
+                        <td>
+                          {order.placer ? (
+                            <div className="placer-cell">
+                              <div className="placer-av" style={{ background: 'var(--purple)' }}>
+                                {(order.placer.business_name || '').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="placer-name">{order.placer.business_name}</div>
+                                <div className="placer-loc"><TierBadge tier={order.placer.tier} /></div>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="tier t-uf">{order.placer_tier}</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="mono">{fmtDate(order.created_at)}</td>
+                      <td><StatusBadge status={order.status} /></td>
+                      <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(order.grand_total || 0)}</div></td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="amt" style={{ color: order.amount_paid > 0 ? 'var(--green)' : 'var(--text3)' }}>
+                          ₹{fmtAmt(order.amount_paid || 0)}
+                        </div>
                       </td>
-                    )}
-                    <td className="mono">₹{fmtAmt(order.grand_total || 0)}</td>
-                    <td className="mono" style={{ color: order.amount_paid > 0 ? 'var(--green)' : 'var(--text3)' }}>
-                      ₹{fmtAmt(order.amount_paid || 0)}
-                    </td>
-                    <td><StatusBadge status={order.status} /></td>
-                    <td>{renderActions(order)}</td>
-                    <td className="muted">{fmtDate(order.created_at)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{renderActions(order)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
       {paySubmitOrder && (
@@ -1552,3 +1539,4 @@ export default function OrdersPage() {
     </div>
   )
 }
+

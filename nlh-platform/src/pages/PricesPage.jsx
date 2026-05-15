@@ -3,9 +3,23 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, showToast } from '../utils'
 
+// Tone map for program emoji colors
+const TONE_MAP = {
+  1: { bg: '#DBEAFE', color: '#2563EB' },
+  2: { bg: '#DCFCE7', color: '#16A34A' },
+  3: { bg: '#FEF3C7', color: '#D97706' },
+  4: { bg: '#FCE7F3', color: '#DB2777' },
+  5: { bg: '#E9D5FF', color: '#7C3AED' },
+  6: { bg: '#BAE6FD', color: '#0284C7' },
+  7: { bg: '#FED7AA', color: '#EA580C' },
+  8: { bg: '#FECDD3', color: '#E11D48' },
+}
+
 export default function PricesPage() {
   const { currentUser } = useAuth()
   const [skus, setSkus] = useState([])
+  const [courses, setCourses] = useState([])
+  const [activeCourseId, setActiveCourseId] = useState(null)
   const [priceChanges, setPriceChanges] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -18,13 +32,28 @@ export default function PricesPage() {
     setLoading(true)
     const { data, error } = await sb
       .from('skus')
-      .select('*, courses(name, group_name)')
+      .select('*, courses(id, name, group_name)')
       .order('course_id')
       .order('sort_order')
     if (error) {
       showToast('Failed to load SKUs: ' + error.message)
     } else {
-      setSkus(data || [])
+      const s = data || []
+      setSkus(s)
+      // Build unique course list
+      const seen = {}
+      const courseList = []
+      s.forEach(function (sku, idx) {
+        const c = sku.courses
+        if (c && !seen[c.id]) {
+          seen[c.id] = true
+          courseList.push({ ...c, tone: (courseList.length % 8) + 1 })
+        }
+      })
+      setCourses(courseList)
+      if (courseList.length > 0 && !activeCourseId) {
+        setActiveCourseId(courseList[0].id)
+      }
     }
     setLoading(false)
   }
@@ -63,18 +92,14 @@ export default function PricesPage() {
       const ch = priceChanges[skuId]
       const { error: updateErr } = await sb
         .from('skus')
-        .update({
-          uf_rate: ch.uf_rate,
-          cf_rate: ch.cf_rate,
-          smf_rate: ch.smf_rate,
-        })
+        .update({ uf_rate: ch.uf_rate, cf_rate: ch.cf_rate, smf_rate: ch.smf_rate })
         .eq('id', skuId)
       if (updateErr) {
-        showToast('Error updating SKU ' + skuId + ': ' + updateErr.message)
+        showToast('Error updating SKU: ' + updateErr.message)
         errorOccurred = true
         continue
       }
-      const { error: histErr } = await sb.from('kit_price_history').insert({
+      await sb.from('kit_price_history').insert({
         sku_id: skuId,
         old_uf_rate: ch.old_uf_rate,
         new_uf_rate: ch.uf_rate,
@@ -85,10 +110,6 @@ export default function PricesPage() {
         changed_by: currentUser.email,
         changed_at: new Date().toISOString(),
       })
-      if (histErr) {
-        showToast('Error logging history for SKU ' + skuId + ': ' + histErr.message)
-        errorOccurred = true
-      }
     }
     if (!errorOccurred) {
       showToast('Prices saved successfully.')
@@ -106,72 +127,151 @@ export default function PricesPage() {
   }
 
   const changedCount = Object.keys(priceChanges).length
+  const activeSkus = skus.filter(function (s) { return s.courses?.id === activeCourseId })
+  const activeCourse = courses.find(function (c) { return c.id === activeCourseId })
 
   if (loading) return <div className="loading"><span className="spinner" />Loading prices…</div>
 
   return (
     <div className="pg">
-      <div className="topbar">
-        <h2>Kit Prices</h2>
-        <button
-          className="btn-p"
-          onClick={handleSave}
-          disabled={saving || changedCount === 0}
-        >
-          {saving ? 'Saving…' : changedCount > 0 ? 'Save ' + changedCount + ' Change' + (changedCount > 1 ? 's' : '') : 'No Changes'}
-        </button>
-      </div>
+      {/* Topbar */}
+      <header className="tb">
+        <div className="crumb">Catalog <span className="sep">›</span> <b>Kit Prices</b></div>
+        <div className="tb-r">
+          <input className="search tb-search" placeholder="Search by SKU…" readOnly />
+          {changedCount > 0 && (
+            <button className="btn btn-p" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : 'Save ' + changedCount + ' Change' + (changedCount > 1 ? 's' : '')}
+            </button>
+          )}
+        </div>
+      </header>
 
-      <div className="card" style={{padding:0,overflow:"hidden"}}>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Course</th>
-              <th>Group</th>
-              <th>Level / SKU</th>
-              <th>UF Rate (₹)</th>
-              <th>CF Rate (₹)</th>
-              <th>SMF Rate (₹)</th>
-              <th>Student Fee (₹)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {skus.map(function (sku) {
+      <div className="content">
+        {/* Page header */}
+        <div className="ph">
+          <div className="ph-l">
+            <div className="ph-eyebrow"><span className="dot"></span>Catalog</div>
+            <h1 className="ph-title">Kit Prices</h1>
+            <div className="ph-sub">
+              <b>{skus.length} SKUs</b> across {courses.length} programs · tier-specific rates for UF, CF, and SMF.
+              Zero renders as <b>Price TBD</b> in the order form.
+            </div>
+          </div>
+        </div>
+
+        {/* Prices layout: sidebar rail + main table */}
+        <div className="prices-layout">
+          {/* Left rail: program list */}
+          <div className="prices-rail">
+            <div className="prices-rail-h">Programs</div>
+            {courses.map(function (c) {
+              const tone = TONE_MAP[c.tone] || TONE_MAP[1]
+              const skuCount = skus.filter(function (s) { return s.courses?.id === c.id }).length
               return (
-                <tr key={sku.id}>
-                  <td>{sku.courses?.name || '—'}</td>
-                  <td>{sku.courses?.group_name || '—'}</td>
-                  <td className="mono">{sku.level_name || '—'}</td>
-                  <td>
-                    <input
-                      type="number"
-                      className={'price-inp' + (isChanged(sku.id, 'uf_rate', sku.uf_rate) ? ' changed' : '')}
-                      value={getCurrentVal(sku, 'uf_rate')}
-                      onChange={function (e) { handlePriceInput(sku.id, 'uf_rate', e.target.value, sku) }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      className={'price-inp' + (isChanged(sku.id, 'cf_rate', sku.cf_rate) ? ' changed' : '')}
-                      value={getCurrentVal(sku, 'cf_rate')}
-                      onChange={function (e) { handlePriceInput(sku.id, 'cf_rate', e.target.value, sku) }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      className={'price-inp' + (isChanged(sku.id, 'smf_rate', sku.smf_rate) ? ' changed' : '')}
-                      value={getCurrentVal(sku, 'smf_rate')}
-                      onChange={function (e) { handlePriceInput(sku.id, 'smf_rate', e.target.value, sku) }}
-                    />
-                  </td>
-                  <td>{fmtAmt(sku.student_fee)}</td>
-                </tr>
+                <div
+                  key={c.id}
+                  className={'prices-rail-i ' + (activeCourseId === c.id ? 'on' : '')}
+                  onClick={function () { setActiveCourseId(c.id) }}
+                >
+                  <div className="prices-rail-em" style={{ background: tone.bg, color: tone.color }}>
+                    {(c.name || '').slice(0, 2)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="prices-rail-name">{c.group_name || c.name}</div>
+                    <div className="prices-rail-sub">{skuCount} SKUs</div>
+                  </div>
+                </div>
               )
             })}
-          </tbody>
-        </table>
+          </div>
+
+          {/* Right: price matrix */}
+          <div className="prices-main">
+            <div className="card-h" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <div className="card-t">{activeCourse ? (activeCourse.group_name || activeCourse.name) : '—'} · Price matrix</div>
+                <div className="card-ts">All edits auto-logged · {changedCount > 0 && <span style={{ color: 'var(--amber)' }}>{changedCount} unsaved change{changedCount > 1 ? 's' : ''}</span>}</div>
+              </div>
+              {changedCount > 0 && (
+                <button className="btn btn-p" onClick={handleSave} disabled={saving} style={{ fontSize: 11 }}>
+                  {saving ? 'Saving…' : 'Save changes'}
+                </button>
+              )}
+            </div>
+            <div className="prices-notice">
+              <span>💡</span>
+              <span><b>Heads up.</b> Prices are live — changes immediately affect what franchisees see when ordering. A zero rate renders as <b>Price TBD</b>.</span>
+            </div>
+            <table className="prices-tbl">
+              <thead>
+                <tr>
+                  <th>SKU / Kit</th>
+                  <th className="r">UF Rate (₹)</th>
+                  <th className="r">CF Rate (₹)</th>
+                  <th className="r">SMF Rate (₹)</th>
+                  <th className="r">Student Fee</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeSkus.length === 0 && (
+                  <tr><td colSpan={5} style={{ padding: 24, color: 'var(--text3)', textAlign: 'center' }}>Select a program to view SKUs</td></tr>
+                )}
+                {activeSkus.map(function (sku) {
+                  const ufChanged = isChanged(sku.id, 'uf_rate', sku.uf_rate)
+                  const cfChanged = isChanged(sku.id, 'cf_rate', sku.cf_rate)
+                  const smfChanged = isChanged(sku.id, 'smf_rate', sku.smf_rate)
+                  return (
+                    <tr key={sku.id}>
+                      <td>
+                        <div className="prices-sku-cell">
+                          <div className="prices-sku-name">{sku.level_name}</div>
+                          <div className="prices-sku-code">{sku.id.slice(0, 8).toUpperCase()}</div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="pinp-wrap">
+                          <span className="pinp-cur">₹</span>
+                          <input
+                            type="number"
+                            className={'pinp' + (ufChanged ? ' ch' : '') + (getCurrentVal(sku, 'uf_rate') === 0 ? ' zero' : '')}
+                            value={getCurrentVal(sku, 'uf_rate')}
+                            onChange={function (e) { handlePriceInput(sku.id, 'uf_rate', e.target.value, sku) }}
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <div className="pinp-wrap">
+                          <span className="pinp-cur">₹</span>
+                          <input
+                            type="number"
+                            className={'pinp' + (cfChanged ? ' ch' : '') + (getCurrentVal(sku, 'cf_rate') === 0 ? ' zero' : '')}
+                            value={getCurrentVal(sku, 'cf_rate')}
+                            onChange={function (e) { handlePriceInput(sku.id, 'cf_rate', e.target.value, sku) }}
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <div className="pinp-wrap">
+                          <span className="pinp-cur">₹</span>
+                          <input
+                            type="number"
+                            className={'pinp' + (smfChanged ? ' ch' : '') + (getCurrentVal(sku, 'smf_rate') === 0 ? ' zero' : '')}
+                            value={getCurrentVal(sku, 'smf_rate')}
+                            onChange={function (e) { handlePriceInput(sku.id, 'smf_rate', e.target.value, sku) }}
+                          />
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right', font: '500 12px var(--mono)', color: 'var(--text2)' }}>
+                        {sku.student_fee ? '₹' + fmtAmt(sku.student_fee) : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   )
