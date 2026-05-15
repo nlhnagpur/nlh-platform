@@ -20,7 +20,7 @@ function initials(name) {
   return name.split(' ').map(function(n) { return n[0] }).join('').slice(0, 2).toUpperCase()
 }
 
-export default function Sidebar({ currentPage, onNavigate }) {
+export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
   const { currentRole, currentUser, signOut } = useAuth()
   const navItems = NAV_ITEMS[currentRole] || NAV_ITEMS.admin
   const isAdmin = ['owner', 'super_admin', 'admin', 'manager', 'staff'].includes(currentRole)
@@ -53,7 +53,7 @@ export default function Sidebar({ currentPage, onNavigate }) {
   }
 
   return (
-    <div className="sb">
+    <div className={'sb' + (isOpen ? ' open' : '')}>
       {/* top: logo + brand */}
       <div className="sb-top">
         <div className="sb-logo-box">
@@ -64,6 +64,8 @@ export default function Sidebar({ currentPage, onNavigate }) {
           <div className="sb-trust">Est. 2008 · <b>ISO 9001:2015</b></div>
         </div>
         {isAdmin && <span className="sb-env">{roleLabel}</span>}
+        {/* close button — visible only on mobile */}
+        <button className="sb-close" onClick={onClose} aria-label="Close menu">✕</button>
       </div>
 
       {/* navigation */}

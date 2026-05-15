@@ -756,7 +756,7 @@ export default function DashboardPage({ onNavigate }) {
             {displayOrders.length === 0 ? (
               <div style={{ padding: '24px 18px', color: 'var(--text3)', fontSize: 12 }}>No orders yet.</div>
             ) : (
-              <table className="tbl">
+              <div className="tbl-scroll"><table className="tbl">
                 <thead>
                   <tr>
                     <th>Order</th>
@@ -808,7 +808,7 @@ export default function DashboardPage({ onNavigate }) {
                     )
                   })}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
 
