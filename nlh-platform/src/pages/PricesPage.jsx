@@ -18,8 +18,9 @@ const TONE_MAP = {
 export default function PricesPage() {
   const { currentUser } = useAuth()
   const [skus, setSkus] = useState([])
-  const [courses, setCourses] = useState([])
-  const [activeCourseId, setActiveCourseId] = useState(null)
+  // programs = unique group_names, each is { groupName, tone, skuCount }
+  const [programs, setPrograms] = useState([])
+  const [activeGroup, setActiveGroup] = useState(null)
   const [priceChanges, setPriceChanges] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -40,19 +41,20 @@ export default function PricesPage() {
     } else {
       const s = data || []
       setSkus(s)
-      // Build unique course list
+
+      // Build unique programs by group_name — each group_name = one program in the rail
       const seen = {}
-      const courseList = []
-      s.forEach(function (sku, idx) {
-        const c = sku.courses
-        if (c && !seen[c.id]) {
-          seen[c.id] = true
-          courseList.push({ ...c, tone: (courseList.length % 8) + 1 })
+      const programList = []
+      s.forEach(function (sku) {
+        const gn = sku.courses?.group_name || sku.courses?.name || '—'
+        if (!seen[gn]) {
+          seen[gn] = true
+          programList.push({ groupName: gn, tone: (programList.length % 8) + 1 })
         }
       })
-      setCourses(courseList)
-      if (courseList.length > 0 && !activeCourseId) {
-        setActiveCourseId(courseList[0].id)
+      setPrograms(programList)
+      if (programList.length > 0 && !activeGroup) {
+        setActiveGroup(programList[0].groupName)
       }
     }
     setLoading(false)
@@ -127,8 +129,11 @@ export default function PricesPage() {
   }
 
   const changedCount = Object.keys(priceChanges).length
-  const activeSkus = skus.filter(function (s) { return s.courses?.id === activeCourseId })
-  const activeCourse = courses.find(function (c) { return c.id === activeCourseId })
+  // All SKUs whose course's group_name matches the selected program
+  const activeSkus = skus.filter(function (s) {
+    const gn = s.courses?.group_name || s.courses?.name || '—'
+    return gn === activeGroup
+  })
 
   if (loading) return <div className="loading"><span className="spinner" />Loading prices…</div>
 
@@ -154,7 +159,7 @@ export default function PricesPage() {
             <div className="ph-eyebrow"><span className="dot"></span>Catalog</div>
             <h1 className="ph-title">Kit Prices</h1>
             <div className="ph-sub">
-              <b>{skus.length} SKUs</b> across {courses.length} programs · tier-specific rates for UF, CF, and SMF.
+              <b>{skus.length} SKUs</b> across {programs.length} programs · tier-specific rates for UF, CF, and SMF.
               Zero renders as <b>Price TBD</b> in the order form.
             </div>
           </div>
@@ -162,24 +167,29 @@ export default function PricesPage() {
 
         {/* Prices layout: sidebar rail + main table */}
         <div className="prices-layout">
-          {/* Left rail: program list */}
+          {/* Left rail: program list — one entry per unique group_name */}
           <div className="prices-rail">
             <div className="prices-rail-h">Programs</div>
-            {courses.map(function (c) {
-              const tone = TONE_MAP[c.tone] || TONE_MAP[1]
-              const skuCount = skus.filter(function (s) { return s.courses?.id === c.id }).length
+            {programs.map(function (p) {
+              const tone = TONE_MAP[p.tone] || TONE_MAP[1]
+              const skuCount = skus.filter(function (s) {
+                const gn = s.courses?.group_name || s.courses?.name || '—'
+                return gn === p.groupName
+              }).length
+              // Initials from the first two words of the program name
+              const initials = p.groupName.split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
               return (
                 <div
-                  key={c.id}
-                  className={'prices-rail-i ' + (activeCourseId === c.id ? 'on' : '')}
-                  onClick={function () { setActiveCourseId(c.id) }}
+                  key={p.groupName}
+                  className={'prices-rail-i ' + (activeGroup === p.groupName ? 'on' : '')}
+                  onClick={function () { setActiveGroup(p.groupName) }}
                 >
                   <div className="prices-rail-em" style={{ background: tone.bg, color: tone.color }}>
-                    {(c.name || '').slice(0, 2)}
+                    {initials}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="prices-rail-name">{c.group_name || c.name}</div>
-                    <div className="prices-rail-sub">{skuCount} SKUs</div>
+                    <div className="prices-rail-name">{p.groupName}</div>
+                    <div className="prices-rail-sub">{skuCount} SKU{skuCount !== 1 ? 's' : ''}</div>
                   </div>
                 </div>
               )
@@ -190,7 +200,7 @@ export default function PricesPage() {
           <div className="prices-main">
             <div className="card-h" style={{ borderBottom: '1px solid var(--border)' }}>
               <div>
-                <div className="card-t">{activeCourse ? (activeCourse.group_name || activeCourse.name) : '—'} · Price matrix</div>
+                <div className="card-t">{activeGroup || '—'} · Price matrix</div>
                 <div className="card-ts">All edits auto-logged · {changedCount > 0 && <span style={{ color: 'var(--amber)' }}>{changedCount} unsaved change{changedCount > 1 ? 's' : ''}</span>}</div>
               </div>
               {changedCount > 0 && (
