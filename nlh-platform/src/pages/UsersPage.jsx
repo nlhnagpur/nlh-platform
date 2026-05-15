@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { showToast } from '../utils'
 import { ROLE_LABELS, ROLE_COLORS, isAdminRole } from '../constants/roles'
+import { sendWelcomeEmail } from '../services/email'
 
 // ── role hierarchy ────────────────────────────────────────────────────────────
 const ROLE_RANK = { owner: 6, super_admin: 5, admin: 4, manager: 3, staff: 2, smf: 1, cf: 1, uf: 1, student: 0 }
@@ -111,8 +112,23 @@ function AddUserModal({ myRole, onClose, onSaved }) {
       is_active: true,
     }, { onConflict: 'email' })
 
-    if (dbErr) showToast('User created in Auth but role save failed: ' + dbErr.message)
-    else { showToast('User created! They can now log in.'); onSaved() }
+    if (dbErr) {
+      showToast('User created in Auth but role save failed: ' + dbErr.message)
+    } else {
+      // Send login credentials email
+      const emailResult = await sendWelcomeEmail(
+        email.trim().toLowerCase(),
+        name.trim() || email.split('@')[0],
+        role,
+        password.trim()
+      )
+      if (emailResult.success) {
+        showToast('User created and credentials emailed to ' + email.trim() + '!')
+      } else {
+        showToast('User created! (Credentials email failed — share details manually.)')
+      }
+      onSaved()
+    }
     setSaving(false)
   }
 
@@ -275,6 +291,15 @@ export default function UsersPage() {
     loadUsers()
   }
 
+  async function sendInvite(user) {
+    const { error } = await sb.auth.resetPasswordForEmail(user.email, {
+      redirectTo: 'https://nlh-platform.vercel.app/login',
+    })
+    if (error) { showToast('Failed to send invite: ' + error.message); return }
+    showToast('Password reset link sent to ' + user.email + '!')
+    setModal(null)
+  }
+
   // Stats
   const total    = users.length
   const adminCnt = users.filter(function (u) { return ADMIN_ROLES.includes(u.role) }).length
@@ -426,6 +451,11 @@ export default function UsersPage() {
                             </button>
                           )}
                           {actable && (
+                            <button className="row-action" onClick={function () { setModal({ type: 'invite', user: u }) }}>
+                              📧 Invite
+                            </button>
+                          )}
+                          {actable && (
                             <button
                               className={'row-action' + (isBlocked ? ' green' : '')}
                               onClick={function () { setModal({ type: 'block', user: u }) }}
@@ -463,6 +493,15 @@ export default function UsersPage() {
         <EditRoleModal user={modal.user} myRole={currentRole}
           onClose={function () { setModal(null) }}
           onSaved={function () { setModal(null); loadUsers() }} />
+      )}
+      {modal?.type === 'invite' && (
+        <ConfirmModal
+          title="Send login invite"
+          message={'Send a password reset link to ' + modal.user.email + '? They will receive an email with a link to set their password and access the platform.'}
+          confirmLabel="Send invite"
+          danger={false}
+          onConfirm={function () { return sendInvite(modal.user) }}
+          onClose={function () { setModal(null) }} />
       )}
       {modal?.type === 'block' && (
         <ConfirmModal
