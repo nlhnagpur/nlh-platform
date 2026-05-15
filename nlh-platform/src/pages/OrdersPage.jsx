@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { jsPDF } from 'jspdf'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
@@ -233,39 +233,44 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  useEffect(function () {
-    loadItems()
-  }, [])
+  useEffect(function () { loadItems() }, [])
 
   async function loadItems() {
     const { data, error } = await sb
       .from('order_items')
-      .select('*, skus(level_name)')
+      .select('*, skus(level_name, uf_rate, cf_rate, smf_rate)')
       .eq('order_id', order.id)
-    if (error) {
-      showToast('Failed to load items: ' + error.message)
-    } else {
-      setItems(data || [])
-    }
+    if (error) { showToast('Failed to load items: ' + error.message) }
+    else { setItems(data || []) }
     setLoading(false)
   }
 
-  function updateSentQty(itemId, val) {
+  function updateField(itemId, field, val) {
     setItems(function (prev) {
       return prev.map(function (it) {
-        if (it.id === itemId) return { ...it, sent_qty: parseInt(val, 10) || 0 }
-        return it
+        if (it.id !== itemId) return it
+        return { ...it, [field]: parseInt(val, 10) || 0 }
       })
     })
+  }
+
+  function lineTotal(item) {
+    return (item.ordered_qty || 0) * (item.rate || 0)
+  }
+
+  function grandTotal() {
+    const itemsTotal = items.reduce(function (s, it) { return s + lineTotal(it) }, 0)
+    return itemsTotal + (parseInt(courierCharges, 10) || 0)
   }
 
   async function handleSave() {
     setSaving(true)
     for (const item of items) {
-      await sb
+      const { error } = await sb
         .from('order_items')
-        .update({ sent_qty: item.sent_qty })
+        .update({ sent_qty: item.sent_qty, rate: item.rate })
         .eq('id', item.id)
+      if (error) { showToast('Error saving item: ' + error.message); setSaving(false); return }
     }
     await sb
       .from('orders')
@@ -281,60 +286,86 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
       <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Edit Invoice — {order.order_ref}</h3>
-          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
+          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>x</button>
         </div>
-        <div >
+        <div>
           {loading ? (
-            <div className="text-muted">Loading items…</div>
+            <div className="muted">Loading items...</div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>SKU</th>
-                  <th>Ordered Qty</th>
-                  <th>Sent Qty</th>
-                  <th>Rate</th>
-                  <th>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(function (item) {
-                  return (
-                    <tr key={item.id}>
-                      <td>{item.skus?.level_name || item.sku_id}</td>
-                      <td>{item.ordered_qty}</td>
-                      <td>
-                        <input
-                          type="number"
-                          className="price-inp"
-                          value={item.sent_qty}
-                          min={0}
-                          max={item.ordered_qty}
-                          onChange={function (e) { updateSentQty(item.id, e.target.value) }}
-                        />
-                      </td>
-                      <td>{fmtAmt(item.rate)}</td>
-                      <td>{fmtAmt(item.sent_qty * item.rate)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <>
+              <table className="tbl" style={{ marginBottom: 0 }}>
+                <thead>
+                  <tr>
+                    <th>SKU / Item</th>
+                    <th style={{ width: 80 }}>Ord Qty</th>
+                    <th style={{ width: 90 }}>Sent Qty</th>
+                    <th style={{ width: 110 }}>Rate (Rs)</th>
+                    <th style={{ width: 110, textAlign: 'right' }}>Amount (Rs)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(function (item) {
+                    const defaultRate = item.skus
+                      ? ({ UF: item.skus.uf_rate, CF: item.skus.cf_rate, SMF: item.skus.smf_rate }[order.placer_tier] || item.skus.uf_rate || 0)
+                      : 0
+                    return (
+                      <tr key={item.id}>
+                        <td>
+                          <div style={{ fontWeight: 500 }}>{item.skus?.level_name || item.sku_id}</div>
+                          {item.rate !== defaultRate && defaultRate > 0 && (
+                            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                              Default: Rs {fmtAmt(defaultRate)}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>{item.ordered_qty}</td>
+                        <td>
+                          <input
+                            type="number" className="price-inp"
+                            value={item.sent_qty} min={0} max={item.ordered_qty}
+                            onChange={function (e) { updateField(item.id, 'sent_qty', e.target.value) }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number" className="price-inp"
+                            value={item.rate} min={0}
+                            onChange={function (e) { updateField(item.id, 'rate', e.target.value) }}
+                            style={{ fontWeight: 600 }}
+                          />
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'var(--mono)' }}>
+                          Rs {fmtAmt(lineTotal(item))}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16, gap: 16 }}>
+                <div className="fr" style={{ margin: 0, flex: 1 }}>
+                  <label>Courier Charges (Rs)</label>
+                  <input
+                    type="number" value={courierCharges}
+                    onChange={function (e) { setCourierCharges(e.target.value) }}
+                    style={{ width: 140 }}
+                  />
+                </div>
+                <div style={{ textAlign: 'right', padding: '10px 16px', background: 'var(--bg3)', borderRadius: 10, minWidth: 180 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>Grand Total</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--purple)' }}>
+                    Rs {fmtAmt(grandTotal())}
+                  </div>
+                </div>
+              </div>
+            </>
           )}
-          <div className="fr" style={{ marginTop: 16 }}>
-            <label>Courier Charges (₹)</label>
-            <input
-              type="number"
-              value={courierCharges}
-              onChange={function (e) { setCourierCharges(e.target.value) }}
-              style={{ width: 140 }}
-            />
-          </div>
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={handleSave} disabled={saving || loading}>
-            {saving ? 'Saving…' : 'Save Changes'}
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -686,7 +717,7 @@ function generateInvoicePDF(order, items) {
   doc.setFont('helvetica', 'bold');   doc.setFontSize(9);   tc(...TDK)
   doc.text('New Learning Horizons', R, 30, { align: 'right' })
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); tc(...TMD)
-  doc.text('9, Anjuman Shopping Complex, Residency Road, Sadar, Nagpur – 440 001', R, 36, { align: 'right' })
+  doc.text('9, Anjuman Shopping Complex, Residency Road, Sadar, Nagpur - 440 001', R, 36, { align: 'right' })
   doc.text('Ph: +91-9373111311   |   dhiral@nlhnagpur.info', R, 41.5, { align: 'right' })
   doc.text('www.nlhnagpur.info', R, 47, { align: 'right' })
 
@@ -694,7 +725,7 @@ function generateInvoicePDF(order, items) {
   fc(...PURPLE); doc.rect(0, 54, W, 7.5, 'F')
   tc(...WHITE); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
   doc.text(
-    "New Learning Horizons  ·  ISO 9001:2015 Certified  ·  Enriching Children’s Future",
+    "New Learning Horizons  ·  ISO 9001:2015 Certified  ·  Enriching Children's Future",
     W / 2, 58.8, { align: ‘center’ }
   )
 
@@ -839,7 +870,7 @@ function generateInvoicePDF(order, items) {
   // Inner white bank-details card
   fc(...WHITE); doc.roundedRect(L + 3, y + 22, payW - 6, 36, 2, 2, 'F')
   doc.setFont('helvetica', 'bold');   doc.setFontSize(7.5); tc(...TDK)
-  doc.text('IDFC FIRST Bank, Nagpur – Byramji Town Branch', L + 7, y + 29)
+  doc.text('IDFC FIRST Bank, Nagpur - Byramji Town Branch', L + 7, y + 29)
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); tc(...TMD)
   doc.text('A/c No: 10278096847', L + 7, y + 35)
   doc.text('IFSC Code: IDFB0042504', L + 7, y + 41)
@@ -848,7 +879,7 @@ function generateInvoicePDF(order, items) {
   // Yellow "scan & pay" strip
   fc(...YELLOW); doc.roundedRect(L + 3, y + 51.5, payW - 6, 6.5, 1, 1, 'F')
   tc(...NAVY); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8)
-  doc.text('• Scan QR in any UPI app  •  newlearninghorizons@idfcbank', L + 7, y + 56)
+  doc.text('- Scan QR in any UPI app  -  newlearninghorizons@idfcbank', L + 7, y + 56)
 
   // Totals box — lavender with purple left accent
   fc(...LAVENDER); doc.roundedRect(totX, y, totW, botH, 3, 3, 'F')
@@ -906,7 +937,7 @@ function generateInvoicePDF(order, items) {
   fc(...FOOTERBG); doc.rect(0, 282.5, W, 14.5, 'F')
   tc(...WHITE); doc.setFont('helvetica', 'normal'); doc.setFontSize(8)
   doc.text(
-    "New Learning Horizons  ·  ISO 9001:2015 Certified  ·  Enriching Children’s Future  ·  www.nlhnagpur.info",
+    "New Learning Horizons  ·  ISO 9001:2015 Certified  ·  Enriching Children's Future  ·  www.nlhnagpur.info",
     W / 2, 289.5, { align: ‘center’ }
   )
   tc(...TLT); doc.setFontSize(7)
