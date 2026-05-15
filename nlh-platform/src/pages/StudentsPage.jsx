@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
+import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -153,21 +154,42 @@ function StudentDetailModal({ student, onClose, onSaved }) {
 function AddStudentModal({ onClose, onSaved }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
+  const isMasterFr = currentRole === 'smf' || currentRole === 'cf'
 
   const [form, setForm] = useState({
     full_name: '', parent_name: '', dob: '', phone: '', address: '',
+    // SMF/CF default to themselves as the centre; UF defaults to self too
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
-  const [ufList, setUfList] = useState([])
+  const [centreList, setCentreList] = useState([])
   const [skusByCourse, setSkusByCourse] = useState([])
   const [selectedSkus, setSelectedSkus] = useState([])
   const [feeTotal, setFeeTotal] = useState(0)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    // Load UF franchisees for centre dropdown
-    sb.from('franchisees').select('id,business_name,city').eq('tier', 'UF').eq('status', 'active').order('business_name')
-      .then(({ data }) => setUfList(data || []))
+    // Load centre options for dropdown
+    async function loadCentres() {
+      if (admin) {
+        // Admin sees all UFs
+        const { data } = await sb.from('franchisees').select('id,business_name,city,tier').eq('tier', 'UF').eq('status', 'active').order('business_name')
+        setCentreList(data || [])
+      } else if (isMasterFr) {
+        // SMF/CF: show self + all UF descendants
+        const descendantIds = await getDescendantIds(currentFranchiseeId)
+        const [selfRes, descRes] = await Promise.all([
+          sb.from('franchisees').select('id,business_name,city,tier').eq('id', currentFranchiseeId).single(),
+          descendantIds.length > 0
+            ? sb.from('franchisees').select('id,business_name,city,tier').in('id', descendantIds).eq('status', 'active').order('business_name')
+            : { data: [] },
+        ])
+        const self = selfRes.data ? [selfRes.data] : []
+        const ufDescendants = (descRes.data || []).filter(f => f.tier === 'UF')
+        setCentreList([...self, ...ufDescendants])
+      }
+      // UF: no dropdown needed — form.franchisee_id is fixed to their own id
+    }
+    loadCentres()
 
     // Load all SKUs grouped by course
     sb.from('skus').select('id,level_name,student_fee,course_id,courses(id,name,group_name)').order('course_id').order('sort_order')
@@ -292,13 +314,22 @@ function AddStudentModal({ onClose, onSaved }) {
             <label className="col-span-2">Address
               <input value={form.address} onChange={field('address')} placeholder="Home address" />
             </label>
-            <label className="col-span-2">Centre (UF) *
-              <select value={form.franchisee_id} onChange={field('franchisee_id')} disabled={!admin && !!currentFranchiseeId}>
-                <option value="">— Select Centre —</option>
-                {ufList.map(uf => (
-                  <option key={uf.id} value={uf.id}>{uf.business_name} ({uf.city})</option>
-                ))}
-              </select>
+            <label className="col-span-2">
+              Centre *
+              {/* Admin or SMF/CF: show dropdown; UF: fixed to own centre */}
+              {(admin || isMasterFr) ? (
+                <select value={form.franchisee_id} onChange={field('franchisee_id')}>
+                  <option value="">— Select Centre —</option>
+                  {centreList.map(c => (
+                    <option key={c.id} value={c.id}>
+                      [{c.tier}] {c.business_name}{c.city ? ' (' + c.city + ')' : ''}
+                      {c.id === currentFranchiseeId && isMasterFr ? ' — your centre' : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={form.franchisee_id ? 'Your centre' : '—'} disabled />
+              )}
             </label>
           </div>
 
@@ -360,10 +391,20 @@ export default function StudentsPage() {
       let q = sb.from('students')
         .select('*, enrollments(id, sku_id, skus(level_name, courses(name)))')
         .order('full_name')
-      if (!admin) {
+
+      if (admin) {
+        // Admin sees all students — no filter
+      } else if (currentRole === 'smf' || currentRole === 'cf') {
+        // SMF / CF sees students from self + all sub-franchisees
+        if (!currentFranchiseeId) { setLoading(false); return }
+        const treeIds = await getTreeIds(currentFranchiseeId)
+        q = q.in('franchisee_id', treeIds.length > 0 ? treeIds : [currentFranchiseeId])
+      } else {
+        // UF sees only own students
         if (!currentFranchiseeId) { setLoading(false); return }
         q = q.eq('franchisee_id', currentFranchiseeId)
       }
+
       const { data, error } = await q
       if (error) { console.error('Students load error:', error); showToast('Failed to load students: ' + error.message, 'err') }
       setStudents(data || [])

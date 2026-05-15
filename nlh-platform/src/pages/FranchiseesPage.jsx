@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast, statusBadge } from '../utils'
 import { isAdminRole } from '../constants/roles'
+import { getDescendantIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -416,19 +417,33 @@ export default function FranchiseesPage() {
     if (currentRole === null) return  // wait until auth resolves
     async function load() {
       setLoading(true)
-      let q = sb.from('franchisees').select('*').order('business_name')
-      if (!admin) {
-        if (!currentFranchiseeId) { setLoading(false); return }
-        q = q.eq('parent_id', currentFranchiseeId)
-      }
-      const [frResult, courseResult] = await Promise.all([
-        q,
-        sb.from('courses').select('id,name').order('name'),
-      ])
-      if (frResult.error) console.error('Franchisees load error:', frResult.error)
+      const courseResult = await sb.from('courses').select('id,name').order('name')
       if (courseResult.error) console.error('Courses load error:', courseResult.error)
-      setFranchisees(frResult.data || [])
       setAllCourses(courseResult.data || [])
+
+      if (admin) {
+        // Admin sees all franchisees
+        const { data, error } = await sb.from('franchisees').select('*').order('business_name')
+        if (error) console.error('Franchisees load error:', error)
+        setFranchisees(data || [])
+      } else {
+        // SMF / CF: show full descendant tree (children + grandchildren)
+        if (!currentFranchiseeId) { setLoading(false); return }
+        const descendantIds = await getDescendantIds(currentFranchiseeId)
+        if (descendantIds.length === 0) {
+          setFranchisees([])
+          setLoading(false)
+          return
+        }
+        const { data, error } = await sb
+          .from('franchisees')
+          .select('*')
+          .in('id', descendantIds)
+          .order('tier')          // SMF → CF → UF grouping
+          .order('business_name')
+        if (error) console.error('Franchisees load error:', error)
+        setFranchisees(data || [])
+      }
       setLoading(false)
     }
     load()

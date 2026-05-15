@@ -4,6 +4,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
+import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 
 // JSX badge components (replaces HTML-string utils)
@@ -457,11 +458,15 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 // NewOrderModal — create an order
 // ---------------------------------------------------------------------------
-function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
+function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onSaved }) {
+  // SMF and CF can place orders for themselves OR sub-franchisees
+  const isMasterFr = currentRole === 'smf' || currentRole === 'cf'
+  const showFrDropdown = isAdmin || isMasterFr
+
   const [franchisees, setFranchisees] = useState([])
   const [allSkus, setAllSkus] = useState([])
   const [visibleSkus, setVisibleSkus] = useState([])
-  const [placerId, setPlacerId] = useState(isAdmin ? '' : currentFranchiseeId)
+  const [placerId, setPlacerId] = useState(showFrDropdown ? (isAdmin ? '' : currentFranchiseeId) : currentFranchiseeId)
   const [placerTier, setPlacerTier] = useState('')
   const [deliverTo, setDeliverTo] = useState('')
   // Each line: { sku_id, qty, rate }  — rate is editable per line
@@ -484,34 +489,54 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
 
   useEffect(function () {
     async function loadData() {
+      // SKUs always loaded for everyone
+      const sRes = await sb.from('skus')
+        .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id')
+        .order('sort_order')
+      const allS = sRes.data || []
+      setAllSkus(allS)
+
       if (isAdmin) {
-        const [fRes, sRes] = await Promise.all([
+        // Admin: see all franchisees
+        const fRes = await sb.from('franchisees')
+          .select('id, business_name, tier, registered_courses, address, city, state')
+          .order('business_name')
+        setFranchisees(fRes.data || [])
+        setVisibleSkus(allS)
+      } else if (isMasterFr) {
+        // SMF / CF: see self + all descendants, default selection = self
+        const [selfRes, descendantIds] = await Promise.all([
           sb.from('franchisees')
             .select('id, business_name, tier, registered_courses, address, city, state')
-            .order('business_name'),
-          sb.from('skus')
-            .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id')
-            .order('sort_order'),
-        ])
-        setFranchisees(fRes.data || [])
-        setAllSkus(sRes.data || [])
-        setVisibleSkus(sRes.data || [])
-      } else {
-        const [frRes, sRes] = await Promise.all([
-          sb.from('franchisees')
-            .select('id, tier, registered_courses, address, city, state')
             .eq('id', currentFranchiseeId)
             .single(),
-          sb.from('skus')
-            .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id')
-            .order('sort_order'),
+          getDescendantIds(currentFranchiseeId),
         ])
-        const allS = sRes.data || []
-        setAllSkus(allS)
+        let allFrs = selfRes.data ? [selfRes.data] : []
+        if (descendantIds.length > 0) {
+          const descRes = await sb.from('franchisees')
+            .select('id, business_name, tier, registered_courses, address, city, state')
+            .in('id', descendantIds)
+            .order('tier').order('business_name')
+          allFrs = [...allFrs, ...(descRes.data || [])]
+        }
+        setFranchisees(allFrs)
+        // Default = self
+        if (selfRes.data) {
+          const fr = selfRes.data
+          setPlacerTier(fr.tier || 'UF')
+          setDeliverTo(buildAddress(fr))
+          setVisibleSkus(allS)   // SMF/CF see all SKUs
+        }
+      } else {
+        // UF: own data only, SKUs filtered to registered courses
+        const frRes = await sb.from('franchisees')
+          .select('id, tier, registered_courses, address, city, state')
+          .eq('id', currentFranchiseeId)
+          .single()
         if (frRes.data) {
           const fr = frRes.data
           setPlacerTier(fr.tier || 'UF')
-          // Auto-fill own delivery address
           setDeliverTo(buildAddress(fr))
           const regCourses = fr.registered_courses || []
           if (fr.tier === 'UF' && regCourses.length > 0) {
@@ -549,7 +574,7 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     })
   }
 
-  // When admin picks a franchisee: auto-fill address + update tier + refresh line rates
+  // When franchisee selection changes: auto-fill address + tier + refresh line rates + filter SKUs
   function handleFranchiseeChange(fid) {
     setPlacerId(fid)
     const fr = franchisees.find(function (f) { return f.id === fid })
@@ -557,6 +582,13 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
     const tier = fr.tier || 'UF'
     setPlacerTier(tier)
     setDeliverTo(buildAddress(fr))
+    // Filter SKUs by registered courses for UF; show all for SMF/CF
+    const regCourses = fr.registered_courses || []
+    if (tier === 'UF' && regCourses.length > 0) {
+      setVisibleSkus(allSkus.filter(function (s) { return regCourses.includes(s.course_id) }))
+    } else {
+      setVisibleSkus(allSkus)
+    }
     // Refresh rates on existing lines for the new tier
     setLines(function (prev) {
       return prev.map(function (line) {
@@ -635,15 +667,19 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
             <div className="muted">Loading...</div>
           ) : (
             <>
-              {isAdmin && (
+              {showFrDropdown && (
                 <div className="fr">
-                  <label>Franchisee</label>
+                  <label>
+                    {isAdmin ? 'Franchisee' : 'Place order for'}
+                    {isMasterFr && <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 11, marginLeft: 6 }}>(yourself or a sub-franchisee)</span>}
+                  </label>
                   <select value={placerId} onChange={function (e) { handleFranchiseeChange(e.target.value) }}>
-                    <option value="">-- Select franchisee --</option>
+                    {isAdmin && <option value="">-- Select franchisee --</option>}
                     {franchisees.map(function (f) {
+                      const isSelf = f.id === currentFranchiseeId
                       return (
                         <option key={f.id} value={f.id}>
-                          [{f.tier}] {f.business_name}
+                          [{f.tier}] {f.business_name}{isSelf && isMasterFr ? ' (you)' : ''}
                         </option>
                       )
                     })}
@@ -1125,20 +1161,31 @@ export default function OrdersPage() {
 
   async function loadOrders() {
     setLoading(true)
-    let query
+    let data, error
+
     if (isAdmin) {
-      query = sb
+      // Admins see all orders with placer info
+      ;({ data, error } = await sb
         .from('orders')
         .select('*, placer:franchisees!orders_placer_id_fkey(business_name, tier, email)')
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }))
+    } else if (currentRole === 'smf' || currentRole === 'cf') {
+      // SMF / CF see own orders + all orders from their sub-network
+      const treeIds = await getTreeIds(currentFranchiseeId)
+      ;({ data, error } = await sb
+        .from('orders')
+        .select('*, placer:franchisees!orders_placer_id_fkey(business_name, tier, email)')
+        .in('placer_id', treeIds.length > 0 ? treeIds : [currentFranchiseeId])
+        .order('created_at', { ascending: false }))
     } else {
-      query = sb
+      // UF sees only their own orders
+      ;({ data, error } = await sb
         .from('orders')
         .select('*')
         .eq('placer_id', currentFranchiseeId)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }))
     }
-    const { data, error } = await query
+
     if (error) {
       showToast('Failed to load orders: ' + error.message)
     } else {
@@ -1386,7 +1433,7 @@ export default function OrdersPage() {
               <tr>
                 <th>Order Ref</th>
                 <th>Invoice No</th>
-                {isAdmin && <th>Franchisee</th>}
+                {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && <th>Franchisee</th>}
                 <th>Total</th>
                 <th>Paid</th>
                 <th>Status</th>
@@ -1400,7 +1447,7 @@ export default function OrdersPage() {
                   <tr key={order.id}>
                     <td className="mono">{order.order_ref}</td>
                     <td className="mono">{order.invoice_no || '—'}</td>
-                    {isAdmin && (
+                    {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && (
                       <td>
                         {order.placer
                           ? <span><TierBadge tier={order.placer.tier} /> {order.placer.business_name}</span>
