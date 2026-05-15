@@ -725,8 +725,8 @@ function generateInvoicePDF(order, items) {
   fc(...PURPLE); doc.rect(0, 54, W, 7.5, 'F')
   tc(...WHITE); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
   doc.text(
-    "New Learning Horizons  ·  ISO 9001:2015 Certified  ·  Enriching Children's Future",
-    W / 2, 58.8, { align: ‘center’ }
+    "New Learning Horizons | ISO 9001:2015 Certified | Enriching Children's Future",
+    W / 2, 58.8, { align: 'center' }
   )
 
   // ═══════════════════════════════════════════════════════════
@@ -752,7 +752,7 @@ function generateInvoicePDF(order, items) {
   doc.setFontSize(7.5); tc(...TLT)
   doc.text(
     'Tier: ' + (order.placer?.tier || order.placer_tier || '—') +
-    '   ·   Order ref: ' + (order.order_ref || '—'),
+    '   |   Order ref: ' + (order.order_ref || '—'),
     L + 6, cardY + 31.5
   )
 
@@ -917,7 +917,7 @@ function generateInvoicePDF(order, items) {
     doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); tc(...TLT)
     doc.text(
       'Payment: ' + (order.payment_mode || '') +
-      (order.payment_ref ? '  ·  Ref: ' + order.payment_ref : ''),
+      (order.payment_ref ? '  |  Ref: ' + order.payment_ref : ''),
       L, y
     )
     y += 5
@@ -925,7 +925,7 @@ function generateInvoicePDF(order, items) {
   if (order.awb_number) {
     doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); tc(...TLT)
     doc.text(
-      'Dispatched via: ' + (order.courier_partner || '') + '  ·  AWB: ' + order.awb_number,
+      'Dispatched via: ' + (order.courier_partner || '') + '  |  AWB: ' + order.awb_number,
       L, y
     )
   }
@@ -937,8 +937,8 @@ function generateInvoicePDF(order, items) {
   fc(...FOOTERBG); doc.rect(0, 282.5, W, 14.5, 'F')
   tc(...WHITE); doc.setFont('helvetica', 'normal'); doc.setFontSize(8)
   doc.text(
-    "New Learning Horizons  ·  ISO 9001:2015 Certified  ·  Enriching Children's Future  ·  www.nlhnagpur.info",
-    W / 2, 289.5, { align: ‘center’ }
+    "New Learning Horizons | ISO 9001:2015 Certified | Enriching Children's Future | www.nlhnagpur.info",
+    W / 2, 289.5, { align: 'center' }
   )
   tc(...TLT); doc.setFontSize(7)
   doc.text('This is a computer-generated document.', W / 2, 294.5, { align: 'center' })
@@ -1191,7 +1191,7 @@ export default function OrdersPage() {
         {order.dispatched_at && (
           <span style={{ color:'var(--text3)', fontSize: 12 }}>
             Dispatched {fmtDate(order.dispatched_at)}
-            {order.awb_number ? ' · ' + order.awb_number : ''}
+            {order.awb_number ? ' | ' + order.awb_number : ''}
           </span>
         )}
       </div>
