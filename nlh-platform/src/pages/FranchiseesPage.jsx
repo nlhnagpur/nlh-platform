@@ -160,19 +160,61 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
           {tab === 'courses' && (
             <div>
               <p className="hint">Check courses this franchisee is registered to deliver.</p>
-              <div className="checkbox-grid">
-                {allCourses.map(c => (
-                  <label key={c.id} className="checkbox-item">
-                    <input
-                      type="checkbox"
-                      checked={registeredCourses.includes(c.id)}
-                      onChange={() => admin && toggleCourse(c.id)}
-                      disabled={!admin}
-                    />
-                    {c.name}
-                  </label>
-                ))}
-              </div>
+              {(() => {
+                // Group by group_name
+                const groups = []
+                const seen = {}
+                allCourses.forEach(c => {
+                  const g = c.group_name || 'Other'
+                  if (!seen[g]) { seen[g] = []; groups.push({ name: g, courses: seen[g] }) }
+                  seen[g].push(c)
+                })
+                return groups.map(group => {
+                  const allChecked = group.courses.every(c => registeredCourses.includes(c.id))
+                  const someChecked = group.courses.some(c => registeredCourses.includes(c.id))
+                  function toggleGroup() {
+                    if (!admin) return
+                    if (allChecked) {
+                      setRegisteredCourses(prev => prev.filter(id => !group.courses.find(c => c.id === id)))
+                    } else {
+                      setRegisteredCourses(prev => [...new Set([...prev, ...group.courses.map(c => c.id)])])
+                    }
+                  }
+                  return (
+                    <div key={group.name} style={{ marginBottom: 14 }}>
+                      {/* Group header with select-all toggle */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+                        <input
+                          type="checkbox"
+                          checked={allChecked}
+                          ref={el => { if (el) el.indeterminate = someChecked && !allChecked }}
+                          onChange={toggleGroup}
+                          disabled={!admin}
+                          style={{ accentColor: 'var(--purple)', width: 14, height: 14, cursor: admin ? 'pointer' : 'default' }}
+                        />
+                        <span style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>{group.name}</span>
+                        <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginLeft: 'auto' }}>
+                          {group.courses.filter(c => registeredCourses.includes(c.id)).length}/{group.courses.length}
+                        </span>
+                      </div>
+                      {/* Individual course checkboxes */}
+                      <div className="checkbox-grid" style={{ paddingLeft: 4 }}>
+                        {group.courses.map(c => (
+                          <label key={c.id} className="checkbox-item">
+                            <input
+                              type="checkbox"
+                              checked={registeredCourses.includes(c.id)}
+                              onChange={() => admin && toggleCourse(c.id)}
+                              disabled={!admin}
+                            />
+                            {c.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
             </div>
           )}
 
@@ -242,7 +284,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   const [allCourses, setAllCourses] = useState([])
 
   useEffect(() => {
-    sb.from('courses').select('id,name').order('name').then(({ data }) => setAllCourses(data || []))
+    sb.from('courses').select('id,name,group_name').order('group_name').order('name').then(({ data }) => setAllCourses(data || []))
   }, [])
 
   useEffect(() => {
@@ -417,7 +459,7 @@ export default function FranchiseesPage() {
     if (currentRole === null) return  // wait until auth resolves
     async function load() {
       setLoading(true)
-      const courseResult = await sb.from('courses').select('id,name').order('name')
+      const courseResult = await sb.from('courses').select('id,name,group_name').order('group_name').order('name')
       if (courseResult.error) console.error('Courses load error:', courseResult.error)
       setAllCourses(courseResult.data || [])
 
