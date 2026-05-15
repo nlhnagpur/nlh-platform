@@ -1,55 +1,120 @@
 import React from 'react'
 import { useAuth } from '../context/AuthContext'
-import { NAV_ITEMS, ROLE_COLORS, ROLE_LABELS } from '../constants/roles'
+import { NAV_ITEMS, ROLE_LABELS } from '../constants/roles'
 
-function parseStyleStr(str) {
-  if (!str) return {}
-  return Object.fromEntries(
-    str.split(';').filter(Boolean).map(s => {
-      const [k, ...v] = s.split(':')
-      return [k.trim().replace(/-([a-z])/g, (_, c) => c.toUpperCase()), v.join(':').trim()]
-    })
-  )
+const NAV_ICONS = {
+  dashboard:       '📊',
+  franchisees:     '🏢',
+  orders:          '📦',
+  students:        '🎓',
+  invoices:        '🧾',
+  courses:         '📚',
+  prices:          '🏷️',
+  'price-history': '📜',
+  users:           '🔑',
+  requests:        '🤝',
+}
+
+function initials(name) {
+  if (!name) return '?'
+  return name.split(' ').map(function(n) { return n[0] }).join('').slice(0, 2).toUpperCase()
 }
 
 export default function Sidebar({ currentPage, onNavigate }) {
   const { currentRole, currentUser, signOut } = useAuth()
   const navItems = NAV_ITEMS[currentRole] || NAV_ITEMS.admin
+  const isAdmin = ['owner', 'super_admin', 'admin', 'manager', 'staff'].includes(currentRole)
+
+  const userName = currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || 'User'
+  const roleLabel = ROLE_LABELS[currentRole] || (currentRole || '').toUpperCase()
+  const userInitials = initials(userName)
+
+  // Group nav items into sections
+  const ops = navItems.filter(function(item) {
+    return ['dashboard', 'franchisees', 'orders', 'students', 'invoices'].includes(item.id)
+  })
+  const catalog = navItems.filter(function(item) {
+    return ['prices', 'courses', 'price-history'].includes(item.id)
+  })
+  const settings = navItems.filter(function(item) {
+    return ['users', 'requests'].includes(item.id)
+  })
+
+  function NavItem({ item }) {
+    return (
+      <div
+        className={'nav ' + (currentPage === item.id ? 'on' : '')}
+        onClick={function() { onNavigate(item.id) }}
+      >
+        <span className="nav-ic">{NAV_ICONS[item.id] || '●'}</span>
+        <span>{item.l}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="sb">
-      <div className="sb-logo">
-        <div className="sb-logo-row">
-          <div className="sb-icon">N</div>
-          <div>
-            <div className="sb-name">NLH Platform</div>
-            <div className="sb-sub">New Learning Horizons</div>
-          </div>
+      {/* top: logo + brand */}
+      <div className="sb-top">
+        <div className="sb-logo-box">
+          <img src="/NLH%20Logo.png" alt="NLH" />
         </div>
-        <span className="sb-role" style={parseStyleStr(ROLE_COLORS[currentRole])}>
-          {ROLE_LABELS[currentRole] || (currentRole || '').toUpperCase()}
-        </span>
-        <div style={{fontSize:10,color:'var(--text3)',marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-          {currentUser?.email}
+        <div className="sb-brand">
+          <div className="sb-name">NLH Platform</div>
+          <div className="sb-trust">Est. 2008 · <b>ISO 9001:2015</b></div>
         </div>
+        {isAdmin && <span className="sb-env">{roleLabel}</span>}
       </div>
 
-      <div id="sidebar-nav" style={{flex:1,padding:'8px 0'}}>
-        <div className="nav-sect">Menu</div>
-        {navItems.map(item => (
-          <div
-            key={item.id}
-            className={'nav-item' + (currentPage === item.id ? ' on' : '')}
-            onClick={() => onNavigate(item.id)}
-          >
-            <span className="nav-dot" style={{background: item.c}} />
-            {item.l}
-          </div>
-        ))}
+      {/* navigation */}
+      <div className="sb-nav">
+        {ops.length > 0 && (
+          <>
+            <div className="sect">Operations</div>
+            {ops.map(function(item) { return <NavItem key={item.id} item={item} /> })}
+          </>
+        )}
+        {catalog.length > 0 && (
+          <>
+            <div className="sect">Catalog</div>
+            {catalog.map(function(item) { return <NavItem key={item.id} item={item} /> })}
+          </>
+        )}
+        {settings.length > 0 && (
+          <>
+            <div className="sect">Settings</div>
+            {settings.map(function(item) { return <NavItem key={item.id} item={item} /> })}
+          </>
+        )}
+        {/* fallback: items not in any section */}
+        {ops.length === 0 && catalog.length === 0 && settings.length === 0 && (
+          <>
+            <div className="sect">Menu</div>
+            {navItems.map(function(item) { return <NavItem key={item.id} item={item} /> })}
+          </>
+        )}
       </div>
 
-      <div className="sb-foot">
-        <button className="signout-btn" onClick={signOut}>Sign out</button>
+      {/* watermark */}
+      <div className="sb-watermark">
+        <div className="sb-wm-ic">☀️</div>
+        <div className="sb-wm-text">Enriching <b>children's future</b><br />since 2008</div>
+      </div>
+
+      {/* footer: avatar + signout */}
+      <div className="sb-foot-new">
+        <div className="av">{userInitials}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="av-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userName}</div>
+          <div className="av-role">{roleLabel}</div>
+        </div>
+        <button
+          onClick={signOut}
+          title="Sign out"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 14, padding: 4, borderRadius: 6, flexShrink: 0 }}
+          onMouseEnter={function(e) { e.currentTarget.style.color = 'var(--red)' }}
+          onMouseLeave={function(e) { e.currentTarget.style.color = 'var(--text3)' }}
+        >⏻</button>
       </div>
     </div>
   )

@@ -158,59 +158,74 @@ function AddStudentModal({ onClose, onSaved }) {
 
   const [form, setForm] = useState({
     full_name: '', parent_name: '', dob: '', phone: '', address: '',
-    // SMF/CF default to themselves as the centre; UF defaults to self too
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
   const [centreList, setCentreList] = useState([])
-  const [skusByCourse, setSkusByCourse] = useState([])
+  const [allSkus, setAllSkus] = useState([])
+  const [regCourseIds, setRegCourseIds] = useState(null) // null = loading; [] = none; [...] = filtered
   const [selectedSkus, setSelectedSkus] = useState([])
   const [feeTotal, setFeeTotal] = useState(0)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    // Load centre options for dropdown
     async function loadCentres() {
       if (admin) {
-        // Admin sees all UFs
-        const { data } = await sb.from('franchisees').select('id,business_name,city,tier').eq('tier', 'UF').eq('status', 'active').order('business_name')
+        const { data } = await sb.from('franchisees')
+          .select('id,business_name,city,tier,registered_courses')
+          .eq('tier', 'UF').eq('status', 'active').order('business_name')
         setCentreList(data || [])
       } else if (isMasterFr) {
-        // SMF/CF: show self + all UF descendants
         const descendantIds = await getDescendantIds(currentFranchiseeId)
         const [selfRes, descRes] = await Promise.all([
-          sb.from('franchisees').select('id,business_name,city,tier').eq('id', currentFranchiseeId).single(),
+          sb.from('franchisees').select('id,business_name,city,tier,registered_courses').eq('id', currentFranchiseeId).single(),
           descendantIds.length > 0
-            ? sb.from('franchisees').select('id,business_name,city,tier').in('id', descendantIds).eq('status', 'active').order('business_name')
+            ? sb.from('franchisees').select('id,business_name,city,tier,registered_courses').in('id', descendantIds).eq('status', 'active').order('business_name')
             : { data: [] },
         ])
         const self = selfRes.data ? [selfRes.data] : []
         const ufDescendants = (descRes.data || []).filter(f => f.tier === 'UF')
         setCentreList([...self, ...ufDescendants])
+      } else {
+        // UF: fetch own registered_courses to filter SKUs
+        const { data } = await sb.from('franchisees')
+          .select('registered_courses').eq('id', currentFranchiseeId).single()
+        setRegCourseIds(data?.registered_courses || [])
       }
-      // UF: no dropdown needed — form.franchisee_id is fixed to their own id
     }
     loadCentres()
 
-    // Load all SKUs grouped by course
-    sb.from('skus').select('id,level_name,student_fee,course_id,courses(id,name,group_name)').order('course_id').order('sort_order')
+    // Load all SKUs once, grouped by course category (group_name)
+    sb.from('skus').select('id,level_name,student_fee,course_id,courses(group_name)').order('sort_order')
       .then(({ data }) => {
-        if (!data) return
-        const grouped = []
-        const seen = {}
-        data.forEach(sku => {
-          const cid = sku.course_id
-          if (!seen[cid]) {
-            seen[cid] = true
-            grouped.push({ course: sku.courses, skus: [] })
-          }
-          grouped[grouped.length - 1].skus.push(sku)
-        })
-        setSkusByCourse(grouped)
+        setAllSkus(data || [])
       })
   }, [])
 
+  // Build filtered + grouped SKU list for display
+  function buildGroups(courseIdFilter) {
+    const filtered = (courseIdFilter === null || courseIdFilter === undefined)
+      ? []  // no centre selected yet — show nothing
+      : (courseIdFilter.length === 0 ? [] : allSkus.filter(s => courseIdFilter.includes(s.course_id)))
+    const map = {}
+    filtered.forEach(function (sku) {
+      const g = sku.courses?.group_name || 'Other'
+      if (!map[g]) map[g] = []
+      map[g].push(sku)
+    })
+    return Object.entries(map).map(function ([name, skus]) { return { name, skus } })
+  }
+
   function field(k) {
     return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) }
+  }
+
+  function handleCentreChange(fid) {
+    setForm(f => ({ ...f, franchisee_id: fid }))
+    setSelectedSkus([])
+    setFeeTotal(0)
+    if (!fid) { setRegCourseIds(null); return }
+    const fr = centreList.find(function (c) { return c.id === fid })
+    setRegCourseIds(fr?.registered_courses || [])
   }
 
   function toggleSku(sku) {
@@ -264,7 +279,7 @@ function AddStudentModal({ onClose, onSaved }) {
           await sb.auth.signUp({
             email: loginEmail,
             password: tempPass,
-            options: { data: { full_name: form.name.trim() } },
+            options: { data: { full_name: form.full_name.trim() } },
           })
           await sb.auth.setSession({
             access_token: admSess.session.access_token,
@@ -318,7 +333,7 @@ function AddStudentModal({ onClose, onSaved }) {
               Centre *
               {/* Admin or SMF/CF: show dropdown; UF: fixed to own centre */}
               {(admin || isMasterFr) ? (
-                <select value={form.franchisee_id} onChange={field('franchisee_id')}>
+                <select value={form.franchisee_id} onChange={e => handleCentreChange(e.target.value)}>
                   <option value="">— Select Centre —</option>
                   {centreList.map(c => (
                     <option key={c.id} value={c.id}>
@@ -336,9 +351,13 @@ function AddStudentModal({ onClose, onSaved }) {
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
             <strong>Course Enrolment</strong>
             <p className="hint">Select SKU levels to enrol. Student fee is calculated automatically.</p>
-            {skusByCourse.map(group => (
-              <div key={group.course?.id} style={{ marginBottom: 12 }}>
-                <div className="course-group-header">{group.course?.name}</div>
+            {(admin || isMasterFr) && !form.franchisee_id ? (
+              <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 4 }}>Select a centre first to see available courses.</p>
+            ) : buildGroups(regCourseIds).length === 0 ? (
+              <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 4 }}>No courses registered for this centre.</p>
+            ) : buildGroups(regCourseIds).map(group => (
+              <div key={group.name} style={{ marginBottom: 12 }}>
+                <div className="course-group-header">{group.name}</div>
                 <div className="checkbox-grid">
                   {group.skus.map(sku => {
                     const checked = selectedSkus.some(s => s.id === sku.id)

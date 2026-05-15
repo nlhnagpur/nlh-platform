@@ -6,6 +6,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
+import InvoiceView from '../components/InvoiceView'
 
 // JSX badge components (replaces HTML-string utils)
 function StatusBadge({ status }) {
@@ -1184,6 +1185,7 @@ export default function OrdersPage() {
   const [dispatchOrder, setDispatchOrder] = useState(null)
   const [editInvoiceOrder, setEditInvoiceOrder] = useState(null)
   const [showNewOrder, setShowNewOrder] = useState(false)
+  const [invoiceViewOrder, setInvoiceViewOrder] = useState(null)
 
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
@@ -1398,13 +1400,13 @@ export default function OrdersPage() {
           </button>
         )}
 
-        {/* closed or invoiced → download invoice */}
+        {/* closed or invoiced → view/download invoice */}
         {['invoiced', 'payment_submitted', 'closed'].includes(order.status) && (
           <button
             className="btn-s btn-sm"
-            onClick={function () { handleDownloadInvoice(order) }}
+            onClick={function () { setInvoiceViewOrder(order) }}
           >
-            Download Invoice
+            📄 Invoice
           </button>
         )}
 
@@ -1542,6 +1544,10 @@ export default function OrdersPage() {
           onClose={function () { setShowNewOrder(false) }}
           onSaved={async function () { setShowNewOrder(false); await loadOrders() }}
         />
+      )}
+
+      {invoiceViewOrder && (
+        <InvoiceView order={invoiceViewOrder} onClose={function() { setInvoiceViewOrder(null) }} />
       )}
     </div>
   )
