@@ -1257,8 +1257,24 @@ export default function OrdersPage() {
     } else {
       showToast('Invoiced as ' + invoiceNo)
       try {
-        await sendInvoiceEmail({ order: { ...order, invoice_no: invoiceNo } })
-      } catch (_) { /* non-fatal */ }
+        // Fetch items to compute total
+        const { data: itemRows } = await sb
+          .from('order_items')
+          .select('ordered_qty, rate')
+          .eq('order_id', order.id)
+        const total = (itemRows || []).reduce(function (sum, it) {
+          return sum + (it.ordered_qty || 0) * (it.rate || 0)
+        }, 0)
+
+        const invoicedOrder = { ...order, invoice_no: invoiceNo }
+        const placerEmail = order.placer?.email || ''
+        const placerName  = order.placer?.business_name || order.placer?.email || ''
+        if (placerEmail) {
+          await sendInvoiceEmail(invoicedOrder, placerEmail, placerName, total)
+        }
+      } catch (emailErr) {
+        console.warn('Invoice email failed:', emailErr.message)
+      }
       await loadOrders()
     }
     setActionLoading(null)

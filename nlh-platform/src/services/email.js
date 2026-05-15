@@ -57,19 +57,91 @@ export async function sendOrderConfirmation(order, franchiseeEmail, franchiseeNa
 }
 
 export async function sendInvoiceEmail(order, franchiseeEmail, franchiseeName, amount) {
-  const subject = 'Invoice ' + (order.invoice_no || order.order_ref) + ' — NLH'
-  const body =
-    '<p>Dear ' + (franchiseeName || 'Partner') + ',</p>' +
-    '<p>Your invoice has been generated for order <strong>' + order.order_ref + '</strong>.</p>' +
-    '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px">' +
-    '<tr style="background:#F0EEE9"><td style="padding:8px;font-weight:bold">Invoice No.</td><td style="padding:8px">' + (order.invoice_no || '—') + '</td></tr>' +
-    '<tr><td style="padding:8px;font-weight:bold">Order Ref</td><td style="padding:8px">' + order.order_ref + '</td></tr>' +
-    '<tr style="background:#F0EEE9"><td style="padding:8px;font-weight:bold">Amount</td><td style="padding:8px;font-weight:bold;color:#534AB7">Rs ' + fmtAmt(amount) + '</td></tr>' +
+  const firstName  = (franchiseeName || 'Partner').split(' ')[0]
+  const invoiceNo  = order.invoice_no || '—'
+  const orderRef   = order.order_ref  || '—'
+  const loginUrl   = 'https://nlh-platform.vercel.app/login'
+  const subject    = 'Invoice ' + invoiceNo + ' from New Learning Horizons'
+
+  const html =
+    '<div style="margin:0;padding:0;background:#F4F3F8;font-family:Arial,Helvetica,sans-serif">' +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="background:#F4F3F8;padding:32px 0">' +
+    '<tr><td align="center">' +
+    '<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">' +
+
+    // Header
+    '<tr><td style="background:linear-gradient(135deg,#534AB7 0%,#7B74D4 100%);border-radius:16px 16px 0 0;padding:36px 40px 32px;text-align:center">' +
+    '<div style="display:inline-block;width:56px;height:56px;background:rgba(255,255,255,.18);border-radius:14px;text-align:center;line-height:56px;font-size:28px;margin-bottom:14px">🧾</div>' +
+    '<div style="color:#FFFFFF;font-size:22px;font-weight:700;margin-bottom:4px">New Learning Horizons</div>' +
+    '<div style="color:rgba(255,255,255,.65);font-size:11px;letter-spacing:.06em;text-transform:uppercase">ISO 9001:2015 Certified &nbsp;·&nbsp; Enriching Children\'s Future</div>' +
+    '</td></tr>' +
+
+    // Body
+    '<tr><td style="background:#FFFFFF;padding:36px 40px 28px">' +
+    '<div style="font-size:24px;font-weight:700;color:#1A1916;margin-bottom:6px">Invoice ready, ' + firstName + '! 📋</div>' +
+    '<p style="font-size:14px;color:#5C5A54;line-height:1.7;margin:0 0 24px 0">' +
+    'Your invoice has been generated for order <strong>' + orderRef + '</strong>. ' +
+    'Please review the details below and make the payment at your earliest convenience.' +
+    '</p>' +
+
+    // Invoice details card
+    '<table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F7FE;border:1.5px solid #DDD9F9;border-radius:12px;margin-bottom:24px">' +
+    '<tr><td style="padding:16px 24px 8px">' +
+    '<div style="font-size:10px;font-weight:700;color:#534AB7;letter-spacing:.1em;text-transform:uppercase;margin-bottom:16px">Invoice Details</div>' +
+    '</td></tr>' +
+    '<tr><td style="padding:0 24px 8px">' +
+    '<table width="100%" cellpadding="0" cellspacing="0">' +
+    '<tr style="border-bottom:1px solid #EDE9FF"><td style="padding:10px 0;font-size:12px;color:#888;width:40%">Invoice Number</td><td style="padding:10px 0;font-size:13px;font-weight:700;color:#534AB7;font-family:Courier New,monospace">' + invoiceNo + '</td></tr>' +
+    '<tr style="border-bottom:1px solid #EDE9FF"><td style="padding:10px 0;font-size:12px;color:#888">Order Reference</td><td style="padding:10px 0;font-size:13px;font-weight:600;color:#1A1916">' + orderRef + '</td></tr>' +
+    (order.deliver_to ? '<tr style="border-bottom:1px solid #EDE9FF"><td style="padding:10px 0;font-size:12px;color:#888">Deliver To</td><td style="padding:10px 0;font-size:13px;color:#1A1916">' + order.deliver_to + '</td></tr>' : '') +
+    '<tr><td style="padding:12px 0;font-size:12px;color:#888">Amount Due</td><td style="padding:12px 0;font-size:18px;font-weight:700;color:#534AB7">₹' + fmtAmt(amount) + '</td></tr>' +
     '</table>' +
-    '<p style="margin-top:16px"><strong>Payment details:</strong></p>' +
-    '<div style="background:#F0EEE9;padding:12px;border-radius:8px;font-size:13px">' + BANK_DETAILS + '</div>' +
-    '<p style="margin-top:16px">Please make the payment and submit the transaction reference via the NLH Platform.</p>'
-  return sendBrevoEmail(franchiseeEmail, franchiseeName, subject, nlhEmailTemplate('Invoice Generated', body, 'Please retain this email for your records.'))
+    '</td></tr></table>' +
+
+    // Payment details
+    '<table width="100%" cellpadding="0" cellspacing="0" style="background:#FFF8E7;border:1.5px solid #FDE68A;border-radius:12px;margin-bottom:24px">' +
+    '<tr><td style="padding:16px 24px">' +
+    '<div style="font-size:10px;font-weight:700;color:#D97706;letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px">💳 Payment Details</div>' +
+    '<div style="font-size:13px;color:#1A1916;line-height:1.8">' + BANK_DETAILS + '</div>' +
+    '</td></tr></table>' +
+
+    // CTA
+    '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">' +
+    '<tr><td align="center">' +
+    '<a href="' + loginUrl + '" style="display:inline-block;background:#534AB7;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:700;padding:14px 36px;border-radius:10px">' +
+    'Submit Payment on NLH Platform &nbsp;→' +
+    '</a>' +
+    '</td></tr>' +
+    '<tr><td align="center" style="padding-top:10px;font-size:11px;color:#999">Log in → go to Orders → Submit Payment</td></tr>' +
+    '</table>' +
+
+    // Note
+    '<table width="100%" cellpadding="0" cellspacing="0">' +
+    '<tr><td style="background:#F0FDF4;border-left:3px solid #16A34A;border-radius:0 8px 8px 0;padding:12px 16px">' +
+    '<div style="font-size:12px;color:#166534;line-height:1.6">' +
+    '<strong>📦 Note:</strong> Dispatch may happen independently of payment on credit terms. ' +
+    'Please submit your UTR / transaction reference on the platform after making payment.' +
+    '</div>' +
+    '</td></tr></table>' +
+
+    '</td></tr>' +
+
+    // Divider
+    '<tr><td style="background:#534AB7;height:4px"></td></tr>' +
+
+    // Footer
+    '<tr><td style="background:#2D2B5E;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center">' +
+    '<div style="color:rgba(255,255,255,.5);font-size:11px;line-height:1.7">' +
+    '<div style="color:rgba(255,255,255,.8);font-weight:600;margin-bottom:6px">New Learning Horizons</div>' +
+    '9, Anjuman Shopping Complex, Residency Road, Sadar, Nagpur – 440 001<br>' +
+    'Ph: 9373111311 &nbsp;·&nbsp; admin@nlhnagpur.info &nbsp;·&nbsp; www.nlhnagpur.info<br><br>' +
+    '<span style="font-size:10px">Please retain this email for your records.</span>' +
+    '</div>' +
+    '</td></tr>' +
+
+    '</table></td></tr></table></div>'
+
+  return sendBrevoEmail(franchiseeEmail, franchiseeName, subject, html)
 }
 
 export async function sendPaymentReminder(order, franchiseeEmail, franchiseeName, amount) {
