@@ -34,7 +34,6 @@ export default function PricesPage() {
     const { data, error } = await sb
       .from('skus')
       .select('*, courses(id, name, group_name)')
-      .order('course_id')
       .order('sort_order')
     if (error) {
       showToast('Failed to load SKUs: ' + error.message)

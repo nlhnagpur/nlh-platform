@@ -19,11 +19,10 @@ export default function CoursesPage() {
     async function load() {
       setLoading(true)
 
-      // Load all SKUs with course info
+      // Load all SKUs with course info — order by sort_order which encodes program+level sequence
       const { data: skus, error } = await sb
         .from('skus')
         .select('*, courses(id, name, group_name)')
-        .order('course_id')
         .order('sort_order')
 
       if (error) {
@@ -84,17 +83,21 @@ export default function CoursesPage() {
     courseRowSpan: filtered.filter(s => s.course_id === sku.course_id).length,
   }))
 
-  // Build unique courses with SKU counts
+  // Build unique programs by group_name — one card per program, sorted by sort_order
   const courseMap = {}
   rows.forEach(function (sku) {
     const c = sku.courses
     if (!c) return
-    if (!courseMap[c.id]) {
-      courseMap[c.id] = { ...c, skuCount: 0, totalStudents: 0 }
+    const key = c.group_name || c.name
+    if (!courseMap[key]) {
+      courseMap[key] = { ...c, groupName: key, skuCount: 0, minSort: sku.sort_order ?? 9999 }
     }
-    courseMap[c.id].skuCount++
+    courseMap[key].skuCount++
+    if ((sku.sort_order ?? 9999) < courseMap[key].minSort) {
+      courseMap[key].minSort = sku.sort_order ?? 9999
+    }
   })
-  const courseCards = Object.values(courseMap)
+  const courseCards = Object.values(courseMap).sort(function (a, b) { return a.minSort - b.minSort })
 
   const TONE_GRADIENT = {
     1: 'linear-gradient(90deg,#2563EB,#60A5FA)',
@@ -161,8 +164,8 @@ export default function CoursesPage() {
                   <div className="progs-bgbar" style={{ background: TONE_GRADIENT[tone] }}></div>
                   <span className="progs-active"><span className="d"></span>Active</span>
                   <div className="progs-em pe-" style={{ background: tones.bg, color: tones.color, marginTop: 18 }}>{em}</div>
-                  <div className="progs-name">{c.group_name || c.name}</div>
-                  <div className="progs-ages" style={{ marginTop: 4 }}>{c.name}</div>
+                  <div className="progs-name">{c.groupName}</div>
+                  <div className="progs-ages" style={{ marginTop: 4 }}>{c.skuCount} level{c.skuCount !== 1 ? 's' : ''}</div>
                   <div className="progs-meta">
                     <div className="progs-meta-i">
                       <div className="progs-meta-num">{c.skuCount}</div>
