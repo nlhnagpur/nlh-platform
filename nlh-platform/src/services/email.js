@@ -101,6 +101,98 @@ export async function sendPaymentVerified(order, franchiseeEmail, franchiseeName
   return sendBrevoEmail(franchiseeEmail, franchiseeName, subject, nlhEmailTemplate('Payment Confirmed', body, 'Thank you for your partnership with NLH.'))
 }
 
+export async function sendInviteEmail(email, name, role) {
+  const ROLE_LABEL = {
+    owner: 'Owner', super_admin: 'Super Admin', admin: 'Admin',
+    manager: 'Manager', staff: 'Staff',
+    smf: 'State Master Franchisee', cf: 'City Franchisee',
+    uf: 'Unit Franchisee', student: 'Student',
+  }
+  const roleLabel = ROLE_LABEL[role] || role
+  const firstName = (name || email.split('@')[0]).split(' ')[0]
+  const loginUrl  = 'https://nlh-platform.vercel.app/login'
+
+  const subject = 'You\'ve been invited to NLH Platform'
+
+  const html =
+    '<div style="margin:0;padding:0;background:#F4F3F8;font-family:Arial,Helvetica,sans-serif">' +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="background:#F4F3F8;padding:32px 0">' +
+    '<tr><td align="center">' +
+    '<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%">' +
+
+    // Header
+    '<tr><td style="background:linear-gradient(135deg,#534AB7 0%,#7B74D4 100%);border-radius:16px 16px 0 0;padding:40px 40px 36px;text-align:center">' +
+    '<div style="display:inline-block;width:56px;height:56px;background:rgba(255,255,255,.18);border-radius:14px;text-align:center;line-height:56px;font-size:28px;margin-bottom:16px">🎓</div>' +
+    '<div style="color:#FFFFFF;font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:4px">New Learning Horizons</div>' +
+    '<div style="color:rgba(255,255,255,.65);font-size:11px;letter-spacing:.06em;text-transform:uppercase">ISO 9001:2015 Certified &nbsp;·&nbsp; Enriching Children\'s Future</div>' +
+    '</td></tr>' +
+
+    // Body
+    '<tr><td style="background:#FFFFFF;padding:40px 40px 32px">' +
+
+    '<div style="font-size:26px;font-weight:700;color:#1A1916;margin-bottom:8px">You\'re invited, ' + firstName + '! 🎉</div>' +
+    '<p style="font-size:14px;color:#5C5A54;line-height:1.7;margin:0 0 28px 0">' +
+    'An administrator has set up an account for you on the <strong style="color:#534AB7">NLH Platform</strong>. ' +
+    'Use the details below to sign in, then set your own password to secure your account.' +
+    '</p>' +
+
+    // Info card
+    '<table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F7FE;border:1.5px solid #DDD9F9;border-radius:12px;margin-bottom:28px">' +
+    '<tr><td style="padding:18px 24px 20px">' +
+    '<div style="font-size:10px;font-weight:700;color:#534AB7;letter-spacing:.1em;text-transform:uppercase;margin-bottom:18px">Your Account Details</div>' +
+
+    '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px">' +
+    '<tr><td style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px">Login Email</td></tr>' +
+    '<tr><td style="font-size:14px;font-weight:600;color:#1A1916">' + email + '</td></tr>' +
+    '</table>' +
+
+    '<table width="100%" cellpadding="0" cellspacing="0">' +
+    '<tr><td style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px">Your Role</td></tr>' +
+    '<tr><td><span style="display:inline-block;background:#EDE9FF;color:#534AB7;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.04em">' + roleLabel + '</span></td></tr>' +
+    '</table>' +
+    '</td></tr></table>' +
+
+    // CTA
+    '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px">' +
+    '<tr><td align="center">' +
+    '<a href="' + loginUrl + '" style="display:inline-block;background:#534AB7;color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:700;padding:15px 40px;border-radius:10px;letter-spacing:.01em">' +
+    'Go to NLH Platform &nbsp;→' +
+    '</a>' +
+    '</td></tr></table>' +
+
+    // Instructions box
+    '<table width="100%" cellpadding="0" cellspacing="0">' +
+    '<tr><td style="background:#F0FDF4;border-left:3px solid #16A34A;border-radius:0 8px 8px 0;padding:14px 18px">' +
+    '<div style="font-size:12px;color:#166534;line-height:1.7">' +
+    '<strong>🔑 How to set your password</strong><br>' +
+    '1. Click the button above to go to the login page<br>' +
+    '2. Click <strong>"Forgot password?"</strong> and enter your email address above<br>' +
+    '3. Check your inbox for a password reset link and follow the instructions<br>' +
+    '4. Done — log in and get started!' +
+    '</div>' +
+    '</td></tr></table>' +
+
+    '</td></tr>' +
+
+    // Divider
+    '<tr><td style="background:#534AB7;height:4px"></td></tr>' +
+
+    // Footer
+    '<tr><td style="background:#2D2B5E;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center">' +
+    '<div style="color:rgba(255,255,255,.5);font-size:11px;line-height:1.7">' +
+    '<div style="color:rgba(255,255,255,.8);font-weight:600;margin-bottom:6px">New Learning Horizons</div>' +
+    '9, Anjuman Shopping Complex, Residency Road, Sadar, Nagpur – 440 001<br>' +
+    'Ph: 9373111311 &nbsp;·&nbsp; admin@nlhnagpur.info &nbsp;·&nbsp; www.nlhnagpur.info<br><br>' +
+    '<span style="font-size:10px">You received this because an account was created for you on the NLH Platform.<br>' +
+    'If you did not expect this, please contact <a href="mailto:admin@nlhnagpur.info" style="color:rgba(255,255,255,.5)">admin@nlhnagpur.info</a>.</span>' +
+    '</div>' +
+    '</td></tr>' +
+
+    '</table></td></tr></table></div>'
+
+  return sendBrevoEmail(email, name, subject, html)
+}
+
 export async function sendWelcomeEmail(email, name, role, password) {
   const ROLE_LABEL = {
     owner: 'Owner', super_admin: 'Super Admin', admin: 'Admin',

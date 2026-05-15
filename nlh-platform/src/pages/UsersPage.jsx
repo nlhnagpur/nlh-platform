@@ -3,7 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { showToast } from '../utils'
 import { ROLE_LABELS, ROLE_COLORS, isAdminRole } from '../constants/roles'
-import { sendWelcomeEmail } from '../services/email'
+import { sendWelcomeEmail, sendInviteEmail } from '../services/email'
 
 // ── role hierarchy ────────────────────────────────────────────────────────────
 const ROLE_RANK = { owner: 6, super_admin: 5, admin: 4, manager: 3, staff: 2, smf: 1, cf: 1, uf: 1, student: 0 }
@@ -292,11 +292,21 @@ export default function UsersPage() {
   }
 
   async function sendInvite(user) {
-    const { error } = await sb.auth.resetPasswordForEmail(user.email, {
+    // Send our branded invite email via Brevo
+    const emailResult = await sendInviteEmail(
+      user.email,
+      user.full_name || user.email.split('@')[0],
+      user.role
+    )
+    // Also trigger Supabase's password-reset so they get the actual set-password link
+    await sb.auth.resetPasswordForEmail(user.email, {
       redirectTo: 'https://nlh-platform.vercel.app/login',
     })
-    if (error) { showToast('Failed to send invite: ' + error.message); return }
-    showToast('Password reset link sent to ' + user.email + '!')
+    if (emailResult.success) {
+      showToast('Invite sent to ' + user.email + '!')
+    } else {
+      showToast('Invite sent (email delivery may be delayed).')
+    }
     setModal(null)
   }
 
