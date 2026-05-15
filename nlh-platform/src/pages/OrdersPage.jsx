@@ -816,9 +816,9 @@ async function generateInvoicePDF(order, items) {
     } catch (e) { return null }
   }
   const [logoB64, mascotB64, qrB64] = await Promise.all([
-    loadImg('/nlh-logo.png'),
-    loadImg('/nlh-mascot.png'),
-    loadImg('/nlh-qr.png'),
+    loadImg('/NLH Logo.png'),
+    loadImg('/NLH Mascot.png'),
+    loadImg('/My QR.jpg'),
   ])
 
   const doc  = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -1014,7 +1014,7 @@ async function generateInvoicePDF(order, items) {
   // QR code — right side of inner card (28x28)
   const qrSize = 28, qrX = cardInX + cardInW - qrSize - 2, qrY = cardInY + 2
   if (qrB64) {
-    doc.addImage(qrB64, 'PNG', qrX, qrY, qrSize, qrSize)
+    doc.addImage(qrB64, 'JPEG', qrX, qrY, qrSize, qrSize)
   } else {
     // Fallback: draw placeholder box
     dc(200, 200, 200); fc(240, 240, 240)
