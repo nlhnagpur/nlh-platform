@@ -22,6 +22,16 @@ export function AuthProvider({ children }) {
       console.log('[initApp] users query →', { data, error: userErr })
 
       if (data) {
+        // Blocked accounts are denied access immediately
+        if (data.is_active === false) {
+          await sb.auth.signOut()
+          setCurrentUser(null)
+          setCurrentRole(null)
+          setCurrentFranchiseeId(null)
+          setScreen('login')
+          setLoading(false)
+          return
+        }
         role = data.role || 'uf'
         franchiseeId = data.franchisee_id
 
