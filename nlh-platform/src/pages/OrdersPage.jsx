@@ -225,57 +225,96 @@ function DispatchModal({ order, onClose, onSaved }) {
 }
 
 // ---------------------------------------------------------------------------
-// InvoiceEditModal — admin edits sent_qty, courier_charges
+// InvoiceEditModal — admin edits items (add/delete/change), sent_qty, rate, courier
 // ---------------------------------------------------------------------------
-function InvoiceEditModal({ order, onClose, onSaved }) {
+function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const [items, setItems] = useState([])
+  const [allSkus, setAllSkus] = useState([])
+  const [deletedIds, setDeletedIds] = useState([])
   const [courierCharges, setCourierCharges] = useState(order.courier_charges || 0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  useEffect(function () { loadItems() }, [])
+  useEffect(function () { loadData() }, [])
 
-  async function loadItems() {
-    const { data, error } = await sb
-      .from('order_items')
-      .select('*, skus(level_name, uf_rate, cf_rate, smf_rate)')
-      .eq('order_id', order.id)
-    if (error) { showToast('Failed to load items: ' + error.message) }
-    else { setItems(data || []) }
+  async function loadData() {
+    const [itemsRes, skusRes] = await Promise.all([
+      sb.from('order_items').select('*, skus(level_name, uf_rate, cf_rate, smf_rate)').eq('order_id', order.id),
+      isAdmin ? sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate').order('level_name') : { data: [] },
+    ])
+    if (itemsRes.error) showToast('Failed to load items: ' + itemsRes.error.message)
+    else setItems(itemsRes.data || [])
+    setAllSkus(skusRes.data || [])
     setLoading(false)
   }
 
-  function updateField(itemId, field, val) {
+  function updateField(idx, field, val) {
     setItems(function (prev) {
-      return prev.map(function (it) {
-        if (it.id !== itemId) return it
+      return prev.map(function (it, i) {
+        if (i !== idx) return it
         return { ...it, [field]: parseInt(val, 10) || 0 }
       })
     })
   }
 
-  function lineTotal(item) {
-    return (item.ordered_qty || 0) * (item.rate || 0)
+  function updateNewItemSku(idx, skuId) {
+    const sku = allSkus.find(function (s) { return s.id === skuId })
+    const tier = order.placer_tier || 'UF'
+    const rate = sku ? ({ UF: sku.uf_rate, CF: sku.cf_rate, SMF: sku.smf_rate }[tier] || sku.uf_rate || 0) : 0
+    setItems(function (prev) {
+      return prev.map(function (it, i) {
+        if (i !== idx) return it
+        return { ...it, sku_id: skuId, skus: sku || null, rate, ordered_qty: it.ordered_qty || 1 }
+      })
+    })
   }
 
+  function addItem() {
+    setItems(function (prev) {
+      return [...prev, { id: null, sku_id: '', ordered_qty: 1, sent_qty: 0, rate: 0, skus: null }]
+    })
+  }
+
+  function removeItem(idx) {
+    const item = items[idx]
+    if (item.id) setDeletedIds(function (prev) { return [...prev, item.id] })
+    setItems(function (prev) { return prev.filter(function (_, i) { return i !== idx }) })
+  }
+
+  function lineTotal(item) { return (item.ordered_qty || 0) * (item.rate || 0) }
+
   function grandTotal() {
-    const itemsTotal = items.reduce(function (s, it) { return s + lineTotal(it) }, 0)
-    return itemsTotal + (parseInt(courierCharges, 10) || 0)
+    return items.reduce(function (s, it) { return s + lineTotal(it) }, 0) + (parseInt(courierCharges, 10) || 0)
   }
 
   async function handleSave() {
     setSaving(true)
-    for (const item of items) {
-      const { error } = await sb
-        .from('order_items')
-        .update({ sent_qty: item.sent_qty, rate: item.rate })
-        .eq('id', item.id)
-      if (error) { showToast('Error saving item: ' + error.message); setSaving(false); return }
+    // Delete removed items
+    for (const id of deletedIds) {
+      const { error } = await sb.from('order_items').delete().eq('id', id)
+      if (error) { showToast('Error removing item: ' + error.message); setSaving(false); return }
     }
-    await sb
-      .from('orders')
-      .update({ courier_charges: parseInt(courierCharges, 10) || 0 })
-      .eq('id', order.id)
+    // Update or insert items
+    for (const item of items) {
+      if (item.id) {
+        const { error } = await sb
+          .from('order_items')
+          .update({ sent_qty: item.sent_qty, rate: item.rate, ordered_qty: item.ordered_qty })
+          .eq('id', item.id)
+        if (error) { showToast('Error saving item: ' + error.message); setSaving(false); return }
+      } else {
+        if (!item.sku_id) continue
+        const { error } = await sb.from('order_items').insert({
+          order_id: order.id,
+          sku_id: item.sku_id,
+          ordered_qty: item.ordered_qty || 1,
+          sent_qty: item.sent_qty || 0,
+          rate: item.rate || 0,
+        })
+        if (error) { showToast('Error adding item: ' + error.message); setSaving(false); return }
+      }
+    }
+    await sb.from('orders').update({ courier_charges: parseInt(courierCharges, 10) || 0 }).eq('id', order.id)
     showToast('Invoice updated.')
     onSaved()
     setSaving(false)
@@ -297,51 +336,93 @@ function InvoiceEditModal({ order, onClose, onSaved }) {
                 <thead>
                   <tr>
                     <th>SKU / Item</th>
-                    <th style={{ width: 80 }}>Ord Qty</th>
-                    <th style={{ width: 90 }}>Sent Qty</th>
-                    <th style={{ width: 110 }}>Rate (Rs)</th>
-                    <th style={{ width: 110, textAlign: 'right' }}>Amount (Rs)</th>
+                    <th style={{ width: 70 }}>Ord Qty</th>
+                    <th style={{ width: 80 }}>Sent Qty</th>
+                    <th style={{ width: 100 }}>Rate (Rs)</th>
+                    <th style={{ width: 100, textAlign: 'right' }}>Amount (Rs)</th>
+                    {isAdmin && <th style={{ width: 40 }}></th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map(function (item) {
+                  {items.map(function (item, idx) {
                     const defaultRate = item.skus
                       ? ({ UF: item.skus.uf_rate, CF: item.skus.cf_rate, SMF: item.skus.smf_rate }[order.placer_tier] || item.skus.uf_rate || 0)
                       : 0
+                    const isNew = !item.id
                     return (
-                      <tr key={item.id}>
+                      <tr key={item.id || ('new-' + idx)} style={isNew ? { background: 'var(--bg3)' } : {}}>
                         <td>
-                          <div style={{ fontWeight: 500 }}>{item.skus?.level_name || item.sku_id}</div>
-                          {item.rate !== defaultRate && defaultRate > 0 && (
-                            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                              Default: Rs {fmtAmt(defaultRate)}
-                            </div>
+                          {isNew ? (
+                            <select
+                              value={item.sku_id}
+                              onChange={function (e) { updateNewItemSku(idx, e.target.value) }}
+                              style={{ width: '100%', fontSize: 13 }}
+                            >
+                              <option value="">— Select SKU —</option>
+                              {allSkus.map(function (s) {
+                                return <option key={s.id} value={s.id}>{s.level_name}</option>
+                              })}
+                            </select>
+                          ) : (
+                            <>
+                              <div style={{ fontWeight: 500 }}>{item.skus?.level_name || item.sku_id}</div>
+                              {item.rate !== defaultRate && defaultRate > 0 && (
+                                <div style={{ fontSize: 11, color: 'var(--text3)' }}>Default: Rs {fmtAmt(defaultRate)}</div>
+                              )}
+                            </>
                           )}
                         </td>
-                        <td style={{ textAlign: 'center' }}>{item.ordered_qty}</td>
                         <td>
                           <input
                             type="number" className="price-inp"
-                            value={item.sent_qty} min={0} max={item.ordered_qty}
-                            onChange={function (e) { updateField(item.id, 'sent_qty', e.target.value) }}
+                            value={item.ordered_qty} min={1}
+                            onChange={function (e) { updateField(idx, 'ordered_qty', e.target.value) }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number" className="price-inp"
+                            value={item.sent_qty} min={0}
+                            onChange={function (e) { updateField(idx, 'sent_qty', e.target.value) }}
                           />
                         </td>
                         <td>
                           <input
                             type="number" className="price-inp"
                             value={item.rate} min={0}
-                            onChange={function (e) { updateField(item.id, 'rate', e.target.value) }}
+                            onChange={function (e) { updateField(idx, 'rate', e.target.value) }}
                             style={{ fontWeight: 600 }}
                           />
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'var(--mono)' }}>
                           Rs {fmtAmt(lineTotal(item))}
                         </td>
+                        {isAdmin && (
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              onClick={function () { removeItem(idx) }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 16, lineHeight: 1 }}
+                              title="Remove item"
+                            >
+                              x
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
+
+              {isAdmin && (
+                <button
+                  className="btn-s btn-sm"
+                  onClick={addItem}
+                  style={{ marginTop: 10, border: '1.5px dashed var(--purple)', color: 'var(--purple)', background: 'none' }}
+                >
+                  + Add Product
+                </button>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16, gap: 16 }}>
                 <div className="fr" style={{ margin: 0, flex: 1 }}>
@@ -684,92 +765,60 @@ function NewOrderModal({ currentFranchiseeId, isAdmin, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 // PDF invoice generation — NLH branded pastel design
 // ---------------------------------------------------------------------------
-function generateInvoicePDF(order, items) {
-  const doc  = new jsPDF({ unit: 'mm', format: 'a4' })
-  const W    = 210          // page width
-  const L    = 12           // left margin
-  const R    = 198          // right margin
-  const CW   = R - L        // content width
+async function generateInvoicePDF(order, items) {
+  // ── Load images from /public ──────────────────────────────
+  async function loadImg(path) {
+    try {
+      const res = await fetch(path)
+      if (!res.ok) return null
+      const blob = await res.blob()
+      return new Promise(function (resolve) {
+        const reader = new FileReader()
+        reader.onloadend = function () { resolve(reader.result) }
+        reader.readAsDataURL(blob)
+      })
+    } catch (e) { return null }
+  }
+  const [logoB64, mascotB64, qrB64] = await Promise.all([
+    loadImg('/nlh-logo.png'),
+    loadImg('/nlh-mascot.png'),
+    loadImg('/nlh-qr.png'),
+  ])
 
-  // ── colour helpers ─────────────────────────────────────────
+  const doc  = new jsPDF({ unit: 'mm', format: 'a4' })
+  const W    = 210
+  const L    = 12
+  const R    = 198
+  const CW   = R - L
+
   function fc(r, g, b) { doc.setFillColor(r, g, b) }
   function dc(r, g, b) { doc.setDrawColor(r, g, b) }
   function tc(r, g, b) { doc.setTextColor(r, g, b) }
 
-  const YELLOW   = [255, 210,  52]   // #FFD234  NLH yellow
-  const YLLT     = [255, 253, 224]   // pastel yellow
-  const PURPLE   = [ 83,  74, 183]   // #534AB7  NLH purple
-  const NAVY     = [ 26,  35, 126]   // #1A237E  dark navy
-  const LAVENDER = [237, 233, 254]   // pastel lavender
+  const YELLOW   = [255, 210,  52]
+  const YLLT     = [255, 253, 224]
+  const PURPLE   = [ 83,  74, 183]
+  const NAVY     = [ 26,  35, 126]
+  const LAVENDER = [237, 233, 254]
   const WHITE    = [255, 255, 255]
-  const FOOTERBG = [ 28,  20,  68]   // near-black footer
-  const TDK      = [ 24,  20,  60]   // text dark
-  const TMD      = [100,  95, 150]   // text medium
-  const TLT      = [165, 160, 200]   // text light
+  const FOOTERBG = [ 28,  20,  68]
+  const TDK      = [ 24,  20,  60]
+  const TMD      = [100,  95, 150]
+  const TLT      = [165, 160, 200]
   const GREEN    = [ 22, 163,  74]
   const RED      = [220,  38,  38]
   const AMBER    = [217, 119,   6]
 
   // ═══════════════════════════════════════════════════════════
-  // 1.  HEADER — NLH yellow background
+  // 1.  HEADER — yellow band with actual NLH logo
   // ═══════════════════════════════════════════════════════════
   fc(...YELLOW); doc.rect(0, 0, W, 54, 'F')
 
-  // White logo card
-  fc(...WHITE); doc.roundedRect(L, 6, 70, 42, 3, 3, 'F')
-
-  // ── Draw sun mascot ────────────────────────────────────────
-  const sx = 22, sy = 25, sr = 6.5
-
-  // Rays (12 at 30° intervals)
-  dc(255, 145, 0); doc.setLineWidth(1.7)
-  for (let i = 0; i < 12; i++) {
-    const a = (i * 30) * Math.PI / 180
-    doc.line(
-      sx + Math.cos(a) * (sr + 1.3), sy + Math.sin(a) * (sr + 1.3),
-      sx + Math.cos(a) * (sr + 4.8), sy + Math.sin(a) * (sr + 4.8)
-    )
+  // White logo card (left)
+  fc(...WHITE); doc.roundedRect(L, 6, 72, 42, 3, 3, 'F')
+  if (logoB64) {
+    doc.addImage(logoB64, 'PNG', L + 1, 7, 70, 40)
   }
-  // Sun body
-  fc(255, 195, 0); dc(255, 145, 0); doc.setLineWidth(0.6)
-  doc.circle(sx, sy, sr, 'FD')
-  // Eyes
-  fc(60, 30, 0)
-  doc.circle(sx - 2.3, sy - 1.6, 0.95, 'F')
-  doc.circle(sx + 2.3, sy - 1.6, 0.95, 'F')
-  // Eye shine
-  fc(255, 255, 255)
-  doc.circle(sx - 2, sy - 2, 0.38, 'F')
-  doc.circle(sx + 2.6, sy - 2, 0.38, 'F')
-  // Smile (5 line segments forming arc)
-  dc(60, 30, 0); doc.setLineWidth(0.75)
-  for (let i = 0; i < 5; i++) {
-    const a1 = (147 + i * 18) * Math.PI / 180
-    const a2 = (147 + (i + 1) * 18) * Math.PI / 180
-    doc.line(
-      sx + Math.cos(a1) * 3.4, sy + Math.sin(a1) * 3.4,
-      sx + Math.cos(a2) * 3.4, sy + Math.sin(a2) * 3.4
-    )
-  }
-  // Cheeks (two small orange circles)
-  fc(255, 140, 80); doc.setLineWidth(0)
-  doc.circle(sx - 4.3, sy + 1.8, 1.8, 'F')
-  doc.circle(sx + 4.3, sy + 1.8, 1.8, 'F')
-
-  // Logo text
-  tc(...NAVY)
-  doc.setFont('helvetica', 'italic');     doc.setFontSize(7)
-  doc.text('Estd. 2008', L + 2, 11.5)
-  doc.setFont('helvetica', 'italic');     doc.setFontSize(8.5)
-  doc.text('new', 33.5, 19)
-  doc.setFont('helvetica', 'bold');       doc.setFontSize(14.5)
-  doc.text('Learning', 33.5, 26.5)
-  doc.setFontSize(11.5)
-  doc.text('HORIZONS®', 33.5, 33.5)
-  doc.setFont('helvetica', 'normal');     doc.setFontSize(6.5); tc(...PURPLE)
-  doc.text('ISO 9001 : 2015 Certified', L + 2, 39.5)
-  doc.setFont('helvetica', 'bolditalic'); doc.setFontSize(6.5); tc(21, 101, 192)
-  doc.text("Enriching Children's Future", L + 2, 45)
 
   // INVOICE title — right
   doc.setFont('helvetica', 'bold'); doc.setFontSize(30); tc(...NAVY)
@@ -813,8 +862,8 @@ function generateInvoicePDF(order, items) {
   }
   doc.setFontSize(7.5); tc(...TLT)
   doc.text(
-    'Tier: ' + (order.placer?.tier || order.placer_tier || '—') +
-    '   |   Order ref: ' + (order.order_ref || '—'),
+    'Tier: ' + (order.placer?.tier || order.placer_tier || '-') +
+    '   |   Order ref: ' + (order.order_ref || '-'),
     L + 6, cardY + 31.5
   )
 
@@ -836,7 +885,6 @@ function generateInvoicePDF(order, items) {
   doc.setFont('helvetica', 'bold');   tc(...TDK)
   doc.text(fmtDate(order.created_at), iVX, cardY + 23, { align: 'right' })
 
-  // Status pill
   const isPaid      = order.status === 'closed'
   const isSubmitted = order.status === 'payment_submitted'
   if (isPaid)           fc(...GREEN)
@@ -852,16 +900,14 @@ function generateInvoicePDF(order, items) {
   // ═══════════════════════════════════════════════════════════
   // 3.  ITEMS TABLE
   // ═══════════════════════════════════════════════════════════
-  let y = cardY + cardH + 8   // ≈ 107
+  let y = cardY + cardH + 8
 
-  // Column right-edge x-positions
   const cSku  = L + 3
   const cOrd  = 128
   const cSent = 146
   const cRate = 167
   const cAmt  = R - 1
 
-  // Header bar
   fc(...PURPLE); doc.rect(L, y, CW, 8.5, 'F')
   tc(...WHITE); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.2)
   const hY = y + 5.8
@@ -875,14 +921,11 @@ function generateInvoicePDF(order, items) {
   let subtotal = 0
   items.forEach(function (item, idx) {
     const rowH = 8
-    // Amount based on ordered_qty so it matches grand_total
     const amt  = (item.ordered_qty || 0) * (item.rate || 0)
     subtotal  += amt
 
-    // Alternating row background
     if (idx % 2 === 0) { fc(250, 248, 255); doc.rect(L, y, CW, rowH, 'F') }
 
-    // Row separator
     dc(215, 210, 240); doc.setLineWidth(0.15)
     doc.line(L, y + rowH, R, y + rowH)
 
@@ -914,36 +957,57 @@ function generateInvoicePDF(order, items) {
   // ═══════════════════════════════════════════════════════════
   const courier = order.courier_charges || 0
   const total   = order.grand_total || (subtotal + courier)
-  const botH    = 62
+  const botH    = 66
   const payW    = 106
   const totX    = L + payW + 4
   const totW    = CW - payW - 4
 
-  // Payment box — pastel yellow with yellow left accent
-  fc(...YLLT);   doc.roundedRect(L,  y, payW, botH, 3, 3, 'F')
-  fc(...YELLOW); doc.roundedRect(L,  y, 2.5,  botH, 1, 1, 'F')
+  // Payment box — pastel yellow
+  fc(...YLLT);   doc.roundedRect(L, y, payW, botH, 3, 3, 'F')
+  fc(...YELLOW); doc.roundedRect(L, y, 2.5,  botH, 1, 1, 'F')
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); tc(...NAVY)
   doc.text('PAY VIA', L + 6, y + 7.5)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); tc(...TMD)
-  doc.text('Payment pending. Please transfer and share UTR', L + 6, y + 13.5)
-  doc.text('/ transaction reference with NLH.', L + 6, y + 18.5)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7); tc(...TMD)
+  doc.text('Transfer and share UTR / transaction ref with NLH.', L + 6, y + 13.5)
 
-  // Inner white bank-details card
-  fc(...WHITE); doc.roundedRect(L + 3, y + 22, payW - 6, 36, 2, 2, 'F')
-  doc.setFont('helvetica', 'bold');   doc.setFontSize(7.5); tc(...TDK)
-  doc.text('IDFC FIRST Bank, Nagpur - Byramji Town Branch', L + 7, y + 29)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); tc(...TMD)
-  doc.text('A/c No: 10278096847', L + 7, y + 35)
-  doc.text('IFSC Code: IDFB0042504', L + 7, y + 41)
-  doc.setFont('helvetica', 'bold'); tc(...PURPLE)
-  doc.text('UPI: newlearninghorizons@idfcbank', L + 7, y + 47.5)
-  // Yellow "scan & pay" strip
-  fc(...YELLOW); doc.roundedRect(L + 3, y + 51.5, payW - 6, 6.5, 1, 1, 'F')
-  tc(...NAVY); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8)
-  doc.text('- Scan QR in any UPI app  -  newlearninghorizons@idfcbank', L + 7, y + 56)
+  // Inner white card — bank details left + QR right
+  const cardInX = L + 3, cardInW = payW - 6, cardInY = y + 18, cardInH = 44
+  fc(...WHITE); doc.roundedRect(cardInX, cardInY, cardInW, cardInH, 2, 2, 'F')
 
-  // Totals box — lavender with purple left accent
+  // QR code — right side of inner card (28x28)
+  const qrSize = 28, qrX = cardInX + cardInW - qrSize - 2, qrY = cardInY + 2
+  if (qrB64) {
+    doc.addImage(qrB64, 'PNG', qrX, qrY, qrSize, qrSize)
+  } else {
+    // Fallback: draw placeholder box
+    dc(200, 200, 200); fc(240, 240, 240)
+    doc.roundedRect(qrX, qrY, qrSize, qrSize, 1, 1, 'FD')
+    tc(160, 160, 160); doc.setFontSize(6)
+    doc.text('QR', qrX + qrSize / 2, qrY + qrSize / 2 + 2, { align: 'center' })
+  }
+  // "Scan" label below QR
+  tc(...PURPLE); doc.setFont('helvetica', 'bold'); doc.setFontSize(5.5)
+  doc.text('Scan to Pay', qrX + qrSize / 2, qrY + qrSize + 4, { align: 'center' })
+
+  // Bank details — left of inner card (text limited width to avoid QR overlap)
+  const bankTextW = cardInW - qrSize - 8
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); tc(...TDK)
+  doc.text('IDFC FIRST Bank', cardInX + 4, cardInY + 8)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); tc(...TMD)
+  doc.text('Byramji Town Branch, Nagpur', cardInX + 4, cardInY + 14)
+  doc.text('A/c: 10278096847', cardInX + 4, cardInY + 20)
+  doc.text('IFSC: IDFB0042504', cardInX + 4, cardInY + 26)
+  doc.setFont('helvetica', 'bold'); tc(...PURPLE); doc.setFontSize(6.5)
+  const upiLines = doc.splitTextToSize('UPI: newlearninghorizons@idfcbank', bankTextW)
+  doc.text(upiLines, cardInX + 4, cardInY + 33)
+
+  // Yellow scan strip at bottom of payment box
+  fc(...YELLOW); doc.roundedRect(cardInX, y + botH - 9, cardInW, 7, 1, 1, 'F')
+  tc(...NAVY); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.2)
+  doc.text('Scan QR with any UPI app to pay instantly', cardInX + cardInW / 2, y + botH - 4.5, { align: 'center' })
+
+  // Totals box — lavender
   fc(...LAVENDER); doc.roundedRect(totX, y, totW, botH, 3, 3, 'F')
   fc(...PURPLE);   doc.roundedRect(totX, y, 2.5,  botH, 1, 1, 'F')
 
@@ -962,7 +1026,6 @@ function generateInvoicePDF(order, items) {
   totRow('Courier charges', courier > 0 ? 'Rs ' + fmtAmt(courier) : 'As per actuals')
   totRow('GST', 'Not applicable')
 
-  // Divider
   dc(180, 170, 220); doc.setLineWidth(0.35)
   doc.line(tL, ty - 3, tR, ty - 3)
 
@@ -972,7 +1035,7 @@ function generateInvoicePDF(order, items) {
   doc.text('Total', tL, ty + 7.5)
   doc.text('Rs ' + fmtAmt(total), tR, ty + 7.5, { align: 'right' })
 
-  y += botH + 6
+  y += botH + 4
 
   // Payment & dispatch notes
   if (order.payment_mode || order.payment_ref) {
@@ -990,10 +1053,36 @@ function generateInvoicePDF(order, items) {
       'Dispatched via: ' + (order.courier_partner || '') + '  |  AWB: ' + order.awb_number,
       L, y
     )
+    y += 5
   }
 
   // ═══════════════════════════════════════════════════════════
-  // 5.  FOOTER
+  // 5.  MASCOT + THANK YOU banner
+  // ═══════════════════════════════════════════════════════════
+  const bannerY = Math.max(y + 2, 240)
+  const bannerH = 22
+  const mascotSz = 24
+
+  // Pastel yellow banner
+  fc(...YLLT); doc.roundedRect(L, bannerY, CW, bannerH, 3, 3, 'F')
+  fc(...YELLOW); doc.roundedRect(L, bannerY, 2.5, bannerH, 1, 1, 'F')
+
+  // Mascot image — left side of banner
+  if (mascotB64) {
+    doc.addImage(mascotB64, 'PNG', L + 3, bannerY - 2, mascotSz, mascotSz + 2)
+  }
+
+  // Thank you text
+  const txX = L + mascotSz + 8
+  tc(...NAVY); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+  doc.text('Thank you for your order!', txX, bannerY + 9)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); tc(...TMD)
+  doc.text('Grand Total Payable:', txX, bannerY + 16)
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); tc(...PURPLE)
+  doc.text('Rs ' + fmtAmt(total), R - 3, bannerY + 16, { align: 'right' })
+
+  // ═══════════════════════════════════════════════════════════
+  // 6.  FOOTER
   // ═══════════════════════════════════════════════════════════
   fc(...YELLOW);   doc.rect(0, 281, W, 1.5, 'F')
   fc(...FOOTERBG); doc.rect(0, 282.5, W, 14.5, 'F')
@@ -1148,7 +1237,7 @@ export default function OrdersPage() {
       showToast('Failed to load items: ' + error.message)
       return
     }
-    generateInvoicePDF(order, items || [])
+    await generateInvoicePDF(order, items || [])
   }
 
   function isActing(orderId, action) {
@@ -1361,6 +1450,7 @@ export default function OrdersPage() {
       {editInvoiceOrder && (
         <InvoiceEditModal
           order={editInvoiceOrder}
+          isAdmin={isAdmin}
           onClose={function () { setEditInvoiceOrder(null) }}
           onSaved={async function () { setEditInvoiceOrder(null); await loadOrders() }}
         />
