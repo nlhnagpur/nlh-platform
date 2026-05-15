@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { showToast } from '../utils'
 
 export default function OnboardingPage() {
-  const { currentUser, currentRole, setScreen, setCurrentFranchiseeId } = useAuth()
+  const { currentUser, currentRole, setScreen, setCurrentFranchiseeId, signOut } = useAuth()
   const [step, setStep] = useState('choose') // 'choose' | 'franchisee' | 'student'
 
   // Franchisee form state
@@ -41,11 +41,15 @@ export default function OnboardingPage() {
     loadParents()
   }, [frTier, step])
 
-  // Load UF centres for student
+  // Load all active centres for student (UF, CF, SMF, NLH)
   useEffect(() => {
     if (step !== 'student') return
     async function loadCentres() {
-      const { data } = await sb.from('franchisees').select('id, business_name, city').eq('tier', 'UF').eq('status', 'active').order('business_name')
+      const { data } = await sb.from('franchisees')
+        .select('id, business_name, city, tier')
+        .in('tier', ['UF', 'CF', 'SMF', 'NLH'])
+        .eq('status', 'active')
+        .order('tier').order('business_name')
       setCentres(data || [])
     }
     loadCentres()
@@ -198,6 +202,17 @@ export default function OnboardingPage() {
           </>
         )}
 
+        {step === 'choose' && (
+          <div style={{ marginTop: 24, textAlign: 'center' }}>
+            <button
+              onClick={signOut}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', font: '500 11px var(--font)', color: 'var(--text3)', textDecoration: 'underline' }}
+            >
+              Not {currentUser?.email?.split('@')[0]}? Sign out
+            </button>
+          </div>
+        )}
+
         {step === 'student' && (
           <>
             <div className="login-title">Student Profile</div>
@@ -224,11 +239,11 @@ export default function OnboardingPage() {
                 </div>
               </div>
               <div className="fr">
-                <label>NLH Centre (Unit Franchisee) *</label>
+                <label>NLH Centre *</label>
                 <select value={stCentre} onChange={e => setStCentre(e.target.value)}>
                   <option value="">— Select your centre —</option>
                   {centres.map(c => (
-                    <option key={c.id} value={c.id}>{c.business_name} — {c.city}</option>
+                    <option key={c.id} value={c.id}>[{c.tier}] {c.business_name}{c.city ? ' — ' + c.city : ''}</option>
                   ))}
                 </select>
               </div>
