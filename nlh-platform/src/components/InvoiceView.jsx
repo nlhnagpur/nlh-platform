@@ -251,6 +251,7 @@ export default function InvoiceView({ order, onClose }) {
                     <div style={{ font:'600 9px "DM Mono",monospace', color:'#9C9A92' }}>{String(i + 1).padStart(2, '0')}</div>
                     <div style={{ display:'flex', flexDirection:'column' }}>
                       <span style={{ font:'600 11.5px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2 }}>{name}</span>
+                      {item.sku_id && <span style={{ font:'500 9px "DM Mono",monospace', color:'#9C9A92', marginTop:2, textTransform:'uppercase', letterSpacing:'.04em' }}>{item.sku_id.slice(0, 8).toUpperCase()}</span>}
                     </div>
                     <div style={{ textAlign:'right', font:'500 11px "DM Mono",monospace', color:'#5C5A54' }}>{item.ordered_qty || 0}</div>
                     <div style={{ textAlign:'right', font:'500 11px "DM Mono",monospace', color: sent === item.ordered_qty ? '#16A34A' : '#5C5A54', fontWeight: sent === item.ordered_qty ? 700 : 500 }}>{sent}</div>
@@ -290,7 +291,7 @@ export default function InvoiceView({ order, onClose }) {
                   {/* QR */}
                   <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
                     <div style={{ font:'700 8.5px "DM Mono",monospace', color:'#1E40AF', textTransform:'uppercase', letterSpacing:'.1em', textAlign:'center', lineHeight:1.3 }}>Scan to pay</div>
-                    <img src="/New%20Learning%20Horizons_GoogleQR%20%26%20Social%20media.png" alt="Pay QR" style={{ width:110, height:110, display:'block', background:'#fff', borderRadius:6, padding:4, border:'2px solid #1E40AF', objectFit:'contain' }} />
+                    <img src="/nlh-upi-qr.png" alt="Pay QR" style={{ width:110, height:110, display:'block', background:'#fff', borderRadius:6, padding:4, border:'2px solid #1E40AF', objectFit:'contain' }} />
                     <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#5C5A54', textAlign:'center', lineHeight:1.35, letterSpacing:'.03em', textTransform:'uppercase' }}>
                       <b style={{ color:'#534AB7' }}>newlearninghorizons@idfcbank</b>
                     </div>
