@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { sb } from '../supabase'
 import { fmtAmt } from '../utils'
+import { sendInvoiceEmail } from '../services/email'
 
 function fmtDateLong(d) {
   if (!d) return '—'
@@ -34,6 +35,7 @@ export default function InvoiceView({ order, onClose }) {
   const [items, setItems] = useState([])
   const [placer, setPlacer] = useState(order.placer || order.franchisees || null)
   const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
   const printRef = useRef(null)
 
   useEffect(function() {
@@ -88,6 +90,23 @@ export default function InvoiceView({ order, onClose }) {
   }, 0)
   const courier = order.courier_charges || 0
   const grandTotal = order.grand_total || (subtotal + courier)
+
+  async function handleSendEmail() {
+    const email = fr.email
+    if (!email) {
+      alert('No email address found for this franchisee.')
+      return
+    }
+    setSending(true)
+    try {
+      await sendInvoiceEmail(order, email, fr.business_name || email, grandTotal)
+      alert('Invoice emailed to ' + email)
+    } catch (err) {
+      alert('Failed to send email: ' + err.message)
+    } finally {
+      setSending(false)
+    }
+  }
   const amtPaid = order.amount_paid || 0
   const balance = grandTotal - amtPaid
 
@@ -116,6 +135,9 @@ export default function InvoiceView({ order, onClose }) {
         </span>
         <button onClick={onClose} style={{ background:'#fff', color:'#5C5A54', border:'1px solid #D0CEC6', padding:'8px 16px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}>
           ← Back
+        </button>
+        <button onClick={handleSendEmail} disabled={sending || !fr.email} style={{ background: fr.email ? '#16A34A' : '#9C9A92', color:'#fff', border:'none', padding:'8px 16px', borderRadius:24, cursor: fr.email ? 'pointer' : 'not-allowed', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase', opacity: sending ? .7 : 1 }}>
+          {sending ? 'Sending…' : '📧 Send Email'}
         </button>
         <button onClick={handlePrint} style={{ background:'#534AB7', color:'#fff', border:'none', padding:'8px 16px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}>
           Print / Save PDF
