@@ -708,3 +708,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
   .kpi { grid-template-columns: repeat(2, 1fr); }
   .programs { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ── suppress Vercel deployment toolbar ── */
+vercel-toolbar { display: none !important; }
+#vercel-live-feedback { display: none !important; }
+#__vercel_toolbar { display: none !important; }
