@@ -29,6 +29,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     parent_name: student.parent_name || '',
     dob: student.dob || '',
     phone: student.phone || '',
+    country: student.country || 'India',
+    state: student.state || '',
+    city: student.city || '',
+    area: student.area || '',
     address: student.address || '',
     payment_status: student.payment_status || '',
     fee_total: student.fee_total ?? '',
@@ -51,6 +55,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       parent_name: form.parent_name.trim(),
       dob: form.dob || null,
       phone: form.phone.trim(),
+      country: form.country.trim(),
+      state: form.state.trim(),
+      city: form.city.trim(),
+      area: form.area.trim(),
       address: form.address.trim(),
       fee_total: form.fee_total === '' ? null : Number(form.fee_total),
       fee_paid: form.fee_paid === '' ? null : Number(form.fee_paid),
@@ -83,8 +91,20 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             <label>Phone
               <input value={form.phone} onChange={field('phone')} disabled={!admin} />
             </label>
-            <label className="col-span-2">Address
-              <input value={form.address} onChange={field('address')} disabled={!admin} />
+            <label>Country
+              <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
+            </label>
+            <label>State
+              <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
+            </label>
+            <label>City
+              <input value={form.city} onChange={field('city')} disabled={!admin} placeholder="Nagpur" />
+            </label>
+            <label>Area / Locality
+              <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Neighbourhood / Area" />
+            </label>
+            <label className="col-span-2">Street / Building Address
+              <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Flat/Shop no., building, street" />
             </label>
             <label>Payment Status
               <select value={form.payment_status} onChange={field('payment_status')} disabled={!admin}>
@@ -175,9 +195,11 @@ function AddStudentModal({ onClose, onSaved }) {
   const isMasterFr = currentRole === 'smf' || currentRole === 'cf'
 
   const [form, setForm] = useState({
-    full_name: '', parent_name: '', dob: '', phone: '', address: '',
+    full_name: '', parent_name: '', dob: '', phone: '',
+    country: 'India', state: '', city: '', area: '', address: '',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
+  const [centreCity, setCentreCity] = useState('')
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
   // null = no centre chosen yet; 'all' = show everything; {skuIds} or {courseIds} = filtered
@@ -284,6 +306,10 @@ function AddStudentModal({ onClose, onSaved }) {
         parent_name: form.parent_name.trim(),
         dob: form.dob || null,
         phone: form.phone.trim(),
+        country: form.country.trim(),
+        state: form.state.trim(),
+        city: form.city.trim(),
+        area: form.area.trim(),
         address: form.address.trim(),
         franchisee_id: form.franchisee_id,
         is_active: true,
@@ -359,26 +385,75 @@ function AddStudentModal({ onClose, onSaved }) {
             <label>Phone
               <input value={form.phone} onChange={field('phone')} placeholder="10-digit mobile" />
             </label>
-            <label className="col-span-2">Address
-              <input value={form.address} onChange={field('address')} placeholder="Home address" />
+            <label>Country
+              <input value={form.country} onChange={field('country')} placeholder="India" />
             </label>
-            <label className="col-span-2">
-              Centre *
-              {/* Admin or SMF/CF: show dropdown; UF: fixed to own centre */}
-              {(admin || isMasterFr) ? (
-                <select value={form.franchisee_id} onChange={e => handleCentreChange(e.target.value)}>
-                  <option value="">— Select Centre —</option>
-                  {centreList.map(c => (
-                    <option key={c.id} value={c.id}>
-                      [{c.tier}] {c.business_name}{c.city ? ' · ' + c.city : ''}
-                      {c.id === currentFranchiseeId && isMasterFr ? ' (your centre)' : ''}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input value={form.franchisee_id ? 'Your centre' : '—'} disabled />
+            <label>State
+              <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
+            </label>
+            <label>City
+              <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
+            </label>
+            <label>Area / Locality
+              <input value={form.area} onChange={field('area')} placeholder="Neighbourhood / Area" />
+            </label>
+            <label className="col-span-2">Street / Building Address
+              <input value={form.address} onChange={field('address')} placeholder="Flat/Shop no., building, street" />
+            </label>
+
+            <div className="col-span-2" style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:4 }}>
+              <strong>Enrolment Centre *</strong>
+              {(admin || isMasterFr) ? (() => {
+                const nlhCentre = centreList.find(c => c.tier === 'NLH')
+                const cities = [...new Set(centreList.filter(c => c.tier !== 'NLH' && c.city).map(c => c.city))].sort()
+                const cityUFs = centreList.filter(c => c.tier !== 'NLH' && c.city === centreCity)
+                return (
+                  <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
+                    {nlhCentre && (
+                      <div
+                        onClick={() => { handleCentreChange(nlhCentre.id); setCentreCity('') }}
+                        style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10,
+                          border:`1.5px solid ${form.franchisee_id===nlhCentre.id ? 'var(--purple)' : 'var(--border)'}`,
+                          background: form.franchisee_id===nlhCentre.id ? 'var(--purple-bg)' : 'var(--bg)',
+                          cursor:'pointer', transition:'all .12s' }}
+                      >
+                        <span style={{ fontSize:18 }}>🏛️</span>
+                        <span style={{ flex:1 }}>
+                          <span style={{ font:'600 12.5px var(--font)', color:'var(--text)' }}>NLH Head Office</span>
+                          <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:8 }}>Nagpur · Maharashtra</span>
+                        </span>
+                        <span className="badge t-nlh">NLH</span>
+                        {form.franchisee_id===nlhCentre.id && <span style={{ font:'700 10px var(--mono)', color:'var(--purple)' }}>✓</span>}
+                      </div>
+                    )}
+                    <div style={{ font:'500 10px var(--mono)', color:'var(--text3)', textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>— or select a local centre —</div>
+                    <select
+                      value={centreCity}
+                      onChange={e => { setCentreCity(e.target.value); if (form.franchisee_id !== nlhCentre?.id) handleCentreChange('') }}
+                    >
+                      <option value="">— Filter by City —</option>
+                      {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {centreCity && (
+                      <select
+                        value={form.franchisee_id !== nlhCentre?.id ? form.franchisee_id : ''}
+                        onChange={e => handleCentreChange(e.target.value)}
+                      >
+                        <option value="">— Select Centre in {centreCity} —</option>
+                        {cityUFs.map(c => (
+                          <option key={c.id} value={c.id}>
+                            [{c.tier}] {c.business_name}{c.id === currentFranchiseeId && isMasterFr ? ' (your centre)' : ''}
+                          </option>
+                        ))}
+                        {cityUFs.length === 0 && <option disabled>No centres in {centreCity}</option>}
+                      </select>
+                    )}
+                  </div>
+                )
+              })() : (
+                <input style={{ marginTop:6 }} value="Your centre" disabled />
               )}
-            </label>
+            </div>
           </div>
 
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>

@@ -35,8 +35,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     name: franchisee.business_name || '',
     email: franchisee.email || '',
     phone: franchisee.phone || '',
-    city: franchisee.city || '',
+    country: franchisee.country || 'India',
     state: franchisee.state || '',
+    city: franchisee.city || '',
+    area: franchisee.area || '',
     address: franchisee.address || '',
     status: franchisee.status || 'active',
     enrollment_fee: franchisee.enrollment_fee ?? '',
@@ -78,8 +80,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     const payload = {
       business_name: form.name.trim(),
       phone: form.phone.trim(),
-      city: form.city.trim(),
+      country: form.country.trim(),
       state: form.state.trim(),
+      city: form.city.trim(),
+      area: form.area.trim(),
       address: form.address.trim(),
       status: form.status,
       enrollment_fee: form.enrollment_fee === '' ? null : Number(form.enrollment_fee),
@@ -126,14 +130,20 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               <label>Phone
                 <input value={form.phone} onChange={field('phone')} disabled={!admin} />
               </label>
-              <label>City
-                <input value={form.city} onChange={field('city')} disabled={!admin} />
+              <label>Country
+                <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
               </label>
               <label>State
-                <input value={form.state} onChange={field('state')} disabled={!admin} />
+                <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
               </label>
-              <label>Address
-                <input value={form.address} onChange={field('address')} disabled={!admin} />
+              <label>City
+                <input value={form.city} onChange={field('city')} disabled={!admin} placeholder="Nagpur" />
+              </label>
+              <label>Area / Locality
+                <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampeth…" />
+              </label>
+              <label className="col-span-2">Street / Building Address
+                <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Shop no., building name, street" />
               </label>
               <label>Status
                 <select value={form.status} onChange={field('status')} disabled={!admin}>
@@ -280,7 +290,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
 function AddFranchiseeModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', city: '', state: '',
+    name: '', email: '', phone: '',
+    country: 'India', state: '', city: '', area: '', address: '',
     tier: 'UF', parent_id: '',
   })
   const [parentOptions, setParentOptions] = useState([])
@@ -335,8 +346,11 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         business_name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
-        city: form.city.trim(),
+        country: form.country.trim(),
         state: form.state.trim(),
+        city: form.city.trim(),
+        area: form.area.trim(),
+        address: form.address.trim(),
         tier: form.tier,
         parent_id: form.parent_id || null,
         status: 'active',
@@ -424,11 +438,20 @@ function AddFranchiseeModal({ onClose, onSaved }) {
                 </select>
               </label>
             )}
-            <label>City
-              <input value={form.city} onChange={field('city')} placeholder="City" />
+            <label>Country
+              <input value={form.country} onChange={field('country')} placeholder="India" />
             </label>
             <label>State
-              <input value={form.state} onChange={field('state')} placeholder="State" />
+              <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
+            </label>
+            <label>City
+              <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
+            </label>
+            <label>Area / Locality
+              <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampeth…" />
+            </label>
+            <label className="col-span-2">Street / Building Address
+              <input value={form.address} onChange={field('address')} placeholder="Shop no., building name, street" />
             </label>
           </div>
           <p className="hint" style={{ marginTop: 12 }}>
