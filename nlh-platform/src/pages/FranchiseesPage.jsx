@@ -304,10 +304,27 @@ function AddFranchiseeModal({ onClose, onSaved }) {
 
   useEffect(() => {
     if (!form.tier) return
-    const parentTier = form.tier === 'CF' ? 'SMF' : form.tier === 'UF' ? 'CF' : null
-    if (!parentTier) { setParentOptions([]); return }
-    sb.from('franchisees').select('id,business_name,city,state,country').eq('tier', parentTier).eq('status', 'active').order('business_name')
-      .then(({ data }) => setParentOptions(data || []))
+    if (form.tier === 'SMF') { setParentOptions([]); return }
+
+    if (form.tier === 'CF') {
+      // CF sits under SMF
+      sb.from('franchisees').select('id,business_name,city,state,country,tier').eq('tier', 'SMF').eq('status', 'active').order('business_name')
+        .then(({ data }) => setParentOptions(data || []))
+      return
+    }
+
+    // UF: prefer CF → fall back to SMF → fall back to NLH HO
+    Promise.all([
+      sb.from('franchisees').select('id,business_name,city,state,country,tier').eq('tier', 'CF').eq('status', 'active').order('business_name'),
+      sb.from('franchisees').select('id,business_name,city,state,country,tier').eq('tier', 'SMF').eq('status', 'active').order('business_name'),
+      sb.from('franchisees').select('id,business_name,city,state,country,tier').eq('tier', 'NLH').single(),
+    ]).then(([cfs, smfs, nlh]) => {
+      setParentOptions([
+        ...(cfs.data || []),
+        ...(smfs.data || []),
+        ...(nlh.data ? [nlh.data] : []),
+      ])
+    })
   }, [form.tier])
 
   function field(k) {
@@ -317,7 +334,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   async function save() {
     if (!form.name.trim() || !form.email.trim()) { showToast('Name and email are required', 'warn'); return }
     if ((form.tier === 'UF' || form.tier === 'CF') && !form.parent_id) {
-      showToast(`Please select a parent ${form.tier === 'UF' ? 'CF' : 'SMF'}`, 'warn'); return
+      showToast(`Please select a parent franchisee for this ${form.tier}`, 'warn'); return
     }
 
     // Territory check — country-aware
@@ -439,12 +456,12 @@ function AddFranchiseeModal({ onClose, onSaved }) {
               </select>
             </label>
             {form.tier !== 'SMF' && (
-              <label>Parent {form.tier === 'CF' ? 'SMF' : 'CF'} *
+              <label>Parent {form.tier === 'CF' ? 'SMF' : 'Franchisee'} *
                 <select value={form.parent_id} onChange={field('parent_id')}>
                   <option value="">— Select —</option>
                   {parentOptions.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.business_name} ({form.tier === 'CF' ? (p.state || p.country) : p.city}{p.country && p.country !== 'India' ? ' · ' + p.country : ''})
+                      [{p.tier}] {p.business_name} ({p.city || p.state || p.country}{p.country && p.country !== 'India' ? ' · ' + p.country : ''})
                     </option>
                   ))}
                 </select>

@@ -39,10 +39,19 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (step !== 'franchisee') return
     async function loadParents() {
-      const parentTier = frTier === 'UF' ? 'CF' : frTier === 'CF' ? 'SMF' : null
-      if (!parentTier) { setParents([]); return }
-      const { data } = await sb.from('franchisees').select('id, business_name, city, state, country').eq('tier', parentTier).eq('status', 'active').order('business_name')
-      setParents(data || [])
+      if (frTier === 'SMF') { setParents([]); return }
+      if (frTier === 'CF') {
+        const { data } = await sb.from('franchisees').select('id, business_name, city, state, country, tier').eq('tier', 'SMF').eq('status', 'active').order('business_name')
+        setParents(data || [])
+        return
+      }
+      // UF: load CFs + SMFs + NLH HO so admin/self can pick appropriate parent
+      const [cfs, smfs, nlh] = await Promise.all([
+        sb.from('franchisees').select('id, business_name, city, state, country, tier').eq('tier', 'CF').eq('status', 'active').order('business_name'),
+        sb.from('franchisees').select('id, business_name, city, state, country, tier').eq('tier', 'SMF').eq('status', 'active').order('business_name'),
+        sb.from('franchisees').select('id, business_name, city, state, country, tier').eq('tier', 'NLH').single(),
+      ])
+      setParents([...(cfs.data || []), ...(smfs.data || []), ...(nlh.data ? [nlh.data] : [])])
     }
     loadParents()
   }, [frTier, step])
@@ -223,11 +232,11 @@ export default function OnboardingPage() {
               </div>
               {(frTier === 'UF' || frTier === 'CF') && (
                 <div className="fr">
-                  <label>Parent {frTier === 'UF' ? 'City Franchisee' : 'State Master Franchisee'} *</label>
+                  <label>Parent {frTier === 'CF' ? 'State Master Franchisee' : 'Franchisee'} *</label>
                   <select value={frParentId} onChange={e => setFrParentId(e.target.value)}>
                     <option value="">— Select —</option>
                     {parents.map(p => (
-                      <option key={p.id} value={p.id}>{p.business_name} ({p.city || p.state}{p.country && p.country !== 'India' ? ' · ' + p.country : ''})</option>
+                      <option key={p.id} value={p.id}>[{p.tier}] {p.business_name} ({p.city || p.state || p.country}{p.country && p.country !== 'India' ? ' · ' + p.country : ''})</option>
                     ))}
                   </select>
                 </div>
