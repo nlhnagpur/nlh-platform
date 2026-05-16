@@ -238,7 +238,8 @@ function AddStudentModal({ onClose, onSaved }) {
       } else {
         // UF: fixed to their own centre — load their SKU filter immediately
         const { data } = await sb.from('franchisees')
-          .select('tier,registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
+          .select('id,business_name,tier,registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
+        if (data) setCentreList([data])
         setRegFilter(deriveFilter(data))
       }
     }
@@ -455,7 +456,7 @@ function AddStudentModal({ onClose, onSaved }) {
                   </div>
                 )
               })() : (
-                <input style={{ marginTop:6 }} value="Your centre" disabled />
+                <input style={{ marginTop:6 }} value={centreList[0]?.business_name || 'Your centre'} disabled />
               )}
             </div>
           </div>
