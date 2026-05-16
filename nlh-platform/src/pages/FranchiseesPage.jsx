@@ -412,16 +412,23 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 <div style={{
                   border: '2px solid var(--border)', borderRadius: 10,
                   background: 'linear-gradient(135deg,#fffef8 0%,#f8f6ff 100%)',
-                  padding: '20px 24px', textAlign: 'center',
+                  padding: '16px 20px', textAlign: 'center',
                   fontFamily: 'Arial,sans-serif', marginBottom: 12,
                 }}>
-                  {/* NLH Logo */}
-                  <img
-                    src="/NLH Logo.png"
-                    alt="NLH"
-                    style={{ height: 44, objectFit: 'contain', marginBottom: 8 }}
-                    onError={e => { e.target.style.display = 'none' }}
-                  />
+                  {/* Logo + social row */}
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 10 }}>
+                    <img
+                      src="/NLH Logo.png" alt="NLH"
+                      style={{ height: 40, objectFit: 'contain' }}
+                      onError={e => { e.target.style.display = 'none' }}
+                    />
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap: 2 }}>
+                      <span style={{ fontSize: 9, color: '#534AB7' }}>📸 /newlearninghorizon</span>
+                      <span style={{ fontSize: 9, color: '#534AB7' }}>📘 /nlhnag</span>
+                      <span style={{ fontSize: 9, color: '#534AB7' }}>🌐 nlhnagpur.info</span>
+                    </div>
+                  </div>
+
                   <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 4 }}>FRANCHISE CERTIFICATE</div>
                   <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>This is to Certify that</div>
                   <div style={{ fontFamily: 'Georgia,serif', fontSize: 22, fontWeight: 700, color: '#CC0000', marginBottom: 2, lineHeight: 1.2 }}>
@@ -432,17 +439,31 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   )}
                   <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, marginBottom: 2 }}>Is a Registered</div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#CC0000', marginBottom: 5 }}>{label}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 5 }}>New Learning Horizons at</div>
-                  <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: courses ? 5 : 0 }}>{address}</div>
-                  {courses && <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5 }}>for {courses}</div>}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 4 }}>New Learning Horizons at</div>
+                  <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: courses ? 4 : 0 }}>{address}</div>
+                  {courses && <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5, marginBottom: 2 }}>for {courses}</div>}
+
+                  {/* Footer: sig | valid till | mascot */}
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginTop:12, paddingTop:10, borderTop:'1px dashed var(--border)' }}>
                     <div style={{ textAlign:'left' }}>
-                      <div style={{ fontSize: 9, color: 'var(--text3)' }}>Valid Till</div>
+                      <img
+                        src="/DRP Signature.png" alt="Signature"
+                        style={{ height: 32, objectFit: 'contain', display: 'block', marginBottom: 2 }}
+                        onError={e => { e.target.style.display = 'none' }}
+                      />
+                      <div style={{ fontSize: 11, fontStyle:'italic', color:'#1A1916', fontWeight: 600 }}>Dhiral Panchmatia</div>
+                      <div style={{ fontSize: 9, color:'var(--text3)' }}>Founder, NLH</div>
+                    </div>
+                    <div style={{ textAlign:'center' }}>
+                      <div style={{ fontSize: 9, color:'var(--text3)' }}>Valid Till</div>
                       <div style={{ fontSize: 11, fontWeight: 700 }}>{till}</div>
                     </div>
-                    <div style={{ textAlign:'right' }}>
-                      <div style={{ fontSize: 9, fontStyle:'italic', color:'var(--text3)' }}>Dhiral Panchmatia</div>
-                      <div style={{ fontSize: 9, color:'var(--text3)' }}>Founder, NLH</div>
+                    <div>
+                      <img
+                        src="/NLH Mascot.png" alt=""
+                        style={{ height: 52, objectFit: 'contain' }}
+                        onError={e => { e.target.style.display = 'none' }}
+                      />
                     </div>
                   </div>
                 </div>
