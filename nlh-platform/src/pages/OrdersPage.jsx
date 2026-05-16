@@ -108,24 +108,38 @@ function PaySubmitModal({ order, onClose, onSaved }) {
 }
 
 // ---------------------------------------------------------------------------
-// RecordPaymentModal — admin records amount paid
+// RecordPaymentModal — admin records payment with mode, UTR, part/full logic
 // ---------------------------------------------------------------------------
 function RecordPaymentModal({ order, onClose, onSaved }) {
+  const total = order.grand_total || 0
   const [amountPaid, setAmountPaid] = useState(order.amount_paid || '')
-  const [saving, setSaving] = useState(false)
+  const [mode, setMode]             = useState(order.payment_mode || 'UPI')
+  const [ref,  setRef]              = useState(order.payment_ref  || '')
+  const [saving, setSaving]         = useState(false)
+
+  const amt     = parseInt(amountPaid, 10) || 0
+  const balance = total - amt
+  const isFull  = amt >= total && total > 0
+  const isPart  = amt > 0 && !isFull
 
   async function handleSave() {
-    const amt = parseInt(amountPaid, 10)
-    if (isNaN(amt) || amt < 0) { showToast('Enter a valid amount.'); return }
+    if (isNaN(amt) || amt <= 0) { showToast('Enter a valid amount.', 'warn'); return }
     setSaving(true)
+    const newStatus = isFull ? 'closed' : 'part_paid'
     const { error } = await sb
       .from('orders')
-      .update({ amount_paid: amt })
+      .update({
+        amount_paid:          amt,
+        payment_mode:         mode,
+        payment_ref:          ref.trim() || null,
+        payment_verified_at:  isFull ? new Date().toISOString() : null,
+        status:               newStatus,
+      })
       .eq('id', order.id)
     if (error) {
-      showToast('Failed to record payment: ' + error.message)
+      showToast('Failed to record payment: ' + error.message, 'err')
     } else {
-      showToast('Payment recorded.')
+      showToast(isFull ? '✓ Full payment recorded — order closed.' : `Part payment of ₹${fmtAmt(amt)} recorded.`)
       onSaved()
     }
     setSaving(false)
@@ -136,24 +150,74 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Record Payment</h3>
-          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
+          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>×</button>
         </div>
-        <div >
-          <div className="fr">
-            <label>Amount Paid (₹)</label>
-            <input
-              type="number"
-              placeholder="Enter amount paid"
-              value={amountPaid}
-              onChange={function (e) { setAmountPaid(e.target.value) }}
-            />
+        <div>
+          {/* Order total summary */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+            background:'var(--bg2)', borderRadius:8, padding:'10px 14px', marginBottom:14 }}>
+            <div>
+              <div style={{ fontSize:11, color:'var(--text3)' }}>Order Total</div>
+              <div style={{ fontSize:18, fontWeight:700, fontFamily:'var(--mono)' }}>₹{fmtAmt(total)}</div>
+            </div>
+            {order.amount_paid > 0 && (
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:11, color:'var(--text3)' }}>Previously recorded</div>
+                <div style={{ fontSize:14, fontWeight:600, color:'var(--text2)', fontFamily:'var(--mono)' }}>
+                  ₹{fmtAmt(order.amount_paid)}
+                </div>
+              </div>
+            )}
           </div>
-          <p className="muted">Order total: ₹{fmtAmt(order.grand_total || 0)}</p>
+
+          <div className="form-grid">
+            <label>Payment Mode
+              <select value={mode} onChange={function (e) { setMode(e.target.value) }}>
+                <option value="UPI">UPI</option>
+                <option value="NEFT">NEFT / RTGS</option>
+                <option value="Cash">Cash</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <label>Amount Paid (₹)
+              <input
+                type="number" placeholder={`Up to ₹${fmtAmt(total)}`}
+                value={amountPaid}
+                onChange={function (e) { setAmountPaid(e.target.value) }}
+                style={{ fontWeight:700, fontSize:16 }}
+              />
+            </label>
+            <label className="col-span-2">UTR / Reference Number
+              <input
+                type="text" placeholder="Transaction ID / cheque no. / cash ref"
+                value={ref}
+                onChange={function (e) { setRef(e.target.value) }}
+              />
+            </label>
+          </div>
+
+          {/* Live balance indicator */}
+          {amt > 0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:12,
+              padding:'8px 14px', borderRadius:8,
+              background: isFull ? 'var(--green-bg,#f0fdf4)' : '#fffbeb',
+              border: '1px solid ' + (isFull ? 'var(--green)' : '#fbbf24') }}>
+              {isFull
+                ? <span style={{ color:'var(--green)', fontWeight:700, fontSize:13 }}>
+                    ✓ Full payment — order will be marked <b>Closed</b>
+                  </span>
+                : <span style={{ color:'#92400e', fontWeight:600, fontSize:13 }}>
+                    Part payment — balance remaining: <b>₹{fmtAmt(balance)}</b> — order marked <b>Part Paid</b>
+                  </span>
+              }
+            </div>
+          )}
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : isFull ? 'Record Full Payment' : isPart ? 'Record Part Payment' : 'Save'}
           </button>
         </div>
       </div>
@@ -224,6 +288,14 @@ function DispatchModal({ order, onClose, onSaved }) {
       </div>
     </div>
   )
+}
+
+// Module-level helper — used by both InvoiceEditModal and NewOrderModal
+function rateForSku(sku, tier) {
+  if (!sku) return 0
+  if (tier === 'CF')                return sku.cf_rate  || 0
+  if (tier === 'SMF' || tier === 'NLH') return sku.smf_rate || 0
+  return sku.uf_rate || 0
 }
 
 // ---------------------------------------------------------------------------
@@ -488,15 +560,6 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   const [lines, setLines] = useState([{ sku_id: '', qty: 1, rate: 0 }])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
-  // Tier-appropriate default rate for a SKU
-  // NLH Head Office is treated at SMF rate (highest dealer rate)
-  function rateForSku(sku, tier) {
-    if (!sku) return 0
-    if (tier === 'CF')               return sku.cf_rate  || 0
-    if (tier === 'SMF' || tier === 'NLH') return sku.smf_rate || 0
-    return sku.uf_rate || 0
-  }
 
   // Build a delivery address string from franchisee fields
   function buildAddress(fr) {
