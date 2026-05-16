@@ -26,6 +26,22 @@ function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
 
+function renewalStatus(fr) {
+  const vt = fr.valid_till
+    ? new Date(fr.valid_till)
+    : (() => { const d = new Date(fr.created_at || Date.now()); d.setFullYear(d.getFullYear() + 3); return d })()
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const daysLeft = Math.ceil((vt - today) / 86400000)
+  return {
+    date: vt,
+    daysLeft,
+    isExpired: daysLeft <= 0,
+    isExpiring: daysLeft > 0 && daysLeft <= 90,
+    isValid: daysLeft > 90,
+    fee: fr.renewal_fee != null ? fr.renewal_fee : (fr.fee_paid ? Math.round(fr.fee_paid * 0.25) : null),
+  }
+}
+
 // ── FranchiseeDetailModal ──────────────────────────────────────────────────────
 
 function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
@@ -45,6 +61,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     status: franchisee.status || 'active',
     enrollment_fee: franchisee.enrollment_fee ?? '',
     fee_paid: franchisee.fee_paid ?? '',
+    valid_till: franchisee.valid_till || '',
+    renewal_fee: franchisee.renewal_fee ?? '',
   })
   const [registeredCourses, setRegisteredCourses] = useState(franchisee.registered_courses || [])
   const [saving, setSaving] = useState(false)
@@ -92,6 +110,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
       status: form.status,
       enrollment_fee: form.enrollment_fee === '' ? null : Number(form.enrollment_fee),
       fee_paid: form.fee_paid === '' ? null : Number(form.fee_paid),
+      valid_till: form.valid_till || null,
+      renewal_fee: form.renewal_fee === '' ? null : Number(form.renewal_fee),
     }
     if (tab === 'courses') {
       payload.registered_courses = registeredCourses
@@ -104,6 +124,20 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   }
 
   const balance = (Number(form.enrollment_fee) || 0) - (Number(form.fee_paid) || 0)
+
+  const rs = renewalStatus({ ...franchisee, ...form })
+
+  async function recordRenewal() {
+    const newTill = new Date(rs.date)
+    newTill.setFullYear(newTill.getFullYear() + 3)
+    const newTillStr = newTill.toISOString().split('T')[0]
+    const { error } = await sb.from('franchisees')
+      .update({ valid_till: newTillStr })
+      .eq('id', franchisee.id)
+    if (error) { showToast('Renewal record failed: ' + error.message, 'err'); return }
+    setForm(f => ({ ...f, valid_till: newTillStr }))
+    showToast('Franchise renewed — valid till ' + newTillStr.split('-').reverse().join('.'))
+  }
 
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -168,6 +202,62 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               <label>Balance
                 <input value={'₹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />
               </label>
+
+              {/* ── Validity & Renewal ── */}
+              <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+                <strong>Validity &amp; Renewal</strong>
+              </div>
+              <label>Valid Till (date)
+                <input
+                  type="date"
+                  value={form.valid_till}
+                  onChange={field('valid_till')}
+                  disabled={!admin}
+                />
+              </label>
+              <label>Custom Renewal Fee (₹)
+                <input
+                  type="number"
+                  value={form.renewal_fee}
+                  onChange={field('renewal_fee')}
+                  disabled={!admin}
+                  placeholder={'Default: ₹' + (rs.fee != null ? fmtAmt(rs.fee) : '25% of fee paid')}
+                />
+              </label>
+              <div className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
+                {/* Status badge */}
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                  background: rs.isExpired ? 'var(--red-bg,#fef2f2)' : rs.isExpiring ? '#fffbeb' : 'var(--green-bg,#f0fdf4)',
+                  color: rs.isExpired ? 'var(--red)' : rs.isExpiring ? '#92400e' : 'var(--green)',
+                  border: '1px solid ' + (rs.isExpired ? 'var(--red)' : rs.isExpiring ? '#fbbf24' : 'var(--green)'),
+                }}>
+                  {rs.isExpired
+                    ? `⚠ Expired ${Math.abs(rs.daysLeft)} days ago`
+                    : rs.isExpiring
+                      ? `⏳ Expiring in ${rs.daysLeft} days`
+                      : `✓ Valid · ${rs.daysLeft} days left`}
+                </span>
+                <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)' }}>
+                  Till: {rs.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}
+                </span>
+                {rs.fee != null && (
+                  <span style={{ font: '500 11px var(--font)', color: 'var(--text2)' }}>
+                    Renewal fee due: <strong style={{ color: 'var(--purple)' }}>₹{fmtAmt(rs.fee)}</strong>
+                    {franchisee.renewal_fee == null ? ' (25% of fee paid)' : ' (custom)'}
+                  </span>
+                )}
+                {admin && (rs.isExpired || rs.isExpiring) && (
+                  <button
+                    className="btn-s"
+                    onClick={recordRenewal}
+                    style={{ marginLeft: 'auto' }}
+                  >
+                    🔄 Record Renewal
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -287,16 +377,17 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               if (f.tier === 'CF')  return `${f.city || ''} City Master Franchisee of`
               return 'Unit Franchisee of'
             }
-            function vTill(ts) {
-              const d = new Date(ts || Date.now())
-              d.setFullYear(d.getFullYear() + 5)
+            function vTill(f) {
+              const d = f.valid_till
+                ? new Date(f.valid_till)
+                : (() => { const x = new Date(f.created_at || Date.now()); x.setFullYear(x.getFullYear() + 3); return x })()
               return [String(d.getDate()).padStart(2,'0'), String(d.getMonth()+1).padStart(2,'0'), d.getFullYear()].join('.')
             }
             const address = [fr.address, fr.area, fr.city, fr.state,
               fr.country && fr.country !== 'India' ? fr.country : null].filter(Boolean).join(', ')
             const courses = courseNames.join(', ')
             const label   = tierLbl(fr)
-            const till    = vTill(fr.created_at)
+            const till    = vTill(fr)
 
             async function emailCert() {
               if (!fr.email) { showToast('No email on file for this franchisee', 'warn'); return }
@@ -803,6 +894,22 @@ export default function FranchiseesPage() {
                   </div>
                   <div className="fr-card-foot">
                     <div className="fr-since">{f.city || f.state || '—'}</div>
+                    {(() => {
+                      const rs2 = renewalStatus(f)
+                      const col = rs2.isExpired ? 'var(--red)' : rs2.isExpiring ? '#b45309' : 'var(--green)'
+                      const lbl = rs2.isExpired
+                        ? '⚠ Expired'
+                        : rs2.isExpiring
+                          ? `⏳ ${rs2.daysLeft}d left`
+                          : `✓ ${rs2.daysLeft}d`
+                      return (
+                        <span title={rs2.date.toLocaleDateString('en-IN')} style={{
+                          font: '600 9px var(--mono)', color: col, letterSpacing: '0.3px',
+                        }}>
+                          {lbl}
+                        </span>
+                      )
+                    })()}
                     <div className={'fr-active ' + (f.status !== 'active' ? 'fr-dormant' : '')}>
                       <span className="d"></span>{f.status === 'active' ? 'Active' : (f.status || 'Unknown')}
                     </div>

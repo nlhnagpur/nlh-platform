@@ -11,9 +11,11 @@ function tierLabel(fr) {
   return 'Unit Franchisee of'
 }
 
-function validTill(createdAt) {
-  const d = new Date(createdAt || Date.now())
-  d.setFullYear(d.getFullYear() + 5)
+function validTill(fr) {
+  // Use stored valid_till if admin has set it, otherwise compute 3 years from onboarding
+  const d = fr.valid_till
+    ? new Date(fr.valid_till)
+    : (() => { const x = new Date(fr.created_at || Date.now()); x.setFullYear(x.getFullYear() + 3); return x })()
   return [
     String(d.getDate()).padStart(2, '0'),
     String(d.getMonth() + 1).padStart(2, '0'),
@@ -31,7 +33,7 @@ function buildAddress(fr) {
 
 export function printFranchiseeCert(franchisee, courseNames) {
   const label    = tierLabel(franchisee)
-  const till     = validTill(franchisee.created_at)
+  const till     = validTill(franchisee)
   const address  = buildAddress(franchisee)
   const courses  = courseNames.join(', ')
   const isSMF    = franchisee.tier === 'SMF'
