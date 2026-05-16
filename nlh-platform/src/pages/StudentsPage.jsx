@@ -199,6 +199,7 @@ function AddStudentModal({ onClose, onSaved }) {
     country: 'India', state: '', city: '', area: '', address: '',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
+  const [centreCountry, setCentreCountry] = useState('India')
   const [centreCity, setCentreCity] = useState('')
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
@@ -208,7 +209,7 @@ function AddStudentModal({ onClose, onSaved }) {
   const [feeTotal, setFeeTotal] = useState(0)
   const [saving, setSaving] = useState(false)
 
-  const FR_FIELDS = 'id,business_name,city,tier,registered_courses,registered_skus'
+  const FR_FIELDS = 'id,business_name,city,country,tier,registered_courses,registered_skus'
 
   useEffect(() => {
     async function loadCentres() {
@@ -405,8 +406,6 @@ function AddStudentModal({ onClose, onSaved }) {
               <strong>Enrolment Centre *</strong>
               {(admin || isMasterFr) ? (() => {
                 const nlhCentre = centreList.find(c => c.tier === 'NLH')
-                const cities = [...new Set(centreList.filter(c => c.tier !== 'NLH' && c.city).map(c => c.city))].sort()
-                const cityUFs = centreList.filter(c => c.tier !== 'NLH' && c.city === centreCity)
                 return (
                   <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
                     {nlhCentre && (
@@ -420,7 +419,7 @@ function AddStudentModal({ onClose, onSaved }) {
                         <span style={{ fontSize:18 }}>🏛️</span>
                         <span style={{ flex:1 }}>
                           <span style={{ font:'600 12.5px var(--font)', color:'var(--text)' }}>NLH Head Office</span>
-                          <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:8 }}>Nagpur · Maharashtra</span>
+                          <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:8 }}>Nagpur · India · Online / In-person</span>
                         </span>
                         <span className="badge t-nlh">NLH</span>
                         {form.franchisee_id===nlhCentre.id && <span style={{ font:'700 10px var(--mono)', color:'var(--purple)' }}>✓</span>}
@@ -428,11 +427,21 @@ function AddStudentModal({ onClose, onSaved }) {
                     )}
                     <div style={{ font:'500 10px var(--mono)', color:'var(--text3)', textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>— or select a local centre —</div>
                     <select
+                      value={centreCountry}
+                      onChange={e => { setCentreCountry(e.target.value); setCentreCity(''); if (form.franchisee_id !== nlhCentre?.id) handleCentreChange('') }}
+                    >
+                      {[...new Set(['India', ...centreList.filter(c => c.tier !== 'NLH' && c.country).map(c => c.country)])].map(co => (
+                        <option key={co} value={co}>{co}</option>
+                      ))}
+                    </select>
+                    <select
                       value={centreCity}
                       onChange={e => { setCentreCity(e.target.value); if (form.franchisee_id !== nlhCentre?.id) handleCentreChange('') }}
                     >
-                      <option value="">— Filter by City —</option>
-                      {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value="">— Select City —</option>
+                      {[...new Set(centreList.filter(c => c.tier !== 'NLH' && (c.country || 'India') === centreCountry && c.city).map(c => c.city))].sort().map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
                     </select>
                     {centreCity && (
                       <select
@@ -440,12 +449,14 @@ function AddStudentModal({ onClose, onSaved }) {
                         onChange={e => handleCentreChange(e.target.value)}
                       >
                         <option value="">— Select Centre in {centreCity} —</option>
-                        {cityUFs.map(c => (
+                        {centreList.filter(c => c.tier !== 'NLH' && (c.country || 'India') === centreCountry && c.city === centreCity).map(c => (
                           <option key={c.id} value={c.id}>
                             [{c.tier}] {c.business_name}{c.id === currentFranchiseeId && isMasterFr ? ' (your centre)' : ''}
                           </option>
                         ))}
-                        {cityUFs.length === 0 && <option disabled>No centres in {centreCity}</option>}
+                        {centreList.filter(c => c.tier !== 'NLH' && (c.country || 'India') === centreCountry && c.city === centreCity).length === 0 && (
+                          <option disabled>No centres in {centreCity}</option>
+                        )}
                       </select>
                     )}
                   </div>

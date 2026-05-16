@@ -306,7 +306,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
     if (!form.tier) return
     const parentTier = form.tier === 'CF' ? 'SMF' : form.tier === 'UF' ? 'CF' : null
     if (!parentTier) { setParentOptions([]); return }
-    sb.from('franchisees').select('id,business_name,city,state').eq('tier', parentTier).eq('status', 'active').order('business_name')
+    sb.from('franchisees').select('id,business_name,city,state,country').eq('tier', parentTier).eq('status', 'active').order('business_name')
       .then(({ data }) => setParentOptions(data || []))
   }, [form.tier])
 
@@ -317,16 +317,30 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   async function save() {
     if (!form.name.trim() || !form.email.trim()) { showToast('Name and email are required', 'warn'); return }
 
-    // Territory check
+    // Territory check — country-aware
     if (form.tier === 'SMF' || form.tier === 'CF') {
-      const col = form.tier === 'SMF' ? 'state' : 'city'
-      const val = form.tier === 'SMF' ? form.state.trim() : form.city.trim()
-      if (!val) { showToast(`${col} is required for ${form.tier}`, 'warn'); return }
-      const { data: existing } = await sb.from('franchisees')
-        .select('id,business_name').eq('tier', form.tier).ilike(col, val).eq('status', 'active')
-      if (existing && existing.length > 0) {
-        showToast(`An active ${form.tier} already exists for ${val}: ${existing[0].business_name}`, 'warn')
-        return
+      const country = (form.country || 'India').trim()
+      const isIndia = country.toLowerCase() === 'india'
+
+      if (form.tier === 'SMF') {
+        // India: 1 SMF per state. International: 1 SMF per country.
+        if (isIndia && !form.state.trim()) { showToast('State is required for an Indian SMF', 'warn'); return }
+        let dupQ = sb.from('franchisees').select('id,business_name').eq('tier', 'SMF').ilike('country', country).eq('status', 'active')
+        if (isIndia) dupQ = dupQ.ilike('state', form.state.trim())
+        const { data: existing } = await dupQ
+        if (existing && existing.length > 0) {
+          const territory = isIndia ? form.state.trim() : country
+          showToast(`An active SMF already exists for ${territory}: ${existing[0].business_name}`, 'warn')
+          return
+        }
+      } else { // CF
+        if (!form.city.trim()) { showToast('City is required for CF', 'warn'); return }
+        const { data: existing } = await sb.from('franchisees')
+          .select('id,business_name').eq('tier', 'CF').ilike('country', country).ilike('city', form.city.trim()).eq('status', 'active')
+        if (existing && existing.length > 0) {
+          showToast(`An active CF already exists in ${form.city} (${country}): ${existing[0].business_name}`, 'warn')
+          return
+        }
       }
     }
 
@@ -432,7 +446,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
                   <option value="">— Select —</option>
                   {parentOptions.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.business_name} ({form.tier === 'CF' ? p.state : p.city})
+                      {p.business_name} ({form.tier === 'CF' ? (p.state || p.country) : p.city}{p.country && p.country !== 'India' ? ' · ' + p.country : ''})
                     </option>
                   ))}
                 </select>
@@ -520,7 +534,7 @@ export default function FranchiseesPage() {
 
   const filtered = franchisees.filter(f => {
     const q = search.toLowerCase()
-    return !q || f.business_name?.toLowerCase().includes(q) || f.city?.toLowerCase().includes(q) || f.state?.toLowerCase().includes(q)
+    return !q || f.business_name?.toLowerCase().includes(q) || f.city?.toLowerCase().includes(q) || f.state?.toLowerCase().includes(q) || f.country?.toLowerCase().includes(q)
   })
 
   function handleSaved(updated) {
@@ -656,7 +670,7 @@ export default function FranchiseesPage() {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="fr-name">{f.business_name}</div>
-                      <div className="fr-loc">{[f.city, f.state].filter(Boolean).join(' · ')}</div>
+                      <div className="fr-loc">{[f.city, f.state, f.country && f.country !== 'India' ? f.country : null].filter(Boolean).join(' · ')}</div>
                       <div className="fr-badge-row">
                         <TierBadge tier={f.tier} />
                         {f.phone && <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{f.phone}</span>}

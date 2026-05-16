@@ -33,6 +33,7 @@ export default function OnboardingPage() {
   const [stAddress, setStAddress] = useState('')
   const [centres, setCentres] = useState([])
   const [stCentre, setStCentre] = useState('')
+  const [stCentreCountry, setStCentreCountry] = useState('India')
   const [stCentreCity, setStCentreCity] = useState('')
   const [stSaving, setStSaving] = useState(false)
 
@@ -42,7 +43,7 @@ export default function OnboardingPage() {
     async function loadParents() {
       const parentTier = frTier === 'UF' ? 'CF' : frTier === 'CF' ? 'SMF' : null
       if (!parentTier) { setParents([]); return }
-      const { data } = await sb.from('franchisees').select('id, business_name, city, state').eq('tier', parentTier).eq('status', 'active').order('business_name')
+      const { data } = await sb.from('franchisees').select('id, business_name, city, state, country').eq('tier', parentTier).eq('status', 'active').order('business_name')
       setParents(data || [])
     }
     loadParents()
@@ -53,7 +54,7 @@ export default function OnboardingPage() {
     if (step !== 'student') return
     async function loadCentres() {
       const { data } = await sb.from('franchisees')
-        .select('id, business_name, city, tier')
+        .select('id, business_name, city, country, tier')
         .in('tier', ['UF', 'CF', 'SMF', 'NLH'])
         .eq('status', 'active')
         .order('tier').order('business_name')
@@ -205,7 +206,7 @@ export default function OnboardingPage() {
                   <select value={frParentId} onChange={e => setFrParentId(e.target.value)}>
                     <option value="">— Select —</option>
                     {parents.map(p => (
-                      <option key={p.id} value={p.id}>{p.business_name} ({p.city || p.state})</option>
+                      <option key={p.id} value={p.id}>{p.business_name} ({p.city || p.state}{p.country && p.country !== 'India' ? ' · ' + p.country : ''})</option>
                     ))}
                   </select>
                 </div>
@@ -260,8 +261,11 @@ export default function OnboardingPage() {
                 <label>NLH Centre *</label>
                 {(() => {
                   const nlhHo = centres.find(c => c.tier === 'NLH')
-                  const cities = [...new Set(centres.filter(c => c.tier !== 'NLH' && c.city).map(c => c.city))].sort()
-                  const cityUFs = centres.filter(c => c.tier !== 'NLH' && c.city === stCentreCity)
+                  const countries = [...new Set(['India', ...centres.filter(c => c.tier !== 'NLH' && c.country).map(c => c.country)])]
+                  const citiesInCountry = [...new Set(
+                    centres.filter(c => c.tier !== 'NLH' && (c.country || 'India') === stCentreCountry && c.city).map(c => c.city)
+                  )].sort()
+                  const centresInCity = centres.filter(c => c.tier !== 'NLH' && (c.country || 'India') === stCentreCountry && c.city === stCentreCity)
                   return (
                     <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:4 }}>
                       {nlhHo && (
@@ -275,15 +279,18 @@ export default function OnboardingPage() {
                           <span style={{ fontSize:18 }}>🏛️</span>
                           <span style={{ flex:1 }}>
                             <span style={{ font:'600 12.5px var(--font)', color:'var(--text)' }}>NLH Head Office</span>
-                            <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:8 }}>Nagpur · Maharashtra</span>
+                            <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:8 }}>Nagpur · India · Online / In-person</span>
                           </span>
                           {stCentre===nlhHo.id && <span style={{ font:'700 10px var(--mono)', color:'var(--purple)' }}>✓</span>}
                         </div>
                       )}
                       <div style={{ font:'500 10px var(--mono)', color:'var(--text3)', textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>— or select a centre near you —</div>
+                      <select value={stCentreCountry} onChange={e => { setStCentreCountry(e.target.value); setStCentreCity(''); if (stCentre !== nlhHo?.id) setStCentre('') }}>
+                        {countries.map(co => <option key={co} value={co}>{co}</option>)}
+                      </select>
                       <select value={stCentreCity} onChange={e => { setStCentreCity(e.target.value); if (stCentre !== nlhHo?.id) setStCentre('') }}>
                         <option value="">— Select your city —</option>
-                        {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                        {citiesInCountry.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                       {stCentreCity && (
                         <select
@@ -291,10 +298,10 @@ export default function OnboardingPage() {
                           onChange={e => setStCentre(e.target.value)}
                         >
                           <option value="">— Select centre in {stCentreCity} —</option>
-                          {cityUFs.map(c => (
+                          {centresInCity.map(c => (
                             <option key={c.id} value={c.id}>[{c.tier}] {c.business_name}</option>
                           ))}
-                          {cityUFs.length === 0 && <option disabled>No centres listed for {stCentreCity}</option>}
+                          {centresInCity.length === 0 && <option disabled>No centres listed for {stCentreCity}</option>}
                         </select>
                       )}
                     </div>
