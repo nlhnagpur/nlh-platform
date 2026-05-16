@@ -31,11 +31,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     dob: student.dob || '',
     phone: student.phone || '',
     email: student.email || '',
+    pincode: student.pincode || '',
     country: student.country || 'India',
     state: student.state || '',
     city: student.city || '',
     area: student.area || '',
     address: student.address || '',
+    channel: student.channel || 'walk-in',
     payment_status: student.payment_status || '',
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
@@ -60,11 +62,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       dob: form.dob || null,
       phone: form.phone.trim(),
       email: form.email.trim() || null,
+      pincode: form.pincode.trim() || null,
       country: form.country.trim(),
       state: form.state.trim(),
       city: form.city.trim(),
       area: form.area.trim(),
       address: form.address.trim(),
+      channel: form.channel || 'walk-in',
       fee_total: form.fee_total === '' ? null : Number(form.fee_total),
       fee_paid: form.fee_paid === '' ? null : Number(form.fee_paid),
     }
@@ -99,11 +103,8 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             <label>Parent Email
               <input type="email" value={form.email} onChange={field('email')} disabled={!admin} placeholder="parent@email.com" />
             </label>
-            <label>Country
-              <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
-            </label>
-            <label>State
-              <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
+            <label>PIN Code
+              <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
             </label>
             <label>City
               <input value={form.city} onChange={field('city')} disabled={!admin} placeholder="Nagpur" />
@@ -111,8 +112,24 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             <label>Area / Locality
               <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Neighbourhood / Area" />
             </label>
+            <label>State
+              <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
+            </label>
+            <label>Country
+              <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
+            </label>
             <label className="col-span-2">Street / Building Address
               <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Flat/Shop no., building, street" />
+            </label>
+            <label>Channel
+              <select value={form.channel} onChange={field('channel')} disabled={!admin}>
+                <option value="walk-in">Walk-in</option>
+                <option value="referral">Referral</option>
+                <option value="online">Online</option>
+                <option value="camp">Camp / Event</option>
+                <option value="school">School tie-up</option>
+                <option value="other">Other</option>
+              </select>
             </label>
             <label>Payment Status
               <select value={form.payment_status} onChange={field('payment_status')} disabled={!admin}>
@@ -237,9 +254,11 @@ function AddStudentModal({ onClose, onSaved }) {
 
   const [form, setForm] = useState({
     full_name: '', parent_name: '', dob: '', phone: '', email: '',
-    country: 'India', state: '', city: '', area: '', address: '',
+    pincode: '', city: '', area: '', state: '', country: 'India', address: '',
+    channel: 'walk-in',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
+  const [showAddress, setShowAddress] = useState(false)
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
   // null = no centre chosen yet; 'all' = show everything; {skuIds} or {courseIds} = filtered
@@ -348,11 +367,13 @@ function AddStudentModal({ onClose, onSaved }) {
         dob: form.dob || null,
         phone: form.phone.trim(),
         email: form.email.trim() || null,
-        country: form.country.trim(),
-        state: form.state.trim(),
+        pincode: form.pincode.trim() || null,
         city: form.city.trim(),
         area: form.area.trim(),
+        state: form.state.trim(),
+        country: form.country.trim(),
         address: form.address.trim(),
+        channel: form.channel || 'walk-in',
         franchisee_id: form.franchisee_id,
         is_active: true,
         fee_total: feeTotal,
@@ -407,17 +428,24 @@ function AddStudentModal({ onClose, onSaved }) {
     }
   }
 
+  const groups = buildGroups()
+
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 640 }}>
+      <div className="modal" style={{ maxWidth: 580 }}>
         <div className="ch">
-          <span>Add Student</span>
+          <span>➕ Add Student</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
-        <div >
+
+        <div>
+          {/* ── Section 1: Student basics ── */}
           <div className="form-grid">
             <label>Student Name *
-              <input value={form.full_name} onChange={field('full_name')} placeholder="Full name" />
+              <input value={form.full_name} onChange={field('full_name')} placeholder="Full name" autoFocus />
+            </label>
+            <label>Phone
+              <input value={form.phone} onChange={field('phone')} placeholder="Parent / guardian mobile" />
             </label>
             <label>Parent / Guardian
               <input value={form.parent_name} onChange={field('parent_name')} placeholder="Parent name" />
@@ -425,117 +453,132 @@ function AddStudentModal({ onClose, onSaved }) {
             <label>Date of Birth
               <input type="date" value={form.dob} onChange={field('dob')} />
             </label>
-            <label>Phone
-              <input value={form.phone} onChange={field('phone')} placeholder="10-digit mobile" />
-            </label>
-            <label>Parent Email
-              <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
-            </label>
-            <label>Country
-              <input value={form.country} onChange={field('country')} placeholder="India" />
-            </label>
-            <label>State
-              <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
-            </label>
-            <label>City
-              <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
-            </label>
-            <label>Area / Locality
-              <input value={form.area} onChange={field('area')} placeholder="Neighbourhood / Area" />
-            </label>
-            <label className="col-span-2">Street / Building Address
-              <input value={form.address} onChange={field('address')} placeholder="Flat/Shop no., building, street" />
-            </label>
+          </div>
 
-            <div className="col-span-2" style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:4 }}>
-              <strong>Enrolment Centre *</strong>
-              {(admin || isMasterFr) ? (() => {
-                const nlhCentre = centreList.find(c => c.tier === 'NLH')
-                const cityStr = form.city.trim()
-                const countryStr = form.country.trim() || 'India'
-                const localCentres = cityStr
-                  ? centreList.filter(c => c.tier !== 'NLH' && c.city === cityStr && (c.country || 'India') === countryStr)
-                  : []
-                return (
-                  <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
-                    {nlhCentre && (
-                      <div
-                        onClick={() => handleCentreChange(nlhCentre.id)}
-                        style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10,
-                          border:`1.5px solid ${form.franchisee_id===nlhCentre.id ? 'var(--purple)' : 'var(--border)'}`,
-                          background: form.franchisee_id===nlhCentre.id ? 'var(--purple-bg)' : 'var(--bg)',
-                          cursor:'pointer', transition:'all .12s' }}
-                      >
-                        <span style={{ fontSize:18 }}>🏛️</span>
-                        <span style={{ flex:1 }}>
-                          <span style={{ font:'600 12.5px var(--font)', color:'var(--text)' }}>NLH Head Office</span>
-                          <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:8 }}>Nagpur · India · Online / In-person</span>
-                        </span>
-                        <span className="badge t-nlh">NLH</span>
-                        {form.franchisee_id===nlhCentre.id && <span style={{ font:'700 10px var(--mono)', color:'var(--purple)' }}>✓</span>}
-                      </div>
-                    )}
-                    {!cityStr ? (
-                      <p style={{ font:'500 11px var(--font)', color:'var(--text3)', margin:0 }}>
-                        Fill in the student's <b>City</b> above to see local centres.
-                      </p>
-                    ) : localCentres.length === 0 ? (
-                      <p style={{ font:'500 11px var(--font)', color:'var(--text3)', margin:0 }}>
-                        No centres in <b>{cityStr}</b> — enrol at NLH Head Office above.
-                      </p>
-                    ) : (
-                      <select
-                        value={form.franchisee_id !== nlhCentre?.id ? form.franchisee_id : ''}
-                        onChange={e => handleCentreChange(e.target.value)}
-                      >
-                        <option value="">— Select centre in {cityStr} —</option>
-                        {localCentres.map(c => (
-                          <option key={c.id} value={c.id}>
-                            [{c.tier}] {c.business_name}{c.area ? ` — ${c.area}` : ''}{c.id === currentFranchiseeId && isMasterFr ? ' (your centre)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                )
-              })() : (
-                <input style={{ marginTop:6 }} value={centreList[0]?.business_name || 'Your centre'} disabled />
+          {/* ── Section 2: Centre ── */}
+          <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
+            <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:8 }}>
+              Enrolment Centre *
+            </div>
+            {(admin || isMasterFr) ? (() => {
+              const nlhCentre = centreList.find(c => c.tier === 'NLH')
+              const otherCentres = centreList.filter(c => c.tier !== 'NLH')
+              return (
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  <select
+                    value={form.franchisee_id}
+                    onChange={e => handleCentreChange(e.target.value)}
+                    style={{ fontSize:13 }}
+                  >
+                    <option value="">— Select centre —</option>
+                    {otherCentres.map(c => (
+                      <option key={c.id} value={c.id}>
+                        [{c.tier}] {c.business_name}{c.city ? ` · ${c.city}` : ''}{c.area ? ` — ${c.area}` : ''}
+                      </option>
+                    ))}
+                    {nlhCentre && <option value={nlhCentre.id}>🏛️ NLH Head Office</option>}
+                  </select>
+                </div>
+              )
+            })() : (
+              <div style={{ padding:'8px 12px', borderRadius:8, background:'var(--purple-bg)',
+                border:'1.5px solid var(--purple)', font:'600 12.5px var(--font)', color:'var(--text)' }}>
+                {centreList[0]?.business_name || 'Your centre'}
+              </div>
+            )}
+          </div>
+
+          {/* ── Section 3: Course enrolment ── */}
+          <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
+            <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:4 }}>
+              Courses &amp; Levels
+              {feeTotal > 0 && (
+                <span style={{ float:'right', color:'var(--purple)', fontSize:13 }}>
+                  Total: ₹{fmtAmt(feeTotal)}
+                </span>
               )}
             </div>
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
-            <strong>Course Enrolment</strong>
-            <p className="hint">Select SKU levels to enrol. Student fee is calculated automatically.</p>
             {!regFilter ? (
-              <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 4 }}>Select a centre first to see available courses.</p>
-            ) : buildGroups().length === 0 ? (
-              <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 4 }}>No courses registered for this centre.</p>
-            ) : buildGroups().map(group => (
-              <div key={group.name} style={{ marginBottom: 12 }}>
-                <div className="course-group-header">{group.name}</div>
-                <div className="checkbox-grid">
-                  {group.skus.map(sku => {
-                    const checked = selectedSkus.some(s => s.id === sku.id)
-                    return (
-                      <label key={sku.id} className="checkbox-item">
-                        <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
-                        {sku.level_name}
-                        {sku.student_fee ? <span className="hint"> ₹{fmtAmt(sku.student_fee)}</span> : null}
-                      </label>
-                    )
-                  })}
-                </div>
+              <p className="hint">Select a centre above to see available courses.</p>
+            ) : groups.length === 0 ? (
+              <p className="hint" style={{ color:'var(--red)' }}>No courses registered for this centre yet.</p>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:8 }}>
+                {groups.map(group => (
+                  <div key={group.name}>
+                    <div style={{ font:'600 11px var(--mono)', color:'var(--text3)', textTransform:'uppercase',
+                      letterSpacing:'0.5px', marginBottom:4 }}>
+                      {group.name}
+                    </div>
+                    <div className="checkbox-grid">
+                      {group.skus.map(sku => {
+                        const checked = selectedSkus.some(s => s.id === sku.id)
+                        return (
+                          <label key={sku.id} className="checkbox-item">
+                            <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
+                            {sku.level_name}
+                            {sku.student_fee ? <span className="hint"> ₹{fmtAmt(sku.student_fee)}</span> : null}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
 
-          {feeTotal > 0 && (
-            <div className="fee-summary" style={{ marginTop: 12 }}>
-              <strong>Total Fee: ₹{fmtAmt(feeTotal)}</strong>
-            </div>
-          )}
+          {/* ── Section 4: Address & extras (collapsible) ── */}
+          <div style={{ borderTop:'1px solid var(--border)', paddingTop:10, marginTop:12 }}>
+            <button
+              type="button"
+              onClick={() => setShowAddress(a => !a)}
+              style={{ background:'none', border:'none', cursor:'pointer', padding:0,
+                font:'500 12px var(--font)', color:'var(--text3)', display:'flex', alignItems:'center', gap:6 }}
+            >
+              <span style={{ fontSize:10 }}>{showAddress ? '▾' : '▸'}</span>
+              {showAddress ? 'Hide' : 'Add'} address, email &amp; channel
+              <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:4 }}>(optional)</span>
+            </button>
+
+            {showAddress && (
+              <div className="form-grid" style={{ marginTop:10 }}>
+                <label>Parent Email
+                  <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
+                </label>
+                <label>PIN Code
+                  <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
+                </label>
+                <label>City
+                  <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
+                </label>
+                <label>Area / Locality
+                  <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampeth…" />
+                </label>
+                <label>State
+                  <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
+                </label>
+                <label>Country
+                  <input value={form.country} onChange={field('country')} placeholder="India" />
+                </label>
+                <label className="col-span-2">Street / Building Address
+                  <input value={form.address} onChange={field('address')} placeholder="Flat/Shop no., building, street" />
+                </label>
+                <label>How did they find us?
+                  <select value={form.channel} onChange={field('channel')}>
+                    <option value="walk-in">Walk-in</option>
+                    <option value="referral">Referral</option>
+                    <option value="online">Online</option>
+                    <option value="camp">Camp / Event</option>
+                    <option value="school">School tie-up</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
         </div>
+
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving}>

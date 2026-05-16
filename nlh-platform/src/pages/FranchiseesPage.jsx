@@ -57,6 +57,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     state: franchisee.state || '',
     city: franchisee.city || '',
     area: franchisee.area || '',
+    pincode: franchisee.pincode || '',
     address: franchisee.address || '',
     status: franchisee.status || 'active',
     enrollment_fee: franchisee.enrollment_fee ?? '',
@@ -106,6 +107,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
       state: form.state.trim(),
       city: form.city.trim(),
       area: form.area.trim(),
+      pincode: form.pincode.trim() || null,
       address: form.address.trim(),
       status: form.status,
       enrollment_fee: form.enrollment_fee === '' ? null : Number(form.enrollment_fee),
@@ -179,6 +181,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               </label>
               <label>Area / Locality
                 <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampeth…" />
+              </label>
+              <label>PIN Code
+                <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
               </label>
               <label className="col-span-2">Street / Building Address
                 <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Shop no., building name, street" />
@@ -508,7 +513,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 function AddFranchiseeModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     name: '', email: '', phone: '',
-    country: 'India', state: '', city: '', area: '', address: '',
+    country: 'India', state: '', city: '', area: '', pincode: '', address: '',
     tier: 'UF', parent_id: '',
   })
   const [parentOptions, setParentOptions] = useState([])
@@ -601,6 +606,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         state: form.state.trim(),
         city: form.city.trim(),
         area: form.area.trim(),
+        pincode: form.pincode.trim() || null,
         address: form.address.trim(),
         tier: form.tier,
         parent_id: form.parent_id || null,
@@ -695,6 +701,9 @@ function AddFranchiseeModal({ onClose, onSaved }) {
             </label>
             <label>Area / Locality
               <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampeth…" />
+            </label>
+            <label>PIN Code
+              <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
             </label>
             <label className="col-span-2">Street / Building Address
               <input value={form.address} onChange={field('address')} placeholder="Shop no., building name, street" />
