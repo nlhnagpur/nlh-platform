@@ -87,6 +87,7 @@ export function printFranchiseeCert(franchisee, courseNames) {
         margin-bottom:2.5mm;text-align:center;line-height:1.4}
     .cr{font-family:Arial,sans-serif;font-size:9.5pt;color:#1A1916;
         text-align:center;line-height:1.5;max-width:200mm}
+    .lg{height:32px;object-fit:contain;margin-bottom:2mm}
     .dt{position:absolute;bottom:13mm;left:10mm;
         font-family:Arial,sans-serif;font-size:9pt;font-weight:700;color:#1A1916}
     .np{text-align:right;padding:10px 20px;background:#f4f4f4}
@@ -103,6 +104,7 @@ export function printFranchiseeCert(franchisee, courseNames) {
   </div>
   <div class="cert">
     <div class="mask">
+      <img class="lg" src="${window.location.origin}/NLH%20Logo.png" alt="NLH">
       <div class="t1">FRANCHISE CERTIFICATE</div>
       <div class="t2">This is to Certify that</div>
       <div class="nm">${franchisee.business_name}</div>
@@ -129,7 +131,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
   const [emailed,  setEmailed]  = useState(!!franchisee.cert_emailed_at)
 
   const label   = tierLabel(franchisee)
-  const till    = validTill(franchisee.created_at)
+  const till    = validTill(franchisee)
   const address = buildAddress(franchisee)
   const courses = courseNames.join(', ')
 
@@ -169,6 +171,12 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
             padding: '20px 24px', textAlign: 'center',
             fontFamily: 'Arial,sans-serif', marginBottom: 12,
           }}>
+            <img
+              src="/NLH Logo.png"
+              alt="NLH"
+              style={{ height: 44, objectFit: 'contain', marginBottom: 8 }}
+              onError={e => { e.target.style.display = 'none' }}
+            />
             <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 4 }}>
               FRANCHISE CERTIFICATE
             </div>
@@ -204,7 +212,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 9, fontStyle: 'italic', color: 'var(--text3)' }}>Dhiral Panchmatia</div>
-                <div style={{ fontSize: 9, color: 'var(--text3)' }}>Director, NLH</div>
+                <div style={{ fontSize: 9, color: 'var(--text3)' }}>Founder, NLH</div>
               </div>
             </div>
           </div>

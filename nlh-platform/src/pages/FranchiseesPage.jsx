@@ -367,9 +367,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
           )}
 
           {tab === 'cert' && (() => {
-            const courseNames = allCourses
-              .filter(c => registeredCourses.includes(c.id))
-              .map(c => c.name)
+            // Show unique program/group names, not individual level names
+            const courseNames = [...new Set(
+              allCourses
+                .filter(c => registeredCourses.includes(c.id))
+                .map(c => c.group_name || c.name)
+            )]
             const fr = { ...franchisee, ...form, cert_emailed_at: certEmailedAt }
 
             function tierLbl(f) {
@@ -412,6 +415,13 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   padding: '20px 24px', textAlign: 'center',
                   fontFamily: 'Arial,sans-serif', marginBottom: 12,
                 }}>
+                  {/* NLH Logo */}
+                  <img
+                    src="/NLH Logo.png"
+                    alt="NLH"
+                    style={{ height: 44, objectFit: 'contain', marginBottom: 8 }}
+                    onError={e => { e.target.style.display = 'none' }}
+                  />
                   <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 4 }}>FRANCHISE CERTIFICATE</div>
                   <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>This is to Certify that</div>
                   <div style={{ fontFamily: 'Georgia,serif', fontSize: 22, fontWeight: 700, color: '#CC0000', marginBottom: 2, lineHeight: 1.2 }}>
@@ -425,14 +435,14 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 5 }}>New Learning Horizons at</div>
                   <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: courses ? 5 : 0 }}>{address}</div>
                   {courses && <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5 }}>for {courses}</div>}
-                  <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, paddingTop:10, borderTop:'1px dashed var(--border)' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginTop:12, paddingTop:10, borderTop:'1px dashed var(--border)' }}>
                     <div style={{ textAlign:'left' }}>
                       <div style={{ fontSize: 9, color: 'var(--text3)' }}>Valid Till</div>
                       <div style={{ fontSize: 11, fontWeight: 700 }}>{till}</div>
                     </div>
                     <div style={{ textAlign:'right' }}>
                       <div style={{ fontSize: 9, fontStyle:'italic', color:'var(--text3)' }}>Dhiral Panchmatia</div>
-                      <div style={{ fontSize: 9, color:'var(--text3)' }}>Director, NLH</div>
+                      <div style={{ fontSize: 9, color:'var(--text3)' }}>Founder, NLH</div>
                     </div>
                   </div>
                 </div>
