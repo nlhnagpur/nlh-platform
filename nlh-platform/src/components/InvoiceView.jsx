@@ -49,7 +49,7 @@ export default function InvoiceView({ order, onClose }) {
       // Always fetch full franchisee details so address is never missing
       if (order.placer_id) {
         const { data: frData } = await sb.from('franchisees')
-          .select('business_name, tier, email, city, state, area, phone, address')
+          .select('business_name, tier, email, city, state, area, country, phone, address')
           .eq('id', order.placer_id)
           .single()
         if (frData) setPlacer(frData)
@@ -260,6 +260,7 @@ export default function InvoiceView({ order, onClose }) {
                   {(fr.city || fr.state) && (
                     <div>{[fr.city, fr.state].filter(Boolean).join(', ')}</div>
                   )}
+                  {fr.country && fr.country !== 'India' && <div>{fr.country}</div>}
                   {fr.phone && <div>☎️ {fr.phone}</div>}
                   {fr.email && <div>✉️ {fr.email}</div>}
                 </div>

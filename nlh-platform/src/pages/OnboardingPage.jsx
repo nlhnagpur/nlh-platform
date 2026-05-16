@@ -33,8 +33,6 @@ export default function OnboardingPage() {
   const [stAddress, setStAddress] = useState('')
   const [centres, setCentres] = useState([])
   const [stCentre, setStCentre] = useState('')
-  const [stCentreCountry, setStCentreCountry] = useState('India')
-  const [stCentreCity, setStCentreCity] = useState('')
   const [stSaving, setStSaving] = useState(false)
 
   // Load parent franchisees when tier changes
@@ -54,7 +52,7 @@ export default function OnboardingPage() {
     if (step !== 'student') return
     async function loadCentres() {
       const { data } = await sb.from('franchisees')
-        .select('id, business_name, city, country, tier')
+        .select('id, business_name, city, area, country, tier')
         .in('tier', ['UF', 'CF', 'SMF', 'NLH'])
         .eq('status', 'active')
         .order('tier').order('business_name')
@@ -69,6 +67,29 @@ export default function OnboardingPage() {
     if ((frTier === 'UF' || frTier === 'CF') && !frParentId) { showToast('Please select a parent franchisee', 'warn'); return }
     setFrSaving(true)
     try {
+      // Territory duplicate check
+      if (frTier === 'SMF' || frTier === 'CF') {
+        const country = (frCountry || 'India').trim()
+        const isIndia = country.toLowerCase() === 'india'
+        if (frTier === 'SMF') {
+          if (isIndia && !frState.trim()) { showToast('State is required for an Indian SMF', 'warn'); setFrSaving(false); return }
+          let dupQ = sb.from('franchisees').select('id,business_name').eq('tier', 'SMF').ilike('country', country).eq('status', 'active')
+          if (isIndia) dupQ = dupQ.ilike('state', frState.trim())
+          const { data: existing } = await dupQ
+          if (existing && existing.length > 0) {
+            showToast(`An active SMF already exists for ${isIndia ? frState : country}: ${existing[0].business_name}`, 'warn')
+            setFrSaving(false); return
+          }
+        } else {
+          if (!frCity.trim()) { showToast('City is required for CF', 'warn'); setFrSaving(false); return }
+          const { data: existing } = await sb.from('franchisees')
+            .select('id,business_name').eq('tier', 'CF').ilike('country', country).ilike('city', frCity.trim()).eq('status', 'active')
+          if (existing && existing.length > 0) {
+            showToast(`An active CF already exists in ${frCity}: ${existing[0].business_name}`, 'warn')
+            setFrSaving(false); return
+          }
+        }
+      }
       const { data: fr, error } = await sb.from('franchisees').insert({
         business_name: frName, email: frEmail, phone: frPhone,
         country: frCountry, state: frState, city: frCity, area: frArea, address: frAddress,
@@ -101,7 +122,7 @@ export default function OnboardingPage() {
         dob: stDob || null,
         country: stCountry, state: stState, city: stCity, area: stArea, address: stAddress,
         franchisee_id: stCentre, is_active: true,
-        fee_total: 0, fee_paid: 0,
+        fee_total: 0, fee_paid: 0, payment_status: 'none',
       }).select().single()
       if (error) throw error
 
@@ -257,20 +278,44 @@ export default function OnboardingPage() {
                   <input type="date" value={stDob} onChange={e => setStDob(e.target.value)} />
                 </div>
               </div>
+              <div className="g2">
+                <div className="fr">
+                  <label>Country</label>
+                  <input value={stCountry} onChange={e => setStCountry(e.target.value)} placeholder="India" />
+                </div>
+                <div className="fr">
+                  <label>State</label>
+                  <input value={stState} onChange={e => setStState(e.target.value)} placeholder="Maharashtra" />
+                </div>
+              </div>
+              <div className="g2">
+                <div className="fr">
+                  <label>City *</label>
+                  <input value={stCity} onChange={e => setStCity(e.target.value)} placeholder="Your city" />
+                </div>
+                <div className="fr">
+                  <label>Area / Locality</label>
+                  <input value={stArea} onChange={e => setStArea(e.target.value)} placeholder="Neighbourhood" />
+                </div>
+              </div>
               <div className="fr">
+                <label>Street / Building Address</label>
+                <input value={stAddress} onChange={e => setStAddress(e.target.value)} placeholder="Flat no., building, street" />
+              </div>
+              <div className="fr" style={{ marginTop:4 }}>
                 <label>NLH Centre *</label>
                 {(() => {
                   const nlhHo = centres.find(c => c.tier === 'NLH')
-                  const countries = [...new Set(['India', ...centres.filter(c => c.tier !== 'NLH' && c.country).map(c => c.country)])]
-                  const citiesInCountry = [...new Set(
-                    centres.filter(c => c.tier !== 'NLH' && (c.country || 'India') === stCentreCountry && c.city).map(c => c.city)
-                  )].sort()
-                  const centresInCity = centres.filter(c => c.tier !== 'NLH' && (c.country || 'India') === stCentreCountry && c.city === stCentreCity)
+                  const cityStr = stCity.trim()
+                  const countryStr = stCountry.trim() || 'India'
+                  const localCentres = cityStr
+                    ? centres.filter(c => c.tier !== 'NLH' && c.city === cityStr && (c.country || 'India') === countryStr)
+                    : []
                   return (
                     <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:4 }}>
                       {nlhHo && (
                         <div
-                          onClick={() => { setStCentre(nlhHo.id); setStCentreCity('') }}
+                          onClick={() => setStCentre(nlhHo.id)}
                           style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10,
                             border:`1.5px solid ${stCentre===nlhHo.id ? 'var(--purple)' : 'var(--border)'}`,
                             background: stCentre===nlhHo.id ? 'var(--purple-bg)' : 'var(--bg)',
@@ -284,53 +329,30 @@ export default function OnboardingPage() {
                           {stCentre===nlhHo.id && <span style={{ font:'700 10px var(--mono)', color:'var(--purple)' }}>✓</span>}
                         </div>
                       )}
-                      <div style={{ font:'500 10px var(--mono)', color:'var(--text3)', textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>— or select a centre near you —</div>
-                      <select value={stCentreCountry} onChange={e => { setStCentreCountry(e.target.value); setStCentreCity(''); if (stCentre !== nlhHo?.id) setStCentre('') }}>
-                        {countries.map(co => <option key={co} value={co}>{co}</option>)}
-                      </select>
-                      <select value={stCentreCity} onChange={e => { setStCentreCity(e.target.value); if (stCentre !== nlhHo?.id) setStCentre('') }}>
-                        <option value="">— Select your city —</option>
-                        {citiesInCountry.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      {stCentreCity && (
+                      {!cityStr ? (
+                        <p style={{ font:'500 11px var(--font)', color:'var(--text3)', margin:0 }}>
+                          Fill in your <b>City</b> above to see local centres.
+                        </p>
+                      ) : localCentres.length === 0 ? (
+                        <p style={{ font:'500 11px var(--font)', color:'var(--text3)', margin:0 }}>
+                          No centres in <b>{cityStr}</b> — please enrol at NLH Head Office above.
+                        </p>
+                      ) : (
                         <select
                           value={stCentre !== nlhHo?.id ? stCentre : ''}
                           onChange={e => setStCentre(e.target.value)}
                         >
-                          <option value="">— Select centre in {stCentreCity} —</option>
-                          {centresInCity.map(c => (
-                            <option key={c.id} value={c.id}>[{c.tier}] {c.business_name}</option>
+                          <option value="">— Select centre in {cityStr} —</option>
+                          {localCentres.map(c => (
+                            <option key={c.id} value={c.id}>
+                              [{c.tier}] {c.business_name}{c.area ? ` — ${c.area}` : ''}
+                            </option>
                           ))}
-                          {centresInCity.length === 0 && <option disabled>No centres listed for {stCentreCity}</option>}
                         </select>
                       )}
                     </div>
                   )
                 })()}
-              </div>
-              <div className="g2">
-                <div className="fr">
-                  <label>Country</label>
-                  <input value={stCountry} onChange={e => setStCountry(e.target.value)} placeholder="India" />
-                </div>
-                <div className="fr">
-                  <label>State</label>
-                  <input value={stState} onChange={e => setStState(e.target.value)} placeholder="Maharashtra" />
-                </div>
-              </div>
-              <div className="g2">
-                <div className="fr">
-                  <label>City (home)</label>
-                  <input value={stCity} onChange={e => setStCity(e.target.value)} placeholder="Your home city" />
-                </div>
-                <div className="fr">
-                  <label>Area / Locality</label>
-                  <input value={stArea} onChange={e => setStArea(e.target.value)} placeholder="Neighbourhood" />
-                </div>
-              </div>
-              <div className="fr">
-                <label>Street / Building Address</label>
-                <input value={stAddress} onChange={e => setStAddress(e.target.value)} placeholder="Flat no., building, street" />
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                 <button type="button" className="btn-s" onClick={() => setStep('choose')}>← Back</button>

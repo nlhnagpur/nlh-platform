@@ -316,6 +316,9 @@ function AddFranchiseeModal({ onClose, onSaved }) {
 
   async function save() {
     if (!form.name.trim() || !form.email.trim()) { showToast('Name and email are required', 'warn'); return }
+    if ((form.tier === 'UF' || form.tier === 'CF') && !form.parent_id) {
+      showToast(`Please select a parent ${form.tier === 'UF' ? 'CF' : 'SMF'}`, 'warn'); return
+    }
 
     // Territory check — country-aware
     if (form.tier === 'SMF' || form.tier === 'CF') {
@@ -399,12 +402,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       }, { onConflict: 'email' })
 
       // Send welcome email
-      await sendWelcomeEmail({
-        to: form.email.trim(),
-        name: form.name.trim(),
-        role: form.tier,
-        tempPassword: tempPass,
-      })
+      await sendWelcomeEmail(form.email.trim(), form.name.trim(), form.tier, tempPass)
 
       showToast(`Franchisee created. Temp password: ${tempPass}`)
       onSaved(fr)

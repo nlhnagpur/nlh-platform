@@ -186,7 +186,9 @@ function deriveFilter(fr) {
   const courses = fr.registered_courses || []
   if (skus.length > 0)    return { skuIds: skus }
   if (courses.length > 0) return { courseIds: courses }
-  return 'all'  // NLH HO or CF/SMF with no explicit restriction
+  // UF with nothing registered = no courses approved yet; NLH / CF / SMF = unrestricted
+  if (fr.tier === 'UF') return { skuIds: [] }
+  return 'all'
 }
 
 function AddStudentModal({ onClose, onSaved }) {
@@ -199,8 +201,6 @@ function AddStudentModal({ onClose, onSaved }) {
     country: 'India', state: '', city: '', area: '', address: '',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
-  const [centreCountry, setCentreCountry] = useState('India')
-  const [centreCity, setCentreCity] = useState('')
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
   // null = no centre chosen yet; 'all' = show everything; {skuIds} or {courseIds} = filtered
@@ -209,7 +209,7 @@ function AddStudentModal({ onClose, onSaved }) {
   const [feeTotal, setFeeTotal] = useState(0)
   const [saving, setSaving] = useState(false)
 
-  const FR_FIELDS = 'id,business_name,city,country,tier,registered_courses,registered_skus'
+  const FR_FIELDS = 'id,business_name,city,area,country,tier,registered_courses,registered_skus'
 
   useEffect(() => {
     async function loadCentres() {
@@ -238,7 +238,7 @@ function AddStudentModal({ onClose, onSaved }) {
       } else {
         // UF: fixed to their own centre — load their SKU filter immediately
         const { data } = await sb.from('franchisees')
-          .select('registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
+          .select('tier,registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
         setRegFilter(deriveFilter(data))
       }
     }
@@ -350,6 +350,7 @@ function AddStudentModal({ onClose, onSaved }) {
             full_name: form.full_name.trim(),
             role: 'student',
             franchisee_id: form.franchisee_id,
+            student_id: st.id,
           }, { onConflict: 'email' })
         } catch (authErr) {
           console.warn('Student auth account skipped:', authErr.message)
@@ -406,11 +407,16 @@ function AddStudentModal({ onClose, onSaved }) {
               <strong>Enrolment Centre *</strong>
               {(admin || isMasterFr) ? (() => {
                 const nlhCentre = centreList.find(c => c.tier === 'NLH')
+                const cityStr = form.city.trim()
+                const countryStr = form.country.trim() || 'India'
+                const localCentres = cityStr
+                  ? centreList.filter(c => c.tier !== 'NLH' && c.city === cityStr && (c.country || 'India') === countryStr)
+                  : []
                 return (
                   <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
                     {nlhCentre && (
                       <div
-                        onClick={() => { handleCentreChange(nlhCentre.id); setCentreCity('') }}
+                        onClick={() => handleCentreChange(nlhCentre.id)}
                         style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10,
                           border:`1.5px solid ${form.franchisee_id===nlhCentre.id ? 'var(--purple)' : 'var(--border)'}`,
                           background: form.franchisee_id===nlhCentre.id ? 'var(--purple-bg)' : 'var(--bg)',
@@ -425,38 +431,25 @@ function AddStudentModal({ onClose, onSaved }) {
                         {form.franchisee_id===nlhCentre.id && <span style={{ font:'700 10px var(--mono)', color:'var(--purple)' }}>✓</span>}
                       </div>
                     )}
-                    <div style={{ font:'500 10px var(--mono)', color:'var(--text3)', textAlign:'center', textTransform:'uppercase', letterSpacing:'.06em' }}>— or select a local centre —</div>
-                    <select
-                      value={centreCountry}
-                      onChange={e => { setCentreCountry(e.target.value); setCentreCity(''); if (form.franchisee_id !== nlhCentre?.id) handleCentreChange('') }}
-                    >
-                      {[...new Set(['India', ...centreList.filter(c => c.tier !== 'NLH' && c.country).map(c => c.country)])].map(co => (
-                        <option key={co} value={co}>{co}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={centreCity}
-                      onChange={e => { setCentreCity(e.target.value); if (form.franchisee_id !== nlhCentre?.id) handleCentreChange('') }}
-                    >
-                      <option value="">— Select City —</option>
-                      {[...new Set(centreList.filter(c => c.tier !== 'NLH' && (c.country || 'India') === centreCountry && c.city).map(c => c.city))].sort().map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                    {centreCity && (
+                    {!cityStr ? (
+                      <p style={{ font:'500 11px var(--font)', color:'var(--text3)', margin:0 }}>
+                        Fill in the student's <b>City</b> above to see local centres.
+                      </p>
+                    ) : localCentres.length === 0 ? (
+                      <p style={{ font:'500 11px var(--font)', color:'var(--text3)', margin:0 }}>
+                        No centres in <b>{cityStr}</b> — enrol at NLH Head Office above.
+                      </p>
+                    ) : (
                       <select
                         value={form.franchisee_id !== nlhCentre?.id ? form.franchisee_id : ''}
                         onChange={e => handleCentreChange(e.target.value)}
                       >
-                        <option value="">— Select Centre in {centreCity} —</option>
-                        {centreList.filter(c => c.tier !== 'NLH' && (c.country || 'India') === centreCountry && c.city === centreCity).map(c => (
+                        <option value="">— Select centre in {cityStr} —</option>
+                        {localCentres.map(c => (
                           <option key={c.id} value={c.id}>
-                            [{c.tier}] {c.business_name}{c.id === currentFranchiseeId && isMasterFr ? ' (your centre)' : ''}
+                            [{c.tier}] {c.business_name}{c.area ? ` — ${c.area}` : ''}{c.id === currentFranchiseeId && isMasterFr ? ' (your centre)' : ''}
                           </option>
                         ))}
-                        {centreList.filter(c => c.tier !== 'NLH' && (c.country || 'India') === centreCountry && c.city === centreCity).length === 0 && (
-                          <option disabled>No centres in {centreCity}</option>
-                        )}
                       </select>
                     )}
                   </div>
