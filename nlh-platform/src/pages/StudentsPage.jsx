@@ -5,6 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
+import StudentCertModal from '../components/StudentCertModal'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     parent_name: student.parent_name || '',
     dob: student.dob || '',
     phone: student.phone || '',
+    email: student.email || '',
     country: student.country || 'India',
     state: student.state || '',
     city: student.city || '',
@@ -38,6 +40,8 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
   })
+  const [certModal, setCertModal] = useState(null)   // { enrollment, centre } | null
+  const [centreCache, setCentreCache] = useState(null)
   const [saving, setSaving] = useState(false)
 
   function field(k) {
@@ -55,6 +59,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       parent_name: form.parent_name.trim(),
       dob: form.dob || null,
       phone: form.phone.trim(),
+      email: form.email.trim() || null,
       country: form.country.trim(),
       state: form.state.trim(),
       city: form.city.trim(),
@@ -90,6 +95,9 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             </label>
             <label>Phone
               <input value={form.phone} onChange={field('phone')} disabled={!admin} />
+            </label>
+            <label>Parent Email
+              <input type="email" value={form.email} onChange={field('email')} disabled={!admin} placeholder="parent@email.com" />
             </label>
             <label>Country
               <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
@@ -139,20 +147,51 @@ function StudentDetailModal({ student, onClose, onSaved }) {
           {enrollments.length > 0 && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <strong>Enrolled Courses</strong>
-              <table className="tbl" style={{ marginTop: 8 }}>
+              <div className="tbl-scroll">
+              <table className="tbl" style={{ marginTop: 8, minWidth: 420 }}>
                 <thead>
-                  <tr><th>Course</th><th>Level / SKU</th></tr>
+                  <tr><th>Course</th><th>Level / SKU</th><th>Certificate</th></tr>
                 </thead>
                 <tbody>
                   {enrollments.map(en => (
                     <tr key={en.id}>
                       <td>{en.skus?.courses?.group_name || '—'}</td>
                       <td>{en.skus?.level_name || '—'}</td>
+                      <td>
+                        <button
+                          className="btn-s"
+                          style={{ padding: '3px 10px', fontSize: 11 }}
+                          onClick={async function () {
+                            // fetch centre if not cached
+                            let centre = centreCache
+                            if (!centre && student.franchisee_id) {
+                              const { data } = await sb.from('franchisees')
+                                .select('id,business_name,city,area,country,tier').eq('id', student.franchisee_id).single()
+                              centre = data || null
+                              setCentreCache(centre)
+                            }
+                            setCertModal({ enrollment: en, centre })
+                          }}
+                        >
+                          {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Certificate'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
+          )}
+
+          {/* Certificate modal — rendered inside StudentDetailModal */}
+          {certModal && (
+            <StudentCertModal
+              student={{ ...student, ...form }}
+              enrollment={certModal.enrollment}
+              centre={certModal.centre}
+              onClose={() => setCertModal(null)}
+            />
           )}
         </div>
 
@@ -197,7 +236,7 @@ function AddStudentModal({ onClose, onSaved }) {
   const isMasterFr = currentRole === 'smf' || currentRole === 'cf'
 
   const [form, setForm] = useState({
-    full_name: '', parent_name: '', dob: '', phone: '',
+    full_name: '', parent_name: '', dob: '', phone: '', email: '',
     country: 'India', state: '', city: '', area: '', address: '',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
@@ -308,6 +347,7 @@ function AddStudentModal({ onClose, onSaved }) {
         parent_name: form.parent_name.trim(),
         dob: form.dob || null,
         phone: form.phone.trim(),
+        email: form.email.trim() || null,
         country: form.country.trim(),
         state: form.state.trim(),
         city: form.city.trim(),
@@ -387,6 +427,9 @@ function AddStudentModal({ onClose, onSaved }) {
             </label>
             <label>Phone
               <input value={form.phone} onChange={field('phone')} placeholder="10-digit mobile" />
+            </label>
+            <label>Parent Email
+              <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
             <label>Country
               <input value={form.country} onChange={field('country')} placeholder="India" />
@@ -521,7 +564,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, enrollments(id, sku_id, skus(level_name, courses(group_name)))')
+        .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
         .order('full_name')
 
       if (admin) {

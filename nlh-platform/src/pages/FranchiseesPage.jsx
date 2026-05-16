@@ -5,6 +5,8 @@ import { fmtAmt, fmtDate, showToast, statusBadge } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
+import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
+import { sendFranchiseeCertEmail } from '../services/email'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -48,7 +50,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [orders, setOrders] = useState([])
   const [students, setStudents] = useState([])
-  const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false })
+  const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false })
+  const [certEmailing, setCertEmailing] = useState(false)
+  const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
 
   function field(k) {
     return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) }
@@ -110,9 +114,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         </div>
 
         <div className="tabs">
-          {['info', 'courses', 'orders', 'students'].map(t => (
+          {['info', 'courses', 'orders', 'students', 'cert'].map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'cert' ? '📜 Certificate' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -271,6 +275,97 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
             </table>
             </div>
           )}
+
+          {tab === 'cert' && (() => {
+            const courseNames = allCourses
+              .filter(c => registeredCourses.includes(c.id))
+              .map(c => c.name)
+            const fr = { ...franchisee, ...form, cert_emailed_at: certEmailedAt }
+
+            function tierLbl(f) {
+              if (f.tier === 'SMF') return 'State Master Franchisee of'
+              if (f.tier === 'CF')  return `${f.city || ''} City Master Franchisee of`
+              return 'Unit Franchisee of'
+            }
+            function vTill(ts) {
+              const d = new Date(ts || Date.now())
+              d.setFullYear(d.getFullYear() + 5)
+              return [String(d.getDate()).padStart(2,'0'), String(d.getMonth()+1).padStart(2,'0'), d.getFullYear()].join('.')
+            }
+            const address = [fr.address, fr.area, fr.city, fr.state,
+              fr.country && fr.country !== 'India' ? fr.country : null].filter(Boolean).join(', ')
+            const courses = courseNames.join(', ')
+            const label   = tierLbl(fr)
+            const till    = vTill(fr.created_at)
+
+            async function emailCert() {
+              if (!fr.email) { showToast('No email on file for this franchisee', 'warn'); return }
+              setCertEmailing(true)
+              try {
+                const res = await sendFranchiseeCertEmail(fr, courseNames)
+                if (!res.success) throw new Error(res.error || 'Send failed')
+                await sb.from('franchisees').update({ cert_emailed_at: new Date().toISOString() }).eq('id', franchisee.id)
+                const now = new Date().toISOString()
+                setCertEmailedAt(now)
+                showToast('Certificate emailed to ' + fr.email)
+              } catch (err) { showToast('Email failed: ' + err.message, 'err') }
+              setCertEmailing(false)
+            }
+
+            return (
+              <div>
+                {/* Preview card */}
+                <div style={{
+                  border: '2px solid var(--border)', borderRadius: 10,
+                  background: 'linear-gradient(135deg,#fffef8 0%,#f8f6ff 100%)',
+                  padding: '20px 24px', textAlign: 'center',
+                  fontFamily: 'Arial,sans-serif', marginBottom: 12,
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 4 }}>FRANCHISE CERTIFICATE</div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>This is to Certify that</div>
+                  <div style={{ fontFamily: 'Georgia,serif', fontSize: 22, fontWeight: 700, color: '#CC0000', marginBottom: 2, lineHeight: 1.2 }}>
+                    {fr.name || fr.business_name}
+                  </div>
+                  {fr.tier === 'SMF' && (
+                    <div style={{ fontFamily: 'Georgia,serif', fontSize: 14, color: '#CC0000', marginBottom: 4 }}>{fr.state}</div>
+                  )}
+                  <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, marginBottom: 2 }}>Is a Registered</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#CC0000', marginBottom: 5 }}>{label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 5 }}>New Learning Horizons at</div>
+                  <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: courses ? 5 : 0 }}>{address}</div>
+                  {courses && <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5 }}>for {courses}</div>}
+                  <div style={{ display:'flex', justifyContent:'space-between', marginTop:12, paddingTop:10, borderTop:'1px dashed var(--border)' }}>
+                    <div style={{ textAlign:'left' }}>
+                      <div style={{ fontSize: 9, color: 'var(--text3)' }}>Valid Till</div>
+                      <div style={{ fontSize: 11, fontWeight: 700 }}>{till}</div>
+                    </div>
+                    <div style={{ textAlign:'right' }}>
+                      <div style={{ fontSize: 9, fontStyle:'italic', color:'var(--text3)' }}>Dhiral Panchmatia</div>
+                      <div style={{ fontSize: 9, color:'var(--text3)' }}>Director, NLH</div>
+                    </div>
+                  </div>
+                </div>
+
+                {certEmailedAt
+                  ? <p className="hint" style={{ color: 'var(--green)' }}>
+                      ✓ Certificate emailed to <strong>{fr.email}</strong> on {new Date(certEmailedAt).toLocaleDateString('en-IN')}
+                    </p>
+                  : fr.email
+                    ? <p className="hint">Ready to send to: <strong>{fr.email}</strong></p>
+                    : <p className="hint" style={{ color: 'var(--red)' }}>⚠ No email on file — cannot send.</p>
+                }
+
+                <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                  <button className="btn-s" onClick={() => printFranchiseeCert(fr, courseNames)}>
+                    🖨️ Print / PDF
+                  </button>
+                  <button className="btn-p" onClick={emailCert} disabled={certEmailing || !fr.email}>
+                    {certEmailing ? 'Sending…' : certEmailedAt ? '📧 Re-send Certificate' : '📧 Email Certificate'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
         {admin && (tab === 'info' || tab === 'courses') && (

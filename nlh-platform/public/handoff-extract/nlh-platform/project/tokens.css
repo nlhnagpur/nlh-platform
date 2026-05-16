@@ -1,0 +1,164 @@
+/* =====================================================================
+   NLH Design System — Foundations (colors + typography)
+   New Learning Horizons Platform
+   ===================================================================== */
+
+:root {
+  /* ── Surface / neutrals ─────────────────────────────────────────── */
+  --bg:        #F7F6F3;   /* Warm app canvas */
+  --bg2:       #FFFFFF;   /* Cards, panels, table rows */
+  --bg3:       #F0EEE9;   /* Subtle hover, inactive chips */
+  --bg4:       #E8E6E0;   /* Deeper neutral */
+  --border:    #E2E0D8;   /* Default 1px hairline */
+  --border2:   #D0CEC6;   /* Input borders, stronger dividers */
+
+  /* ── Text ───────────────────────────────────────────────────────── */
+  --text:      #1A1916;   /* Primary copy, headings */
+  --text2:     #5C5A54;   /* Secondary copy, labels */
+  --text3:     #9C9A92;   /* Tertiary / mono microcopy */
+
+  /* ── Brand purple (admin platform primary) ──────────────────────── */
+  --purple:    #534AB7;   /* Buttons, active nav, focus */
+  --purple2:   #3D35A0;   /* Hover state for purple */
+  --purple-bg: #EEEDFE;   /* Tinted backgrounds */
+
+  /* ── Brand blue (landing / consumer primary) ────────────────────── */
+  --blue-deep: #1E40AF;   /* Landing h1 / wordmark navy */
+  --blue:      #2563EB;   /* Primary CTA on landing, accent links */
+  --blue2:     #1A5FA8;   /* App-shell semantic blue */
+  --blue-bg:   #EAF2FB;   /* Info banners */
+  --blue-50:   #DBEAFE;   /* Stat-icon tinted bg */
+
+  /* ── Brand orange / sun (mascot warmth) ─────────────────────────── */
+  --sun:       #F59E0B;   /* Sun-mascot orange */
+  --sun-2:     #FBBF24;   /* Lighter sun gradient stop */
+  --sun-3:     #FCD34D;   /* Pale sun gradient stop */
+  --sun-bg:    #FEF3C7;   /* Yellow tinted bg */
+  --orange:    #D97706;   /* Deeper orange icon */
+  --orange-2:  #EA580C;   /* Hot-orange accent */
+
+  /* ── Semantic ────────────────────────────────────────────────────── */
+  --green:     #1D7A4F;   /* Success, paid, active */
+  --green-2:   #16A34A;   /* Bright success */
+  --green-bg:  #E6F5ED;
+  --green-50:  #DCFCE7;
+  --amber:     #8A5200;   /* Warning, pending */
+  --amber-bg:  #FEF3E0;
+  --red:       #A32D2D;   /* Error, overdue */
+  --red-bg:    #FCEAEA;
+
+  /* Tier accent set used for franchisee tiers + course cards */
+  --pink:      #DB2777;
+  --pink-50:   #FCE7F3;
+  --violet:    #7C3AED;
+  --violet-50: #E9D5FF;
+  --sky:       #0284C7;
+  --sky-50:    #BAE6FD;
+  --rose:      #E11D48;
+  --rose-50:   #FECDD3;
+
+  /* ── Radii ──────────────────────────────────────────────────────── */
+  --r:   10px;   /* Default card */
+  --r2:  7px;    /* Inputs, small buttons */
+  --r3:  5px;    /* Inline price input */
+  --r-pill: 30px;     /* Landing buttons (pill) */
+  --r-card-lg: 18px;  /* Marketing course / dash gradient cards */
+  --r-card-xl: 32px;  /* Hero CTA section */
+
+  /* ── Shadows ────────────────────────────────────────────────────── */
+  --shadow:    0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.10);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,.08);
+  --shadow-cta:0 8px 24px rgba(0,0,0,.15);
+  --shadow-blue: 0 4px 14px rgba(37,99,235,.25);
+
+  /* ── Spacing scale (used in app shell) ──────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* ── Typography ─────────────────────────────────────────────────── */
+  --font: 'DM Sans', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Pull DM Sans / DM Mono via Google Fonts ─ same as the platform */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+/* =====================================================================
+   Semantic type ramp
+   The platform mixes a tight UI scale (12-22px) with a large landing scale
+   (38-56px). Both are exposed as CSS classes.
+   ===================================================================== */
+
+.t-display, .t-display-1 {
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 56px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--blue-deep);
+}
+.t-display-2 {
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 40px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--blue-deep);
+}
+.t-h1 {       /* page title in landing CTA / section */
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 36px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.t-h2 {       /* card / modal title */
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.25;
+  color: var(--text);
+}
+.t-h3 {       /* section title in app */
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--text);
+}
+.t-h4 {       /* card heading */
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+}
+.t-h5 {       /* small section heading in app */
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.t-body-lg { font-family: var(--font); font-size: 17px; line-height: 1.6; color: var(--text2); }
+.t-body    { font-family: var(--font); font-size: 13px; line-height: 1.55; color: var(--text); }
+.t-body-sm { font-family: var(--font); font-size: 12px; line-height: 1.55; color: var(--text2); }
+.t-caption { font-family: var(--font); font-size: 11px; line-height: 1.4; color: var(--text3); }
+
+/* Mono/uppercase microcopy (table headers, labels, timestamps, code) */
+.t-label  { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); }
+.t-mono   { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+.t-mono-sm{ font-family: var(--mono); font-size: 10px; color: var(--text3); }
+
+/* Accent colour helper — landing h1 uses two blues stacked */
+.t-accent { color: var(--blue); }
+
+/* Numerics on dashboard gradient cards */
+.t-metric  { font-family: var(--font); font-weight: 700; font-size: 28px; line-height: 1.05; }
+.t-metric-sm { font-family: var(--font); font-weight: 600; font-size: 22px; line-height: 1.1; }

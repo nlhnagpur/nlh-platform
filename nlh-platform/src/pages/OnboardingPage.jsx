@@ -25,6 +25,7 @@ export default function OnboardingPage() {
   const [stName, setStName] = useState('')
   const [stParent, setStParent] = useState('')
   const [stPhone, setStPhone] = useState('')
+  const [stEmail, setStEmail] = useState('')
   const [stDob, setStDob] = useState('')
   const [stCountry, setStCountry] = useState('India')
   const [stState, setStState] = useState('')
@@ -128,6 +129,7 @@ export default function OnboardingPage() {
     try {
       const { data: st, error } = await sb.from('students').insert({
         full_name: stName, parent_name: stParent, phone: stPhone,
+        email: stEmail.trim() || null,
         dob: stDob || null,
         country: stCountry, state: stState, city: stCity, area: stArea, address: stAddress,
         franchisee_id: stCentre, is_active: true,
@@ -283,9 +285,16 @@ export default function OnboardingPage() {
                   <input value={stPhone} onChange={e => setStPhone(e.target.value)} placeholder="Contact number" />
                 </div>
                 <div className="fr">
+                  <label>Parent Email</label>
+                  <input type="email" value={stEmail} onChange={e => setStEmail(e.target.value)} placeholder="parent@email.com" />
+                </div>
+              </div>
+              <div className="g2">
+                <div className="fr">
                   <label>Date of Birth</label>
                   <input type="date" value={stDob} onChange={e => setStDob(e.target.value)} />
                 </div>
+                <div className="fr" />
               </div>
               <div className="g2">
                 <div className="fr">

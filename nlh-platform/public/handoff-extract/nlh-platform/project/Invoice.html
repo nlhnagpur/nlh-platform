@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NLH — Invoice INV-2026-0418</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: var(--font);
+    background: #EFEDE6;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* ── viewing chrome (hidden in print) ─────────────────────── */
+  .stage {
+    min-height: 100vh;
+    padding: 36px 24px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+  }
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    background: #fff;
+    border-radius: 30px;
+    padding: 6px 6px 6px 18px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.08);
+    font: 500 12px var(--mono);
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .toolbar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green-2); display: inline-block; margin-right: 6px; }
+  .toolbar .btn {
+    background: var(--purple); color: #fff;
+    border: none; padding: 8px 16px;
+    border-radius: 24px; cursor: pointer;
+    font: 600 11px var(--mono); letter-spacing: .05em;
+    text-transform: uppercase;
+    transition: all .15s;
+  }
+  .toolbar .btn:hover { background: var(--purple2); transform: translateY(-1px); }
+  .toolbar .btn-s { background: #fff; color: var(--text2); border: 1px solid var(--border2); }
+  .toolbar .btn-s:hover { background: var(--bg); color: var(--text); }
+
+  /* ── A4 sheet ──────────────────────────────────────────────── */
+  .sheet {
+    width: 210mm;
+    min-height: 297mm;
+    background: #fff;
+    box-shadow: 0 8px 28px rgba(0,0,0,.10), 0 2px 6px rgba(0,0,0,.06);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─────────── HEADER BAND ─────────── */
+  .hd {
+    position: relative;
+    padding: 18px 22mm 0;
+    height: 200px;
+    background: linear-gradient(115deg, #FFF6D9 0%, #FFE89B 40%, #FFD234 75%, #FFB347 100%);
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .hd-wave {
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    width: 100%; height: 30px;
+    pointer-events: none;
+  }
+  .hd-row {
+    display: grid;
+    grid-template-columns: 130px 1fr 200px;
+    align-items: start;
+    gap: 16px;
+    position: relative;
+    z-index: 2;
+  }
+  /* Logo (preserve aspect — 1:1 square) */
+  .hd-logo {
+    width: 130px;
+    height: 130px;
+    flex-shrink: 0;
+    background: #fff;
+    border-radius: 14px;
+    padding: 6px;
+    box-shadow: 0 4px 14px rgba(217, 119, 6, .22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hd-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .hd-mid {
+    text-align: center;
+    padding-top: 22px;
+  }
+  .hd-title {
+    font: 800 56px var(--font);
+    color: var(--blue-deep);
+    letter-spacing: -.02em;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .hd-title-sub {
+    font: 700 10px var(--mono);
+    color: var(--orange);
+    text-transform: uppercase;
+    letter-spacing: .25em;
+  }
+
+  .hd-r {
+    text-align: right;
+    padding-top: 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .hd-office-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--blue-deep);
+    color: #fff;
+    padding: 4px 12px 4px 8px;
+    border-radius: 24px;
+    font: 800 8.5px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    box-shadow: 0 2px 8px rgba(30, 64, 175, .25);
+    white-space: nowrap;
+  }
+  .hd-office-pill::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--sun-2);
+    display: inline-block;
+  }
+  .hd-org {
+    font: 800 17px var(--font);
+    color: var(--text);
+    line-height: 1.15;
+    letter-spacing: -.01em;
+    margin-top: 2px;
+  }
+  .hd-addr {
+    font: 700 9.5px var(--font);
+    color: var(--text);
+    line-height: 1.6;
+    margin-top: 4px;
+  }
+  .hd-addr .row { display: block; }
+  .hd-addr .row .em {
+    display: inline-block;
+    width: 12px;
+    text-align: center;
+    margin-right: 4px;
+    font-size: 9px;
+    opacity: .8;
+  }
+
+  .hd-mascot {
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 80px;
+    z-index: 1;
+    filter: drop-shadow(0 4px 10px rgba(217, 119, 6, .35));
+  }
+  .hd-mascot img { width: 100%; height: 100%; object-fit: contain; }
+
+  /* ─────────── PURPLE TAGLINE STRIP ─────────── */
+  .tagline {
+    background: linear-gradient(90deg, var(--purple) 0%, #6F66CC 100%);
+    color: #fff;
+    text-align: center;
+    padding: 7px 22mm;
+    font: 600 9px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    position: relative;
+    z-index: 3;
+  }
+  .tagline .dot { display: inline-block; margin: 0 8px; opacity: .6; }
+
+  /* ─────────── META STRIP ─────────── */
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 22mm;
+    gap: 16px;
+  }
+  .meta-cell { display: flex; flex-direction: column; gap: 3px; }
+  .meta-lbl { font: 600 8.5px var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: .08em; }
+  .meta-val { font: 700 13px var(--font); color: var(--text); }
+  .meta-val.mono { font-family: var(--mono); font-weight: 600; font-size: 12px; }
+  .meta-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 24px;
+    font: 700 10px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+  .meta-status .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .ms-unpaid { background: rgba(220, 38, 38, .12); color: var(--red); }
+  .ms-paid { background: var(--green-bg); color: var(--green); }
+  .ms-pend { background: var(--amber-bg); color: var(--amber); }
+
+  /* ─────────── BODY ─────────── */
+  .body {
+    padding: 18px 22mm 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ─────────── BILL TO / FROM ─────────── */
+  .parties {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .party {
+    border-radius: 12px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .party-from { background: var(--purple-bg); }
+  .party-to   { background: linear-gradient(135deg, #FFF7DA 0%, #FFEAA0 100%); }
+  .party::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 3px;
+  }
+  .party-from::before { background: var(--purple); }
+  .party-to::before   { background: var(--sun); }
+  .party-lbl { font: 700 8.5px var(--mono); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 7px; }
+  .party-from .party-lbl { color: var(--purple); }
+  .party-to .party-lbl { color: var(--orange); }
+  .party-name { font: 700 14px var(--font); color: var(--text); line-height: 1.2; margin-bottom: 5px; }
+  .party-addr { font: 500 10px var(--mono); color: var(--text2); line-height: 1.55; }
+  .party-foot {
+    margin-top: 8px;
+    padding-top: 7px;
+    border-top: 1px dashed rgba(0,0,0,.12);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font: 600 9px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .party-foot span { color: var(--text3); }
+  .party-foot b { color: var(--text); font-weight: 700; }
+  .party-foot .tier-pill {
+    background: rgba(83, 74, 183, .14);
+    color: var(--purple);
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 700;
+  }
+  .party-to .party-foot .tier-pill {
+    background: rgba(217, 119, 6, .18);
+    color: var(--orange);
+  }
+
+  /* ─────────── ITEMS TABLE ─────────── */
+  .items {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .items-h {
+    background: linear-gradient(90deg, var(--purple) 0%, #6F66CC 100%);
+    color: #fff;
+    padding: 10px 16px;
+    display: grid;
+    grid-template-columns: 32px 1fr 50px 50px 80px 100px;
+    gap: 10px;
+    font: 700 9px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .items-h div:nth-child(3), .items-h div:nth-child(4), .items-h div:nth-child(5), .items-h div:nth-child(6) { text-align: right; }
+  .items-row {
+    display: grid;
+    grid-template-columns: 32px 1fr 50px 50px 80px 100px;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font: 500 11px var(--font);
+    color: var(--text);
+    align-items: center;
+  }
+  .items-row:nth-child(odd of .items-row) { background: #FAFAFE; }
+  .items-row:last-child { border-bottom: none; }
+  .items-idx { font: 600 9px var(--mono); color: var(--text3); }
+  .items-sku { display: flex; flex-direction: column; }
+  .items-sku-name { font: 600 11.5px var(--font); color: var(--text); line-height: 1.2; }
+  .items-sku-code { font: 500 9px var(--mono); color: var(--text3); margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
+  .items-row .qty, .items-row .sent, .items-row .rate, .items-row .amt {
+    text-align: right;
+    font: 500 11px var(--mono);
+    color: var(--text2);
+  }
+  .items-row .sent.g { color: var(--green); font-weight: 700; }
+  .items-row .amt { font-weight: 700; color: var(--text); font-size: 12px; }
+
+  /* ─────────── BOTTOM ROW: PAYMENT + TOTALS ─────────── */
+  .bot {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 12px;
+  }
+  .pay {
+    background: linear-gradient(135deg, #FFF7DA 0%, #FFE89B 100%);
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .pay::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 3px; background: var(--sun);
+  }
+  .pay-h {
+    font: 700 9px var(--mono);
+    color: var(--orange);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: 4px;
+  }
+  .pay-sub {
+    font: 500 10px var(--mono);
+    color: var(--text2);
+    margin-bottom: 12px;
+    letter-spacing: .02em;
+  }
+  .pay-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 120px;
+    gap: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    align-items: start;
+  }
+  .pay-bank { min-width: 0; }
+  .pay-upi { overflow-wrap: anywhere; }
+  .pay-bank { display: flex; flex-direction: column; gap: 8px; }
+  .pay-bank-name {
+    font: 700 12px var(--font);
+    color: var(--blue-deep);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pay-bank-name::before {
+    content: '🏦';
+    font-size: 12px;
+  }
+  .pay-bank-branch { font: 500 9px var(--mono); color: var(--text3); text-transform: uppercase; letter-spacing: .04em; margin-top: -4px; }
+  .pay-bank-rows { display: grid; grid-template-columns: 50px 1fr; gap: 4px 8px; font: 500 10.5px var(--mono); align-items: center; }
+  .pay-bank-rows .l { color: var(--text3); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .pay-bank-rows .v { color: var(--text); font-weight: 600; }
+  .pay-upi {
+    margin-top: 4px;
+    background: var(--purple-bg);
+    border-radius: 7px;
+    padding: 6px 10px;
+    font: 700 9.5px var(--mono);
+    color: var(--purple);
+    letter-spacing: .04em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pay-qr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 120px;
+    gap: 6px;
+  }
+  .pay-qr-cap {
+    font: 700 8.5px var(--mono);
+    color: var(--blue-deep);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    text-align: center;
+    line-height: 1.3;
+  }
+  .pay-qr-img {
+    width: 110px;
+    height: 110px;
+    display: block;
+    background: #fff;
+    border-radius: 6px;
+    padding: 4px;
+    border: 2px solid var(--blue-deep);
+    object-fit: contain;
+  }
+  .pay-qr-foot {
+    font: 700 7.5px var(--mono);
+    color: var(--text2);
+    text-align: center;
+    line-height: 1.35;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+  .pay-qr-foot b { color: var(--purple); font-weight: 700; }
+  .pay-foot {
+    margin-top: 10px;
+    background: var(--blue-deep);
+    color: #fff;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font: 600 9px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    text-align: center;
+  }
+  .pay-foot .em { margin-right: 6px; }
+
+  /* totals */
+  .totals {
+    background: var(--purple-bg);
+    border-radius: 12px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .totals::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 3px; background: var(--purple);
+  }
+  .totals-h {
+    font: 700 9px var(--mono);
+    color: var(--purple);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: 6px;
+  }
+  .tot-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px dashed rgba(83, 74, 183, .25);
+  }
+  .tot-row:last-of-type { border-bottom: none; }
+  .tot-l { font: 500 11px var(--font); color: var(--text2); }
+  .tot-v { font: 600 12px var(--mono); color: var(--text); }
+  .tot-v.muted { color: var(--text3); font-weight: 500; }
+  .tot-grand {
+    margin-top: 10px;
+    background: linear-gradient(135deg, var(--purple) 0%, #6F66CC 100%);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(83, 74, 183, .25);
+  }
+  .tot-grand-l { font: 700 9.5px var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+  .tot-grand-v { font: 800 22px var(--font); letter-spacing: -.01em; line-height: 1; }
+  .tot-grand-v .cur { font: 700 11px var(--font); margin-right: 4px; opacity: .85; }
+  .tot-words { margin-top: 8px; font: 500 9px var(--mono); color: var(--text3); line-height: 1.45; text-transform: uppercase; letter-spacing: .04em; }
+  .tot-words b { color: var(--purple); font-weight: 700; }
+
+  /* ─────────── THANK YOU ─────────── */
+  .thanks {
+    margin-top: 14px;
+    background: linear-gradient(115deg, #FFE89B 0%, #FFD234 100%);
+    border-radius: 12px;
+    padding: 14px 16px 14px 78px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .thanks-mascot {
+    position: absolute;
+    left: 4px;
+    bottom: -6px;
+    width: 76px; height: 76px;
+    z-index: 1;
+    filter: drop-shadow(0 3px 8px rgba(217, 119, 6, .3));
+  }
+  .thanks-mascot img { width: 100%; height: 100%; object-fit: contain; }
+  .thanks-l { z-index: 2; flex: 1; }
+  .thanks-title { font: 800 17px var(--font); color: var(--blue-deep); letter-spacing: -.01em; }
+  .thanks-sub { font: 500 10px var(--mono); color: #5B3A00; text-transform: uppercase; letter-spacing: .06em; margin-top: 3px; }
+  .thanks-r {
+    z-index: 2;
+    text-align: right;
+    background: rgba(255,255,255,.6);
+    padding: 8px 14px;
+    border-radius: 24px;
+    backdrop-filter: blur(4px);
+  }
+  .thanks-r-l { font: 700 8.5px var(--mono); color: var(--orange); text-transform: uppercase; letter-spacing: .08em; }
+  .thanks-r-v { font: 800 14px var(--font); color: var(--blue-deep); margin-top: 1px; }
+
+  /* ─────────── FOOTER ─────────── */
+  .ft {
+    background: #1F2937;
+    color: #fff;
+    padding: 14px 22mm;
+    margin-top: auto;
+    position: relative;
+  }
+  .ft::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--sun) 0%, var(--orange-2) 50%, var(--sun) 100%);
+  }
+  .ft-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+  }
+  .ft-l { font: 600 9px var(--mono); color: #fff; text-transform: uppercase; letter-spacing: .1em; }
+  .ft-l .accent { color: var(--sun-3); }
+  .ft-c { font: 500 8.5px var(--mono); color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .08em; }
+  .ft-r { font: 600 9px var(--mono); color: #fff; letter-spacing: .04em; }
+  .ft-r .accent { color: var(--sun-3); }
+
+  /* ─────────── PRINT ─────────── */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  @media print {
+    body { background: #fff; }
+    .stage { padding: 0; gap: 0; }
+    .toolbar { display: none; }
+    .sheet { box-shadow: none; width: 210mm; min-height: 297mm; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <div class="toolbar">
+    <span><span class="dot"></span>INV-2026-0418 · Preview</span>
+    <button class="btn btn-s" onclick="window.history.back()">← Back</button>
+    <button class="btn" onclick="window.print()">Print / save PDF</button>
+  </div>
+
+  <article class="sheet" data-screen-label="01 Invoice INV-2026-0418">
+
+    <!-- ── HEADER ── -->
+    <header class="hd">
+      <div class="hd-row">
+        <div class="hd-logo">
+          <img src="assets/nlh-logo.png" alt="New Learning Horizons">
+        </div>
+        <div class="hd-mid">
+          <h1 class="hd-title">INVOICE</h1>
+          <div class="hd-title-sub">Tax invoice &middot; Original copy</div>
+        </div>
+        <div class="hd-r">
+          <span class="hd-office-pill">Head Office</span>
+          <div class="hd-org">New Learning Horizons</div>
+          <div class="hd-addr">
+            <span class="row"><span class="em">📍</span>9, Anjuman Shopping Complex,<br>&nbsp;&nbsp;&nbsp;&nbsp;Residency Road, Sadar, Nagpur<br>&nbsp;&nbsp;&nbsp;&nbsp;440 001 &middot; Maharashtra</span>
+            <span class="row" style="margin-top:4px"><span class="em">☎️</span>+91 9373 111 311</span>
+            <span class="row"><span class="em">✉️</span>dhiral@nlhnagpur.info</span>
+          </div>
+        </div>
+      </div>
+      <div class="hd-mascot"><img src="assets/nlh-mascot.png" alt=""></div>
+      <svg class="hd-wave" viewBox="0 0 800 30" preserveAspectRatio="none">
+        <path d="M0 30 L0 18 Q 100 4, 200 16 T 400 16 T 600 16 T 800 18 L 800 30 Z" fill="#fff" />
+      </svg>
+    </header>
+
+    <!-- ── TAGLINE STRIP ── -->
+    <div class="tagline">
+      New Learning Horizons <span class="dot">·</span> ISO 9001:2015 Certified <span class="dot">·</span> Enriching Children's Future
+    </div>
+
+    <!-- ── META ── -->
+    <section class="meta">
+      <div class="meta-cell">
+        <span class="meta-lbl">Invoice no.</span>
+        <span class="meta-val mono">INV-2026-0418</span>
+      </div>
+      <div class="meta-cell">
+        <span class="meta-lbl">Order ref.</span>
+        <span class="meta-val mono">ORD-2026-0418</span>
+      </div>
+      <div class="meta-cell">
+        <span class="meta-lbl">Issue date</span>
+        <span class="meta-val">15 May 2026</span>
+      </div>
+      <div class="meta-cell">
+        <span class="meta-lbl">Due date</span>
+        <span class="meta-val">29 May 2026</span>
+        <span class="meta-status ms-unpaid"><span class="d"></span>Unpaid</span>
+      </div>
+    </section>
+
+    <!-- ── BODY ── -->
+    <main class="body">
+
+      <!-- parties -->
+      <div class="parties">
+        <div class="party party-from">
+          <div class="party-lbl">From</div>
+          <div class="party-name">New Learning Horizons</div>
+          <div class="party-addr">
+            9, Anjuman Shopping Complex, Residency Road<br>
+            Sadar, Nagpur &middot; Maharashtra &middot; 440 001
+          </div>
+          <div class="party-foot">
+            <span>Ph &middot; <b>9373 111 311</b></span>
+            <span>GSTIN &middot; <b>27ABCDE1234F1Z5</b></span>
+          </div>
+        </div>
+        <div class="party party-to">
+          <div class="party-lbl">Bill to</div>
+          <div class="party-name">Bright Minds Pune</div>
+          <div class="party-addr">
+            Anjali Sharma &middot; Centre owner<br>
+            Plot 14, Aundh Road, Pune &middot; Maharashtra &middot; 411 007
+          </div>
+          <div class="party-foot">
+            <span class="tier-pill">UF</span>
+            <span>Centre &middot; <b>NLH-PUN-014</b></span>
+            <span>Onboarded &middot; <b>Mar 2022</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- items table -->
+      <div class="items">
+        <div class="items-h">
+          <div>#</div>
+          <div>SKU / item</div>
+          <div>Ord</div>
+          <div>Sent</div>
+          <div>Rate</div>
+          <div>Amount</div>
+        </div>
+        <div class="items-row">
+          <div class="items-idx">01</div>
+          <div class="items-sku">
+            <span class="items-sku-name">ACEM Abacus &mdash; Level 1 kit</span>
+            <span class="items-sku-code">ABC-L1-KIT</span>
+          </div>
+          <div class="qty">8</div>
+          <div class="sent g">8</div>
+          <div class="rate">₹1,250</div>
+          <div class="amt">₹10,000</div>
+        </div>
+        <div class="items-row">
+          <div class="items-idx">02</div>
+          <div class="items-sku">
+            <span class="items-sku-name">ACEM Abacus &mdash; Level 2 kit</span>
+            <span class="items-sku-code">ABC-L2-KIT</span>
+          </div>
+          <div class="qty">4</div>
+          <div class="sent g">4</div>
+          <div class="rate">₹1,550</div>
+          <div class="amt">₹6,200</div>
+        </div>
+        <div class="items-row">
+          <div class="items-idx">03</div>
+          <div class="items-sku">
+            <span class="items-sku-name">Coding starter &mdash; Junior kit</span>
+            <span class="items-sku-code">COD-JR-KIT</span>
+          </div>
+          <div class="qty">2</div>
+          <div class="sent g">2</div>
+          <div class="rate">₹2,100</div>
+          <div class="amt">₹4,200</div>
+        </div>
+        <div class="items-row">
+          <div class="items-idx">04</div>
+          <div class="items-sku">
+            <span class="items-sku-name">Art &amp; Craft &mdash; Toddler bundle</span>
+            <span class="items-sku-code">ART-TOD-KIT</span>
+          </div>
+          <div class="qty">6</div>
+          <div class="sent g">6</div>
+          <div class="rate">₹850</div>
+          <div class="amt">₹5,100</div>
+        </div>
+        <div class="items-row">
+          <div class="items-idx">05</div>
+          <div class="items-sku">
+            <span class="items-sku-name">Phonics &mdash; Level 1 workbook set</span>
+            <span class="items-sku-code">PHO-L1-WBK</span>
+          </div>
+          <div class="qty">10</div>
+          <div class="sent g">10</div>
+          <div class="rate">₹240</div>
+          <div class="amt">₹2,400</div>
+        </div>
+      </div>
+
+      <!-- bottom row -->
+      <div class="bot">
+        <!-- payment box -->
+        <div class="pay">
+          <div class="pay-h">Pay via</div>
+          <div class="pay-sub">Bank transfer or UPI &middot; share UTR with NLH after payment</div>
+          <div class="pay-card">
+            <div class="pay-bank">
+              <div>
+                <div class="pay-bank-name">IDFC FIRST Bank</div>
+                <div class="pay-bank-branch">Byramji Town &middot; Nagpur</div>
+              </div>
+              <div class="pay-bank-rows">
+                <span class="l">A/c</span><span class="v">10278096847</span>
+                <span class="l">IFSC</span><span class="v">IDFB0042504</span>
+                <span class="l">Type</span><span class="v">Current</span>
+                <span class="l">Name</span><span class="v">New Learning Horizons</span>
+              </div>
+            </div>
+            <div class="pay-qr">
+              <div class="pay-qr-cap">Scan to pay</div>
+              <img class="pay-qr-img" src="assets/nlh-upi-qr.png" alt="UPI QR — newlearninghorizons@idfcbank">
+              <div class="pay-qr-foot">Any UPI app<br><b>newlearninghorizons<br>@idfcbank</b></div>
+            </div>
+          </div>
+          <div class="pay-foot"><span class="em">⚡</span>Instant payment — settled in minutes</div>
+        </div>
+
+        <!-- totals -->
+        <div class="totals">
+          <div class="totals-h">Summary</div>
+          <div class="tot-row"><span class="tot-l">Subtotal</span><span class="tot-v">₹27,900</span></div>
+          <div class="tot-row"><span class="tot-l">Courier charges</span><span class="tot-v">₹450</span></div>
+          <div class="tot-row"><span class="tot-l">GST</span><span class="tot-v muted">Not applicable</span></div>
+          <div class="tot-row"><span class="tot-l">Discount</span><span class="tot-v muted">—</span></div>
+          <div class="tot-grand">
+            <span class="tot-grand-l">Grand total</span>
+            <span class="tot-grand-v"><span class="cur">₹</span>28,350</span>
+          </div>
+          <div class="tot-words">
+            <b>In words:</b> Rupees twenty-eight thousand three hundred fifty only
+          </div>
+        </div>
+      </div>
+
+      <!-- thank you -->
+      <div class="thanks">
+        <div class="thanks-mascot"><img src="assets/nlh-mascot.png" alt=""></div>
+        <div class="thanks-l">
+          <div class="thanks-title">Thank you for your order!</div>
+          <div class="thanks-sub">Kits will be dispatched within 3 working days</div>
+        </div>
+        <div class="thanks-r">
+          <div class="thanks-r-l">Amount due</div>
+          <div class="thanks-r-v">₹28,350</div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ── FOOTER ── -->
+    <footer class="ft">
+      <div class="ft-row">
+        <div class="ft-l">Enriching children's <span class="accent">future</span> since 2008</div>
+        <div class="ft-c">This is a computer-generated document</div>
+        <div class="ft-r">www.<span class="accent">nlhnagpur</span>.info</div>
+      </div>
+    </footer>
+
+  </article>
+
+</div>
+
+</body>
+</html>

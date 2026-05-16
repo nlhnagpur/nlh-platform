@@ -372,3 +372,119 @@ export async function sendWelcomeEmail(email, name, role, password) {
 
   return sendBrevoEmail(email, name, subject, html)
 }
+
+// ── Franchisee Certificate ─────────────────────────────────────────────────────
+
+export async function sendFranchiseeCertEmail(franchisee, courseNames) {
+  const name      = franchisee.business_name || 'Partner'
+  const firstName = name.split(' ')[0]
+  const subject   = 'Your NLH Franchise Certificate — New Learning Horizons'
+
+  function mkTierLabel(fr) {
+    if (fr.tier === 'SMF') return 'State Master Franchisee'
+    if (fr.tier === 'CF')  return (fr.city || '') + ' City Master Franchisee'
+    return 'Unit Franchisee'
+  }
+  function mkValidTill(ts) {
+    const d = new Date(ts || Date.now())
+    d.setFullYear(d.getFullYear() + 5)
+    return [String(d.getDate()).padStart(2,'0'), String(d.getMonth()+1).padStart(2,'0'), d.getFullYear()].join('.')
+  }
+  function mkAddress(fr) {
+    return [fr.address, fr.area, fr.city, fr.state,
+      fr.country && fr.country !== 'India' ? fr.country : null].filter(Boolean).join(', ')
+  }
+
+  const label   = mkTierLabel(franchisee)
+  const till    = mkValidTill(franchisee.created_at)
+  const addr    = mkAddress(franchisee)
+  const courses = courseNames.join(', ')
+  const isSMF   = franchisee.tier === 'SMF'
+  const loginUrl = 'https://nlh-platform.vercel.app'
+
+  const certCard =
+    '<table width="100%" cellpadding="0" cellspacing="0" style="border:2px solid #DDD9F9;border-radius:12px;background:#FAFAFA;margin:20px 0">' +
+    '<tr><td style="padding:24px;text-align:center;font-family:Arial,sans-serif">' +
+    '<div style="font-size:13px;font-weight:900;letter-spacing:2px;color:#1A1916;margin-bottom:4px">FRANCHISE CERTIFICATE</div>' +
+    '<div style="font-size:10px;color:#888;margin-bottom:12px">This is to Certify that</div>' +
+    '<div style="font-size:22px;font-weight:700;color:#CC0000;margin-bottom:' + (isSMF ? '2px' : '8px') + ';font-style:italic">' + name + '</div>' +
+    (isSMF ? '<div style="font-size:14px;font-weight:700;color:#CC0000;margin-bottom:8px;font-style:italic">' + (franchisee.state || '') + '</div>' : '') +
+    '<div style="font-size:10px;color:#888;margin-bottom:2px">Is a Registered</div>' +
+    '<div style="font-size:12px;font-weight:700;color:#CC0000;margin-bottom:6px">' + label + ' of</div>' +
+    '<div style="font-size:13px;font-weight:700;color:#1A1916;margin-bottom:6px">New Learning Horizons at</div>' +
+    '<div style="font-size:10px;color:#555;margin-bottom:' + (courses ? '6px' : '0') + '">' + addr + '</div>' +
+    (courses ? '<div style="font-size:10px;color:#1A1916;line-height:1.5">for ' + courses + '</div>' : '') +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;padding-top:10px;border-top:1px dashed #DDD9F9"><tr>' +
+    '<td style="text-align:left;font-size:10px;color:#888"><div>Valid Till</div><div style="font-weight:700;color:#1A1916">' + till + '</div></td>' +
+    '<td style="text-align:right;font-size:9px;color:#888;font-style:italic"><div>Dhiral Panchmatia</div><div>Director, NLH</div></td>' +
+    '</tr></table>' +
+    '</td></tr></table>'
+
+  const body =
+    '<p>Dear ' + firstName + ',</p>' +
+    '<p style="margin:12px 0">Congratulations! Your franchise certificate from <strong>New Learning Horizons</strong> is ready. ' +
+    'Please find your certificate details below. Log in to the NLH Platform to print or save a PDF copy.</p>' +
+    certCard +
+    '<p style="font-size:12px;color:#555;margin:16px 0">To print your certificate, log in and open your franchise profile.</p>' +
+    '<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
+    '<a href="' + loginUrl + '" style="display:inline-block;background:#534AB7;color:#fff;text-decoration:none;font-size:13px;font-weight:700;padding:12px 28px;border-radius:8px">Log In to NLH Platform →</a>' +
+    '</td></tr></table>'
+
+  return sendBrevoEmail(
+    franchisee.email, name, subject,
+    nlhEmailTemplate('Your Franchise Certificate is Ready 🎉', body,
+      'Congratulations on joining the NLH family! We look forward to growing together.')
+  )
+}
+
+// ── Student Certificate ────────────────────────────────────────────────────────
+
+export async function sendStudentCertEmail(student, enrollment, centre, parentEmail) {
+  const studentName = student.full_name || 'Student'
+  const courseName  = enrollment.skus?.courses?.group_name || 'Course'
+  const levelName   = enrollment.skus?.level_name || 'Level'
+  const fullCourse  = courseName + ' — ' + levelName
+  const centreLine  = (centre?.business_name || 'New Learning Horizons') +
+                      (centre?.city ? ', ' + centre.city : '')
+  const parentLine  = [
+    student.parent_name ? 'S/o. ' + student.parent_name : null,
+    student.city
+      ? 'R/o. ' + student.city +
+        (student.country && student.country !== 'India' ? ', ' + student.country : '')
+      : null,
+  ].filter(Boolean).join(', ')
+  const today   = new Date()
+  const dateStr = [String(today.getDate()).padStart(2,'0'), String(today.getMonth()+1).padStart(2,'0'), today.getFullYear()].join('.')
+  const subject = 'Certificate of Accomplishment — ' + studentName + ' — NLH'
+
+  const certCard =
+    '<table width="100%" cellpadding="0" cellspacing="0" style="border:2px solid #89CFF0;border-radius:12px;background:linear-gradient(135deg,#E8F4FD,#C8E6F8);margin:20px 0">' +
+    '<tr><td style="padding:24px;text-align:center;font-family:Arial,sans-serif">' +
+    '<div style="font-size:18px;font-style:italic;font-weight:700;color:#CC0000;margin-bottom:4px">Certificate of Accomplishment</div>' +
+    '<div style="font-size:9px;font-weight:700;letter-spacing:2px;color:#1A3A6A;margin-bottom:12px">THIS IS TO CERTIFY THAT</div>' +
+    '<div style="font-size:22px;font-weight:700;color:#CC0000;font-style:italic;margin-bottom:4px">' + studentName + '</div>' +
+    (parentLine ? '<div style="font-size:10px;color:#555;margin-bottom:10px">' + parentLine + '</div>' : '') +
+    '<div style="font-size:10px;color:#1A1916;margin-bottom:4px">Has successfully completed</div>' +
+    '<div style="font-size:14px;font-weight:700;color:#1A3A6A;margin-bottom:4px;line-height:1.3">' + fullCourse + '</div>' +
+    '<div style="font-size:10px;color:#555;margin-bottom:14px">at ' + centreLine + '</div>' +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px dashed #89CFF0;padding-top:10px"><tr>' +
+    '<td style="text-align:left;font-size:9px;color:#888;font-style:italic"><div>Dhiral Panchmatia</div><div>Director, NLH</div></td>' +
+    '<td style="text-align:right;font-size:10px;font-weight:700;color:#1A1916">' + dateStr + '</td>' +
+    '</tr></table>' +
+    '</td></tr></table>'
+
+  const body =
+    '<p>Dear Parent / Guardian,</p>' +
+    '<p style="margin:12px 0">We are delighted to inform you that <strong>' + studentName + '</strong> has successfully completed ' +
+    '<strong>' + fullCourse + '</strong> at <strong>' + centreLine + '</strong>. ' +
+    'Please find the Certificate of Accomplishment below.</p>' +
+    certCard +
+    '<p style="font-size:12px;color:#555;margin-top:8px">You can print or save this certificate for your records. ' +
+    'We are very proud of this achievement and look forward to continued learning!</p>'
+
+  return sendBrevoEmail(
+    parentEmail, student.parent_name || studentName, subject,
+    nlhEmailTemplate('🎓 Certificate of Accomplishment', body,
+      'New Learning Horizons — Enriching Children\'s Future since 2008.')
+  )
+}

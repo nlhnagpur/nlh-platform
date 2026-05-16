@@ -3,3 +3,8 @@ dist/
 .env
 .env.local
 .DS_Store
+.vercel
+
+# Claude Code local settings (may contain API keys)
+../.claude/
+.claude/
