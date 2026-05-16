@@ -188,6 +188,7 @@ export default function AccessRequestsPage() {
         <div className="empty">No {filterStatus === 'all' ? '' : filterStatus} requests found.</div>
       ) : (
         <div className="card" style={{padding:0,overflow:"hidden"}}>
+          <div className="tbl-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -247,6 +248,7 @@ export default function AccessRequestsPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

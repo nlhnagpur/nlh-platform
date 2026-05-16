@@ -212,6 +212,7 @@ export default function PricesPage() {
               <span>💡</span>
               <span><b>Heads up.</b> Prices are live — changes immediately affect what franchisees see when ordering. A zero rate renders as <b>Price TBD</b>.</span>
             </div>
+            <div className="tbl-scroll">
             <table className="prices-tbl">
               <thead>
                 <tr>
@@ -279,6 +280,7 @@ export default function PricesPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

@@ -219,6 +219,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
           )}
 
           {tab === 'orders' && (
+            <div className="tbl-scroll">
             <table className="data-table">
               <thead>
                 <tr><th>Date</th><th>Status</th><th>Paid</th></tr>
@@ -234,9 +235,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
 
           {tab === 'students' && (
+            <div className="tbl-scroll">
             <table className="data-table">
               <thead>
                 <tr><th>Name</th><th>Status</th><th>Fee Total</th><th>Fee Paid</th><th>Balance</th></tr>
@@ -256,6 +259,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

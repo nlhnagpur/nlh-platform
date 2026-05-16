@@ -51,6 +51,7 @@ export default function PriceHistoryPage() {
         <div className="empty">No price changes recorded yet.</div>
       ) : (
         <div className="card" style={{padding:0,overflow:"hidden"}}>
+          <div className="tbl-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -79,6 +80,7 @@ export default function PriceHistoryPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
