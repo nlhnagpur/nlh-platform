@@ -469,7 +469,20 @@ function AddStudentModal({ onClose, onSaved }) {
               Enrolment Centre *
             </div>
             {(admin || isMasterFr) ? (() => {
-              const sorted = [...centreList].sort((a, b) => (a.city || '').localeCompare(b.city || ''))
+              const nlhCentre = centreList.find(c => c.tier === 'NLH')
+              const others    = centreList.filter(c => c.tier !== 'NLH')
+              const tierOrder = { SMF: 1, CF: 2, UF: 3 }
+              // Group by city, sort cities A→Z, sort within each city by tier hierarchy
+              const cityMap = {}
+              others.forEach(function (c) {
+                const city = c.city || '(No City)'
+                if (!cityMap[city]) cityMap[city] = []
+                cityMap[city].push(c)
+              })
+              const sortedCities = Object.keys(cityMap).sort((a, b) => a.localeCompare(b))
+              sortedCities.forEach(function (city) {
+                cityMap[city].sort((a, b) => (tierOrder[a.tier] || 9) - (tierOrder[b.tier] || 9))
+              })
               return (
                 <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                   <select
@@ -478,14 +491,20 @@ function AddStudentModal({ onClose, onSaved }) {
                     style={{ fontSize:13 }}
                   >
                     <option value="">— Select centre —</option>
-                    {sorted.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.tier === 'NLH'
-                          ? `🏛️ NLH Head Office${c.city ? ' · ' + c.city : ''}`
-                          : `[${c.tier}] ${c.business_name}${c.city ? ' · ' + c.city : ''}${c.area ? ' — ' + c.area : ''}`
-                        }
-                      </option>
-                    ))}
+                    {nlhCentre && (
+                      <option value={nlhCentre.id}>🏛️ NLH Own Centre</option>
+                    )}
+                    {sortedCities.map(function (city) {
+                      return (
+                        <optgroup key={city} label={city}>
+                          {cityMap[city].map(c => (
+                            <option key={c.id} value={c.id}>
+                              [{c.tier}] {c.business_name}{c.area ? ` — ${c.area}` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )
+                    })}
                   </select>
                 </div>
               )
