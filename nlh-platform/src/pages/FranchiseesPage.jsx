@@ -26,6 +26,18 @@ function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
 
+// Sort franchisees: city A→Z, then tier SMF→CF→UF, then name A→Z
+const TIER_ORDER = { NLH: 0, SMF: 1, CF: 2, UF: 3 }
+function sortFranchisees(list) {
+  return [...list].sort(function (a, b) {
+    const city = (a.city || '').localeCompare(b.city || '')
+    if (city !== 0) return city
+    const tier = (TIER_ORDER[a.tier] ?? 9) - (TIER_ORDER[b.tier] ?? 9)
+    if (tier !== 0) return tier
+    return (a.business_name || '').localeCompare(b.business_name || '')
+  })
+}
+
 function renewalStatus(fr) {
   const vt = fr.valid_till
     ? new Date(fr.valid_till)
@@ -747,9 +759,9 @@ export default function FranchiseesPage() {
 
       if (admin) {
         // Admin sees all franchisees
-        const { data, error } = await sb.from('franchisees').select('*').order('business_name')
+        const { data, error } = await sb.from('franchisees').select('*').order('city').order('business_name')
         if (error) console.error('Franchisees load error:', error)
-        setFranchisees(data || [])
+        setFranchisees(sortFranchisees(data || []))
       } else {
         // SMF / CF: show full descendant tree (children + grandchildren)
         if (!currentFranchiseeId) { setLoading(false); return }
@@ -763,10 +775,10 @@ export default function FranchiseesPage() {
           .from('franchisees')
           .select('*')
           .in('id', descendantIds)
-          .order('tier')          // SMF → CF → UF grouping
+          .order('city')
           .order('business_name')
         if (error) console.error('Franchisees load error:', error)
-        setFranchisees(data || [])
+        setFranchisees(sortFranchisees(data || []))
       }
       setLoading(false)
     }
@@ -784,7 +796,7 @@ export default function FranchiseesPage() {
   }
 
   function handleAdded(fr) {
-    setFranchisees(fs => [...fs, fr].sort((a, b) => (a.business_name || '').localeCompare(b.business_name || '')))
+    setFranchisees(fs => sortFranchisees([...fs, fr]))
     setShowAdd(false)
   }
 
