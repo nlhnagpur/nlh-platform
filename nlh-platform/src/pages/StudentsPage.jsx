@@ -357,6 +357,8 @@ function AddStudentModal({ onClose, onSaved }) {
 
   async function save() {
     if (!form.full_name.trim()) { showToast('Student name is required', 'warn'); return }
+    if (!form.phone.trim()) { showToast('Parent mobile number is required', 'warn'); return }
+    if (!form.email.trim() || !form.email.includes('@')) { showToast('Parent email address is required', 'warn'); return }
     if (!form.franchisee_id) { showToast('Please select a centre', 'warn'); return }
 
     setSaving(true)
@@ -447,7 +449,7 @@ function AddStudentModal({ onClose, onSaved }) {
             <label>Student Name *
               <input value={form.full_name} onChange={field('full_name')} placeholder="Full name" autoFocus />
             </label>
-            <label>Phone
+            <label>Phone *
               <input value={form.phone} onChange={field('phone')} placeholder="Parent / guardian mobile" />
             </label>
             <label>Parent / Guardian
@@ -455,6 +457,9 @@ function AddStudentModal({ onClose, onSaved }) {
             </label>
             <label>Date of Birth
               <input type="date" value={form.dob} onChange={field('dob')} />
+            </label>
+            <label className="col-span-2">Parent Email *
+              <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
           </div>
 
@@ -464,8 +469,7 @@ function AddStudentModal({ onClose, onSaved }) {
               Enrolment Centre *
             </div>
             {(admin || isMasterFr) ? (() => {
-              const nlhCentre = centreList.find(c => c.tier === 'NLH')
-              const otherCentres = centreList.filter(c => c.tier !== 'NLH')
+              const sorted = [...centreList].sort((a, b) => (a.city || '').localeCompare(b.city || ''))
               return (
                 <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                   <select
@@ -474,12 +478,14 @@ function AddStudentModal({ onClose, onSaved }) {
                     style={{ fontSize:13 }}
                   >
                     <option value="">— Select centre —</option>
-                    {otherCentres.map(c => (
+                    {sorted.map(c => (
                       <option key={c.id} value={c.id}>
-                        [{c.tier}] {c.business_name}{c.city ? ` · ${c.city}` : ''}{c.area ? ` — ${c.area}` : ''}
+                        {c.tier === 'NLH'
+                          ? `🏛️ NLH Head Office${c.city ? ' · ' + c.city : ''}`
+                          : `[${c.tier}] ${c.business_name}${c.city ? ' · ' + c.city : ''}${c.area ? ' — ' + c.area : ''}`
+                        }
                       </option>
                     ))}
-                    {nlhCentre && <option value={nlhCentre.id}>🏛️ NLH Head Office</option>}
                   </select>
                 </div>
               )
@@ -540,15 +546,12 @@ function AddStudentModal({ onClose, onSaved }) {
                 font:'500 12px var(--font)', color:'var(--text3)', display:'flex', alignItems:'center', gap:6 }}
             >
               <span style={{ fontSize:10 }}>{showAddress ? '▾' : '▸'}</span>
-              {showAddress ? 'Hide' : 'Add'} address, email &amp; channel
+              {showAddress ? 'Hide' : 'Add'} address &amp; channel
               <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:4 }}>(optional)</span>
             </button>
 
             {showAddress && (
               <div className="form-grid" style={{ marginTop:10 }}>
-                <label>Parent Email
-                  <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
-                </label>
                 <label>PIN Code
                   <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
                 </label>
