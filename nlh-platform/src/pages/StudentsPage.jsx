@@ -37,7 +37,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     city: student.city || '',
     area: student.area || '',
     address: student.address || '',
-    channel: student.channel || 'walk-in',
+    channel: student.channel || 'franchise',
     payment_status: student.payment_status || '',
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
@@ -121,13 +121,16 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             <label className="col-span-2">Street / Building Address
               <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Flat/Shop no., building, street" />
             </label>
-            <label>Channel
+            <label>Enrolment Channel
               <select value={form.channel} onChange={field('channel')} disabled={!admin}>
+                <option value="franchise">Franchise Centre</option>
+                <option value="own_centre">NLH Own Centre</option>
+                <option value="international">International / Online</option>
                 <option value="walk-in">Walk-in</option>
                 <option value="referral">Referral</option>
-                <option value="online">Online</option>
+                <option value="online">Online Campaign</option>
                 <option value="camp">Camp / Event</option>
-                <option value="school">School tie-up</option>
+                <option value="school">School Tie-up</option>
                 <option value="other">Other</option>
               </select>
             </label>
@@ -255,7 +258,7 @@ function AddStudentModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     full_name: '', parent_name: '', dob: '', phone: '', email: '',
     pincode: '', city: '', area: '', state: '', country: 'India', address: '',
-    channel: 'walk-in',
+    channel: 'franchise',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
   const [showAddress, setShowAddress] = useState(false)
@@ -564,13 +567,16 @@ function AddStudentModal({ onClose, onSaved }) {
                 <label className="col-span-2">Street / Building Address
                   <input value={form.address} onChange={field('address')} placeholder="Flat/Shop no., building, street" />
                 </label>
-                <label>How did they find us?
+                <label>Enrolment Channel
                   <select value={form.channel} onChange={field('channel')}>
+                    <option value="franchise">Franchise Centre</option>
+                    <option value="own_centre">NLH Own Centre</option>
+                    <option value="international">International / Online</option>
                     <option value="walk-in">Walk-in</option>
                     <option value="referral">Referral</option>
-                    <option value="online">Online</option>
+                    <option value="online">Online Campaign</option>
                     <option value="camp">Camp / Event</option>
-                    <option value="school">School tie-up</option>
+                    <option value="school">School Tie-up</option>
                     <option value="other">Other</option>
                   </select>
                 </label>
