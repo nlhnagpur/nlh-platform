@@ -26,14 +26,17 @@ function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
 
-// Sort franchisees: city A→Z, then tier SMF→CF→UF, then name A→Z
+// Sort franchisees: state A→Z → tier SMF→CF→UF → city A→Z → name A→Z
+// SMF is state-level (one per state), CF/UF are city-level beneath it.
 const TIER_ORDER = { NLH: 0, SMF: 1, CF: 2, UF: 3 }
 function sortFranchisees(list) {
   return [...list].sort(function (a, b) {
-    const city = (a.city || '').localeCompare(b.city || '')
-    if (city !== 0) return city
+    const state = (a.state || '').localeCompare(b.state || '')
+    if (state !== 0) return state
     const tier = (TIER_ORDER[a.tier] ?? 9) - (TIER_ORDER[b.tier] ?? 9)
     if (tier !== 0) return tier
+    const city = (a.city || '').localeCompare(b.city || '')
+    if (city !== 0) return city
     return (a.business_name || '').localeCompare(b.business_name || '')
   })
 }
