@@ -117,8 +117,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   async function save() {
     setSaving(true)
     const payload = {
-      business_name: form.name.trim(),
-      owner_name: form.owner_name.trim() || form.name.trim(),
+      owner_name: form.owner_name.trim(),
+      business_name: form.name.trim() || form.owner_name.trim(),
       phone: form.phone.trim(),
       country: form.country.trim(),
       state: form.state.trim(),
@@ -178,11 +178,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
           {tab === 'info' && (
             <div className="form-grid">
-              <label>Business / Centre Name
-                <input value={form.name} onChange={field('name')} disabled={!admin} />
-              </label>
-              <label>Owner Name
+              <label>Owner Name *
                 <input value={form.owner_name} onChange={field('owner_name')} disabled={!admin} placeholder="Owner's full name" />
+              </label>
+              <label>Business / Centre Name
+                <input value={form.name} onChange={field('name')} disabled={!admin} placeholder="Optional — e.g. Bright Minds Academy" />
               </label>
               <label>Email
                 <input value={form.email} disabled />
@@ -574,8 +574,8 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   }
 
   async function save() {
-    if (!form.name.trim() || !form.email.trim()) { showToast('Business name and email are required', 'warn'); return }
     if (!form.owner_name.trim()) { showToast('Owner name is required', 'warn'); return }
+    if (!form.email.trim()) { showToast('Email is required', 'warn'); return }
     if ((form.tier === 'UF' || form.tier === 'CF') && !form.parent_id) {
       showToast(`Please select a parent franchisee for this ${form.tier}`, 'warn'); return
     }
@@ -620,8 +620,8 @@ function AddFranchiseeModal({ onClose, onSaved }) {
 
       // Insert franchisee
       const { data: fr, error: frErr } = await sb.from('franchisees').insert({
-        business_name: form.name.trim(),
-        owner_name: form.owner_name.trim() || form.name.trim(),
+        owner_name: form.owner_name.trim(),
+        business_name: form.name.trim() || form.owner_name.trim(),
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
         country: form.country.trim(),
@@ -643,7 +643,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       const { error: signupErr } = await sb.auth.signUp({
         email: form.email.trim().toLowerCase(),
         password: tempPass,
-        options: { data: { full_name: form.name.trim() } },
+        options: { data: { full_name: form.owner_name.trim() } },
       })
       await sb.auth.setSession({
         access_token: admSess.session.access_token,
@@ -658,7 +658,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       const roleMap = { SMF: 'smf', CF: 'cf', UF: 'uf' }
       await sb.from('users').upsert({
         email: form.email.trim().toLowerCase(),
-        full_name: form.name.trim(),
+        full_name: form.owner_name.trim(),
         role: roleMap[form.tier] || 'uf',
         franchisee_id: fr.id,
       }, { onConflict: 'email' })
@@ -684,11 +684,11 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         </div>
         <div >
           <div className="form-grid">
-            <label>Business / Centre Name *
-              <input value={form.name} onChange={field('name')} placeholder="e.g. Bright Minds Academy" />
-            </label>
             <label>Owner Name *
               <input value={form.owner_name} onChange={field('owner_name')} placeholder="Owner's full name" />
+            </label>
+            <label>Business / Centre Name
+              <input value={form.name} onChange={field('name')} placeholder="Optional — e.g. Bright Minds Academy" />
             </label>
             <label>Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="login@email.com" />
