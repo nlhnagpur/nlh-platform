@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Welcome Letter — Shruti Singh | NLH</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#E8E5DC;font-family:Georgia,'Times New Roman',serif;color:#1A1916}
+
+  .page{
+    width:210mm;min-height:297mm;
+    background:#fff;
+    margin:20px auto;
+    box-shadow:0 8px 40px rgba(0,0,0,.18);
+    display:flex;flex-direction:column;
+  }
+
+  /* ── Letterhead ── */
+  .lh{
+    padding:14px 22px 12px;
+    border-bottom:3px solid #CC0000;
+  }
+  .lh-row{display:flex;align-items:flex-start;gap:10px}
+
+  .lh-logo{flex-shrink:0;display:flex;align-items:center;gap:10px}
+  .lh-logo img.nlh{height:76px;width:auto}
+  .lh-logo img.mascot{height:76px;width:auto;filter:drop-shadow(0 4px 12px rgba(217,119,6,.30))}
+
+  .lh-awards{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:0 8px}
+  .lh-awards img{width:100%;max-width:270px;height:auto;object-fit:contain;border-radius:4px}
+
+  .lh-addr{text-align:right;flex-shrink:0;width:155px;font-family:Arial,sans-serif;padding-top:2px}
+  .lh-addr .name{font-size:12.5px;font-weight:700;color:#CC0000;margin-bottom:3px}
+  .lh-addr p{font-size:9.5px;color:#444;line-height:1.75}
+  .lh-addr a{color:#CC0000;text-decoration:none}
+
+  /* ── Body ── */
+  .body{flex:1;padding:20px 30px 0}
+
+  .addr-block{font-family:Arial,sans-serif;font-size:13px;line-height:1.8;margin-bottom:18px}
+  .addr-block .to{color:#555}
+  .addr-block strong{display:block}
+
+  .subject{font-family:Arial,sans-serif;font-size:13px;font-weight:700;text-align:center;margin-bottom:18px}
+  .subject u{text-decoration:underline}
+
+  p{font-family:Arial,sans-serif;font-size:12.8px;line-height:1.85;margin-bottom:13px;text-align:justify}
+
+  ul.items{margin:0 0 13px 22px;font-family:Arial,sans-serif;font-size:12.8px;line-height:1.85}
+  ul.items li::marker{content:'– '}
+
+  /* ── Credentials box ── */
+  .creds{
+    border:1.5px solid #C8C3B8;border-radius:5px;
+    background:#FAF9F6;
+    padding:12px 18px 10px;
+    margin:4px 0 14px;
+    font-family:Arial,sans-serif;font-size:12.8px;
+  }
+  .creds-label{
+    font-size:10px;font-weight:700;letter-spacing:1.2px;
+    text-transform:uppercase;color:#888;margin-bottom:10px;
+  }
+  .creds table{width:100%;border-collapse:collapse}
+  .creds td{padding:3px 0;vertical-align:top}
+  .creds td:first-child{color:#555;width:46%}
+  .creds td:last-child{font-weight:700}
+
+  /* ── Sign-off ── */
+  .signoff{font-family:Arial,sans-serif;font-size:12.8px;margin-bottom:6px}
+  .sig-img{height:50px;width:auto;opacity:.88;display:block;margin:4px 0 2px}
+  .sig-name{font-family:Arial,sans-serif;font-size:13px;font-weight:700;margin-bottom:1px}
+  .sig-title{font-family:Arial,sans-serif;font-size:12.5px;color:#333;margin-bottom:1px}
+  .sig-org{font-family:Arial,sans-serif;font-size:12.5px;font-weight:700;color:#CC0000}
+
+  /* ── Red rule ── */
+  .red-rule{height:3px;background:#CC0000;margin-top:16px}
+
+  /* ── Brand logos ── */
+  .brand-logos{
+    display:flex;align-items:center;justify-content:center;gap:20px;
+    padding:14px 22px 10px;
+  }
+  .brand-logos img{height:46px;width:auto;border-radius:4px}
+
+  /* ── Footer ── */
+  .footer{
+    font-family:Arial,sans-serif;font-size:9.5px;color:#888;
+    text-align:center;line-height:1.7;
+    padding:6px 22px 14px;
+    border-top:1px solid #E0DBCE;
+  }
+  .footer strong{color:#555}
+
+  /* ── Print button (hidden on print) ── */
+  .print-bar{
+    display:flex;align-items:center;justify-content:space-between;
+    background:#534AB7;padding:10px 20px;
+    position:sticky;top:0;z-index:10;
+    font-family:Arial,sans-serif;font-size:13px;color:#fff;
+  }
+  .print-bar span{opacity:.8;font-size:12px}
+  .print-bar button{
+    background:#fff;color:#534AB7;border:none;
+    padding:7px 20px;border-radius:6px;
+    font-size:13px;font-weight:700;cursor:pointer;
+  }
+  .print-bar button:hover{background:#EDE9FF}
+
+  @media print{
+    .print-bar{display:none}
+    body{background:#fff}
+    .page{margin:0;box-shadow:none;width:100%;min-height:auto}
+  }
+  @page{size:A4;margin:0}
+</style>
+</head>
+<body>
+
+<!-- Print bar -->
+<div class="print-bar">
+  <span>Welcome Letter — Shruti Singh &nbsp;·&nbsp; Unit Franchisee, Bengaluru</span>
+  <button onclick="window.print()">⬇ Download / Print as PDF</button>
+</div>
+
+<div class="page">
+
+  <!-- LETTERHEAD -->
+  <div class="lh">
+    <div class="lh-row">
+
+      <!-- Logo + Mascot -->
+      <div class="lh-logo">
+        <img class="nlh" src="/NLH%20Logo.png" alt="NLH Logo">
+        <img class="mascot" src="/NLH%20Mascot.png" alt="NLH Mascot">
+      </div>
+
+      <!-- Award photos -->
+      <div class="lh-awards">
+        <img src="/awards-banner.png" alt="Awards">
+      </div>
+
+      <!-- Address -->
+      <div class="lh-addr">
+        <div class="name">Dhiral Panchmatia</div>
+        <p>
+          9, Anjuman Shopping Complex<br>
+          Residency Road, Sadar<br>
+          Nagpur &ndash; 440 001<br>
+          Mob.: +91 9373111311<br>
+          <a href="mailto:nlhnagpur@yahoo.in">nlhnagpur@yahoo.in</a><br>
+          <a href="https://www.nlhnagpur.info">www.nlhnagpur.info</a>
+        </p>
+      </div>
+
+    </div>
+  </div><!-- /lh -->
+
+  <!-- BODY -->
+  <div class="body">
+
+    <!-- Addressee -->
+    <div class="addr-block">
+      <div class="to">To,</div>
+      <strong>Shruti Singh</strong>
+      <div>New Learning Horizons &mdash; <em>Unit Franchisee</em></div>
+      <div style="color:#555">Jayanagar, Bengaluru, Karnataka</div>
+    </div>
+
+    <!-- Subject -->
+    <div class="subject">
+      Subject: <u>Welcome to the New Learning Horizons Family!</u>
+    </div>
+
+    <p>Dear Shruti,</p>
+
+    <p>It is with great joy and pride that we welcome you to the <strong>New Learning Horizons</strong> family! You are now an authorised <strong>Unit Franchisee</strong> in <strong>Bengaluru</strong> &mdash; at the heart of our mission to enrich children&rsquo;s lives every day.</p>
+
+    <p>You are now part of a growing educational movement that is transforming the way children learn, grow, and discover their true potential. With your new centre, we are expanding our mission to reach more young minds and create lifelong learners across India and beyond.</p>
+
+    <p>At New Learning Horizons, we believe in nurturing creativity, confidence, and curiosity. With over 15 innovative programs &mdash; Abacus, Vedic Maths, Montessori, Handwriting, Rubik&rsquo;s Cube, Reading, Phonics, Personality Development, Chess, Art &amp; Craft and more &mdash; your centre will play a key role in shaping a brighter future.</p>
+
+    <p>We are committed to ensuring your smooth transition and long-term success. To support you in this journey, you will be provided with:</p>
+    <ul class="items">
+      <li>A detailed orientation and training program</li>
+      <li>Branding and marketing support</li>
+      <li>Curriculum access and teacher manuals</li>
+      <li>Ongoing mentorship and operational guidance</li>
+    </ul>
+
+    <!-- Credentials -->
+    <div class="creds">
+      <div class="creds-label">Your Franchise Credentials</div>
+      <table>
+        <tr>
+          <td>Franchise Type</td>
+          <td>: Unit Franchisee</td>
+        </tr>
+        <tr>
+          <td>Authorised Territory</td>
+          <td>: Jayanagar, Bengaluru</td>
+        </tr>
+        <tr>
+          <td>Date of Appointment</td>
+          <td>: 18-05-2026</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top">Courses Authorised</td>
+          <td>: Art and Craft, Montessori, Phonics, Write Well</td>
+        </tr>
+      </table>
+    </div>
+
+    <p>Let&rsquo;s work together to make your centre a warm, enriching space where children not only learn but thrive.</p>
+    <p>Once again, welcome aboard &mdash; we are thrilled to have you with us!</p>
+
+    <p class="signoff">Warm regards,</p>
+    <img class="sig-img" src="/DRP%20Signature.png" alt="Signature">
+    <div class="sig-name">Dhiral Panchmatia</div>
+    <div class="sig-title">Founder</div>
+    <div class="sig-org">New Learning Horizons</div>
+
+  </div><!-- /body -->
+
+  <!-- Red rule -->
+  <div class="red-rule"></div>
+
+  <!-- Brand logos -->
+  <div class="brand-logos">
+    <img src="/acem-abacus-logo.png" alt="ACEM Abacus">
+    <img src="/writewell-logo.png" alt="WriteWell">
+    <img src="/easy-math-logo.png" alt="Easy Math">
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <strong>New Learning Horizons &nbsp;|&nbsp; ISO 9001:2015 Certified &nbsp;|&nbsp; Enriching Children&rsquo;s Future since 2008</strong><br>
+    9, Anjuman Shopping Complex, Residency Road, Sadar, Nagpur &ndash; 440 001 &nbsp;&nbsp; Ph: 9373111311 &nbsp;&nbsp; admin@nlhnagpur.info
+  </div>
+
+</div><!-- /page -->
+
+</body>
+</html>

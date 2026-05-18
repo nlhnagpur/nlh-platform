@@ -443,14 +443,17 @@ export async function sendFranchiseeWelcomeLetter(franchisee, courseNames) {
     '<tr><td style="padding:16px 24px 12px;border-bottom:2px solid #CC0000">' +
     '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
 
-    // NLH logo — left column
-    '<td style="vertical-align:top;width:130px;padding-right:10px">' +
-    '<img src="' + logoUrl + '" alt="NLH" style="height:60px;width:auto;display:block" />' +
+    // NLH logo + Mascot — left column
+    '<td style="vertical-align:top;width:170px;padding-right:10px">' +
+    '<div style="display:inline-flex;align-items:center;gap:8px">' +
+    '<img src="' + logoUrl + '" alt="NLH" style="height:72px;width:auto;display:block" />' +
+    '<img src="' + BASE + '/NLH%20Mascot.png" alt="" style="height:72px;width:auto;display:block;filter:drop-shadow(0 4px 10px rgba(217,119,6,.28))" />' +
+    '</div>' +
     '</td>' +
 
     // Awards photo strip — centre column
     '<td style="vertical-align:top;text-align:center;padding:0 6px">' +
-    '<img src="' + awardsUrl + '" alt="Awards" style="width:100%;max-width:290px;height:60px;object-fit:cover;object-position:center;display:block;border-radius:3px" />' +
+    '<img src="' + awardsUrl + '" alt="Awards" style="width:100%;max-width:270px;height:auto;object-fit:contain;display:block;border-radius:3px" />' +
     '</td>' +
 
     // Address — right column
@@ -555,7 +558,7 @@ export async function sendFranchiseeWelcomeLetter(franchisee, courseNames) {
 
     '<tr><td style="padding:0 40px 28px;font-family:Arial,sans-serif;font-size:13px;color:#1A1916;line-height:1.7">' +
     '<div style="font-weight:700">Dhiral Panchmatia</div>' +
-    '<div>Founder &amp; Director</div>' +
+    '<div>Founder</div>' +
     '<div style="color:#CC0000;font-weight:600">New Learning Horizons</div>' +
     '</td></tr>' +
 
