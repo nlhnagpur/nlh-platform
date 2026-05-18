@@ -18,21 +18,41 @@
 
   /* ── Letterhead ── */
   .lh{
-    padding:14px 22px 12px;
+    padding:13px 22px 11px;
     border-bottom:3px solid #CC0000;
   }
-  .lh-row{display:flex;align-items:flex-start;gap:10px}
+  /* Grid: logo col | awards col (stretches) | address col */
+  .lh-row{
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    gap:14px;
+    align-items:center;
+  }
 
-  .lh-logo{flex-shrink:0;display:flex;align-items:center;gap:10px}
-  .lh-logo img.nlh{height:76px;width:auto}
-  .lh-logo img.mascot{height:76px;width:auto;filter:drop-shadow(0 4px 12px rgba(217,119,6,.30))}
+  /* Logo + Mascot — side by side, 92 px tall */
+  .lh-logo{display:flex;align-items:center;gap:10px}
+  .lh-logo img.nlh{height:92px;width:auto}
+  .lh-logo img.mascot{height:92px;width:auto;filter:drop-shadow(0 4px 14px rgba(217,119,6,.32))}
 
-  .lh-awards{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:0 8px}
-  .lh-awards img{width:100%;max-width:270px;height:auto;object-fit:contain;border-radius:4px}
+  /* Awards strip — fills the middle column, capped at 92 px tall, no cropping */
+  .lh-awards{display:flex;align-items:center;justify-content:center}
+  .lh-awards img{
+    width:100%;height:92px;
+    object-fit:contain;object-position:center;
+    border-radius:3px;
+  }
 
-  .lh-addr{text-align:right;flex-shrink:0;width:155px;font-family:Arial,sans-serif;padding-top:2px}
-  .lh-addr .name{font-size:12.5px;font-weight:700;color:#CC0000;margin-bottom:3px}
-  .lh-addr p{font-size:9.5px;color:#444;line-height:1.75}
+  /* Address — auto-width so it hugs its content flush to the right edge */
+  .lh-addr{
+    text-align:right;
+    font-family:Arial,sans-serif;
+    white-space:nowrap;        /* keeps name on one line */
+  }
+  .lh-addr .name{
+    font-size:13px;font-weight:700;color:#CC0000;
+    margin-bottom:5px;letter-spacing:0.1px;
+  }
+  .lh-addr p{font-size:9px;color:#444;line-height:1.48}
   .lh-addr a{color:#CC0000;text-decoration:none}
 
   /* ── Body ── */

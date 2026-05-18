@@ -443,23 +443,21 @@ export async function sendFranchiseeWelcomeLetter(franchisee, courseNames) {
     '<tr><td style="padding:16px 24px 12px;border-bottom:2px solid #CC0000">' +
     '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
 
-    // NLH logo + Mascot — left column
-    '<td style="vertical-align:top;width:170px;padding-right:10px">' +
-    '<div style="display:inline-flex;align-items:center;gap:8px">' +
-    '<img src="' + logoUrl + '" alt="NLH" style="height:72px;width:auto;display:block" />' +
-    '<img src="' + BASE + '/NLH%20Mascot.png" alt="" style="height:72px;width:auto;display:block;filter:drop-shadow(0 4px 10px rgba(217,119,6,.28))" />' +
-    '</div>' +
+    // NLH logo + Mascot — left column (92 px, vertically centred)
+    '<td style="vertical-align:middle;white-space:nowrap;padding-right:12px">' +
+    '<img src="' + logoUrl + '" alt="NLH" style="height:88px;width:auto;display:inline-block;vertical-align:middle" />' +
+    '<img src="' + BASE + '/NLH%20Mascot.png" alt="" style="height:88px;width:auto;display:inline-block;vertical-align:middle;margin-left:8px;filter:drop-shadow(0 4px 10px rgba(217,119,6,.28))" />' +
     '</td>' +
 
-    // Awards photo strip — centre column
-    '<td style="vertical-align:top;text-align:center;padding:0 6px">' +
-    '<img src="' + awardsUrl + '" alt="Awards" style="width:100%;max-width:270px;height:auto;object-fit:contain;display:block;border-radius:3px" />' +
+    // Awards photo strip — centre column, fills available space, no crop
+    '<td style="vertical-align:middle;text-align:center;padding:0 8px">' +
+    '<img src="' + awardsUrl + '" alt="Awards" style="width:100%;height:88px;object-fit:contain;display:block;border-radius:3px" />' +
     '</td>' +
 
-    // Address — right column
-    '<td style="text-align:right;vertical-align:top;width:156px;padding-left:10px;font-family:Arial,sans-serif">' +
-    '<div style="font-size:12px;font-weight:700;color:#CC0000">Dhiral Panchmatia</div>' +
-    '<div style="font-size:9.5px;color:#444;line-height:1.75">' +
+    // Address — right column, tighter line-height, flush right
+    '<td style="text-align:right;vertical-align:middle;white-space:nowrap;padding-left:12px;font-family:Arial,sans-serif">' +
+    '<div style="font-size:13px;font-weight:700;color:#CC0000;margin-bottom:5px">Dhiral Panchmatia</div>' +
+    '<div style="font-size:9px;color:#444;line-height:1.48">' +
     '9, Anjuman Shopping Complex<br>Residency Road, Sadar<br>Nagpur &ndash; 440 001<br>' +
     'Mob.: +91 9373111311<br>' +
     '<a href="mailto:nlhnagpur@yahoo.in" style="color:#CC0000;text-decoration:none">nlhnagpur@yahoo.in</a><br>' +
