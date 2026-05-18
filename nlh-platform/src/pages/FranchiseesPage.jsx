@@ -88,6 +88,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false })
   const [certEmailing, setCertEmailing] = useState(false)
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
+  const [resending, setResending] = useState(false)
 
   function field(k) {
     return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) }
@@ -146,6 +147,27 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
   const rs = renewalStatus({ ...franchisee, ...form })
 
+  async function resendAccess() {
+    if (!franchisee.email) { showToast('No email on record', 'warn'); return }
+    setResending(true)
+    try {
+      const { error } = await sb.auth.resetPasswordForEmail(franchisee.email, {
+        redirectTo: 'https://nlh-platform.vercel.app',
+      })
+      if (error) throw error
+      // Also send a branded notification so they know why they got the link
+      const displayName = franchisee.owner_name || franchisee.business_name || 'Partner'
+      const tierMap = { SMF: 'State Master Franchisee', CF: 'City Franchisee', UF: 'Unit Franchisee' }
+      const roleLabel = tierMap[franchisee.tier] || franchisee.tier
+      await sendWelcomeEmail(franchisee.email, displayName, roleLabel.toLowerCase().replace(/ /g,'_'), '(see reset link in separate email)')
+      showToast('Password reset link sent to ' + franchisee.email)
+    } catch (err) {
+      showToast('Failed to send: ' + err.message, 'err')
+    } finally {
+      setResending(false)
+    }
+  }
+
   async function recordRenewal() {
     const newTill = new Date(rs.date)
     newTill.setFullYear(newTill.getFullYear() + 3)
@@ -187,6 +209,21 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               <label>Email
                 <input value={form.email} disabled />
               </label>
+              {admin && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    className="btn-s"
+                    onClick={resendAccess}
+                    disabled={resending}
+                    style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+                  >
+                    {resending ? 'Sending…' : '📧 Resend Login Access'}
+                  </button>
+                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    Sends a password reset link to the franchisee's email
+                  </span>
+                </div>
+              )}
               <label>Phone
                 <input value={form.phone} onChange={field('phone')} disabled={!admin} />
               </label>
@@ -664,7 +701,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       }, { onConflict: 'email' })
 
       // Send welcome email
-      await sendWelcomeEmail(form.email.trim(), form.name.trim(), form.tier, tempPass)
+      await sendWelcomeEmail(form.email.trim(), form.owner_name.trim() || form.name.trim(), form.tier, tempPass)
 
       showToast(`Franchisee created. Temp password: ${tempPass}`)
       onSaved(fr)
