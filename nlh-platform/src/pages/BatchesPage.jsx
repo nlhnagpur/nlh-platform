@@ -5,8 +5,331 @@ import { fmtDate, showToast } from '../utils'
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-const DAYS  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAYS       = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
+
+// ── AttendanceModal ───────────────────────────────────────────────────────────
+
+function AttendanceModal({ batch, onClose, onSaved }) {
+  const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+
+  const [sessionDate,   setSessionDate]   = useState(new Date().toISOString().split('T')[0])
+  const [instructorId,  setInstructorId]  = useState(batch.instructor_id || '')
+  const [isSubstitute,  setIsSubstitute]  = useState(false)
+  const [makePermanent, setMakePermanent] = useState(false)
+  const [eligibleCIs,   setEligibleCIs]   = useState([])
+  const [attendance,    setAttendance]    = useState(function () {
+    var map = {}
+    activeStudents.forEach(function (bs) { map[bs.enrollment_id] = true })
+    return map
+  })
+  const [saving,        setSaving]        = useState(false)
+  const [sessionNum,    setSessionNum]    = useState(null)
+
+  useEffect(function () {
+    // Get next session number
+    sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
+      .then(function (res) { setSessionNum((res.count || 0) + 1) })
+
+    // Load eligible CIs for this sku (for substitute picker)
+    sb.from('instructor_courses')
+      .select('instructor_id, instructors(id, full_name, status)')
+      .eq('sku_id', batch.sku_id)
+      .eq('status', 'active')
+      .then(function (res) {
+        var seen = {}
+        var cis = (res.data || [])
+          .map(function (r) { return r.instructors })
+          .filter(function (i) { return i && i.status === 'active' })
+          .filter(function (i) {
+            if (seen[i.id]) return false
+            seen[i.id] = true
+            return true
+          })
+        setEligibleCIs(cis)
+      })
+  }, [])
+
+  function toggleAll(present) {
+    var map = {}
+    activeStudents.forEach(function (bs) { map[bs.enrollment_id] = present })
+    setAttendance(map)
+  }
+
+  function toggle(enrollmentId) {
+    setAttendance(function (prev) {
+      var next = Object.assign({}, prev)
+      next[enrollmentId] = !prev[enrollmentId]
+      return next
+    })
+  }
+
+  async function save() {
+    if (!sessionDate) { showToast('Select a date', 'warn'); return }
+    setSaving(true)
+
+    // Fresh count for session number (avoid race)
+    var countRes = await sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
+    var sNum = (countRes.count || 0) + 1
+
+    var actualInstructorId = isSubstitute && instructorId ? instructorId : batch.instructor_id
+
+    // Create the session record
+    var sessRes = await sb.from('batch_sessions').insert({
+      batch_id:       batch.id,
+      session_date:   sessionDate,
+      session_number: sNum,
+      instructor_id:  actualInstructorId,
+      is_substitute:  isSubstitute && actualInstructorId !== batch.instructor_id,
+    }).select('id').single()
+
+    if (sessRes.error) {
+      showToast('Failed to create session: ' + sessRes.error.message, 'err')
+      setSaving(false)
+      return
+    }
+
+    // Insert attendance rows
+    var attRows = activeStudents.map(function (bs) {
+      return {
+        session_id:    sessRes.data.id,
+        enrollment_id: bs.enrollment_id,
+        student_id:    bs.enrollments?.student_id || null,
+        attended:      attendance[bs.enrollment_id] !== false,
+      }
+    })
+    if (attRows.length > 0) {
+      var attRes = await sb.from('session_attendance').insert(attRows)
+      if (attRes.error) showToast('Attendance saved but some rows failed', 'warn')
+    }
+
+    // Increment sessions_done
+    await sb.from('batches').update({ sessions_done: (batch.sessions_done || 0) + 1 }).eq('id', batch.id)
+
+    // Permanent instructor change
+    if (isSubstitute && makePermanent && instructorId && instructorId !== batch.instructor_id) {
+      await sb.from('batches').update({ instructor_id: instructorId }).eq('id', batch.id)
+    }
+
+    setSaving(false)
+    var presentCount = activeStudents.filter(function (bs) { return attendance[bs.enrollment_id] !== false }).length
+    showToast('Session #' + sNum + ' marked — ' + presentCount + '/' + activeStudents.length + ' present ✓')
+    onSaved()
+  }
+
+  var presentCount = activeStudents.filter(function (bs) { return attendance[bs.enrollment_id] !== false }).length
+  var ciName = batch.instructors?.full_name || '—'
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <div className="ch">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Attendance</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+              Session #{sessionNum || '…'} &nbsp;·&nbsp; {batch.skus?.courses?.group_name} — {batch.skus?.level_name}
+            </div>
+          </div>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Date */}
+          <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
+            Session Date *
+            <input type="date" value={sessionDate}
+              onChange={function (e) { setSessionDate(e.target.value) }}
+              style={{ marginTop: 4 }} />
+          </label>
+
+          {/* Instructor */}
+          <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px' }}>
+            <div style={{ font: '600 12px var(--font)', color: 'var(--text2)', marginBottom: 6 }}>
+              Instructor
+            </div>
+            <div style={{ font: '500 13px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
+              {ciName}
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 7, font: '500 12px var(--font)', color: 'var(--text2)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={isSubstitute}
+                onChange={function (e) {
+                  setIsSubstitute(e.target.checked)
+                  if (!e.target.checked) { setMakePermanent(false); setInstructorId(batch.instructor_id || '') }
+                }} />
+              Different instructor today (substitute / cover)
+            </label>
+
+            {isSubstitute && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <select
+                  value={instructorId}
+                  onChange={function (e) { setInstructorId(e.target.value) }}
+                  style={{ fontSize: 13 }}
+                >
+                  <option value="">— Select CI —</option>
+                  {eligibleCIs.map(function (ci) {
+                    return <option key={ci.id} value={ci.id}>{ci.full_name}</option>
+                  })}
+                </select>
+                {instructorId && instructorId !== batch.instructor_id && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 7, font: '500 12px var(--font)', color: 'var(--text2)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={makePermanent}
+                      onChange={function (e) { setMakePermanent(e.target.checked) }} />
+                    Make permanent — reassign this batch to the new instructor
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Student attendance */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                Students &nbsp;
+                <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{presentCount}</span>
+                <span style={{ color: 'var(--text3)' }}>/{activeStudents.length} present</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn-s" style={{ fontSize: 11, padding: '2px 10px' }}
+                  onClick={function () { toggleAll(true) }}>All Present</button>
+                <button className="btn-s" style={{ fontSize: 11, padding: '2px 10px' }}
+                  onClick={function () { toggleAll(false) }}>All Absent</button>
+              </div>
+            </div>
+
+            {activeStudents.length === 0 ? (
+              <p className="hint">No students assigned to this batch yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {activeStudents.map(function (bs) {
+                  var present = attendance[bs.enrollment_id] !== false
+                  var name = bs.enrollments?.students?.full_name || '—'
+                  return (
+                    <div
+                      key={bs.id}
+                      onClick={function () { toggle(bs.enrollment_id) }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                        border: present ? '1.5px solid var(--green)' : '1.5px solid var(--border)',
+                        background: present ? 'var(--green-bg)' : 'var(--bg2)',
+                        transition: 'all 0.12s',
+                      }}
+                    >
+                      <div style={{
+                        width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                        background: present ? 'var(--green)' : 'var(--bg4)',
+                        color: present ? '#fff' : 'var(--text3)',
+                        fontWeight: 700, fontSize: 13,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {present ? '✓' : '✗'}
+                      </div>
+                      <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>{name}</div>
+                      <div style={{ font: '600 11px var(--mono)', color: present ? 'var(--green)' : 'var(--text3)' }}>
+                        {present ? 'Present' : 'Absent'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Mark Attendance'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ChangeInstructorModal ─────────────────────────────────────────────────────
+
+function ChangeInstructorModal({ batch, onClose, onSaved }) {
+  const [eligibleCIs,  setEligibleCIs]  = useState([])
+  const [instructorId, setInstructorId] = useState('')
+  const [loading,      setLoading]      = useState(true)
+  const [saving,       setSaving]       = useState(false)
+
+  useEffect(function () {
+    sb.from('instructor_courses')
+      .select('instructor_id, instructors(id, full_name, status)')
+      .eq('sku_id', batch.sku_id)
+      .eq('status', 'active')
+      .then(function (res) {
+        var seen = {}
+        var cis = (res.data || [])
+          .map(function (r) { return r.instructors })
+          .filter(function (i) { return i && i.status === 'active' })
+          .filter(function (i) { if (seen[i.id]) return false; seen[i.id] = true; return true })
+        setEligibleCIs(cis)
+        setLoading(false)
+      })
+  }, [])
+
+  async function save() {
+    if (!instructorId) { showToast('Select an instructor', 'warn'); return }
+    if (instructorId === batch.instructor_id) { showToast('That is already the current instructor', 'warn'); return }
+    setSaving(true)
+    var { error } = await sb.from('batches').update({ instructor_id: instructorId }).eq('id', batch.id)
+    setSaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    showToast('Instructor updated ✓')
+    onSaved()
+  }
+
+  var currentName = batch.instructors?.full_name || '—'
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 400 }}>
+        <div className="ch">
+          <span style={{ fontWeight: 700 }}>Change Instructor — {batch.name}</span>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
+            Current instructor: <strong>{currentName}</strong>
+          </div>
+          {loading ? (
+            <div className="hint">Loading eligible CIs…</div>
+          ) : eligibleCIs.length === 0 ? (
+            <div className="hint" style={{ color: 'var(--red)' }}>
+              No other active CIs are appointed for this level yet.
+            </div>
+          ) : (
+            <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
+              New Instructor *
+              <select value={instructorId} onChange={function (e) { setInstructorId(e.target.value) }}
+                style={{ marginTop: 4, fontSize: 13 }}>
+                <option value="">— Select CI —</option>
+                {eligibleCIs
+                  .filter(function (ci) { return ci.id !== batch.instructor_id })
+                  .map(function (ci) { return <option key={ci.id} value={ci.id}>{ci.full_name}</option> })}
+              </select>
+            </label>
+          )}
+          <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', background: 'var(--sun-bg)', borderRadius: 6, padding: '8px 12px' }}>
+            ⚠️ This permanently reassigns the batch. Past session records keep their original instructor.
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving || !instructorId || loading}>
+            {saving ? 'Saving…' : 'Reassign Batch'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function avatar(name) {
   return (name || '?').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
@@ -248,8 +571,10 @@ export default function BatchesPage() {
   const [filterStatus,  setFilterStatus]  = useState('active')
 
   // Modals
-  const [showAddBatch,  setShowAddBatch]  = useState(null) // { instructorId, skuId, skuLabel }
-  const [rosterModal,   setRosterModal]   = useState(null) // batch object
+  const [showAddBatch,       setShowAddBatch]       = useState(null) // { instructorId, skuId, skuLabel }
+  const [rosterModal,        setRosterModal]        = useState(null) // batch object
+  const [attendanceModal,    setAttendanceModal]    = useState(null) // batch object
+  const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
 
   // ── load ──────────────────────────────────────────────────────────────────
 
@@ -444,8 +769,9 @@ export default function BatchesPage() {
                     </div>
 
                     {/* Right controls */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {/* Sessions counter */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+
+                      {/* Sessions counter — undo button + label only; + replaced by Take Attendance */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <button
                           onClick={function () { adjustSessions(batch, -1) }}
@@ -463,17 +789,17 @@ export default function BatchesPage() {
                         }}>
                           {sessLabel} sessions
                         </div>
-                        <button
-                          onClick={function () { adjustSessions(batch, 1) }}
-                          title="Mark session done"
-                          style={{
-                            width: 24, height: 24, borderRadius: 5, border: '1px solid var(--border)',
-                            background: 'var(--bg2)', cursor: 'pointer',
-                            fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>+</button>
                       </div>
 
-                      {/* Students pill */}
+                      {/* Take Attendance */}
+                      {batch.is_active && (
+                        <button className="btn-p" style={{ fontSize: 11, padding: '4px 12px' }}
+                          onClick={function () { setAttendanceModal(batch) }}>
+                          📋 Attendance
+                        </button>
+                      )}
+
+                      {/* Students roster */}
                       <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
                         onClick={function () {
                           setRosterModal({
@@ -482,8 +808,17 @@ export default function BatchesPage() {
                             level_name:      levelName,
                           })
                         }}>
-                        👥 {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''}
+                        👥 {activeStudents.length}
                       </button>
+
+                      {/* Change instructor */}
+                      {batch.is_active && (
+                        <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
+                          title="Change instructor"
+                          onClick={function () { setChangeInstrModal(batch) }}>
+                          👤 CI
+                        </button>
+                      )}
 
                       {/* Toggle active */}
                       <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
@@ -528,6 +863,24 @@ export default function BatchesPage() {
           nlhCentreId={nlhCentreId}
           onClose={function () { setRosterModal(null) }}
           onChange={function () { load() }}
+        />
+      )}
+
+      {/* ── Attendance modal ── */}
+      {attendanceModal && (
+        <AttendanceModal
+          batch={attendanceModal}
+          onClose={function () { setAttendanceModal(null) }}
+          onSaved={function () { setAttendanceModal(null); load() }}
+        />
+      )}
+
+      {/* ── Change instructor modal ── */}
+      {changeInstrModal && (
+        <ChangeInstructorModal
+          batch={changeInstrModal}
+          onClose={function () { setChangeInstrModal(null) }}
+          onSaved={function () { setChangeInstrModal(null); load() }}
         />
       )}
     </div>
