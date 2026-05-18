@@ -341,7 +341,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 640 }}>
+      <div className="modal" style={{ width: 700, maxWidth: '96vw' }}>
 
         {/* header */}
         <div className="ch">
@@ -365,10 +365,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         </div>
 
         {/* tabs */}
-        <div className="tab-row">
+        <div className="tabs">
           {[['profile','👤 Profile'],['caution','🔒 Caution'],['courses','📚 Courses'],['batches','📦 Batches']].map(function ([id, label]) {
             return (
-              <button key={id} className={'tab ' + (tab === id ? 'on' : '')} onClick={function () { loadTab(id) }}>
+              <button key={id} className={'tab ' + (tab === id ? 'active' : '')} onClick={function () { loadTab(id) }}>
                 {label}
               </button>
             )
