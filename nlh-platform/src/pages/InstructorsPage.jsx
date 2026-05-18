@@ -34,7 +34,18 @@ const REMUN_SUFFIX = {
 
 // ── InstructorDetailModal ──────────────────────────────────────────────────────
 
-function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
+// Group flat SKU list into [{courseName, skus:[]}] for optgroup dropdowns
+function groupSkus(allSkus) {
+  const map = {}
+  allSkus.forEach(function (s) {
+    const g = s.courses?.group_name || 'Other'
+    if (!map[g]) map[g] = []
+    map[g].push(s)
+  })
+  return Object.entries(map).map(function ([name, skus]) { return { name, skus } })
+}
+
+function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
   const [tab, setTab]           = useState('profile')
   const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false })
   const [saving, setSaving]     = useState(false)
@@ -70,7 +81,7 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
   const [appointments, setAppointments]   = useState([])
   const [showAddCourse, setShowAddCourse] = useState(false)
   const [newAppt, setNewAppt] = useState({
-    course_id: '', trained_by_nlh: false, training_fee: '', training_date: '',
+    sku_id: '', trained_by_nlh: false, training_fee: '', training_date: '',
     remuneration_mode: 'per_session', remuneration_rate: '',
     appointed_at: new Date().toISOString().split('T')[0], notes: '',
   })
@@ -85,7 +96,7 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
     setTabLoaded(tl => ({ ...tl, [t]: true }))
     if (t === 'courses') {
       const { data } = await sb.from('instructor_courses')
-        .select('*, courses(id,group_name)')
+        .select('*, skus(id,level_name,total_sessions,courses(group_name))')
         .eq('instructor_id', instructor.id)
         .order('appointed_at', { ascending: false })
       setAppointments(data || [])
@@ -141,12 +152,12 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
 
   // ── Add course appointment ──
   async function addAppointment() {
-    if (!newAppt.course_id)        { showToast('Select a course', 'warn');           return }
+    if (!newAppt.sku_id)           { showToast('Select a course level', 'warn');     return }
     if (!newAppt.remuneration_rate){ showToast('Enter remuneration rate', 'warn');   return }
     setSaving(true)
     const { data, error } = await sb.from('instructor_courses').insert({
       instructor_id:      instructor.id,
-      course_id:          newAppt.course_id,
+      sku_id:             newAppt.sku_id,
       trained_by_nlh:     newAppt.trained_by_nlh,
       training_fee:       newAppt.trained_by_nlh && newAppt.training_fee
                             ? Number(newAppt.training_fee) : null,
@@ -156,17 +167,17 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
       remuneration_rate:  Number(newAppt.remuneration_rate),
       appointed_at:       newAppt.appointed_at,
       notes:              newAppt.notes.trim() || null,
-    }).select('*, courses(id,group_name)').single()
+    }).select('*, skus(id,level_name,total_sessions,courses(group_name))').single()
     setSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     setAppointments(a => [data, ...a])
     setShowAddCourse(false)
     setNewAppt({
-      course_id: '', trained_by_nlh: false, training_fee: '', training_date: '',
+      sku_id: '', trained_by_nlh: false, training_fee: '', training_date: '',
       remuneration_mode: 'per_session', remuneration_rate: '',
       appointed_at: new Date().toISOString().split('T')[0], notes: '',
     })
-    showToast('Course appointment added')
+    showToast('Course level appointment added')
   }
 
   // ── Toggle appointment active/inactive ──
@@ -180,8 +191,9 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
     showToast(newStatus === 'active' ? 'Reactivated' : 'Deactivated')
   }
 
-  const appointedIds    = appointments.filter(a => a.status === 'active').map(a => a.course_id)
-  const availableCourses = allCourses.filter(c => !appointedIds.includes(c.id))
+  const appointedSkuIds  = appointments.filter(a => a.status === 'active').map(a => a.sku_id)
+  const availableSkus    = allSkus.filter(s => !appointedSkuIds.includes(s.id))
+  const skuGroups        = groupSkus(availableSkus)
   const showSettlement   = ['refunded', 'partial', 'forfeited'].includes(caution.caution_status)
 
   return (
@@ -363,7 +375,15 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>
-                          {appt.courses?.group_name || '—'}
+                          {appt.skus?.courses?.group_name || '—'}
+                          <span style={{ fontWeight: 400, color: 'var(--text2)' }}>
+                            {appt.skus?.level_name ? ` — ${appt.skus.level_name}` : ''}
+                          </span>
+                          {appt.skus?.total_sessions && (
+                            <span style={{ font: '400 10px var(--mono)', color: 'var(--text3)', marginLeft: 6 }}>
+                              {appt.skus.total_sessions} sessions
+                            </span>
+                          )}
                           <span className={`badge ${appt.status === 'active' ? 'ba' : 'bd'}`}
                             style={{ marginLeft: 6, fontSize: 9 }}>
                             {appt.status}
@@ -407,11 +427,21 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
                     New Course Appointment
                   </div>
                   <div className="form-grid">
-                    <label className="col-span-2">Course *
-                      <select value={newAppt.course_id} onChange={nfd('course_id')}>
-                        <option value="">— Select course —</option>
-                        {availableCourses.map(function (c) {
-                          return <option key={c.id} value={c.id}>{c.group_name}</option>
+                    <label className="col-span-2">Course &amp; Level *
+                      <select value={newAppt.sku_id} onChange={nfd('sku_id')}>
+                        <option value="">— Select course &amp; level —</option>
+                        {skuGroups.map(function (g) {
+                          return (
+                            <optgroup key={g.name} label={g.name}>
+                              {g.skus.map(function (s) {
+                                return (
+                                  <option key={s.id} value={s.id}>
+                                    {s.level_name}{s.total_sessions ? ` (${s.total_sessions} sessions)` : ''}
+                                  </option>
+                                )
+                              })}
+                            </optgroup>
+                          )
                         })}
                       </select>
                     </label>
@@ -465,12 +495,12 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
               ) : (
                 <button className="btn-s" style={{ marginTop: 4 }}
                   onClick={function () { setShowAddCourse(true) }}
-                  disabled={availableCourses.length === 0}>
-                  + Appoint to Course
+                  disabled={availableSkus.length === 0}>
+                  + Appoint to Level
                 </button>
               )}
-              {availableCourses.length === 0 && appointments.filter(a => a.status === 'active').length > 0 && (
-                <p className="hint" style={{ marginTop: 6 }}>All courses are already appointed.</p>
+              {availableSkus.length === 0 && appointments.filter(a => a.status === 'active').length > 0 && (
+                <p className="hint" style={{ marginTop: 6 }}>All course levels are already appointed.</p>
               )}
             </div>
           </div>
@@ -484,11 +514,11 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
 // ── AddInstructorModal ─────────────────────────────────────────────────────────
 
 const BLANK_APPT = {
-  course_id: '', remuneration_mode: 'per_session', remuneration_rate: '',
+  sku_id: '', remuneration_mode: 'per_session', remuneration_rate: '',
   trained_by_nlh: false, training_fee: '', training_date: '',
 }
 
-function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
+function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
   const [form, setForm] = useState({
     full_name: '', phone: '', email: '',
     city: '', area: '', state: '', pincode: '', address: '',
@@ -509,11 +539,11 @@ function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
   function addRow()       { setApptRows(function (r) { return [...r, { ...BLANK_APPT }] }) }
   function removeRow(idx) { setApptRows(function (r) { return r.filter(function (_, i) { return i !== idx }) }) }
 
-  // Courses already chosen in other rows (to avoid duplicates)
-  function usedCourseIds(excludeIdx) {
+  // SKUs already chosen in other rows (to avoid duplicates)
+  function usedSkuIds(excludeIdx) {
     return apptRows
       .filter(function (_, i) { return i !== excludeIdx })
-      .map(function (r) { return r.course_id })
+      .map(function (r) { return r.sku_id })
       .filter(Boolean)
   }
 
@@ -521,10 +551,10 @@ function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
     if (!form.full_name.trim()) { showToast('Name is required', 'warn'); return }
 
     // Validate filled appointment rows
-    const validRows = apptRows.filter(function (r) { return r.course_id })
+    const validRows = apptRows.filter(function (r) { return r.sku_id })
     for (let i = 0; i < validRows.length; i++) {
       if (!validRows[i].remuneration_rate) {
-        showToast('Enter a rate for every appointed course', 'warn'); return
+        showToast('Enter a rate for every appointed course level', 'warn'); return
       }
     }
 
@@ -558,7 +588,7 @@ function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
         validRows.map(function (r) {
           return {
             instructor_id:     ins.id,
-            course_id:         r.course_id,
+            sku_id:            r.sku_id,
             remuneration_mode: r.remuneration_mode,
             remuneration_rate: Number(r.remuneration_rate),
             trained_by_nlh:    r.trained_by_nlh,
@@ -624,9 +654,9 @@ function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
             </div>
 
             {apptRows.map(function (row, idx) {
-              const available = allCourses.filter(function (c) {
-                return !usedCourseIds(idx).includes(c.id)
-              })
+              const available = groupSkus(allSkus.filter(function (s) {
+                return !usedSkuIds(idx).includes(s.id)
+              }))
               return (
                 <div key={idx} style={{
                   border: '1px solid var(--border)', borderRadius: 8,
@@ -647,12 +677,22 @@ function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
                   </div>
 
                   <div className="form-grid">
-                    <label className="col-span-2">Course
-                      <select value={row.course_id}
-                        onChange={function (e) { updateRow(idx, 'course_id', e.target.value) }}>
-                        <option value="">— Select course —</option>
-                        {available.map(function (c) {
-                          return <option key={c.id} value={c.id}>{c.group_name}</option>
+                    <label className="col-span-2">Course &amp; Level
+                      <select value={row.sku_id}
+                        onChange={function (e) { updateRow(idx, 'sku_id', e.target.value) }}>
+                        <option value="">— Select course &amp; level —</option>
+                        {available.map(function (g) {
+                          return (
+                            <optgroup key={g.name} label={g.name}>
+                              {g.skus.map(function (s) {
+                                return (
+                                  <option key={s.id} value={s.id}>
+                                    {s.level_name}{s.total_sessions ? ` (${s.total_sessions} sessions)` : ''}
+                                  </option>
+                                )
+                              })}
+                            </optgroup>
+                          )
                         })}
                       </select>
                     </label>
@@ -664,7 +704,7 @@ function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
                     </label>
-                    <label>Rate (₹){row.course_id ? ' *' : ''}
+                    <label>Rate (₹){row.sku_id ? ' *' : ''}
                       <input type="number" value={row.remuneration_rate}
                         onChange={function (e) { updateRow(idx, 'remuneration_rate', e.target.value) }}
                         placeholder={
@@ -700,12 +740,12 @@ function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
 
             <button className="btn-s" onClick={addRow}
               style={{ marginTop: 2 }}
-              disabled={apptRows.some(function (r) { return !r.course_id }) || allCourses.length === apptRows.length}>
-              + Add Another Course
+              disabled={apptRows.some(function (r) { return !r.sku_id }) || allSkus.length === apptRows.length}>
+              + Add Another Level
             </button>
-            {apptRows.some(function (r) { return !r.course_id }) && apptRows.length > 0 && (
+            {apptRows.some(function (r) { return !r.sku_id }) && apptRows.length > 0 && (
               <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 8 }}>
-                Select a course above first
+                Select a level above first
               </span>
             )}
           </div>
@@ -763,7 +803,7 @@ export default function InstructorsPage() {
   const admin = isAdminRole(currentRole)
 
   const [instructors,   setInstructors]   = useState([])
-  const [allCourses,    setAllCourses]     = useState([])
+  const [allSkus,       setAllSkus]       = useState([])
   const [nlhCentreId,   setNlhCentreId]   = useState(null)
   const [loading,       setLoading]        = useState(true)
   const [search,        setSearch]         = useState('')
@@ -782,15 +822,17 @@ export default function InstructorsPage() {
 
       // Instructors with their active course appointments
       const { data: ins, error } = await sb.from('instructors')
-        .select('*, instructor_courses(id,status,remuneration_mode,remuneration_rate,courses(group_name))')
+        .select('*, instructor_courses(id,status,remuneration_mode,remuneration_rate,skus(level_name,courses(group_name)))')
         .eq('franchisee_id', nlh.id)
         .order('full_name')
       if (error) showToast('Load failed: ' + error.message, 'err')
       setInstructors(ins || [])
 
-      // All courses for appointment modal
-      const { data: courses } = await sb.from('courses').select('id,group_name').order('group_name')
-      setAllCourses(courses || [])
+      // All SKUs for appointment dropdowns (sorted by curriculum order)
+      const { data: skus } = await sb.from('skus')
+        .select('id,level_name,total_sessions,course_id,courses(group_name)')
+        .order('sort_order')
+      setAllSkus(skus || [])
 
       setLoading(false)
     }
@@ -832,7 +874,7 @@ export default function InstructorsPage() {
     instructors.flatMap(function (i) {
       return (i.instructor_courses || [])
         .filter(function (c) { return c.status === 'active' })
-        .map(function (c) { return c.courses?.group_name })
+        .map(function (c) { return c.skus?.courses?.group_name })
     }).filter(Boolean)
   )].length
 
@@ -953,7 +995,7 @@ export default function InstructorsPage() {
                             return (
                               <span key={c.id} className="badge bp"
                                 style={{ marginRight: 4, marginBottom: 2, fontSize: 10 }}>
-                                {c.courses?.group_name || '—'}
+                                {c.skus?.courses?.group_name || '—'} — {c.skus?.level_name || '?'}
                               </span>
                             )
                           })
@@ -989,7 +1031,7 @@ export default function InstructorsPage() {
       {selected && (
         <InstructorDetailModal
           instructor={selected}
-          allCourses={allCourses}
+          allSkus={allSkus}
           onClose={function () { setSelected(null) }}
           onSaved={handleSaved}
         />
@@ -998,7 +1040,7 @@ export default function InstructorsPage() {
       {showAdd && nlhCentreId && (
         <AddInstructorModal
           nlhCentreId={nlhCentreId}
-          allCourses={allCourses}
+          allSkus={allSkus}
           onClose={function () { setShowAdd(false) }}
           onSaved={handleAdded}
         />
