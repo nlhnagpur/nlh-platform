@@ -483,7 +483,12 @@ function InstructorDetailModal({ instructor, allCourses, onClose, onSaved }) {
 
 // ── AddInstructorModal ─────────────────────────────────────────────────────────
 
-function AddInstructorModal({ nlhCentreId, onClose, onSaved }) {
+const BLANK_APPT = {
+  course_id: '', remuneration_mode: 'per_session', remuneration_rate: '',
+  trained_by_nlh: false, training_fee: '', training_date: '',
+}
+
+function AddInstructorModal({ nlhCentreId, allCourses, onClose, onSaved }) {
   const [form, setForm] = useState({
     full_name: '', phone: '', email: '',
     city: '', area: '', state: '', pincode: '', address: '',
@@ -491,46 +496,96 @@ function AddInstructorModal({ nlhCentreId, onClose, onSaved }) {
     caution_amount: '', caution_mode: '', caution_paid_at: '',
     notes: '',
   })
-  const [saving, setSaving] = useState(false)
+  const [apptRows, setApptRows] = useState([{ ...BLANK_APPT }])
+  const [saving,   setSaving]   = useState(false)
 
   function fld(k) { return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) } }
 
+  function updateRow(idx, key, val) {
+    setApptRows(function (rows) {
+      return rows.map(function (r, i) { return i === idx ? { ...r, [key]: val } : r })
+    })
+  }
+  function addRow()       { setApptRows(function (r) { return [...r, { ...BLANK_APPT }] }) }
+  function removeRow(idx) { setApptRows(function (r) { return r.filter(function (_, i) { return i !== idx }) }) }
+
+  // Courses already chosen in other rows (to avoid duplicates)
+  function usedCourseIds(excludeIdx) {
+    return apptRows
+      .filter(function (_, i) { return i !== excludeIdx })
+      .map(function (r) { return r.course_id })
+      .filter(Boolean)
+  }
+
   async function save() {
     if (!form.full_name.trim()) { showToast('Name is required', 'warn'); return }
+
+    // Validate filled appointment rows
+    const validRows = apptRows.filter(function (r) { return r.course_id })
+    for (let i = 0; i < validRows.length; i++) {
+      if (!validRows[i].remuneration_rate) {
+        showToast('Enter a rate for every appointed course', 'warn'); return
+      }
+    }
+
     setSaving(true)
-    const { data, error } = await sb.from('instructors').insert({
-      franchisee_id:  nlhCentreId,
-      full_name:      form.full_name.trim(),
-      phone:          form.phone.trim()    || null,
-      email:          form.email.trim()    || null,
-      address:        form.address.trim()  || null,
-      area:           form.area.trim()     || null,
-      city:           form.city.trim()     || null,
-      state:          form.state.trim()    || null,
-      pincode:        form.pincode.trim()  || null,
-      joined_at:      form.joined_at       || null,
-      caution_amount: form.caution_amount  ? Number(form.caution_amount) : 0,
-      caution_mode:   form.caution_mode    || null,
-      caution_paid_at:form.caution_paid_at || null,
-      caution_status: 'held',
-      notes:          form.notes.trim()    || null,
+
+    // 1 — Insert instructor
+    const { data: ins, error: insErr } = await sb.from('instructors').insert({
+      franchisee_id:   nlhCentreId,
+      full_name:       form.full_name.trim(),
+      phone:           form.phone.trim()    || null,
+      email:           form.email.trim()    || null,
+      address:         form.address.trim()  || null,
+      area:            form.area.trim()     || null,
+      city:            form.city.trim()     || null,
+      state:           form.state.trim()    || null,
+      pincode:         form.pincode.trim()  || null,
+      joined_at:       form.joined_at       || null,
+      caution_amount:  form.caution_amount  ? Number(form.caution_amount) : 0,
+      caution_mode:    form.caution_mode    || null,
+      caution_paid_at: form.caution_paid_at || null,
+      caution_status:  'held',
+      notes:           form.notes.trim()    || null,
     }).select().single()
+
+    if (insErr) { showToast('Failed: ' + insErr.message, 'err'); setSaving(false); return }
+
+    // 2 — Insert course appointments
+    if (validRows.length > 0) {
+      const apptDate = form.joined_at || new Date().toISOString().split('T')[0]
+      const { error: apptErr } = await sb.from('instructor_courses').insert(
+        validRows.map(function (r) {
+          return {
+            instructor_id:     ins.id,
+            course_id:         r.course_id,
+            remuneration_mode: r.remuneration_mode,
+            remuneration_rate: Number(r.remuneration_rate),
+            trained_by_nlh:    r.trained_by_nlh,
+            training_fee:      r.trained_by_nlh && r.training_fee  ? Number(r.training_fee)  : null,
+            training_date:     r.trained_by_nlh && r.training_date ? r.training_date          : null,
+            appointed_at:      apptDate,
+          }
+        })
+      )
+      if (apptErr) showToast('CI added but course appointments failed: ' + apptErr.message, 'warn')
+    }
+
     setSaving(false)
-    if (error) { showToast('Failed: ' + error.message, 'err'); return }
     showToast(form.full_name.trim() + ' added as CI')
-    onSaved(data)
+    onSaved(ins)
   }
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 580 }}>
+      <div className="modal" style={{ maxWidth: 600 }}>
         <div className="ch">
           <span>➕ Add Course Instructor (CI)</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
 
         <div>
-          {/* Personal info */}
+          {/* ── Personal info ── */}
           <div className="form-grid">
             <label className="col-span-2">Full Name *
               <input value={form.full_name} onChange={fld('full_name')}
@@ -559,8 +614,104 @@ function AddInstructorModal({ nlhCentreId, onClose, onSaved }) {
             </label>
           </div>
 
-          {/* Caution deposit */}
+          {/* ── Course Appointments ── */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '4px 20px 0', paddingTop: 12 }}>
+            <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 10 }}>
+              📚 Course Appointments
+              <span style={{ font: '400 11px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
+                (select all courses this CI will teach)
+              </span>
+            </div>
+
+            {apptRows.map(function (row, idx) {
+              const available = allCourses.filter(function (c) {
+                return !usedCourseIds(idx).includes(c.id)
+              })
+              return (
+                <div key={idx} style={{
+                  border: '1px solid var(--border)', borderRadius: 8,
+                  padding: '10px 12px', marginBottom: 8, background: 'var(--bg2)',
+                }}>
+                  {/* row header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' }}>
+                      Course {idx + 1}
+                    </span>
+                    {apptRows.length > 1 && (
+                      <button onClick={function () { removeRow(idx) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer',
+                          color: 'var(--red)', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="form-grid">
+                    <label className="col-span-2">Course
+                      <select value={row.course_id}
+                        onChange={function (e) { updateRow(idx, 'course_id', e.target.value) }}>
+                        <option value="">— Select course —</option>
+                        {available.map(function (c) {
+                          return <option key={c.id} value={c.id}>{c.group_name}</option>
+                        })}
+                      </select>
+                    </label>
+                    <label>Remuneration Mode
+                      <select value={row.remuneration_mode}
+                        onChange={function (e) { updateRow(idx, 'remuneration_mode', e.target.value) }}>
+                        <option value="per_session">Per Session (₹ / hour)</option>
+                        <option value="per_student">Per Student (₹ on completion)</option>
+                        <option value="monthly">Monthly Fixed (₹ / month)</option>
+                      </select>
+                    </label>
+                    <label>Rate (₹){row.course_id ? ' *' : ''}
+                      <input type="number" value={row.remuneration_rate}
+                        onChange={function (e) { updateRow(idx, 'remuneration_rate', e.target.value) }}
+                        placeholder={
+                          row.remuneration_mode === 'per_session' ? 'e.g. 150' :
+                          row.remuneration_mode === 'monthly'     ? 'e.g. 5000' : 'e.g. 500'
+                        } />
+                    </label>
+
+                    {/* NLH Training */}
+                    <label className="col-span-2"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+                      <input type="checkbox" checked={row.trained_by_nlh}
+                        onChange={function (e) { updateRow(idx, 'trained_by_nlh', e.target.checked) }} />
+                      <span style={{ fontSize: 12 }}>Trained by NLH for this course</span>
+                    </label>
+                    {row.trained_by_nlh && (
+                      <>
+                        <label>Training Fee Paid (₹)
+                          <input type="number" value={row.training_fee}
+                            onChange={function (e) { updateRow(idx, 'training_fee', e.target.value) }}
+                            placeholder="0 if waived" />
+                        </label>
+                        <label>Training Date
+                          <input type="date" value={row.training_date}
+                            onChange={function (e) { updateRow(idx, 'training_date', e.target.value) }} />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+
+            <button className="btn-s" onClick={addRow}
+              style={{ marginTop: 2 }}
+              disabled={apptRows.some(function (r) { return !r.course_id }) || allCourses.length === apptRows.length}>
+              + Add Another Course
+            </button>
+            {apptRows.some(function (r) { return !r.course_id }) && apptRows.length > 0 && (
+              <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 8 }}>
+                Select a course above first
+              </span>
+            )}
+          </div>
+
+          {/* ── Caution Deposit ── */}
+          <div style={{ borderTop: '1px solid var(--border)', margin: '12px 20px 0', paddingTop: 12 }}>
             <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
               🔒 Caution Deposit
             </div>
@@ -585,8 +736,8 @@ function AddInstructorModal({ nlhCentreId, onClose, onSaved }) {
             </div>
           </div>
 
-          {/* Notes */}
-          <div style={{ padding: '0 20px', marginTop: 4 }}>
+          {/* ── Notes ── */}
+          <div style={{ padding: '8px 20px 0' }}>
             <label>Notes
               <textarea value={form.notes} onChange={fld('notes')} rows={2}
                 placeholder="Any internal notes…" style={{ resize: 'vertical', width: '100%' }} />
@@ -847,6 +998,7 @@ export default function InstructorsPage() {
       {showAdd && nlhCentreId && (
         <AddInstructorModal
           nlhCentreId={nlhCentreId}
+          allCourses={allCourses}
           onClose={function () { setShowAdd(false) }}
           onSaved={handleAdded}
         />
