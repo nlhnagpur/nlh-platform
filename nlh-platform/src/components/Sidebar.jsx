@@ -8,6 +8,7 @@ const NAV_ICONS = {
   orders:          '📦',
   students:        '🎓',
   instructors:     '👩‍🏫',
+  batches:         '🗓️',
   invoices:        '🧾',
   courses:         '📚',
   prices:          '🏷️',
@@ -34,7 +35,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
 
   // Group nav items
   const ops         = navItems.filter(function(item) {
-    return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'invoices'].includes(item.id)
+    return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'batches', 'invoices'].includes(item.id)
   })
   const settingsAll = navItems.filter(function(item) {
     return SETTINGS_IDS.includes(item.id)
@@ -42,7 +43,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
 
   // Fallback: items not in any known section
   const other = navItems.filter(function(item) {
-    return !['dashboard','franchisees','orders','students','instructors','invoices',...SETTINGS_IDS].includes(item.id)
+    return !['dashboard','franchisees','orders','students','instructors','batches','invoices',...SETTINGS_IDS].includes(item.id)
   })
 
   // Auto-expand settings when current page lives there

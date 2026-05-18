@@ -10,6 +10,7 @@ const adminNav = [
   { id: 'orders',        l: 'Orders',            c: '#8A5200' },
   { id: 'students',      l: 'Students',          c: '#1A5FA8' },
   { id: 'instructors',   l: 'Instructors',       c: '#6D28D9' },
+  { id: 'batches',       l: 'Batches',           c: '#0F766E' },
   { id: 'courses',       l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'prices',        l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history', l: 'Price change log',  c: '#9C9A92' },
@@ -23,6 +24,7 @@ const managerNav = [
   { id: 'orders',      l: 'Orders',           c: '#8A5200' },
   { id: 'students',    l: 'Students',         c: '#1A5FA8' },
   { id: 'instructors', l: 'Instructors',      c: '#6D28D9' },
+  { id: 'batches',     l: 'Batches',          c: '#0F766E' },
   { id: 'courses',     l: 'Courses & SKUs',   c: '#534AB7' },
   { id: 'prices',      l: 'Kit prices',       c: '#1D7A4F' },
 ]
