@@ -373,6 +373,197 @@ export async function sendWelcomeEmail(email, name, role, password) {
   return sendBrevoEmail(email, name, subject, html)
 }
 
+// ── Franchisee Welcome Letter ─────────────────────────────────────────────────
+//
+// sendFranchiseeWelcomeLetter(franchisee, courseNames)
+//   franchisee  — DB row (owner_name, business_name, tier, city, area, state, country, created_at, email)
+//   courseNames — string[] of course group_names already registered (empty = "To be announced")
+
+export async function sendFranchiseeWelcomeLetter(franchisee, courseNames) {
+  const ownerName   = franchisee.owner_name || franchisee.business_name || 'Partner'
+  const firstName   = ownerName.split(' ')[0]
+  const centreName  = franchisee.business_name && franchisee.business_name !== ownerName
+    ? franchisee.business_name
+    : null
+
+  // ── Tier labels & territory ──
+  const TIER = {
+    SMF: { label: 'State Master Franchisee', short: 'SMF' },
+    CF:  { label: 'City Franchisee',          short: 'CF'  },
+    UF:  { label: 'Unit Franchisee',           short: 'UF'  },
+  }
+  const tierInfo  = TIER[franchisee.tier] || { label: franchisee.tier, short: franchisee.tier }
+  const territory = franchisee.tier === 'SMF'
+    ? (franchisee.state || franchisee.country || '—')
+    : franchisee.tier === 'CF'
+      ? (franchisee.city || '—')
+      : [franchisee.area, franchisee.city].filter(Boolean).join(', ') || '—'
+
+  // ── Date of appointment ──
+  const apptDate = (function () {
+    const d = new Date(franchisee.created_at || Date.now())
+    return [
+      String(d.getDate()).padStart(2, '0'),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      d.getFullYear(),
+    ].join('-')
+  })()
+
+  // ── Courses ──
+  const coursesText = courseNames && courseNames.length > 0
+    ? courseNames.join(', ')
+    : (franchisee.tier === 'SMF' || franchisee.tier === 'CF')
+      ? 'All NLH Programs'
+      : 'To be assigned'
+
+  // ── Tier-specific opening line ──
+  const tierOpenings = {
+    SMF: 'You are now the <strong>State Master Franchisee</strong> for <strong>' + (franchisee.state || franchisee.country) + '</strong> — responsible for growing the NLH family across your entire state.',
+    CF:  'You are now the <strong>City Franchisee</strong> for <strong>' + (franchisee.city || territory) + '</strong> — a key pillar in expanding NLH&rsquo;s reach in your city.',
+    UF:  'You are now an authorised <strong>Unit Franchisee</strong>' + (franchisee.city ? ' in <strong>' + franchisee.city + '</strong>' : '') + ' — at the heart of our mission to enrich children&rsquo;s lives every day.',
+  }
+  const tierOpening = tierOpenings[franchisee.tier] || tierOpenings.UF
+
+  const subject = 'Welcome to the New Learning Horizons Family, ' + firstName + '!'
+  const sigUrl  = 'https://nlh-platform.vercel.app/DRP%20Signature.png'
+  const logoUrl = 'https://nlh-platform.vercel.app/NLH%20Logo.png'
+
+  const html =
+    '<div style="margin:0;padding:0;background:#F4F2EC;font-family:Georgia,\'Times New Roman\',serif">' +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="background:#F4F2EC;padding:32px 0">' +
+    '<tr><td align="center">' +
+    '<table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#FFFFFF;border:1px solid #D6D0C4;border-radius:4px">' +
+
+    // ── Letterhead ────────────────────────────────────────────────────────────
+    '<tr><td style="padding:20px 32px 16px;border-bottom:2px solid #CC0000">' +
+    '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
+
+    // Logo left
+    '<td style="vertical-align:middle;width:140px">' +
+    '<img src="' + logoUrl + '" alt="NLH" style="height:64px;width:auto;display:block" />' +
+    '</td>' +
+
+    // Address right
+    '<td style="text-align:right;vertical-align:top;font-family:Arial,sans-serif">' +
+    '<div style="font-size:13px;font-weight:700;color:#CC0000">Dhiral Panchmatia</div>' +
+    '<div style="font-size:10px;color:#555;line-height:1.7">' +
+    '9, Anjuman Shopping Complex<br>Residency Road, Sadar, Nagpur &ndash; 440 001<br>' +
+    'Mob.: +91 9373111311<br>' +
+    'Email: <a href="mailto:nlhnagpur@yahoo.in" style="color:#CC0000;text-decoration:none">nlhnagpur@yahoo.in</a><br>' +
+    'Website: <a href="https://www.nlhnagpur.info" style="color:#CC0000;text-decoration:none">www.nlhnagpur.info</a>' +
+    '</div>' +
+    '</td>' +
+
+    '</tr></table>' +
+    '</td></tr>' +
+
+    // ── Addressee block ───────────────────────────────────────────────────────
+    '<tr><td style="padding:28px 40px 0;font-family:Arial,sans-serif;font-size:13px;color:#1A1916;line-height:1.8">' +
+    '<div>To,</div>' +
+    '<div style="font-weight:700">' + ownerName + (centreName ? '<br>' + centreName : '') + '</div>' +
+    '<div>New Learning Horizons — <em>' + tierInfo.label + '</em></div>' +
+    '<div style="color:#555">' + territory + '</div>' +
+    '</td></tr>' +
+
+    // ── Subject ───────────────────────────────────────────────────────────────
+    '<tr><td style="padding:20px 40px 0;font-family:Arial,sans-serif">' +
+    '<div style="font-size:13px;font-weight:700;color:#1A1916;text-align:center">' +
+    'Subject: <u>Welcome to the New Learning Horizons Family!</u>' +
+    '</div>' +
+    '</td></tr>' +
+
+    // ── Letter body ───────────────────────────────────────────────────────────
+    '<tr><td style="padding:20px 40px 0;font-family:Arial,sans-serif;font-size:13px;color:#1A1916;line-height:1.9">' +
+
+    '<p style="margin:0 0 14px 0">Dear ' + firstName + ',</p>' +
+
+    '<p style="margin:0 0 14px 0">' +
+    'It is with great joy and pride that we welcome you to the <strong>New Learning Horizons</strong> family! ' +
+    tierOpening +
+    '</p>' +
+
+    '<p style="margin:0 0 14px 0">' +
+    'You are now part of a growing educational movement that is transforming the way children learn, grow, and discover ' +
+    'their true potential. With your new centre, we are expanding our mission to reach more young minds and create ' +
+    'lifelong learners across India and beyond.' +
+    '</p>' +
+
+    '<p style="margin:0 0 14px 0">' +
+    'At New Learning Horizons, we believe in nurturing creativity, confidence, and curiosity. With over 15 innovative ' +
+    'programs — Abacus, Vedic Maths, Montessori, Handwriting, Rubik\'s Cube, Reading, Phonics, Personality ' +
+    'Development, Chess, Art &amp; Craft and more — your centre will play a key role in shaping a brighter future.' +
+    '</p>' +
+
+    '<p style="margin:0 0 6px 0">' +
+    'We are committed to ensuring your smooth transition and long-term success. To support you in this journey, you will be provided with:' +
+    '</p>' +
+    '<table cellpadding="0" cellspacing="0" style="margin:0 0 14px 20px;font-size:13px;color:#1A1916">' +
+    '<tr><td style="padding:2px 0">&ndash;&nbsp; A detailed orientation and training program</td></tr>' +
+    '<tr><td style="padding:2px 0">&ndash;&nbsp; Branding and marketing support</td></tr>' +
+    '<tr><td style="padding:2px 0">&ndash;&nbsp; Curriculum access and teacher manuals</td></tr>' +
+    '<tr><td style="padding:2px 0">&ndash;&nbsp; Ongoing mentorship and operational guidance</td></tr>' +
+    '</table>' +
+
+    '</td></tr>' +
+
+    // ── Credentials box ───────────────────────────────────────────────────────
+    '<tr><td style="padding:0 40px">' +
+    '<table width="100%" cellpadding="0" cellspacing="0" style="border:1.5px solid #D6D0C4;border-radius:4px;background:#FAF9F6;margin:14px 0">' +
+    '<tr><td style="padding:12px 20px 4px">' +
+    '<div style="font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#888;margin-bottom:10px">Your Franchise Credentials</div>' +
+    '<table cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;font-size:13px;color:#1A1916;width:100%">' +
+
+    '<tr><td style="padding:4px 0;color:#555;width:44%">Franchise Type</td>' +
+    '<td style="padding:4px 0;font-weight:700">: ' + tierInfo.label + '</td></tr>' +
+
+    '<tr><td style="padding:4px 0;color:#555">Authorised Territory</td>' +
+    '<td style="padding:4px 0;font-weight:700">: ' + territory + '</td></tr>' +
+
+    '<tr><td style="padding:4px 0;color:#555">Date of Appointment</td>' +
+    '<td style="padding:4px 0;font-weight:700">: ' + apptDate + '</td></tr>' +
+
+    '<tr><td style="padding:4px 0 10px;color:#555;vertical-align:top">Courses Selected</td>' +
+    '<td style="padding:4px 0 10px;font-weight:700">: ' + coursesText + '</td></tr>' +
+
+    '</table>' +
+    '</td></tr></table>' +
+    '</td></tr>' +
+
+    // ── Closing ───────────────────────────────────────────────────────────────
+    '<tr><td style="padding:10px 40px 0;font-family:Arial,sans-serif;font-size:13px;color:#1A1916;line-height:1.9">' +
+    '<p style="margin:0 0 14px 0">' +
+    'Let\'s work together to make your centre a warm, enriching space where children not only learn but thrive.' +
+    '</p>' +
+    '<p style="margin:0 0 20px 0">Once again, welcome aboard — we are thrilled to have you with us!</p>' +
+    '<p style="margin:0 0 4px 0">Warm regards,</p>' +
+    '</td></tr>' +
+
+    // ── Signature ─────────────────────────────────────────────────────────────
+    '<tr><td style="padding:0 40px 4px">' +
+    '<img src="' + sigUrl + '" alt="Signature" style="height:52px;width:auto;display:block;opacity:0.85" />' +
+    '</td></tr>' +
+
+    '<tr><td style="padding:0 40px 28px;font-family:Arial,sans-serif;font-size:13px;color:#1A1916;line-height:1.7">' +
+    '<div style="font-weight:700">Dhiral Panchmatia</div>' +
+    '<div>Founder &amp; Director</div>' +
+    '<div style="color:#CC0000;font-weight:600">New Learning Horizons</div>' +
+    '</td></tr>' +
+
+    // ── Red divider ───────────────────────────────────────────────────────────
+    '<tr><td style="background:#CC0000;height:3px"></td></tr>' +
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    '<tr><td style="padding:14px 32px;text-align:center;font-family:Arial,sans-serif;font-size:10px;color:#888;line-height:1.7;border-top:1px solid #E8E4DA">' +
+    '<div style="font-weight:700;color:#555;margin-bottom:4px">New Learning Horizons &nbsp;|&nbsp; ISO 9001:2015 Certified &nbsp;|&nbsp; Enriching Children\'s Future since 2008</div>' +
+    '9, Anjuman Shopping Complex, Residency Road, Sadar, Nagpur &ndash; 440 001 &nbsp;&nbsp; Ph: 9373111311 &nbsp;&nbsp; admin@nlhnagpur.info' +
+    '</td></tr>' +
+
+    '</table>' +
+    '</td></tr></table></div>'
+
+  return sendBrevoEmail(franchisee.email, ownerName, subject, html)
+}
+
 // ── Franchisee Certificate ─────────────────────────────────────────────────────
 
 export async function sendFranchiseeCertEmail(franchisee, courseNames) {

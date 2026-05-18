@@ -4,9 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast, statusBadge } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds } from '../utils/hierarchy'
-import { sendWelcomeEmail } from '../services/email'
+import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
-import { sendFranchiseeCertEmail } from '../services/email'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -155,12 +154,27 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         redirectTo: 'https://nlh-platform.vercel.app',
       })
       if (error) throw error
-      // Also send a branded notification so they know why they got the link
+
       const displayName = franchisee.owner_name || franchisee.business_name || 'Partner'
       const tierMap = { SMF: 'State Master Franchisee', CF: 'City Franchisee', UF: 'Unit Franchisee' }
       const roleLabel = tierMap[franchisee.tier] || franchisee.tier
-      await sendWelcomeEmail(franchisee.email, displayName, roleLabel.toLowerCase().replace(/ /g,'_'), '(see reset link in separate email)')
-      showToast('Password reset link sent to ' + franchisee.email)
+
+      // 1. Platform access email (password reset notice)
+      await sendWelcomeEmail(
+        franchisee.email, displayName,
+        roleLabel.toLowerCase().replace(/ /g, '_'),
+        '(see reset link in separate email)'
+      )
+
+      // 2. Dhiral's welcome letter with franchisee's registered courses
+      const courseNames = (franchisee.registered_courses || [])
+        .map(function (id) { return (allCourses || []).find(function (c) { return c.id === id }) })
+        .filter(Boolean)
+        .map(function (c) { return c.group_name || c.name })
+        .filter(function (n, i, a) { return a.indexOf(n) === i }) // dedupe
+      await sendFranchiseeWelcomeLetter(franchisee, courseNames)
+
+      showToast('Welcome letter + password reset link sent to ' + franchisee.email)
     } catch (err) {
       showToast('Failed to send: ' + err.message, 'err')
     } finally {
@@ -700,8 +714,26 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         franchisee_id: fr.id,
       }, { onConflict: 'email' })
 
-      // Send welcome email
+      // 1. Platform access email (credentials + login)
       await sendWelcomeEmail(form.email.trim(), form.owner_name.trim() || form.name.trim(), form.tier, tempPass)
+
+      // 2. Dhiral's personalised welcome letter
+      const courseNames = (form.tier === 'SMF' || form.tier === 'CF')
+        ? allCourses.map(function (c) { return c.group_name || c.name }).filter(function (n, i, a) { return a.indexOf(n) === i })
+        : [] // UF starts with no courses; letter will show "To be assigned"
+      await sendFranchiseeWelcomeLetter(
+        {
+          ...fr,
+          owner_name: form.owner_name.trim(),
+          business_name: form.name.trim() || form.owner_name.trim(),
+          tier: form.tier,
+          city: form.city.trim(),
+          area: form.area.trim(),
+          state: form.state.trim(),
+          country: form.country.trim(),
+        },
+        courseNames
+      )
 
       showToast(`Franchisee created. Temp password: ${tempPass}`)
       onSaved(fr)
