@@ -7,6 +7,7 @@ const NAV_ICONS = {
   franchisees:     '🏢',
   orders:          '📦',
   students:        '🎓',
+  instructors:     '👩‍🏫',
   invoices:        '🧾',
   courses:         '📚',
   prices:          '🏷️',
@@ -31,7 +32,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
 
   // Group nav items into sections
   const ops = navItems.filter(function(item) {
-    return ['dashboard', 'franchisees', 'orders', 'students', 'invoices'].includes(item.id)
+    return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'invoices'].includes(item.id)
   })
   const catalog = navItems.filter(function(item) {
     return ['prices', 'courses', 'price-history'].includes(item.id)

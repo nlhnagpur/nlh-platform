@@ -9,6 +9,7 @@ import CoursesPage from '../pages/CoursesPage'
 import PriceHistoryPage from '../pages/PriceHistoryPage'
 import UsersPage from '../pages/UsersPage'
 import AccessRequestsPage from '../pages/AccessRequestsPage'
+import InstructorsPage from '../pages/InstructorsPage'
 
 const PAGE_MAP = {
   dashboard:       DashboardPage,
@@ -20,6 +21,7 @@ const PAGE_MAP = {
   'price-history': PriceHistoryPage,
   users:           UsersPage,
   requests:        AccessRequestsPage,
+  instructors:     InstructorsPage,
 }
 
 export default function AppShell() {
