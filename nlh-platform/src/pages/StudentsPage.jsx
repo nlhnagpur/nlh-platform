@@ -19,11 +19,15 @@ function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
 
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
 function StudentDetailModal({ student, onClose, onSaved }) {
   const { currentRole } = useAuth()
   const admin = isAdminRole(currentRole)
+
+  const [tab, setTab] = useState('profile')
 
   const [form, setForm] = useState({
     full_name: student.full_name || '',
@@ -42,35 +46,45 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
   })
-  const [certModal, setCertModal] = useState(null)   // { enrollment, centre } | null
+  const [certModal,   setCertModal]   = useState(null)
   const [centreCache, setCentreCache] = useState(null)
-  const [saving, setSaving] = useState(false)
+  const [saving,      setSaving]      = useState(false)
+
+  // ── Courses / Batch state ──
+  const [nlhCentreId,     setNlhCentreId]     = useState(null)
+  const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
+  const [coursesLoaded,   setCoursesLoaded]   = useState(false)
+  const [batchPanelEnrId, setBatchPanelEnrId] = useState(null)  // enrollment.id whose panel is open
+  const [panelData,       setPanelData]       = useState({ batches: [], eligibleCIs: [], loading: false })
+  const [showNewBatch,    setShowNewBatch]    = useState(false)
+  const [newBatchCI,      setNewBatchCI]      = useState('')
+  const [newBatchForm,    setNewBatchForm]    = useState({ name: '', days: [], time: '', is_individual: false })
+  const [panelSaving,     setPanelSaving]     = useState(false)
 
   function field(k) {
-    return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) }
+    return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
   }
 
-  const balance = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
-
+  const balance     = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
   const enrollments = student.enrollments || []
 
   async function save() {
     setSaving(true)
     const payload = {
-      full_name: form.full_name.trim(),
-      parent_name: form.parent_name.trim(),
-      dob: form.dob || null,
-      phone: form.phone.trim(),
-      email: form.email.trim() || null,
-      pincode: form.pincode.trim() || null,
-      country: form.country.trim(),
-      state: form.state.trim(),
-      city: form.city.trim(),
-      area: form.area.trim(),
-      address: form.address.trim(),
-      channel: form.channel || 'walk-in',
-      fee_total: form.fee_total === '' ? null : Number(form.fee_total),
-      fee_paid: form.fee_paid === '' ? null : Number(form.fee_paid),
+      full_name:      form.full_name.trim(),
+      parent_name:    form.parent_name.trim(),
+      dob:            form.dob || null,
+      phone:          form.phone.trim(),
+      email:          form.email.trim() || null,
+      pincode:        form.pincode.trim() || null,
+      country:        form.country.trim(),
+      state:          form.state.trim(),
+      city:           form.city.trim(),
+      area:           form.area.trim(),
+      address:        form.address.trim(),
+      channel:        form.channel || 'walk-in',
+      fee_total:      form.fee_total === '' ? null : Number(form.fee_total),
+      fee_paid:       form.fee_paid  === '' ? null : Number(form.fee_paid),
     }
     const { error } = await sb.from('students').update(payload).eq('id', student.id)
     setSaving(false)
@@ -79,150 +93,518 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     onSaved({ ...student, ...payload })
   }
 
+  // ── Load courses tab ──
+  async function loadCoursesTab() {
+    if (coursesLoaded) return
+    setCoursesLoaded(true)
+
+    // Get NLH centre id
+    let centreId = nlhCentreId
+    if (!centreId) {
+      const { data: nlh } = await sb.from('franchisees').select('id').eq('tier', 'NLH').single()
+      centreId = nlh?.id || null
+      setNlhCentreId(centreId)
+    }
+
+    // Load batch assignments for all enrollments of this student
+    const enrIds = enrollments.map(function (e) { return e.id })
+    if (!enrIds.length) return
+    const { data: bsRows } = await sb.from('batch_students')
+      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, sku_id, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+      .in('enrollment_id', enrIds)
+      .is('removed_at', null)
+    const map = {}
+    ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
+    setBatchAssignments(map)
+  }
+
+  // ── Open batch assignment panel for one enrollment ──
+  async function openBatchPanel(enrollment) {
+    if (batchPanelEnrId === enrollment.id) { setBatchPanelEnrId(null); return }
+    setBatchPanelEnrId(enrollment.id)
+    setShowNewBatch(false)
+    setNewBatchCI('')
+    setNewBatchForm({ name: '', days: [], time: '', is_individual: false })
+    setPanelData({ batches: [], eligibleCIs: [], loading: true })
+
+    const [{ data: batches }, { data: ciRows }] = await Promise.all([
+      sb.from('batches')
+        .select('id, name, schedule_days, schedule_time, is_individual, sessions_done, instructor_id, instructors(id, full_name)')
+        .eq('sku_id', enrollment.sku_id)
+        .eq('is_active', true)
+        .order('created_at'),
+      sb.from('instructor_courses')
+        .select('instructor_id, instructors(id, full_name, status)')
+        .eq('sku_id', enrollment.sku_id)
+        .eq('status', 'active'),
+    ])
+
+    const eligibleCIs = (ciRows || [])
+      .map(function (r) { return r.instructors })
+      .filter(function (i) { return i && i.status === 'active' })
+      // deduplicate by id
+      .filter(function (i, idx, arr) { return arr.findIndex(function (x) { return x.id === i.id }) === idx })
+
+    setPanelData({ batches: batches || [], eligibleCIs, loading: false })
+  }
+
+  // ── Assign student to an existing batch ──
+  async function assignToBatch(batchId, enrollmentId) {
+    setPanelSaving(true)
+    // Remove from any existing batch first
+    const existing = batchAssignments[enrollmentId]
+    if (existing) {
+      await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
+    }
+    const { data, error } = await sb.from('batch_students')
+      .insert({ batch_id: batchId, enrollment_id: enrollmentId })
+      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, sku_id, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+      .single()
+    setPanelSaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    setBatchAssignments(function (prev) { return { ...prev, [enrollmentId]: data } })
+    setBatchPanelEnrId(null)
+    showToast('Assigned to batch ✓')
+  }
+
+  // ── Remove student from current batch ──
+  async function removeFromBatch(enrollmentId) {
+    const bs = batchAssignments[enrollmentId]
+    if (!bs) return
+    const { error } = await sb.from('batch_students')
+      .update({ removed_at: new Date().toISOString() }).eq('id', bs.id)
+    if (error) { showToast('Failed', 'err'); return }
+    setBatchAssignments(function (prev) { const n = { ...prev }; delete n[enrollmentId]; return n })
+    showToast('Removed from batch')
+  }
+
+  // ── Create a new batch and assign student ──
+  async function createAndAssign(enrollment) {
+    if (!newBatchCI)             { showToast('Select a Course Instructor', 'warn'); return }
+    if (!newBatchForm.name.trim()){ showToast('Batch name is required', 'warn');    return }
+    setPanelSaving(true)
+    const { data: batch, error } = await sb.from('batches').insert({
+      instructor_id:  newBatchCI,
+      sku_id:         enrollment.sku_id,
+      franchisee_id:  nlhCentreId,
+      name:           newBatchForm.name.trim(),
+      is_individual:  newBatchForm.is_individual,
+      schedule_days:  newBatchForm.days.length ? newBatchForm.days.join(', ') : null,
+      schedule_time:  newBatchForm.time || null,
+      is_active:      true,
+      sessions_done:  0,
+    }).select('id, name, schedule_days, schedule_time, is_individual, sessions_done, instructor_id, instructors(id, full_name)').single()
+    if (error) { showToast('Create failed: ' + error.message, 'err'); setPanelSaving(false); return }
+    // Now assign student
+    const existing = batchAssignments[enrollment.id]
+    if (existing) {
+      await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
+    }
+    const { data: bs, error: bsErr } = await sb.from('batch_students')
+      .insert({ batch_id: batch.id, enrollment_id: enrollment.id })
+      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, sku_id, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+      .single()
+    setPanelSaving(false)
+    if (bsErr) { showToast('Batch created but assign failed: ' + bsErr.message, 'err'); return }
+    setBatchAssignments(function (prev) { return { ...prev, [enrollment.id]: bs } })
+    setBatchPanelEnrId(null)
+    showToast('Batch created and student assigned ✓')
+  }
+
   return (
-    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 640 }}>
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 680 }}>
+        {/* Header */}
         <div className="ch">
           <span>{student.full_name}</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
-        <div >
-          <div className="form-grid">
-            <label>Student Name *
-              <input value={form.full_name} onChange={field('full_name')} disabled={!admin} />
-            </label>
-            <label>Parent / Guardian
-              <input value={form.parent_name} onChange={field('parent_name')} disabled={!admin} />
-            </label>
-            <label>Date of Birth
-              <input type="date" value={form.dob} onChange={field('dob')} disabled={!admin} />
-            </label>
-            <label>Phone
-              <input value={form.phone} onChange={field('phone')} disabled={!admin} />
-            </label>
-            <label>Parent Email
-              <input type="email" value={form.email} onChange={field('email')} disabled={!admin} placeholder="parent@email.com" />
-            </label>
-            <label>PIN Code
-              <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
-            </label>
-            <label>City
-              <input value={form.city} onChange={field('city')} disabled={!admin} placeholder="Nagpur" />
-            </label>
-            <label>Area / Locality
-              <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Neighbourhood / Area" />
-            </label>
-            <label>State
-              <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
-            </label>
-            <label>Country
-              <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
-            </label>
-            <label className="col-span-2">Street / Building Address
-              <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Flat/Shop no., building, street" />
-            </label>
-            <label>Enrolment Channel
-              <select value={form.channel} onChange={field('channel')} disabled={!admin}>
-                <option value="franchise">Franchise Centre</option>
-                <option value="own_centre">NLH Own Centre</option>
-                <option value="international">International / Online</option>
-                <option value="walk-in">Walk-in</option>
-                <option value="referral">Referral</option>
-                <option value="online">Online Campaign</option>
-                <option value="camp">Camp / Event</option>
-                <option value="school">School Tie-up</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-            <label>Payment Status
-              <select value={form.payment_status} onChange={field('payment_status')} disabled={!admin}>
-                <option value="">—</option>
-                <option value="pending">Pending</option>
-                <option value="partial">Partial</option>
-                <option value="paid">Paid</option>
-                <option value="none">None</option>
-              </select>
-            </label>
-          </div>
 
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
-            <strong>Fee Tracking</strong>
-            <div className="form-grid" style={{ marginTop: 8 }}>
-              <label>Fee Total (₹)
-                <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!admin} />
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4, padding: '0 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+          {['profile', 'courses'].map(function (t) {
+            return (
+              <button
+                key={t}
+                onClick={function () {
+                  setTab(t)
+                  if (t === 'courses') loadCoursesTab()
+                }}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '10px 16px', fontSize: 13, fontWeight: 600,
+                  color: tab === t ? 'var(--purple)' : 'var(--text3)',
+                  borderBottom: tab === t ? '2px solid var(--purple)' : '2px solid transparent',
+                  marginBottom: -1, transition: 'color 0.15s',
+                }}
+              >
+                {t === 'profile' ? '👤 Profile' : '📚 Courses & Batches'}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ── PROFILE TAB ── */}
+        {tab === 'profile' && (
+          <div>
+            <div className="form-grid">
+              <label>Student Name *
+                <input value={form.full_name} onChange={field('full_name')} disabled={!admin} />
               </label>
-              <label>Fee Paid (₹)
-                <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!admin} />
+              <label>Parent / Guardian
+                <input value={form.parent_name} onChange={field('parent_name')} disabled={!admin} />
               </label>
-              <label>Balance
-                <input
-                  value={'₹' + fmtAmt(balance)}
-                  disabled
-                  style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
-                />
+              <label>Date of Birth
+                <input type="date" value={form.dob} onChange={field('dob')} disabled={!admin} />
+              </label>
+              <label>Phone
+                <input value={form.phone} onChange={field('phone')} disabled={!admin} />
+              </label>
+              <label>Parent Email
+                <input type="email" value={form.email} onChange={field('email')} disabled={!admin} placeholder="parent@email.com" />
+              </label>
+              <label>PIN Code
+                <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
+              </label>
+              <label>City
+                <input value={form.city} onChange={field('city')} disabled={!admin} placeholder="Nagpur" />
+              </label>
+              <label>Area / Locality
+                <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Neighbourhood / Area" />
+              </label>
+              <label>State
+                <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
+              </label>
+              <label>Country
+                <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
+              </label>
+              <label className="col-span-2">Street / Building Address
+                <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Flat/Shop no., building, street" />
+              </label>
+              <label>Enrolment Channel
+                <select value={form.channel} onChange={field('channel')} disabled={!admin}>
+                  <option value="franchise">Franchise Centre</option>
+                  <option value="own_centre">NLH Own Centre</option>
+                  <option value="international">International / Online</option>
+                  <option value="walk-in">Walk-in</option>
+                  <option value="referral">Referral</option>
+                  <option value="online">Online Campaign</option>
+                  <option value="camp">Camp / Event</option>
+                  <option value="school">School Tie-up</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label>Payment Status
+                <select value={form.payment_status} onChange={field('payment_status')} disabled={!admin}>
+                  <option value="">—</option>
+                  <option value="pending">Pending</option>
+                  <option value="partial">Partial</option>
+                  <option value="paid">Paid</option>
+                  <option value="none">None</option>
+                </select>
               </label>
             </div>
-          </div>
 
-          {enrollments.length > 0 && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
-              <strong>Enrolled Courses</strong>
-              <div className="tbl-scroll">
-              <table className="tbl" style={{ marginTop: 8, minWidth: 420 }}>
-                <thead>
-                  <tr><th>Course</th><th>Level / SKU</th><th>Certificate</th></tr>
-                </thead>
-                <tbody>
-                  {enrollments.map(en => (
-                    <tr key={en.id}>
-                      <td>{en.skus?.courses?.group_name || '—'}</td>
-                      <td>{en.skus?.level_name || '—'}</td>
-                      <td>
+              <strong>Fee Tracking</strong>
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <label>Fee Total (₹)
+                  <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!admin} />
+                </label>
+                <label>Fee Paid (₹)
+                  <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!admin} />
+                </label>
+                <label>Balance
+                  <input
+                    value={'₹' + fmtAmt(balance)}
+                    disabled
+                    style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── COURSES & BATCHES TAB ── */}
+        {tab === 'courses' && (
+          <div style={{ padding: '16px 0' }}>
+            {enrollments.length === 0 ? (
+              <p className="hint" style={{ textAlign: 'center', padding: 24 }}>No courses enrolled yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {enrollments.map(function (en) {
+                  const bs          = batchAssignments[en.id]
+                  const isOpen      = batchPanelEnrId === en.id
+                  const courseName  = en.skus?.courses?.group_name || '—'
+                  const levelName   = en.skus?.level_name || '—'
+
+                  return (
+                    <div key={en.id} style={{
+                      border: '1px solid var(--border)', borderRadius: 10,
+                      overflow: 'hidden', background: 'var(--card)',
+                    }}>
+                      {/* Enrollment header row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>
+                            {courseName}
+                            <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)', marginLeft: 8 }}>
+                              {levelName}
+                            </span>
+                          </div>
+                          {bs ? (
+                            <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginTop: 3 }}>
+                              <span style={{ color: 'var(--green)' }}>●</span>
+                              {' '}{bs.batches?.name || 'Batch'}
+                              {bs.batches?.instructors?.full_name ? (
+                                <span style={{ color: 'var(--text3)' }}> · {bs.batches.instructors.full_name}</span>
+                              ) : null}
+                              {bs.batches?.schedule_days ? (
+                                <span style={{ color: 'var(--text3)' }}> · {bs.batches.schedule_days}</span>
+                              ) : null}
+                              {bs.batches?.schedule_time ? (
+                                <span style={{ color: 'var(--text3)' }}> {bs.batches.schedule_time}</span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginTop: 3 }}>
+                              Not assigned to a batch
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Certificate button */}
                         <button
                           className="btn-s"
-                          style={{ padding: '3px 10px', fontSize: 11 }}
+                          style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
                           onClick={async function () {
-                            // fetch centre if not cached
                             let centre = centreCache
                             if (!centre && student.franchisee_id) {
                               const { data } = await sb.from('franchisees')
-                                .select('id,business_name,city,area,country,tier').eq('id', student.franchisee_id).single()
+                                .select('id,business_name,city,area,country,tier')
+                                .eq('id', student.franchisee_id).single()
                               centre = data || null
                               setCentreCache(centre)
                             }
                             setCertModal({ enrollment: en, centre })
                           }}
                         >
-                          {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Certificate'}
+                          {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+                        {/* Assign batch toggle */}
+                        {admin && (
+                          <button
+                            className={isOpen ? 'btn' : 'btn-s'}
+                            style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}
+                            onClick={function () { openBatchPanel(en) }}
+                          >
+                            {isOpen ? 'Close' : bs ? '✏️ Change Batch' : '+ Assign Batch'}
+                          </button>
+                        )}
+
+                        {/* Remove from batch */}
+                        {admin && bs && !isOpen && (
+                          <button
+                            className="btn-s"
+                            style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)' }}
+                            onClick={function () { removeFromBatch(en.id) }}
+                            title="Remove from batch"
+                          >✕</button>
+                        )}
+                      </div>
+
+                      {/* Batch assignment panel */}
+                      {isOpen && (
+                        <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)', padding: 16 }}>
+                          {panelData.loading ? (
+                            <div className="hint">Loading batches…</div>
+                          ) : (
+                            <>
+                              {/* Existing batches */}
+                              {panelData.batches.length > 0 && (
+                                <div style={{ marginBottom: 16 }}>
+                                  <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
+                                    Existing Batches
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {panelData.batches.map(function (b) {
+                                      const isCurrent = bs && bs.batch_id === b.id
+                                      return (
+                                        <div key={b.id} style={{
+                                          display: 'flex', alignItems: 'center', gap: 10,
+                                          padding: '8px 12px', borderRadius: 8,
+                                          border: isCurrent ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                                          background: isCurrent ? 'var(--purple-bg)' : 'var(--card)',
+                                        }}>
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>
+                                              {b.name}
+                                              {isCurrent && <span style={{ color: 'var(--purple)', marginLeft: 6, fontSize: 11 }}>● current</span>}
+                                            </div>
+                                            <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                                              {b.instructors?.full_name || 'No instructor'}
+                                              {b.schedule_days ? ' · ' + b.schedule_days : ''}
+                                              {b.schedule_time ? ' ' + b.schedule_time : ''}
+                                              {b.is_individual ? ' · Individual' : ' · Group'}
+                                            </div>
+                                          </div>
+                                          {!isCurrent && (
+                                            <button
+                                              className="btn-s"
+                                              style={{ fontSize: 11, padding: '3px 12px', flexShrink: 0 }}
+                                              disabled={panelSaving}
+                                              onClick={function () { assignToBatch(b.id, en.id) }}
+                                            >
+                                              Assign
+                                            </button>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Create new batch toggle */}
+                              <button
+                                className="btn-s"
+                                style={{ fontSize: 12, marginBottom: showNewBatch ? 12 : 0 }}
+                                onClick={function () { setShowNewBatch(function (v) { return !v }) }}
+                              >
+                                {showNewBatch ? '▲ Hide' : '+ Create New Batch'}
+                              </button>
+
+                              {showNewBatch && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                                  {/* CI selector */}
+                                  {panelData.eligibleCIs.length === 0 ? (
+                                    <p className="hint" style={{ color: 'var(--red)' }}>
+                                      No active Course Instructors are appointed for this level yet.
+                                    </p>
+                                  ) : (
+                                    <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
+                                      Course Instructor *
+                                      <select
+                                        value={newBatchCI}
+                                        onChange={function (e) { setNewBatchCI(e.target.value) }}
+                                        style={{ marginTop: 4, fontSize: 13 }}
+                                      >
+                                        <option value="">— Select CI —</option>
+                                        {panelData.eligibleCIs.map(function (ci) {
+                                          return <option key={ci.id} value={ci.id}>{ci.full_name}</option>
+                                        })}
+                                      </select>
+                                    </label>
+                                  )}
+
+                                  {/* Batch name */}
+                                  <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
+                                    Batch Name *
+                                    <input
+                                      value={newBatchForm.name}
+                                      onChange={function (e) { setNewBatchForm(function (f) { return { ...f, name: e.target.value } }) }}
+                                      placeholder="e.g. Saturday Morning Group"
+                                      style={{ marginTop: 4, fontSize: 13 }}
+                                    />
+                                  </label>
+
+                                  {/* Day picker */}
+                                  <div>
+                                    <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginBottom: 6 }}>Schedule Days</div>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                      {DAYS.map(function (d) {
+                                        const active = newBatchForm.days.includes(d)
+                                        return (
+                                          <button
+                                            key={d}
+                                            type="button"
+                                            onClick={function () {
+                                              setNewBatchForm(function (f) {
+                                                const days = active
+                                                  ? f.days.filter(function (x) { return x !== d })
+                                                  : [...f.days, d]
+                                                return { ...f, days }
+                                              })
+                                            }}
+                                            style={{
+                                              padding: '4px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                                              border: active ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                                              background: active ? 'var(--purple-bg)' : 'var(--card)',
+                                              color: active ? 'var(--purple)' : 'var(--text2)',
+                                              fontWeight: active ? 700 : 500,
+                                            }}
+                                          >
+                                            {d}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* Time + individual toggle */}
+                                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                                    <label style={{ font: '500 12px var(--font)', color: 'var(--text2)', flex: 1 }}>
+                                      Time
+                                      <input
+                                        type="time"
+                                        value={newBatchForm.time}
+                                        onChange={function (e) { setNewBatchForm(function (f) { return { ...f, time: e.target.value } }) }}
+                                        style={{ marginTop: 4, fontSize: 13 }}
+                                      />
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, font: '500 12px var(--font)', color: 'var(--text2)', paddingBottom: 6 }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={newBatchForm.is_individual}
+                                        onChange={function (e) { setNewBatchForm(function (f) { return { ...f, is_individual: e.target.checked } }) }}
+                                      />
+                                      Individual session
+                                    </label>
+                                  </div>
+
+                                  <button
+                                    className="btn-p"
+                                    style={{ fontSize: 12, alignSelf: 'flex-start', padding: '6px 18px' }}
+                                    disabled={panelSaving || !newBatchCI || !newBatchForm.name.trim()}
+                                    onClick={function () { createAndAssign(en) }}
+                                  >
+                                    {panelSaving ? 'Creating…' : 'Create & Assign'}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {/* Certificate modal — rendered inside StudentDetailModal */}
-          {certModal && (
-            <StudentCertModal
-              student={{ ...student, ...form }}
-              enrollment={certModal.enrollment}
-              centre={certModal.centre}
-              onClose={() => setCertModal(null)}
-            />
-          )}
-        </div>
+        {/* Certificate modal */}
+        {certModal && (
+          <StudentCertModal
+            student={{ ...student, ...form }}
+            enrollment={certModal.enrollment}
+            centre={certModal.centre}
+            onClose={function () { setCertModal(null) }}
+          />
+        )}
 
-        {admin && (
-          <div className="modal-actions">
-            <button className="btn" onClick={onClose}>Cancel</button>
+        {/* Footer actions */}
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Close</button>
+          {admin && tab === 'profile' && (
             <button className="btn-p" onClick={save} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )
