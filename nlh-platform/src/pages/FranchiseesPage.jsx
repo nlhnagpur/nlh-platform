@@ -66,6 +66,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   const [tab, setTab] = useState('info')
   const [form, setForm] = useState({
     name: franchisee.business_name || '',
+    owner_name: franchisee.owner_name || '',
     email: franchisee.email || '',
     phone: franchisee.phone || '',
     country: franchisee.country || 'India',
@@ -117,6 +118,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     setSaving(true)
     const payload = {
       business_name: form.name.trim(),
+      owner_name: form.owner_name.trim() || form.name.trim(),
       phone: form.phone.trim(),
       country: form.country.trim(),
       state: form.state.trim(),
@@ -176,8 +178,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
           {tab === 'info' && (
             <div className="form-grid">
-              <label>Name
+              <label>Business / Centre Name
                 <input value={form.name} onChange={field('name')} disabled={!admin} />
+              </label>
+              <label>Owner Name
+                <input value={form.owner_name} onChange={field('owner_name')} disabled={!admin} placeholder="Owner's full name" />
               </label>
               <label>Email
                 <input value={form.email} disabled />
@@ -527,7 +532,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
 function AddFranchiseeModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
-    name: '', email: '', phone: '',
+    name: '', owner_name: '', email: '', phone: '',
     country: 'India', state: '', city: '', area: '', pincode: '', address: '',
     tier: 'UF', parent_id: '',
   })
@@ -569,7 +574,8 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   }
 
   async function save() {
-    if (!form.name.trim() || !form.email.trim()) { showToast('Name and email are required', 'warn'); return }
+    if (!form.name.trim() || !form.email.trim()) { showToast('Business name and email are required', 'warn'); return }
+    if (!form.owner_name.trim()) { showToast('Owner name is required', 'warn'); return }
     if ((form.tier === 'UF' || form.tier === 'CF') && !form.parent_id) {
       showToast(`Please select a parent franchisee for this ${form.tier}`, 'warn'); return
     }
@@ -615,6 +621,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       // Insert franchisee
       const { data: fr, error: frErr } = await sb.from('franchisees').insert({
         business_name: form.name.trim(),
+        owner_name: form.owner_name.trim() || form.name.trim(),
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
         country: form.country.trim(),
@@ -677,8 +684,11 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         </div>
         <div >
           <div className="form-grid">
-            <label>Name *
-              <input value={form.name} onChange={field('name')} placeholder="Full name" />
+            <label>Business / Centre Name *
+              <input value={form.name} onChange={field('name')} placeholder="e.g. Bright Minds Academy" />
+            </label>
+            <label>Owner Name *
+              <input value={form.owner_name} onChange={field('owner_name')} placeholder="Owner's full name" />
             </label>
             <label>Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="login@email.com" />
