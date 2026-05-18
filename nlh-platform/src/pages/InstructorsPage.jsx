@@ -45,9 +45,12 @@ function groupSkus(allSkus) {
   return Object.entries(map).map(function ([name, skus]) { return { name, skus } })
 }
 
-function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
+const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
+const DAYS        = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSaved }) {
   const [tab, setTab]           = useState('profile')
-  const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false })
+  const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false, batches: false })
   const [saving, setSaving]     = useState(false)
 
   // ── Profile form ──
@@ -86,6 +89,15 @@ function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
     appointed_at: new Date().toISOString().split('T')[0], notes: '',
   })
 
+  // ── Batches state ──
+  const [batchesData,   setBatchesData]   = useState([])   // [{appt, batches:[]}]
+  const [openRoster,    setOpenRoster]    = useState({})   // { batch_id: bool }
+  const [addBatchFor,   setAddBatchFor]   = useState(null) // sku_id | null
+  const [batchForm,     setBatchForm]     = useState({ ...BLANK_BATCH })
+  const [addStudentFor, setAddStudentFor] = useState(null) // batch_id | null
+  const [eligibleEnr,   setEligibleEnr]   = useState([])
+  const [batchSaving,   setBatchSaving]   = useState(false)
+
   function fld(k)  { return function (e) { setForm(f    => ({ ...f, [k]: e.target.value })) } }
   function cfd(k)  { return function (e) { setCaution(c => ({ ...c, [k]: e.target.value })) } }
   function nfd(k)  { return function (e) { setNewAppt(a => ({ ...a, [k]: e.target.value })) } }
@@ -100,6 +112,30 @@ function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
         .eq('instructor_id', instructor.id)
         .order('appointed_at', { ascending: false })
       setAppointments(data || [])
+    }
+    if (t === 'batches') {
+      const [{ data: appts }, { data: batchRows }] = await Promise.all([
+        sb.from('instructor_courses')
+          .select('id, sku_id, skus(id,level_name,total_sessions,courses(group_name))')
+          .eq('instructor_id', instructor.id)
+          .eq('status', 'active')
+          .order('appointed_at'),
+        sb.from('batches')
+          .select(`id, sku_id, name, is_individual, schedule_days, schedule_time,
+                   is_active, start_date, sessions_done, notes, created_at,
+                   batch_students(id, enrollment_id, assigned_at, removed_at,
+                     enrollments(id, student_id, students(id, full_name)))`)
+          .eq('instructor_id', instructor.id)
+          .order('created_at'),
+      ])
+      const batchMap = {}
+      ;(batchRows || []).forEach(function (b) {
+        if (!batchMap[b.sku_id]) batchMap[b.sku_id] = []
+        batchMap[b.sku_id].push(b)
+      })
+      setBatchesData((appts || []).map(function (a) {
+        return { appt: a, batches: batchMap[a.sku_id] || [] }
+      }))
     }
   }
 
@@ -191,6 +227,113 @@ function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
     showToast(newStatus === 'active' ? 'Reactivated' : 'Deactivated')
   }
 
+  // ── Batch functions ──────────────────────────────────────────────────────────
+
+  async function saveBatch(sku_id) {
+    if (!batchForm.name.trim()) { showToast('Batch name is required', 'warn'); return }
+    setBatchSaving(true)
+    const { data, error } = await sb.from('batches').insert({
+      instructor_id:  instructor.id,
+      franchisee_id:  nlhCentreId || null,
+      sku_id,
+      name:           batchForm.name.trim(),
+      is_individual:  batchForm.is_individual,
+      schedule_days:  batchForm.days.length ? batchForm.days.join(', ') : null,
+      schedule_time:  batchForm.time || null,
+      start_date:     batchForm.start_date || null,
+      is_active:      true,
+      notes:          batchForm.notes.trim() || null,
+    }).select(`id, sku_id, name, is_individual, schedule_days, schedule_time,
+               is_active, start_date, sessions_done, notes, created_at,
+               batch_students(id, enrollment_id, assigned_at, removed_at,
+                 enrollments(id, student_id, students(id, full_name)))`).single()
+    setBatchSaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    setBatchesData(function (prev) {
+      return prev.map(function (item) {
+        if (item.appt.sku_id !== sku_id) return item
+        return { ...item, batches: [...item.batches, data] }
+      })
+    })
+    setAddBatchFor(null)
+    setBatchForm({ ...BLANK_BATCH })
+    showToast('Batch created')
+  }
+
+  async function toggleBatchActive(batch) {
+    const is_active = !batch.is_active
+    const { error } = await sb.from('batches').update({ is_active }).eq('id', batch.id)
+    if (error) { showToast('Update failed', 'err'); return }
+    setBatchesData(function (prev) {
+      return prev.map(function (item) {
+        return { ...item, batches: item.batches.map(function (b) {
+          return b.id === batch.id ? { ...b, is_active } : b
+        })}
+      })
+    })
+  }
+
+  async function adjustSessions(batch, delta) {
+    const sessions_done = Math.max(0, (batch.sessions_done || 0) + delta)
+    const { error } = await sb.from('batches').update({ sessions_done }).eq('id', batch.id)
+    if (error) { showToast('Update failed', 'err'); return }
+    setBatchesData(function (prev) {
+      return prev.map(function (item) {
+        return { ...item, batches: item.batches.map(function (b) {
+          return b.id === batch.id ? { ...b, sessions_done } : b
+        })}
+      })
+    })
+  }
+
+  async function openAddStudentPanel(batch) {
+    setAddStudentFor(batch.id)
+    const alreadyIn = (batch.batch_students || [])
+      .filter(function (bs) { return !bs.removed_at })
+      .map(function (bs) { return bs.enrollment_id })
+    const { data } = await sb.from('enrollments')
+      .select('id, student_id, students(id, full_name)')
+      .eq('sku_id', batch.sku_id)
+      .eq('franchisee_id', nlhCentreId)
+      .eq('status', 'active')
+    setEligibleEnr((data || []).filter(function (e) { return !alreadyIn.includes(e.id) }))
+  }
+
+  async function assignStudent(batch_id, enrollment_id) {
+    const { data, error } = await sb.from('batch_students')
+      .insert({ batch_id, enrollment_id })
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, students(id, full_name))')
+      .single()
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    setBatchesData(function (prev) {
+      return prev.map(function (item) {
+        return { ...item, batches: item.batches.map(function (b) {
+          if (b.id !== batch_id) return b
+          return { ...b, batch_students: [...(b.batch_students || []), data] }
+        })}
+      })
+    })
+    setEligibleEnr(function (e) { return e.filter(function (x) { return x.id !== enrollment_id }) })
+    setAddStudentFor(null)
+    showToast('Student added to batch')
+  }
+
+  async function removeStudentFromBatch(batch_id, bs_id) {
+    const removed_at = new Date().toISOString()
+    const { error } = await sb.from('batch_students').update({ removed_at }).eq('id', bs_id)
+    if (error) { showToast('Remove failed', 'err'); return }
+    setBatchesData(function (prev) {
+      return prev.map(function (item) {
+        return { ...item, batches: item.batches.map(function (b) {
+          if (b.id !== batch_id) return b
+          return { ...b, batch_students: b.batch_students.map(function (bs) {
+            return bs.id === bs_id ? { ...bs, removed_at } : bs
+          })}
+        })}
+      })
+    })
+  }
+
   const appointedSkuIds  = appointments.filter(a => a.status === 'active').map(a => a.sku_id)
   const availableSkus    = allSkus.filter(s => !appointedSkuIds.includes(s.id))
   const skuGroups        = groupSkus(availableSkus)
@@ -223,7 +366,7 @@ function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
 
         {/* tabs */}
         <div className="tab-row">
-          {[['profile','👤 Profile'],['caution','🔒 Caution'],['courses','📚 Courses']].map(function ([id, label]) {
+          {[['profile','👤 Profile'],['caution','🔒 Caution'],['courses','📚 Courses'],['batches','📦 Batches']].map(function ([id, label]) {
             return (
               <button key={id} className={'tab ' + (tab === id ? 'on' : '')} onClick={function () { loadTab(id) }}>
                 {label}
@@ -359,66 +502,140 @@ function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
         {tab === 'courses' && (
           <div>
             <div style={{ padding: '0 20px 12px' }}>
-              {appointments.length === 0 && !showAddCourse && (
-                <p className="hint">No course appointments yet.</p>
-              )}
 
-              {/* Appointment cards */}
-              {appointments.map(function (appt) {
-                return (
-                  <div key={appt.id} style={{
-                    border: '1px solid var(--border)', borderRadius: 8,
-                    padding: '10px 14px', marginBottom: 8,
-                    background: appt.status === 'inactive' ? 'var(--bg2)' : 'var(--bg)',
-                    opacity: appt.status === 'inactive' ? 0.65 : 1,
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>
-                          {appt.skus?.courses?.group_name || '—'}
-                          <span style={{ fontWeight: 400, color: 'var(--text2)' }}>
-                            {appt.skus?.level_name ? ` — ${appt.skus.level_name}` : ''}
-                          </span>
-                          {appt.skus?.total_sessions && (
-                            <span style={{ font: '400 10px var(--mono)', color: 'var(--text3)', marginLeft: 6 }}>
-                              {appt.skus.total_sessions} sessions
-                            </span>
-                          )}
-                          <span className={`badge ${appt.status === 'active' ? 'ba' : 'bd'}`}
-                            style={{ marginLeft: 6, fontSize: 9 }}>
-                            {appt.status}
-                          </span>
+              {/* ── Progression view ─────────────────────────────────────────── */}
+              {(function () {
+                // Build: courseName → [{sku, appt|null}] preserving sort_order
+                const courseMap = {}
+                allSkus.forEach(function (s) {
+                  const g = s.courses?.group_name || 'Other'
+                  if (!courseMap[g]) courseMap[g] = []
+                  const appt = appointments.find(function (a) { return a.sku_id === s.id }) || null
+                  courseMap[g].push({ sku: s, appt })
+                })
+
+                // Only render courses where CI has at least one appointment record
+                const appointedCourses = Object.entries(courseMap)
+                  .filter(function ([, levels]) { return levels.some(function (l) { return l.appt }) })
+                  .map(function ([name, levels]) { return { name, levels } })
+
+                if (appointedCourses.length === 0) {
+                  return (
+                    <p className="hint" style={{ marginBottom: 10 }}>
+                      No course appointments yet. Use the button below to appoint this CI to a course level.
+                    </p>
+                  )
+                }
+
+                return appointedCourses.map(function (course) {
+                  const activeCount = course.levels.filter(function (l) { return l.appt?.status === 'active' }).length
+
+                  return (
+                    <div key={course.name} style={{
+                      marginBottom: 12, borderRadius: 8,
+                      border: '1px solid var(--border)', padding: '12px 14px',
+                    }}>
+                      {/* Course header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{course.name}</div>
+                        <div style={{ font: '400 11px var(--mono)', color: 'var(--text3)' }}>
+                          {activeCount} active · {course.levels.length} levels
                         </div>
-                        <div style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 600, marginBottom: 2 }}>
-                          {REMUN_LABELS[appt.remuneration_mode]}
-                          {' · '}₹{Number(appt.remuneration_rate).toLocaleString('en-IN')}
-                          {' '}{REMUN_SUFFIX[appt.remuneration_mode]}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                          Appointed: {fmtDate(appt.appointed_at)}
-                          {appt.removed_at && ` · Removed: ${fmtDate(appt.removed_at)}`}
-                          {appt.trained_by_nlh && (
-                            <span style={{ marginLeft: 10 }}>
-                              ✅ NLH Trained
-                              {appt.training_date ? ` (${fmtDate(appt.training_date)})` : ''}
-                              {appt.training_fee ? ` · ₹${Number(appt.training_fee).toLocaleString('en-IN')}` : ''}
-                            </span>
-                          )}
-                        </div>
-                        {appt.notes && (
-                          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-                            {appt.notes}
-                          </div>
-                        )}
                       </div>
-                      <button className="btn" style={{ fontSize: 11, padding: '4px 10px', flexShrink: 0 }}
-                        onClick={function () { toggleApptStatus(appt) }}>
-                        {appt.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                      </button>
+
+                      {/* Level chips */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+                        {course.levels.map(function ({ sku, appt: a }) {
+                          const isActive   = a?.status === 'active'
+                          const isInactive = a && a.status !== 'active'
+                          const notApptd   = !a
+
+                          const chipTitle = isActive
+                            ? ('Appointed: ' + fmtDate(a.appointed_at) + ' · ' + REMUN_LABELS[a.remuneration_mode] + ' · ₹' + Number(a.remuneration_rate).toLocaleString('en-IN'))
+                            : isInactive
+                            ? ('Removed: ' + fmtDate(a.removed_at || ''))
+                            : 'Click + to appoint this level'
+
+                          return (
+                            <div
+                              key={sku.id}
+                              title={chipTitle}
+                              onClick={notApptd ? function () {
+                                setNewAppt(function (prev) { return { ...prev, sku_id: sku.id } })
+                                setShowAddCourse(true)
+                              } : undefined}
+                              style={{
+                                padding: '4px 10px', borderRadius: 20,
+                                fontSize: 11, fontWeight: 600,
+                                border: '1.5px solid',
+                                borderColor: isActive ? 'var(--green)' : 'var(--border)',
+                                background:  isActive ? 'var(--green-bg)' : isInactive ? 'var(--bg3)' : 'var(--bg2)',
+                                color:       isActive ? 'var(--green)' : isInactive ? 'var(--text3)' : 'var(--text3)',
+                                display: 'flex', alignItems: 'center', gap: 4,
+                                cursor:        notApptd ? 'pointer' : 'default',
+                                textDecoration: isInactive ? 'line-through' : 'none',
+                                opacity:       isInactive ? 0.55 : 1,
+                              }}
+                            >
+                              {isActive   && <span style={{ fontSize: 8, color: 'var(--green)' }}>●</span>}
+                              {isInactive && <span style={{ fontSize: 9 }}>✕</span>}
+                              {notApptd   && <span style={{ fontSize: 10, color: 'var(--purple)', lineHeight: 1 }}>+</span>}
+                              <span>{sku.level_name}</span>
+                              {sku.total_sessions
+                                ? <span style={{ fontSize: 9, fontWeight: 400, opacity: 0.7 }}>{sku.total_sessions}s</span>
+                                : null
+                              }
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Detail rows for every appointment record in this course */}
+                      {course.levels
+                        .filter(function (l) { return l.appt })
+                        .map(function ({ sku, appt: a }) {
+                          return (
+                            <div key={a.id} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '6px 10px', marginBottom: 4, borderRadius: 6,
+                              background: a.status === 'active' ? 'var(--purple-bg)' : 'var(--bg3)',
+                              opacity: a.status !== 'active' ? 0.6 : 1,
+                            }}>
+                              <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+                                <span style={{ fontWeight: 600 }}>{sku.level_name}</span>
+                                <span style={{ color: 'var(--text3)', marginLeft: 8 }}>
+                                  {REMUN_LABELS[a.remuneration_mode]}
+                                  {' · '}₹{Number(a.remuneration_rate).toLocaleString('en-IN')} {REMUN_SUFFIX[a.remuneration_mode]}
+                                </span>
+                                {a.trained_by_nlh && (
+                                  <span style={{ color: 'var(--green)', marginLeft: 8, fontSize: 10 }}>
+                                    ✅ NLH Trained
+                                    {a.training_date ? ' ' + fmtDate(a.training_date) : ''}
+                                    {a.training_fee  ? ' · ₹' + Number(a.training_fee).toLocaleString('en-IN') : ''}
+                                  </span>
+                                )}
+                                <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
+                                  Since {fmtDate(a.appointed_at)}
+                                  {a.removed_at ? ' · Removed ' + fmtDate(a.removed_at) : ''}
+                                </span>
+                                {a.notes && (
+                                  <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
+                                    · {a.notes}
+                                  </span>
+                                )}
+                              </div>
+                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0, marginLeft: 8 }}
+                                onClick={function () { toggleApptStatus(a) }}>
+                                {a.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                              </button>
+                            </div>
+                          )
+                        })
+                      }
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              })()}
 
               {/* Add appointment form */}
               {showAddCourse ? (
@@ -506,6 +723,250 @@ function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
           </div>
         )}
 
+        {/* ══ Batches tab ══════════════════════════════════════════════════════ */}
+        {tab === 'batches' && (
+          <div style={{ padding: '0 20px 16px' }}>
+
+            {batchesData.length === 0 && (
+              <p className="hint">No active course appointments — appoint this CI to course levels first.</p>
+            )}
+
+            {batchesData.map(function ({ appt, batches }) {
+              const totalSessions = appt.skus?.total_sessions
+
+              return (
+                <div key={appt.sku_id} style={{ marginBottom: 20 }}>
+
+                  {/* ── Level header ── */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>
+                      {appt.skus?.courses?.group_name || '—'}
+                      <span style={{ fontWeight: 400, color: 'var(--text2)', marginLeft: 6 }}>
+                        — {appt.skus?.level_name || '?'}
+                      </span>
+                      {totalSessions && (
+                        <span style={{ font: '400 10px var(--mono)', color: 'var(--text3)', marginLeft: 6 }}>
+                          {totalSessions} sessions
+                        </span>
+                      )}
+                    </div>
+                    {addBatchFor !== appt.sku_id && (
+                      <button className="btn-s" style={{ fontSize: 11 }}
+                        onClick={function () { setAddBatchFor(appt.sku_id); setBatchForm({ ...BLANK_BATCH }) }}>
+                        + New Batch
+                      </button>
+                    )}
+                  </div>
+
+                  {/* ── Batch cards ── */}
+                  {batches.length === 0 && addBatchFor !== appt.sku_id && (
+                    <p className="hint" style={{ marginBottom: 4 }}>No batches yet for this level.</p>
+                  )}
+
+                  {batches.map(function (batch) {
+                    const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+                    const rosterOpen     = !!openRoster[batch.id]
+                    const sessLabel      = totalSessions
+                      ? (batch.sessions_done || 0) + ' / ' + totalSessions + ' sessions'
+                      : (batch.sessions_done || 0) + ' sessions'
+
+                    return (
+                      <div key={batch.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+
+                        {/* Batch summary row */}
+                        <div style={{
+                          padding: '10px 14px',
+                          background: batch.is_active ? 'var(--bg)' : 'var(--bg3)',
+                          opacity: batch.is_active ? 1 : 0.75,
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            {/* Left: name + badges */}
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 700, fontSize: 13 }}>{batch.name}</span>
+                                {batch.is_individual && (
+                                  <span className="badge bp" style={{ fontSize: 9 }}>1-on-1</span>
+                                )}
+                                <span className={`badge ${batch.is_active ? 'ba' : 'bd'}`} style={{ fontSize: 9 }}>
+                                  {batch.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
+                                {batch.schedule_days || ''}
+                                {batch.schedule_time ? ' · ' + batch.schedule_time.slice(0, 5) : ''}
+                                {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
+                              </div>
+                            </div>
+
+                            {/* Right: sessions counter + actions */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              {/* Sessions counter */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <button
+                                  onClick={function () { adjustSessions(batch, -1) }}
+                                  disabled={!batch.sessions_done}
+                                  style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border)',
+                                    background: 'var(--bg2)', cursor: batch.sessions_done ? 'pointer' : 'not-allowed',
+                                    fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    opacity: batch.sessions_done ? 1 : 0.35 }}>
+                                  −
+                                </button>
+                                <span style={{ font: '600 11px var(--mono)', minWidth: 70, textAlign: 'center', color: 'var(--purple)' }}>
+                                  {sessLabel}
+                                </span>
+                                <button
+                                  onClick={function () { adjustSessions(batch, 1) }}
+                                  style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border)',
+                                    background: 'var(--bg2)', cursor: 'pointer',
+                                    fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  +
+                                </button>
+                              </div>
+                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                                onClick={function () { toggleBatchActive(batch) }}>
+                                {batch.is_active ? 'Deactivate' : 'Reactivate'}
+                              </button>
+                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                                onClick={function () { setOpenRoster(function (r) { return { ...r, [batch.id]: !r[batch.id] } }) }}>
+                                {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} {rosterOpen ? '▲' : '▼'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Roster panel (expandable) */}
+                        {rosterOpen && (
+                          <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px', background: 'var(--bg2)' }}>
+                            {activeStudents.length === 0 && (
+                              <p className="hint" style={{ marginBottom: 8 }}>No students assigned yet.</p>
+                            )}
+                            {activeStudents.map(function (bs) {
+                              return (
+                                <div key={bs.id} style={{
+                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12,
+                                }}>
+                                  <span style={{ fontWeight: 500 }}>
+                                    {bs.enrollments?.students?.full_name || '—'}
+                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                                      Since {fmtDate(bs.assigned_at)}
+                                    </span>
+                                    <button className="btn" style={{ fontSize: 10, padding: '2px 6px' }}
+                                      onClick={function () { removeStudentFromBatch(batch.id, bs.id) }}>
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+
+                            {/* Add student */}
+                            {addStudentFor === batch.id ? (
+                              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                                {eligibleEnr.length === 0
+                                  ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                                      No eligible enrolled students found for this level.
+                                    </span>
+                                  : <select style={{ flex: 1, fontSize: 12 }} defaultValue=""
+                                      onChange={function (e) {
+                                        if (e.target.value) assignStudent(batch.id, e.target.value)
+                                      }}>
+                                      <option value="">— Select student to add —</option>
+                                      {eligibleEnr.map(function (e) {
+                                        return (
+                                          <option key={e.id} value={e.id}>
+                                            {e.students?.full_name || '—'}
+                                          </option>
+                                        )
+                                      })}
+                                    </select>
+                                }
+                                <button className="btn" style={{ fontSize: 11 }}
+                                  onClick={function () { setAddStudentFor(null); setEligibleEnr([]) }}>
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button className="btn-s" style={{ marginTop: 8, fontSize: 11 }}
+                                onClick={function () { openAddStudentPanel(batch) }}>
+                                + Add Student
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {/* ── New batch form ── */}
+                  {addBatchFor === appt.sku_id && (
+                    <div style={{ border: '1.5px dashed var(--purple)', borderRadius: 8, padding: 14, marginBottom: 4 }}>
+                      <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: 12 }}>
+                        New Batch — {appt.skus?.courses?.group_name} {appt.skus?.level_name}
+                      </div>
+                      <div className="form-grid">
+                        <label className="col-span-2">Batch Name *
+                          <input value={batchForm.name} autoFocus
+                            onChange={function (e) { setBatchForm(function (f) { return { ...f, name: e.target.value } }) }}
+                            placeholder="e.g. Morning Batch, Batch A, 1-on-1 Riya" />
+                        </label>
+                        <label>Start Date
+                          <input type="date" value={batchForm.start_date}
+                            onChange={function (e) { setBatchForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
+                        </label>
+                        <label>Time
+                          <input type="time" value={batchForm.time}
+                            onChange={function (e) { setBatchForm(function (f) { return { ...f, time: e.target.value } }) }} />
+                        </label>
+                        <label className="col-span-2">Schedule Days
+                          <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+                            {DAYS.map(function (d) {
+                              const checked = batchForm.days.includes(d)
+                              return (
+                                <label key={d} style={{
+                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                                  fontSize: 11, cursor: 'pointer', fontWeight: checked ? 700 : 400,
+                                  color: checked ? 'var(--purple)' : 'var(--text2)',
+                                }}>
+                                  <input type="checkbox" checked={checked}
+                                    onChange={function (e) {
+                                      setBatchForm(function (f) {
+                                        return {
+                                          ...f,
+                                          days: e.target.checked
+                                            ? [...f.days, d]
+                                            : f.days.filter(function (x) { return x !== d })
+                                        }
+                                      })
+                                    }} />
+                                  {d}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+                          <input type="checkbox" checked={batchForm.is_individual}
+                            onChange={function (e) { setBatchForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
+                          <span style={{ fontSize: 12 }}>Individual (1-on-1) session</span>
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                        <button className="btn" onClick={function () { setAddBatchFor(null) }}>Cancel</button>
+                        <button className="btn-p" onClick={function () { saveBatch(appt.sku_id) }} disabled={batchSaving}>
+                          {batchSaving ? 'Creating…' : 'Create Batch'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
       </div>
     </div>
   )
@@ -513,9 +974,14 @@ function InstructorDetailModal({ instructor, allSkus, onClose, onSaved }) {
 
 // ── AddInstructorModal ─────────────────────────────────────────────────────────
 
-const BLANK_APPT = {
-  sku_id: '', remuneration_mode: 'per_session', remuneration_rate: '',
-  trained_by_nlh: false, training_fee: '', training_date: '',
+const BLANK_COURSE_BLOCK = {
+  group_name: '',
+  remuneration_mode: 'per_session',
+  trained_by_nlh: false,
+  training_fee: '',
+  training_date: '',
+  checkedLevels: {},  // { [sku_id]: bool }
+  levelRates: {},     // { [sku_id]: rate_string }
 }
 
 function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
@@ -526,35 +992,97 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
     caution_amount: '', caution_mode: '', caution_paid_at: '',
     notes: '',
   })
-  const [apptRows, setApptRows] = useState([{ ...BLANK_APPT }])
-  const [saving,   setSaving]   = useState(false)
+  const [courseBlocks, setCourseBlocks] = useState([{ ...BLANK_COURSE_BLOCK }])
+  const [saving, setSaving] = useState(false)
 
   function fld(k) { return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) } }
 
-  function updateRow(idx, key, val) {
-    setApptRows(function (rows) {
-      return rows.map(function (r, i) { return i === idx ? { ...r, [key]: val } : r })
+  // All unique course names (group_name), in the order they appear in allSkus
+  const allCourseNames = (function () {
+    const seen = new Set()
+    const out  = []
+    allSkus.forEach(function (s) {
+      const g = s.courses?.group_name
+      if (g && !seen.has(g)) { seen.add(g); out.push(g) }
+    })
+    return out
+  })()
+
+  // SKUs belonging to a given course name
+  function getLevels(group_name) {
+    return allSkus.filter(function (s) { return s.courses?.group_name === group_name })
+  }
+
+  // Course names already selected in other blocks (to prevent duplicates)
+  function usedCourseNames(excludeIdx) {
+    return courseBlocks
+      .filter(function (_, i) { return i !== excludeIdx })
+      .map(function (b) { return b.group_name })
+      .filter(Boolean)
+  }
+
+  function addCourseBlock() {
+    setCourseBlocks(function (b) { return [...b, { ...BLANK_COURSE_BLOCK }] })
+  }
+  function removeCourseBlock(idx) {
+    setCourseBlocks(function (b) { return b.filter(function (_, i) { return i !== idx }) })
+  }
+
+  function updateBlock(idx, key, val) {
+    setCourseBlocks(function (blocks) {
+      return blocks.map(function (b, i) {
+        if (i !== idx) return b
+        // Reset level selections when the course changes
+        if (key === 'group_name') return { ...b, group_name: val, checkedLevels: {}, levelRates: {} }
+        return { ...b, [key]: val }
+      })
     })
   }
-  function addRow()       { setApptRows(function (r) { return [...r, { ...BLANK_APPT }] }) }
-  function removeRow(idx) { setApptRows(function (r) { return r.filter(function (_, i) { return i !== idx }) }) }
 
-  // SKUs already chosen in other rows (to avoid duplicates)
-  function usedSkuIds(excludeIdx) {
-    return apptRows
-      .filter(function (_, i) { return i !== excludeIdx })
-      .map(function (r) { return r.sku_id })
-      .filter(Boolean)
+  function toggleLevel(blockIdx, skuId) {
+    setCourseBlocks(function (blocks) {
+      return blocks.map(function (b, i) {
+        if (i !== blockIdx) return b
+        const nowChecked = !b.checkedLevels[skuId]
+        const newRates   = { ...b.levelRates }
+        if (!nowChecked) delete newRates[skuId]   // clear rate when unchecking
+        return { ...b, checkedLevels: { ...b.checkedLevels, [skuId]: nowChecked }, levelRates: newRates }
+      })
+    })
+  }
+
+  function setLevelRate(blockIdx, skuId, rate) {
+    setCourseBlocks(function (blocks) {
+      return blocks.map(function (b, i) {
+        if (i !== blockIdx) return b
+        return { ...b, levelRates: { ...b.levelRates, [skuId]: rate } }
+      })
+    })
   }
 
   async function save() {
     if (!form.full_name.trim()) { showToast('Name is required', 'warn'); return }
 
-    // Validate filled appointment rows
-    const validRows = apptRows.filter(function (r) { return r.sku_id })
-    for (let i = 0; i < validRows.length; i++) {
-      if (!validRows[i].remuneration_rate) {
-        showToast('Enter a rate for every appointed course level', 'warn'); return
+    // Flatten course blocks → individual appointment rows
+    const validRows = []
+    for (let bi = 0; bi < courseBlocks.length; bi++) {
+      const block = courseBlocks[bi]
+      if (!block.group_name) continue
+      const checkedSkus = getLevels(block.group_name).filter(function (s) { return block.checkedLevels[s.id] })
+      for (let li = 0; li < checkedSkus.length; li++) {
+        const s = checkedSkus[li]
+        if (!block.levelRates[s.id]) {
+          showToast('Enter rate for ' + block.group_name + ' — ' + s.level_name, 'warn')
+          return
+        }
+        validRows.push({
+          sku_id:            s.id,
+          remuneration_mode: block.remuneration_mode,
+          remuneration_rate: Number(block.levelRates[s.id]),
+          trained_by_nlh:    block.trained_by_nlh,
+          training_fee:      block.trained_by_nlh && block.training_fee  ? Number(block.training_fee)  : null,
+          training_date:     block.trained_by_nlh && block.training_date ? block.training_date          : null,
+        })
       }
     }
 
@@ -590,10 +1118,10 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
             instructor_id:     ins.id,
             sku_id:            r.sku_id,
             remuneration_mode: r.remuneration_mode,
-            remuneration_rate: Number(r.remuneration_rate),
+            remuneration_rate: r.remuneration_rate,
             trained_by_nlh:    r.trained_by_nlh,
-            training_fee:      r.trained_by_nlh && r.training_fee  ? Number(r.training_fee)  : null,
-            training_date:     r.trained_by_nlh && r.training_date ? r.training_date          : null,
+            training_fee:      r.training_fee,
+            training_date:     r.training_date,
             appointed_at:      apptDate,
           }
         })
@@ -649,103 +1177,129 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
             <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 10 }}>
               📚 Course Appointments
               <span style={{ font: '400 11px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
-                (select all courses this CI will teach)
+                (select courses and tick the levels to appoint)
               </span>
             </div>
 
-            {apptRows.map(function (row, idx) {
-              const available = groupSkus(allSkus.filter(function (s) {
-                return !usedSkuIds(idx).includes(s.id)
-              }))
+            {courseBlocks.map(function (block, idx) {
+              const takenNames = usedCourseNames(idx)
+              const levels     = block.group_name ? getLevels(block.group_name) : []
+              const ratePlaceholder =
+                block.remuneration_mode === 'per_session' ? '₹ per session' :
+                block.remuneration_mode === 'monthly'     ? '₹ per month'   : '₹ per student'
+
               return (
                 <div key={idx} style={{
                   border: '1px solid var(--border)', borderRadius: 8,
-                  padding: '10px 12px', marginBottom: 8, background: 'var(--bg2)',
+                  padding: '12px 14px', marginBottom: 8, background: 'var(--bg2)',
                 }}>
-                  {/* row header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' }}>
+                  {/* Block header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
                       Course {idx + 1}
                     </span>
-                    {apptRows.length > 1 && (
-                      <button onClick={function () { removeRow(idx) }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer',
-                          color: 'var(--red)', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>
+                    {courseBlocks.length > 1 && (
+                      <button onClick={function () { removeCourseBlock(idx) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>
                         ✕
                       </button>
                     )}
                   </div>
 
-                  <div className="form-grid">
-                    <label className="col-span-2">Course &amp; Level
-                      <select value={row.sku_id}
-                        onChange={function (e) { updateRow(idx, 'sku_id', e.target.value) }}>
-                        <option value="">— Select course &amp; level —</option>
-                        {available.map(function (g) {
-                          return (
-                            <optgroup key={g.name} label={g.name}>
-                              {g.skus.map(function (s) {
-                                return (
-                                  <option key={s.id} value={s.id}>
-                                    {s.level_name}{s.total_sessions ? ` (${s.total_sessions} sessions)` : ''}
-                                  </option>
-                                )
-                              })}
-                            </optgroup>
-                          )
-                        })}
+                  {/* Course selector */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                    <label>Course *
+                      <select value={block.group_name}
+                        onChange={function (e) { updateBlock(idx, 'group_name', e.target.value) }}>
+                        <option value="">— Select course —</option>
+                        {allCourseNames
+                          .filter(function (n) { return !takenNames.includes(n) })
+                          .map(function (n) { return <option key={n} value={n}>{n}</option> })
+                        }
                       </select>
                     </label>
                     <label>Remuneration Mode
-                      <select value={row.remuneration_mode}
-                        onChange={function (e) { updateRow(idx, 'remuneration_mode', e.target.value) }}>
+                      <select value={block.remuneration_mode}
+                        onChange={function (e) { updateBlock(idx, 'remuneration_mode', e.target.value) }}>
                         <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="per_student">Per Student (₹ on completion)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
                     </label>
-                    <label>Rate (₹){row.sku_id ? ' *' : ''}
-                      <input type="number" value={row.remuneration_rate}
-                        onChange={function (e) { updateRow(idx, 'remuneration_rate', e.target.value) }}
-                        placeholder={
-                          row.remuneration_mode === 'per_session' ? 'e.g. 150' :
-                          row.remuneration_mode === 'monthly'     ? 'e.g. 5000' : 'e.g. 500'
-                        } />
-                    </label>
-
-                    {/* NLH Training */}
-                    <label className="col-span-2"
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
-                      <input type="checkbox" checked={row.trained_by_nlh}
-                        onChange={function (e) { updateRow(idx, 'trained_by_nlh', e.target.checked) }} />
-                      <span style={{ fontSize: 12 }}>Trained by NLH for this course</span>
-                    </label>
-                    {row.trained_by_nlh && (
-                      <>
-                        <label>Training Fee Paid (₹)
-                          <input type="number" value={row.training_fee}
-                            onChange={function (e) { updateRow(idx, 'training_fee', e.target.value) }}
-                            placeholder="0 if waived" />
-                        </label>
-                        <label>Training Date
-                          <input type="date" value={row.training_date}
-                            onChange={function (e) { updateRow(idx, 'training_date', e.target.value) }} />
-                        </label>
-                      </>
-                    )}
                   </div>
+
+                  {/* Level checkboxes — only shown once a course is selected */}
+                  {block.group_name && (
+                    <>
+                      <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6, fontWeight: 600 }}>
+                        Levels to appoint <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(tick each level, enter its rate)</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+                        {levels.map(function (s) {
+                          const checked = !!block.checkedLevels[s.id]
+                          return (
+                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                              <input
+                                type="checkbox" id={`lv-${idx}-${s.id}`}
+                                checked={checked}
+                                onChange={function () { toggleLevel(idx, s.id) }}
+                                style={{ flexShrink: 0 }}
+                              />
+                              <label htmlFor={`lv-${idx}-${s.id}`}
+                                style={{ fontSize: 12, cursor: 'pointer', flex: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                {s.level_name}
+                                {s.total_sessions
+                                  ? <span style={{ font: '400 10px var(--mono)', color: 'var(--text3)' }}>({s.total_sessions}s)</span>
+                                  : null
+                                }
+                              </label>
+                              {checked && (
+                                <input
+                                  type="number" min="0"
+                                  value={block.levelRates[s.id] || ''}
+                                  onChange={function (e) { setLevelRate(idx, s.id, e.target.value) }}
+                                  placeholder={ratePlaceholder}
+                                  style={{ width: 130, fontSize: 12 }}
+                                />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* NLH Training */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <input type="checkbox" checked={block.trained_by_nlh}
+                          onChange={function (e) { updateBlock(idx, 'trained_by_nlh', e.target.checked) }} />
+                        <span style={{ fontSize: 12 }}>Trained by NLH for this course</span>
+                      </label>
+                      {block.trained_by_nlh && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <label style={{ fontSize: 12 }}>Training Fee (₹)
+                            <input type="number" value={block.training_fee}
+                              onChange={function (e) { updateBlock(idx, 'training_fee', e.target.value) }}
+                              placeholder="0 if waived" />
+                          </label>
+                          <label style={{ fontSize: 12 }}>Training Date
+                            <input type="date" value={block.training_date}
+                              onChange={function (e) { updateBlock(idx, 'training_date', e.target.value) }} />
+                          </label>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )
             })}
 
-            <button className="btn-s" onClick={addRow}
+            <button className="btn-s" onClick={addCourseBlock}
               style={{ marginTop: 2 }}
-              disabled={apptRows.some(function (r) { return !r.sku_id }) || allSkus.length === apptRows.length}>
-              + Add Another Level
+              disabled={courseBlocks.some(function (b) { return !b.group_name }) || courseBlocks.length >= allCourseNames.length}>
+              + Add Another Course
             </button>
-            {apptRows.some(function (r) { return !r.sku_id }) && apptRows.length > 0 && (
+            {courseBlocks.some(function (b) { return !b.group_name }) && (
               <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 8 }}>
-                Select a level above first
+                Select a course above first
               </span>
             )}
           </div>
@@ -1032,6 +1586,7 @@ export default function InstructorsPage() {
         <InstructorDetailModal
           instructor={selected}
           allSkus={allSkus}
+          nlhCentreId={nlhCentreId}
           onClose={function () { setSelected(null) }}
           onSaved={handleSaved}
         />
