@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Certificate Preview — NLH</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    @page{size:A4 landscape;margin:0}
+    body{margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:Arial,sans-serif;background:#E8E5DC}
+
+    /* ── Print bar (screen only) ── */
+    .print-bar{
+      display:flex;align-items:center;justify-content:space-between;
+      background:#534AB7;padding:10px 20px;
+      position:sticky;top:0;z-index:10;
+      font-family:Arial,sans-serif;font-size:13px;color:#fff;
+    }
+    .print-bar span{opacity:.8;font-size:12px}
+    .print-bar button{
+      background:#fff;color:#534AB7;border:none;
+      padding:7px 20px;border-radius:6px;
+      font-size:13px;font-weight:700;cursor:pointer;
+    }
+    .print-bar button:hover{background:#EDE9FF}
+    @media print{.print-bar{display:none}body{background:#fff}}
+
+    /* ── Certificate canvas ── */
+    .cert{
+      width:297mm;height:210mm;
+      position:relative;overflow:hidden;
+      background:url('/Certificate%20Background.png') center/cover no-repeat;
+      margin:20px auto;
+      box-shadow:0 8px 40px rgba(0,0,0,.18);
+    }
+
+    /* ── Content layer ── */
+    .layer{
+      position:absolute;inset:0;
+      display:flex;flex-direction:column;
+      padding:6mm 12mm 5mm;
+    }
+
+    /* ── Header ── */
+    .hd{
+      display:flex;justify-content:space-between;align-items:flex-start;
+      margin-bottom:2mm;
+    }
+    .nlh-logo{height:20mm;width:auto;object-fit:contain}
+    .sm-col{
+      display:flex;flex-direction:column;align-items:flex-end;gap:1.5mm;
+      font-size:7pt;color:#1A3A6A;
+    }
+
+    /* ── Main body ── */
+    .body{
+      flex:1;
+      display:flex;flex-direction:column;
+      justify-content:center;align-items:center;
+      text-align:center;
+    }
+    .acc{
+      font-family:'Dancing Script',cursive;font-size:27pt;font-weight:700;
+      color:#CC0000;margin-bottom:1.5mm;
+    }
+    .certify{
+      font-size:9pt;font-weight:700;letter-spacing:2.5px;
+      color:#1A3A6A;margin-bottom:2mm;
+    }
+    .nm{
+      font-family:'Dancing Script',cursive;font-size:36pt;font-weight:700;
+      color:#CC0000;line-height:1.1;margin-bottom:2mm;
+    }
+    .pr{font-size:9.5pt;color:#1A1916;font-style:italic;margin-bottom:1.5mm}
+    .comp{font-size:9.5pt;color:#555;margin-bottom:1.5mm}
+    .cr{font-size:14pt;font-weight:700;color:#1A3A6A;line-height:1.3;margin-bottom:1.5mm}
+    .ct{font-size:9.5pt;color:#1A1916}
+
+    /* ── Footer ── */
+    .ft{
+      display:flex;justify-content:space-between;align-items:flex-end;
+      padding-top:2.5mm;
+      border-top:1px solid rgba(26,58,106,0.22);
+      margin-top:1mm;
+    }
+    .sig-blk{display:flex;flex-direction:column;align-items:flex-start}
+    .sig-img{height:13mm;object-fit:contain;margin-bottom:0.5mm}
+    .sig-nm{
+      font-family:'Dancing Script',cursive;font-size:13pt;font-weight:700;color:#1A1916;
+    }
+    .sig-tl{font-size:7.5pt;color:#1A3A6A}
+    .dt-blk{display:flex;flex-direction:column;align-items:center}
+    .dt-val{font-size:11pt;font-weight:700;color:#1A1916}
+    .dt-lbl{font-size:7pt;color:#555;letter-spacing:1px;text-transform:uppercase}
+    .brand-blk{display:flex;align-items:flex-end;gap:5mm}
+    .brand-blk img{height:10mm;width:auto;object-fit:contain}
+  </style>
+</head>
+<body>
+
+<div class="print-bar">
+  <span>Certificate Preview &nbsp;·&nbsp; Ayaan Ahmad Khan &nbsp;·&nbsp; ACEM Abacus — Senior Level 1</span>
+  <button onclick="window.print()">⬇ Download / Print as PDF</button>
+</div>
+
+<div class="cert">
+  <div class="layer">
+
+    <!-- Header -->
+    <div class="hd">
+      <img class="nlh-logo" src="/NLH%20Logo.png" alt="NLH">
+      <div class="sm-col">
+        <span>📸 /newlearninghorizon</span>
+        <span>📘 /nlhnag</span>
+        <span>🌐 nlhnagpur.info</span>
+      </div>
+    </div>
+
+    <!-- Main content -->
+    <div class="body">
+      <div class="acc">Certificate of Accomplishment</div>
+      <div class="certify">THIS IS TO CERTIFY THAT</div>
+      <div class="nm">Ayaan Ahmad Khan</div>
+      <div class="pr">S/o. Faizan Ahmad Khan, R/o. Nagpur, Maharashtra</div>
+      <div class="comp">Has successfully completed</div>
+      <div class="cr">ACEM Abacus &mdash; Senior Level 1</div>
+      <div class="ct">at New Learning Horizons, Nagpur</div>
+    </div>
+
+    <!-- Footer -->
+    <div class="ft">
+      <div class="sig-blk">
+        <img class="sig-img" src="/DRP%20Signature.png" alt="Signature"
+             onerror="this.style.display='none'">
+        <div class="sig-nm">Dhiral Panchmatia</div>
+        <div class="sig-tl">Founder, New Learning Horizons</div>
+      </div>
+      <div class="dt-blk">
+        <div class="dt-val">18.05.2026</div>
+        <div class="dt-lbl">Date</div>
+      </div>
+      <div class="brand-blk">
+        <img src="/acem-abacus-logo.png" alt="ACEM Abacus" onerror="this.style.display='none'">
+        <img src="/writewell-logo.png" alt="WriteWell" onerror="this.style.display='none'">
+        <img src="/easy-math-logo.png" alt="Easy Math" onerror="this.style.display='none'">
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
