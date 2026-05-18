@@ -81,13 +81,16 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   })
 
   // ── Courses state ──
-  const [appointments, setAppointments]   = useState([])
+  const [appointments,  setAppointments]  = useState([])
   const [showAddCourse, setShowAddCourse] = useState(false)
   const [newAppt, setNewAppt] = useState({
-    sku_id: '', trained_by_nlh: false, training_fee: '', training_date: '',
-    remuneration_mode: 'per_session', remuneration_rate: '',
+    course_name: '', selectedSkuIds: [],
+    trained_by_nlh: false, training_fee: '', training_date: '',
+    remuneration_mode: 'per_student', remuneration_rate: '',
     appointed_at: new Date().toISOString().split('T')[0], notes: '',
   })
+  const [editApptId,   setEditApptId]   = useState(null)
+  const [editApptForm, setEditApptForm] = useState({})
 
   // ── Batches state ──
   const [batchesData,   setBatchesData]   = useState([])   // [{appt, batches:[]}]
@@ -186,34 +189,39 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     onSaved({ ...instructor, ...payload })
   }
 
-  // ── Add course appointment ──
+  // ── Add course appointment (multi-level) ──
   async function addAppointment() {
-    if (!newAppt.sku_id)           { showToast('Select a course level', 'warn');     return }
-    if (!newAppt.remuneration_rate){ showToast('Enter remuneration rate', 'warn');   return }
+    if (!newAppt.course_name)              { showToast('Select a course', 'warn');              return }
+    if (!newAppt.selectedSkuIds.length)    { showToast('Select at least one level', 'warn');    return }
+    if (!newAppt.remuneration_rate)        { showToast('Enter remuneration rate', 'warn');      return }
     setSaving(true)
-    const { data, error } = await sb.from('instructor_courses').insert({
-      instructor_id:      instructor.id,
-      sku_id:             newAppt.sku_id,
-      trained_by_nlh:     newAppt.trained_by_nlh,
-      training_fee:       newAppt.trained_by_nlh && newAppt.training_fee
-                            ? Number(newAppt.training_fee) : null,
-      training_date:      newAppt.trained_by_nlh && newAppt.training_date
-                            ? newAppt.training_date : null,
-      remuneration_mode:  newAppt.remuneration_mode,
-      remuneration_rate:  Number(newAppt.remuneration_rate),
-      appointed_at:       newAppt.appointed_at,
-      notes:              newAppt.notes.trim() || null,
-    }).select('*, skus(id,level_name,total_sessions,courses(group_name))').single()
+    const rows = newAppt.selectedSkuIds.map(function (skuId) {
+      return {
+        instructor_id:     instructor.id,
+        sku_id:            skuId,
+        trained_by_nlh:    newAppt.trained_by_nlh,
+        training_fee:      newAppt.trained_by_nlh && newAppt.training_fee ? Number(newAppt.training_fee) : null,
+        training_date:     newAppt.trained_by_nlh && newAppt.training_date ? newAppt.training_date : null,
+        remuneration_mode: newAppt.remuneration_mode,
+        remuneration_rate: Number(newAppt.remuneration_rate),
+        appointed_at:      newAppt.appointed_at,
+        notes:             newAppt.notes.trim() || null,
+      }
+    })
+    const { data, error } = await sb.from('instructor_courses')
+      .insert(rows)
+      .select('*, skus(id,level_name,total_sessions,courses(group_name))')
     setSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    setAppointments(a => [data, ...a])
+    setAppointments(function (a) { return [...(data || []), ...a] })
     setShowAddCourse(false)
     setNewAppt({
-      sku_id: '', trained_by_nlh: false, training_fee: '', training_date: '',
-      remuneration_mode: 'per_session', remuneration_rate: '',
+      course_name: '', selectedSkuIds: [],
+      trained_by_nlh: false, training_fee: '', training_date: '',
+      remuneration_mode: 'per_student', remuneration_rate: '',
       appointed_at: new Date().toISOString().split('T')[0], notes: '',
     })
-    showToast('Course level appointment added')
+    showToast((data || []).length + ' level' + ((data || []).length !== 1 ? 's' : '') + ' appointed')
   }
 
   // ── Toggle appointment active/inactive ──
@@ -223,8 +231,40 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     const { error }  = await sb.from('instructor_courses')
       .update({ status: newStatus, removed_at }).eq('id', appt.id)
     if (error) { showToast('Update failed', 'err'); return }
-    setAppointments(a => a.map(x => x.id === appt.id ? { ...x, status: newStatus, removed_at } : x))
+    setAppointments(function (a) { return a.map(function (x) { return x.id === appt.id ? { ...x, status: newStatus, removed_at } : x }) })
     showToast(newStatus === 'active' ? 'Reactivated' : 'Deactivated')
+  }
+
+  // ── Edit existing appointment ──
+  function startEditAppt(appt) {
+    setEditApptId(appt.id)
+    setEditApptForm({
+      remuneration_mode: appt.remuneration_mode,
+      remuneration_rate: appt.remuneration_rate,
+      trained_by_nlh:    appt.trained_by_nlh,
+      training_fee:      appt.training_fee  ?? '',
+      training_date:     appt.training_date || '',
+      notes:             appt.notes         || '',
+    })
+  }
+
+  async function saveEditAppt() {
+    if (!editApptForm.remuneration_rate) { showToast('Rate is required', 'warn'); return }
+    setSaving(true)
+    const payload = {
+      remuneration_mode: editApptForm.remuneration_mode,
+      remuneration_rate: Number(editApptForm.remuneration_rate),
+      trained_by_nlh:    editApptForm.trained_by_nlh,
+      training_fee:      editApptForm.trained_by_nlh && editApptForm.training_fee ? Number(editApptForm.training_fee) : null,
+      training_date:     editApptForm.trained_by_nlh && editApptForm.training_date ? editApptForm.training_date : null,
+      notes:             editApptForm.notes?.trim() || null,
+    }
+    const { error } = await sb.from('instructor_courses').update(payload).eq('id', editApptId)
+    setSaving(false)
+    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
+    setAppointments(function (a) { return a.map(function (x) { return x.id === editApptId ? { ...x, ...payload } : x }) })
+    setEditApptId(null)
+    showToast('Appointment updated')
   }
 
   // ── Batch functions ──────────────────────────────────────────────────────────
@@ -334,9 +374,15 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     })
   }
 
-  const appointedSkuIds  = appointments.filter(a => a.status === 'active').map(a => a.sku_id)
-  const availableSkus    = allSkus.filter(s => !appointedSkuIds.includes(s.id))
-  const skuGroups        = groupSkus(availableSkus)
+  const appointedSkuIds  = appointments.filter(function (a) { return a.status === 'active' }).map(function (a) { return a.sku_id })
+  const availableSkus    = allSkus.filter(function (s) { return !appointedSkuIds.includes(s.id) })
+  // Course names that still have at least one unapppointed level
+  const availableCourseNames = Array.from(new Set(
+    availableSkus.map(function (s) { return s.courses?.group_name }).filter(Boolean)
+  )).sort()
+  function levelsForCourse(courseName) {
+    return availableSkus.filter(function (s) { return s.courses?.group_name === courseName })
+  }
   const showSettlement   = ['refunded', 'partial', 'forfeited'].includes(caution.caution_status)
 
   return (
@@ -564,7 +610,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                               key={sku.id}
                               title={chipTitle}
                               onClick={notApptd ? function () {
-                                setNewAppt(function (prev) { return { ...prev, sku_id: sku.id } })
+                                setNewAppt(function (prev) { return { ...prev, course_name: sku.courses?.group_name || '', selectedSkuIds: [sku.id] } })
                                 setShowAddCourse(true)
                               } : undefined}
                               style={{
@@ -597,40 +643,101 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       {course.levels
                         .filter(function (l) { return l.appt })
                         .map(function ({ sku, appt: a }) {
+                          const isEditing = editApptId === a.id
                           return (
                             <div key={a.id} style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              padding: '6px 10px', marginBottom: 4, borderRadius: 6,
+                              padding: '8px 10px', marginBottom: 4, borderRadius: 6,
                               background: a.status === 'active' ? 'var(--purple-bg)' : 'var(--bg3)',
                               opacity: a.status !== 'active' ? 0.6 : 1,
                             }}>
-                              <div style={{ fontSize: 11, lineHeight: 1.5 }}>
-                                <span style={{ fontWeight: 600 }}>{sku.level_name}</span>
-                                <span style={{ color: 'var(--text3)', marginLeft: 8 }}>
-                                  {REMUN_LABELS[a.remuneration_mode]}
-                                  {' · '}₹{Number(a.remuneration_rate).toLocaleString('en-IN')} {REMUN_SUFFIX[a.remuneration_mode]}
-                                </span>
-                                {a.trained_by_nlh && (
-                                  <span style={{ color: 'var(--green)', marginLeft: 8, fontSize: 10 }}>
-                                    ✅ NLH Trained
-                                    {a.training_date ? ' ' + fmtDate(a.training_date) : ''}
-                                    {a.training_fee  ? ' · ₹' + Number(a.training_fee).toLocaleString('en-IN') : ''}
-                                  </span>
-                                )}
-                                <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
-                                  Since {fmtDate(a.appointed_at)}
-                                  {a.removed_at ? ' · Removed ' + fmtDate(a.removed_at) : ''}
-                                </span>
-                                {a.notes && (
-                                  <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
-                                    · {a.notes}
-                                  </span>
-                                )}
-                              </div>
-                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0, marginLeft: 8 }}
-                                onClick={function () { toggleApptStatus(a) }}>
-                                {a.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                              </button>
+                              {isEditing ? (
+                                /* ── Inline edit form ── */
+                                <div>
+                                  <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>{sku.level_name}</div>
+                                  <div className="form-grid">
+                                    <label>Mode
+                                      <select value={editApptForm.remuneration_mode}
+                                        onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_mode: e.target.value } }) }}>
+                                        <option value="per_session">Per Session (₹ / hr)</option>
+                                        <option value="per_student">Per Student (₹ on completion)</option>
+                                        <option value="monthly">Monthly Fixed (₹ / month)</option>
+                                      </select>
+                                    </label>
+                                    <label>Rate (₹)
+                                      <input type="number" value={editApptForm.remuneration_rate}
+                                        onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_rate: e.target.value } }) }} />
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 18 }}>
+                                      <input type="checkbox" checked={!!editApptForm.trained_by_nlh}
+                                        onChange={function (e) { setEditApptForm(function (f) { return { ...f, trained_by_nlh: e.target.checked } }) }} />
+                                      Trained by NLH
+                                    </label>
+                                    {editApptForm.trained_by_nlh && (
+                                      <>
+                                        <label>Training Fee (₹)
+                                          <input type="number" value={editApptForm.training_fee}
+                                            onChange={function (e) { setEditApptForm(function (f) { return { ...f, training_fee: e.target.value } }) }}
+                                            placeholder="0 if waived" />
+                                        </label>
+                                        <label>Training Date
+                                          <input type="date" value={editApptForm.training_date}
+                                            onChange={function (e) { setEditApptForm(function (f) { return { ...f, training_date: e.target.value } }) }} />
+                                        </label>
+                                      </>
+                                    )}
+                                    <label className="col-span-2">Notes
+                                      <input value={editApptForm.notes}
+                                        onChange={function (e) { setEditApptForm(function (f) { return { ...f, notes: e.target.value } }) }}
+                                        placeholder="Remarks…" />
+                                    </label>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                    <button className="btn" style={{ fontSize: 11 }} onClick={function () { setEditApptId(null) }}>Cancel</button>
+                                    <button className="btn-p" style={{ fontSize: 11 }} onClick={saveEditAppt} disabled={saving}>
+                                      {saving ? 'Saving…' : 'Save Changes'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* ── Read-only row ── */
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+                                    <span style={{ fontWeight: 600 }}>{sku.level_name}</span>
+                                    <span style={{ color: 'var(--text3)', marginLeft: 8 }}>
+                                      {REMUN_LABELS[a.remuneration_mode]}
+                                      {' · '}₹{Number(a.remuneration_rate).toLocaleString('en-IN')} {REMUN_SUFFIX[a.remuneration_mode]}
+                                    </span>
+                                    {a.trained_by_nlh && (
+                                      <span style={{ color: 'var(--green)', marginLeft: 8, fontSize: 10 }}>
+                                        ✅ NLH Trained
+                                        {a.training_date ? ' ' + fmtDate(a.training_date) : ''}
+                                        {a.training_fee  ? ' · ₹' + Number(a.training_fee).toLocaleString('en-IN') : ''}
+                                      </span>
+                                    )}
+                                    <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
+                                      Since {fmtDate(a.appointed_at)}
+                                      {a.removed_at ? ' · Removed ' + fmtDate(a.removed_at) : ''}
+                                    </span>
+                                    {a.notes && (
+                                      <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
+                                        · {a.notes}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 8 }}>
+                                    {a.status === 'active' && (
+                                      <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                                        onClick={function () { startEditAppt(a) }}>
+                                        Edit
+                                      </button>
+                                    )}
+                                    <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                                      onClick={function () { toggleApptStatus(a) }}>
+                                      {a.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )
                         })
@@ -647,28 +754,59 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     New Course Appointment
                   </div>
                   <div className="form-grid">
-                    <label className="col-span-2">Course &amp; Level *
-                      <select value={newAppt.sku_id} onChange={nfd('sku_id')}>
-                        <option value="">— Select course &amp; level —</option>
-                        {skuGroups.map(function (g) {
-                          return (
-                            <optgroup key={g.name} label={g.name}>
-                              {g.skus.map(function (s) {
-                                return (
-                                  <option key={s.id} value={s.id}>
-                                    {s.level_name}{s.total_sessions ? ` (${s.total_sessions} sessions)` : ''}
-                                  </option>
-                                )
-                              })}
-                            </optgroup>
-                          )
+
+                    {/* Step 1: Course */}
+                    <label className="col-span-2">Course *
+                      <select value={newAppt.course_name}
+                        onChange={function (e) {
+                          setNewAppt(function (a) { return { ...a, course_name: e.target.value, selectedSkuIds: [] } })
+                        }}>
+                        <option value="">— Select course —</option>
+                        {availableCourseNames.map(function (cn) {
+                          return <option key={cn} value={cn}>{cn}</option>
                         })}
                       </select>
                     </label>
+
+                    {/* Step 2: Level checkboxes */}
+                    {newAppt.course_name && (
+                      <div className="col-span-2">
+                        <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>
+                          Levels * — select one or more
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {levelsForCourse(newAppt.course_name).map(function (s) {
+                            const checked = newAppt.selectedSkuIds.includes(s.id)
+                            return (
+                              <button key={s.id} type="button"
+                                onClick={function () {
+                                  setNewAppt(function (a) {
+                                    const ids = checked
+                                      ? a.selectedSkuIds.filter(function (id) { return id !== s.id })
+                                      : [...a.selectedSkuIds, s.id]
+                                    return { ...a, selectedSkuIds: ids }
+                                  })
+                                }}
+                                style={{
+                                  padding: '5px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                                  border: checked ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                                  background: checked ? 'var(--purple-bg)' : 'var(--bg2)',
+                                  color: checked ? 'var(--purple)' : 'var(--text2)',
+                                  fontWeight: checked ? 700 : 400,
+                                }}>
+                                {checked ? '✓ ' : ''}{s.level_name}
+                                {s.total_sessions ? <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>{s.total_sessions}s</span> : null}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <label>Remuneration Mode *
                       <select value={newAppt.remuneration_mode} onChange={nfd('remuneration_mode')}>
-                        <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="per_student">Per Student (₹ on completion)</option>
+                        <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
                     </label>
@@ -677,8 +815,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         onChange={nfd('remuneration_rate')}
                         placeholder={
                           newAppt.remuneration_mode === 'per_session' ? 'e.g. 150' :
-                          newAppt.remuneration_mode === 'monthly'     ? 'e.g. 5000' :
-                                                                        'e.g. 500'
+                          newAppt.remuneration_mode === 'monthly'     ? 'e.g. 5000' : 'e.g. 750'
                         } />
                     </label>
                     <label>Appointed From
@@ -686,7 +823,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 20 }}>
                       <input type="checkbox" checked={newAppt.trained_by_nlh}
-                        onChange={function (e) { setNewAppt(a => ({ ...a, trained_by_nlh: e.target.checked })) }} />
+                        onChange={function (e) { setNewAppt(function (a) { return { ...a, trained_by_nlh: e.target.checked } }) }} />
                       Trained by NLH
                     </label>
                     {newAppt.trained_by_nlh && (
@@ -705,21 +842,26 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         placeholder="Remarks on this appointment…" />
                     </label>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
                     <button className="btn" onClick={function () { setShowAddCourse(false) }}>Cancel</button>
-                    <button className="btn-p" onClick={addAppointment} disabled={saving}>
-                      {saving ? 'Saving…' : 'Add Appointment'}
+                    <button className="btn-p" onClick={addAppointment} disabled={saving || !newAppt.selectedSkuIds.length}>
+                      {saving ? 'Saving…' : 'Appoint' + (newAppt.selectedSkuIds.length > 1 ? ' ' + newAppt.selectedSkuIds.length + ' Levels' : ' to Level')}
                     </button>
+                    {newAppt.selectedSkuIds.length > 0 && (
+                      <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        {newAppt.selectedSkuIds.length} level{newAppt.selectedSkuIds.length > 1 ? 's' : ''} selected
+                      </span>
+                    )}
                   </div>
                 </div>
               ) : (
                 <button className="btn-s" style={{ marginTop: 4 }}
                   onClick={function () { setShowAddCourse(true) }}
                   disabled={availableSkus.length === 0}>
-                  + Appoint to Level
+                  + Appoint to Course / Level
                 </button>
               )}
-              {availableSkus.length === 0 && appointments.filter(a => a.status === 'active').length > 0 && (
+              {availableSkus.length === 0 && appointments.filter(function (a) { return a.status === 'active' }).length > 0 && (
                 <p className="hint" style={{ marginTop: 6 }}>All course levels are already appointed.</p>
               )}
             </div>
