@@ -425,8 +425,13 @@ export async function sendFranchiseeWelcomeLetter(franchisee, courseNames) {
   const tierOpening = tierOpenings[franchisee.tier] || tierOpenings.UF
 
   const subject = 'Welcome to the New Learning Horizons Family, ' + firstName + '!'
-  const sigUrl  = 'https://nlh-platform.vercel.app/DRP%20Signature.png'
-  const logoUrl = 'https://nlh-platform.vercel.app/NLH%20Logo.png'
+  const BASE    = 'https://nlh-platform.vercel.app'
+  const sigUrl  = BASE + '/DRP%20Signature.png'
+  const logoUrl = BASE + '/NLH%20Logo.png'
+  const awardsUrl  = BASE + '/awards-banner.png'
+  const acemUrl    = BASE + '/acem-abacus-logo.png'
+  const writewellUrl = BASE + '/writewell-logo.png'
+  const easymathUrl  = BASE + '/easy-math-logo.png'
 
   const html =
     '<div style="margin:0;padding:0;background:#F4F2EC;font-family:Georgia,\'Times New Roman\',serif">' +
@@ -434,23 +439,28 @@ export async function sendFranchiseeWelcomeLetter(franchisee, courseNames) {
     '<tr><td align="center">' +
     '<table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#FFFFFF;border:1px solid #D6D0C4;border-radius:4px">' +
 
-    // ── Letterhead ────────────────────────────────────────────────────────────
-    '<tr><td style="padding:20px 32px 16px;border-bottom:2px solid #CC0000">' +
+    // ── Row 1: Logo + Awards strip + Address ──────────────────────────────────
+    '<tr><td style="padding:16px 24px 12px;border-bottom:2px solid #CC0000">' +
     '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
 
-    // Logo left
-    '<td style="vertical-align:middle;width:140px">' +
-    '<img src="' + logoUrl + '" alt="NLH" style="height:64px;width:auto;display:block" />' +
+    // NLH logo — left column
+    '<td style="vertical-align:top;width:130px;padding-right:10px">' +
+    '<img src="' + logoUrl + '" alt="NLH" style="height:60px;width:auto;display:block" />' +
     '</td>' +
 
-    // Address right
-    '<td style="text-align:right;vertical-align:top;font-family:Arial,sans-serif">' +
-    '<div style="font-size:13px;font-weight:700;color:#CC0000">Dhiral Panchmatia</div>' +
-    '<div style="font-size:10px;color:#555;line-height:1.7">' +
-    '9, Anjuman Shopping Complex<br>Residency Road, Sadar, Nagpur &ndash; 440 001<br>' +
+    // Awards photo strip — centre column
+    '<td style="vertical-align:top;text-align:center;padding:0 6px">' +
+    '<img src="' + awardsUrl + '" alt="Awards" style="width:100%;max-width:290px;height:60px;object-fit:cover;object-position:center;display:block;border-radius:3px" />' +
+    '</td>' +
+
+    // Address — right column
+    '<td style="text-align:right;vertical-align:top;width:156px;padding-left:10px;font-family:Arial,sans-serif">' +
+    '<div style="font-size:12px;font-weight:700;color:#CC0000">Dhiral Panchmatia</div>' +
+    '<div style="font-size:9.5px;color:#444;line-height:1.75">' +
+    '9, Anjuman Shopping Complex<br>Residency Road, Sadar<br>Nagpur &ndash; 440 001<br>' +
     'Mob.: +91 9373111311<br>' +
-    'Email: <a href="mailto:nlhnagpur@yahoo.in" style="color:#CC0000;text-decoration:none">nlhnagpur@yahoo.in</a><br>' +
-    'Website: <a href="https://www.nlhnagpur.info" style="color:#CC0000;text-decoration:none">www.nlhnagpur.info</a>' +
+    '<a href="mailto:nlhnagpur@yahoo.in" style="color:#CC0000;text-decoration:none">nlhnagpur@yahoo.in</a><br>' +
+    '<a href="https://www.nlhnagpur.info" style="color:#CC0000;text-decoration:none">www.nlhnagpur.info</a>' +
     '</div>' +
     '</td>' +
 
@@ -547,6 +557,21 @@ export async function sendFranchiseeWelcomeLetter(franchisee, courseNames) {
     '<div style="font-weight:700">Dhiral Panchmatia</div>' +
     '<div>Founder &amp; Director</div>' +
     '<div style="color:#CC0000;font-weight:600">New Learning Horizons</div>' +
+    '</td></tr>' +
+
+    // ── Premier course brand logos ────────────────────────────────────────────
+    '<tr><td style="padding:16px 32px 8px;border-top:1px solid #E8E4DA">' +
+    '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
+    '<td align="center" style="padding:0 8px">' +
+    '<img src="' + acemUrl + '" alt="ACEM Abacus" style="height:48px;width:auto;border-radius:4px" />' +
+    '</td>' +
+    '<td align="center" style="padding:0 8px">' +
+    '<img src="' + writewellUrl + '" alt="WriteWell" style="height:48px;width:auto;border-radius:4px" />' +
+    '</td>' +
+    '<td align="center" style="padding:0 8px">' +
+    '<img src="' + easymathUrl + '" alt="Easy Math" style="height:48px;width:auto;border-radius:4px" />' +
+    '</td>' +
+    '</tr></table>' +
     '</td></tr>' +
 
     // ── Red divider ───────────────────────────────────────────────────────────
