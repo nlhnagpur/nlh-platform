@@ -1234,7 +1234,7 @@ export default function StudentsPage() {
       setLoading(true)
       let q = sb.from('students')
         .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
-        .order('full_name')
+        .order('created_at', { ascending: false })
 
       if (admin) {
         // Admin sees all students — no filter
@@ -1268,7 +1268,7 @@ export default function StudentsPage() {
   }
 
   function handleAdded(st) {
-    setStudents(ss => [...ss, { ...st, enrollments: [] }].sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '')))
+    setStudents(ss => [{ ...st, enrollments: [] }, ...ss])
     setShowAdd(false)
   }
 
@@ -1365,6 +1365,11 @@ export default function StudentsPage() {
                           </div>
                           <div>
                             <div className="placer-name">{s.full_name}</div>
+                            {s.created_at && (
+                              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
+                                Joined {new Date(s.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
