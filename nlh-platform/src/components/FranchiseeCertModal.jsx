@@ -38,7 +38,7 @@ export function printFranchiseeCert(franchisee, courseNames) {
   const courses = courseNames.join(', ')
   const isSMF   = franchisee.tier === 'SMF'
   const origin  = window.location.origin
-  const bgUrl   = origin + '/Certificate%20Background.png'
+  const bgUrl   = origin + '/Franchisee%20Certificate%20Background.png'
   const logoUrl = origin + '/NLH%20Logo.png'
   const sigUrl  = origin + '/DRP%20Signature.png'
 
@@ -229,7 +229,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
           <div style={{
             borderRadius: 10, overflow: 'hidden',
             border: '1px solid #D6D0C4',
-            backgroundImage: 'url(/Certificate%20Background.png)',
+            backgroundImage: 'url(/Franchisee%20Certificate%20Background.png)',
             backgroundSize: 'cover', backgroundPosition: 'center',
             display: 'flex', marginBottom: 12,
             fontFamily: 'Arial,sans-serif',
