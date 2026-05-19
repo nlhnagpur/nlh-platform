@@ -988,71 +988,114 @@ export default function FranchiseesPage() {
           </div>
         </div>
 
-        {/* Franchisee cards grid */}
+        {/* City-grouped list */}
         {loading ? (
           <div className="loading"><span className="spinner" />Loading…</div>
         ) : tierFiltered.length === 0 ? (
           <div className="empty">No franchisees found.</div>
-        ) : (
-          <div className="fr-grid">
-            {tierFiltered.map(function (f) {
-              const tier = (f.tier || 'UF').toLowerCase()
-              return (
-                <div key={f.id} className={'fr-card ' + tier} onClick={function () { setSelected(f) }}>
-                  <div className="fr-head">
-                    <div className="fr-av" style={{ background: tierColor(f.tier) }}>
-                      {frInitials(f.business_name)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="fr-name">{f.business_name}</div>
-                      <div className="fr-loc">{[f.city, f.state, f.country && f.country !== 'India' ? f.country : null].filter(Boolean).join(' · ')}</div>
-                      <div className="fr-badge-row">
-                        <TierBadge tier={f.tier} />
-                        {f.phone && <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{f.phone}</span>}
-                      </div>
+        ) : (function () {
+          // Separate NLH own centre
+          const nlhCentre = tierFiltered.find(function (f) { return f.tier === 'NLH' })
+          const others = tierFiltered.filter(function (f) { return f.tier !== 'NLH' })
+
+          // Group by city (fallback to state → country)
+          const cityMap = {}
+          others.forEach(function (f) {
+            const key = f.city || f.state || f.country || 'Unknown'
+            if (!cityMap[key]) cityMap[key] = []
+            cityMap[key].push(f)
+          })
+          const cityGroups = Object.keys(cityMap).sort().map(function (city) {
+            return {
+              city,
+              items: cityMap[city].slice().sort(function (a, b) {
+                const t = (TIER_ORDER[a.tier] ?? 9) - (TIER_ORDER[b.tier] ?? 9)
+                if (t !== 0) return t
+                return (a.business_name || '').localeCompare(b.business_name || '')
+              }),
+            }
+          })
+
+          return (
+            <div>
+              {/* NLH Own Centre */}
+              {nlhCentre && (
+                <div className="nlh-own-card" onClick={function () { setSelected(nlhCentre) }}>
+                  <img
+                    className="nlh-own-logo" src="/NLH Logo.png" alt="NLH"
+                    onError={function (e) { e.target.style.display = 'none' }}
+                  />
+                  <div className="nlh-own-info">
+                    <div className="nlh-own-name">{nlhCentre.business_name || 'New Learning Horizons'}</div>
+                    <div className="nlh-own-loc">
+                      {[nlhCentre.address, nlhCentre.area, nlhCentre.city, nlhCentre.state].filter(Boolean).join(', ')}
                     </div>
                   </div>
-                  <div className="fr-stat-row">
-                    <div className="fr-stat">
-                      <div className="fr-stat-num">{f.fee_paid > 0 ? '₹' + fmtAmt(f.fee_paid) : '—'}</div>
-                      <div className="fr-stat-lbl">Fee paid</div>
+                  <span className="nlh-own-badge">NLH HQ</span>
+                  <span className="nlh-own-arrow">›</span>
+                </div>
+              )}
+
+              {/* City sections */}
+              {cityGroups.map(function (group) {
+                return (
+                  <div key={group.city} className="city-section">
+                    <div className="city-hdr">
+                      <span className="city-hdr-name">{group.city}</span>
+                      <span className="city-hdr-count">{group.items.length} partner{group.items.length !== 1 ? 's' : ''}</span>
                     </div>
-                    <div className="fr-stat">
-                      <div className="fr-stat-num">{(f.registered_courses || []).length}</div>
-                      <div className="fr-stat-lbl">Courses</div>
-                    </div>
-                    <div className="fr-stat">
-                      <div className="fr-stat-num">{f.status || '—'}</div>
-                      <div className="fr-stat-lbl">Status</div>
-                    </div>
-                  </div>
-                  <div className="fr-card-foot">
-                    <div className="fr-since">{f.city || f.state || '—'}</div>
-                    {(() => {
+
+                    {group.items.map(function (f) {
+                      const tierCls = (f.tier || 'uf').toLowerCase()
                       const rs2 = renewalStatus(f)
-                      const col = rs2.isExpired ? 'var(--red)' : rs2.isExpiring ? '#b45309' : 'var(--green)'
-                      const lbl = rs2.isExpired
+                      const valCol = rs2.isExpired ? 'var(--red)' : rs2.isExpiring ? '#b45309' : 'var(--green)'
+                      const valLbl = rs2.isExpired
                         ? '⚠ Expired'
                         : rs2.isExpiring
-                          ? `⏳ ${rs2.daysLeft}d left`
-                          : `✓ ${rs2.daysLeft}d`
+                          ? `⏳ ${rs2.daysLeft}d`
+                          : '✓ Active'
+
                       return (
-                        <span title={rs2.date.toLocaleDateString('en-IN')} style={{
-                          font: '600 9px var(--mono)', color: col, letterSpacing: '0.3px',
-                        }}>
-                          {lbl}
-                        </span>
+                        <div
+                          key={f.id}
+                          className={'fr-row ' + tierCls}
+                          onClick={function () { setSelected(f) }}
+                        >
+                          <TierBadge tier={f.tier} />
+
+                          <div className="fr-row-main">
+                            <div className="fr-row-name">{f.business_name}</div>
+                            {f.owner_name && f.owner_name !== f.business_name && (
+                              <div className="fr-row-owner">{f.owner_name}</div>
+                            )}
+                            {(f.area || f.state) && (
+                              <div className="fr-row-loc">
+                                {[f.area, f.tier === 'SMF' ? f.state : null].filter(Boolean).join(' · ')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="fr-row-meta">
+                            {f.phone && <span className="fr-row-phone">{f.phone}</span>}
+                            {(f.registered_courses || []).length > 0 && (
+                              <span className="fr-row-courses">{(f.registered_courses || []).length} courses</span>
+                            )}
+                          </div>
+
+                          <span className="fr-row-validity" style={{ color: valCol, flexShrink: 0 }}>
+                            {valLbl}
+                          </span>
+
+                          <span className="fr-row-arrow">›</span>
+                        </div>
                       )
-                    })()}
-                    <div className={'fr-active ' + (f.status !== 'active' ? 'fr-dormant' : '')}>
-                      <span className="d"></span>{f.status === 'active' ? 'Active' : (f.status || 'Unknown')}
-                    </div>
+                    })}
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+                )
+              })}
+            </div>
+          )
+        })()}
       </div>
 
       {selected && (

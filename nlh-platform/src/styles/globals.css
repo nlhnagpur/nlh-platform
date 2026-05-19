@@ -907,7 +907,7 @@ vercel-toolbar { display: none !important; }
   .mini-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
 
   /* ── franchisees grid → 1-col ── */
-  .fr-grid { grid-template-columns: 1fr !important; }
+  .fr-row-meta { display:none; }
   .fr-toolbar { flex-wrap: wrap; }
 
   /* ── prices layout → stack ── */
@@ -1085,29 +1085,56 @@ vercel-toolbar { display: none !important; }
 .fr-tab .ct { font:700 9px var(--mono); padding:1px 6px; border-radius:20px; background:var(--bg3); color:var(--text2); }
 .fr-tab.on .ct { background:var(--purple-bg); color:var(--purple); }
 
-.fr-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
-@media (max-width:1200px) { .fr-grid { grid-template-columns:repeat(2,1fr); } }
-.fr-card { background:#fff; border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:var(--shadow); transition:all .18s; cursor:pointer; position:relative; overflow:hidden; }
-.fr-card:hover { transform:translateY(-3px); box-shadow:0 12px 28px rgba(0,0,0,.08); border-color:rgba(83,74,183,.18); }
-.fr-card::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; }
-.fr-card.smf::before { background:linear-gradient(90deg,var(--sun),var(--orange-2)); }
-.fr-card.cf::before  { background:linear-gradient(90deg,var(--green-2),#6EE7B7); }
-.fr-card.uf::before  { background:linear-gradient(90deg,var(--blue),#60A5FA); }
-.fr-head { display:flex; gap:12px; align-items:flex-start; margin-bottom:14px; }
-.fr-av { width:48px; height:48px; border-radius:14px; display:flex; align-items:center; justify-content:center; font:700 16px var(--font); color:#fff; flex-shrink:0; }
-.fr-name { font:700 14px var(--font); color:var(--text); line-height:1.2; }
-.fr-loc { font:500 10px var(--mono); color:var(--text3); margin-top:3px; text-transform:uppercase; letter-spacing:.05em; }
-.fr-badge-row { display:flex; gap:6px; margin-top:6px; align-items:center; }
-.fr-stat-row { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:10px 0; border-top:1px solid var(--border); }
-.fr-stat { text-align:left; }
-.fr-stat-num { font:700 16px var(--font); color:var(--text); letter-spacing:-.01em; }
-.fr-stat-lbl { font:500 9px var(--mono); color:var(--text3); text-transform:uppercase; letter-spacing:.05em; margin-top:2px; }
-.fr-card-foot { display:flex; justify-content:space-between; align-items:center; padding-top:10px; border-top:1px solid var(--border); }
-.fr-since { font:500 10px var(--mono); color:var(--text3); text-transform:uppercase; letter-spacing:.04em; }
-.fr-active { display:inline-flex; align-items:center; gap:5px; font:600 10px var(--mono); color:var(--green); text-transform:uppercase; letter-spacing:.05em; }
-.fr-active .d { width:6px; height:6px; border-radius:50%; background:var(--green-2); }
-.fr-dormant { color:var(--text3); }
-.fr-dormant .d { background:var(--text3); }
+/* ── NLH Own Centre hero card ── */
+.nlh-own-card {
+  display:flex; align-items:center; gap:16px;
+  background:linear-gradient(135deg,#f5f3ff 0%,#eef2ff 100%);
+  border:1.5px solid rgba(83,74,183,.22);
+  border-radius:14px; padding:16px 20px;
+  cursor:pointer; margin-bottom:24px;
+  transition:all .16s; box-shadow:0 2px 10px rgba(83,74,183,.08);
+}
+.nlh-own-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(83,74,183,.14); }
+.nlh-own-logo { height:46px; width:auto; object-fit:contain; flex-shrink:0; }
+.nlh-own-info { flex:1; min-width:0; }
+.nlh-own-name { font:700 15px var(--font); color:var(--purple); line-height:1.2; }
+.nlh-own-loc  { font:500 11px var(--mono); color:var(--text3); margin-top:3px; }
+.nlh-own-badge { background:var(--purple); color:#fff; font:700 10px var(--mono); letter-spacing:.08em; padding:3px 10px; border-radius:20px; text-transform:uppercase; flex-shrink:0; }
+.nlh-own-arrow { font-size:20px; color:var(--purple); opacity:.5; flex-shrink:0; }
+
+/* ── City section ── */
+.city-section { margin-bottom:20px; }
+.city-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px 4px 8px;
+  border-bottom:2px solid var(--border);
+  margin-bottom:4px;
+}
+.city-hdr-name { font:700 13px var(--font); color:var(--text); text-transform:uppercase; letter-spacing:.06em; }
+.city-hdr-count { font:600 10px var(--mono); color:var(--text3); background:var(--bg3); padding:2px 8px; border-radius:20px; }
+
+/* ── Franchisee row ── */
+.fr-row {
+  display:flex; align-items:center; gap:14px;
+  background:#fff; border:1px solid var(--border);
+  border-left:4px solid transparent;
+  border-radius:10px; padding:11px 14px;
+  cursor:pointer; transition:all .15s;
+  margin-bottom:6px;
+}
+.fr-row:hover { background:#fafaf9; box-shadow:0 3px 12px rgba(0,0,0,.06); border-color:var(--border2); border-left-color:inherit; }
+.fr-row.smf { border-left-color:#F59E0B; }
+.fr-row.cf  { border-left-color:#16A34A; }
+.fr-row.uf  { border-left-color:#2563EB; }
+.fr-row-main { flex:1; min-width:0; }
+.fr-row-name { font:600 13.5px var(--font); color:var(--text); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fr-row-owner { font:500 11px var(--font); color:var(--text3); margin-top:1px; }
+.fr-row-loc { font:500 10px var(--mono); color:var(--text3); margin-top:2px; text-transform:uppercase; letter-spacing:.03em; }
+.fr-row-meta { display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
+.fr-row-phone { font:500 11px var(--mono); color:var(--text2); }
+.fr-row-courses { font:500 10px var(--mono); color:var(--text3); }
+.fr-row-validity { font:600 11px var(--mono); }
+.fr-row-arrow { font-size:18px; color:var(--text3); flex-shrink:0; line-height:1; }
 
 /* ═══════════════════════════════════════════════════════════════════════
    ORDERS & INVOICES PAGES
@@ -1238,7 +1265,7 @@ vercel-toolbar { display: none !important; }
   .content { padding: 16px 14px 32px; gap: 14px; }
   .ph-title { font-size: 20px; }
   .mini-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .fr-grid { grid-template-columns: 1fr !important; }
+  .fr-row-meta { display:none; }
   .fr-toolbar { flex-wrap: wrap; }
   .prices-layout { grid-template-columns: 1fr !important; }
   .prices-rail { max-height: none; }
