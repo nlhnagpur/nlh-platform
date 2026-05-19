@@ -25,12 +25,14 @@ export function printStudentCert(student, enrollment, centre) {
     student.city
       ? `R/o. ${student.city}${student.country && student.country !== 'India' ? ', ' + student.country : ''}`
       : null,
-  ].filter(Boolean).join(', ')
+  ].filter(Boolean).join(' • ')
   const centreLine  = `${centre?.business_name || 'New Learning Horizons'}${centre?.city ? ', ' + centre.city : ''}`
   const dateStr     = todayDMY()
   const origin      = window.location.origin
   const bgUrl       = origin + '/Certificate%20Background.png'
   const sigUrl      = origin + '/DRP%20Signature.png'
+  const logoUrl     = origin + '/NLH%20Logo.png'
+  const mascotUrl   = origin + '/NLH%20Mascot.png'
 
   const html = `<!DOCTYPE html>
 <html>
@@ -44,75 +46,71 @@ export function printStudentCert(student, enrollment, centre) {
     @page{size:A4 landscape;margin:0}
     body{margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:Arial,sans-serif}
 
-    /* ── Full-page canvas ── */
+    /* ── Full canvas: main area + right sidebar ── */
     .cert{
       width:297mm;height:210mm;
-      position:relative;overflow:hidden;
+      display:flex;overflow:hidden;
       background:url('${bgUrl}') center/cover no-repeat;
     }
 
-    /* ── Content layer sits on top of the background ── */
-    .layer{
-      position:absolute;inset:0;
-      display:flex;flex-direction:column;
-      padding:6mm 12mm 5mm;
+    /* ── Main content area ── */
+    .main{
+      flex:1;display:flex;flex-direction:column;
+      padding:7mm 9mm 5mm;
     }
+    .nlh-logo{height:18mm;width:auto;object-fit:contain;margin-bottom:3mm}
 
-    /* ── Header: NLH logo (left) + social (right) ── */
-    .hd{
-      display:flex;justify-content:space-between;align-items:flex-start;
-      margin-bottom:2mm;
-    }
-    .nlh-logo{height:20mm;width:auto;object-fit:contain}
-    .sm-col{
-      display:flex;flex-direction:column;align-items:flex-end;gap:1.5mm;
-      font-size:7pt;color:#1A3A6A;
-    }
-
-    /* ── Main certificate body (vertically centred) ── */
-    .body{
-      flex:1;
-      display:flex;flex-direction:column;
-      justify-content:center;align-items:center;
-      text-align:center;
-    }
+    /* Title */
     .acc{
-      font-family:'Dancing Script',cursive;font-size:27pt;font-weight:700;
-      color:#CC0000;margin-bottom:1.5mm;
+      font-family:'Dancing Script',cursive;font-size:30pt;font-weight:700;
+      color:#CC0000;margin-bottom:1mm;
     }
     .certify{
       font-size:9pt;font-weight:700;letter-spacing:2.5px;
-      color:#1A3A6A;margin-bottom:2mm;
+      color:#1A3A6A;margin-bottom:5mm;
     }
-    .nm{
-      font-family:'Dancing Script',cursive;font-size:36pt;font-weight:700;
-      color:#CC0000;line-height:1.1;margin-bottom:2mm;
-    }
-    .pr{font-size:9.5pt;color:#1A1916;font-style:italic;margin-bottom:1.5mm}
-    .comp{font-size:9.5pt;color:#555;margin-bottom:1.5mm}
-    .cr{font-size:14pt;font-weight:700;color:#1A3A6A;line-height:1.3;margin-bottom:1.5mm}
-    .ct{font-size:9.5pt;color:#1A1916}
 
-    /* ── Footer: sig | date | brand logos ── */
+    /* Student name */
+    .nm{
+      font-family:'Dancing Script',cursive;font-size:42pt;font-weight:700;
+      color:#CC0000;line-height:1.05;margin-bottom:2mm;
+    }
+    .pr{font-size:10pt;color:#1A1916;font-style:italic;margin-bottom:2mm}
+    .comp{font-size:10pt;color:#555;margin-bottom:1.5mm}
+    .cr{font-size:15pt;font-weight:700;color:#1A3A6A;line-height:1.3;margin-bottom:1.5mm}
+    .ct{font-size:10pt;color:#1A1916}
+
+    /* Footer: sig | mascot | date */
     .ft{
       display:flex;justify-content:space-between;align-items:flex-end;
-      padding-top:2.5mm;
-      border-top:1px solid rgba(26,58,106,0.22);
-      margin-top:1mm;
+      border-top:1.5px solid rgba(26,58,106,0.2);
+      padding-top:2.5mm;margin-top:auto;
     }
     .sig-blk{display:flex;flex-direction:column;align-items:flex-start}
     .sig-img{height:13mm;object-fit:contain;margin-bottom:0.5mm}
-    .sig-nm{
-      font-family:'Dancing Script',cursive;font-size:13pt;font-weight:700;color:#1A1916;
-    }
+    .sig-nm{font-family:'Dancing Script',cursive;font-size:12pt;font-weight:700;color:#1A1916}
     .sig-tl{font-size:7.5pt;color:#1A3A6A}
-    .dt-blk{display:flex;flex-direction:column;align-items:center}
+    .mascot-img{height:24mm;width:auto;object-fit:contain}
+    .dt-blk{text-align:right}
     .dt-val{font-size:11pt;font-weight:700;color:#1A1916}
     .dt-lbl{font-size:7pt;color:#555;letter-spacing:1px;text-transform:uppercase}
-    .brand-blk{display:flex;align-items:flex-end;gap:5mm}
-    .brand-blk img{height:10mm;width:auto;object-fit:contain}
 
-    /* ── Print button (screen only) ── */
+    /* ── Right sidebar ── */
+    .sidebar{
+      width:55mm;display:flex;flex-direction:column;
+      align-items:center;justify-content:space-between;
+      padding:6mm 5mm;text-align:center;
+      border-left:2px solid rgba(204,0,0,0.22);
+      background:rgba(255,255,255,0.10);
+    }
+    .estd{font-size:9pt;font-weight:700;color:#CC0000;letter-spacing:1px}
+    .sb-logo{height:18mm;width:auto;object-fit:contain}
+    .iso{font-size:7.5pt;font-weight:700;color:#1A3A6A;letter-spacing:0.5px}
+    .tagline{font-size:7.5pt;color:#3A3830;font-style:italic;line-height:1.45}
+    .social{display:flex;flex-direction:column;gap:2mm;font-size:7.5pt;color:#534AB7}
+    .brand-row{display:flex;flex-direction:column;gap:2mm;align-items:center}
+    .brand-row img{height:9mm;width:auto;object-fit:contain}
+
     .np{text-align:right;padding:10px 20px;background:#f0f0f0}
     @media print{.np{display:none}}
   </style>
@@ -127,53 +125,52 @@ export function printStudentCert(student, enrollment, centre) {
   </div>
 
   <div class="cert">
-    <div class="layer">
 
-      <!-- Header row -->
-      <div class="hd">
-        <img class="nlh-logo" src="${origin}/NLH%20Logo.png" alt="NLH"
-             onerror="this.style.display='none'">
-        <div class="sm-col">
-          <span>📸 /newlearninghorizon</span>
-          <span>📘 /nlhnag</span>
-          <span>🌐 nlhnagpur.info</span>
-        </div>
-      </div>
+    <!-- ── Main content ── -->
+    <div class="main">
+      <img class="nlh-logo" src="${logoUrl}" alt="NLH" onerror="this.style.display='none'">
 
-      <!-- Main content -->
-      <div class="body">
-        <div class="acc">Certificate of Accomplishment</div>
-        <div class="certify">THIS IS TO CERTIFY THAT</div>
-        <div class="nm">${student.full_name}</div>
-        ${parentLine ? `<div class="pr">${parentLine}</div>` : ''}
-        <div class="comp">Has successfully completed</div>
-        <div class="cr">${fullCourse}</div>
-        <div class="ct">at ${centreLine}</div>
-      </div>
+      <div class="acc">Certificate of Accomplishment</div>
+      <div class="certify">THIS IS TO CERTIFY THAT</div>
 
-      <!-- Footer row -->
+      <div class="nm">${student.full_name}</div>
+      ${parentLine ? `<div class="pr">${parentLine}</div>` : ''}
+      <div class="comp">Has successfully completed</div>
+      <div class="cr">${fullCourse}</div>
+      <div class="ct">at ${centreLine}</div>
+
       <div class="ft">
         <div class="sig-blk">
-          <img class="sig-img" src="${sigUrl}" alt="Signature"
-               onerror="this.style.display='none'">
+          <img class="sig-img" src="${sigUrl}" alt="Signature" onerror="this.style.display='none'">
           <div class="sig-nm">Dhiral Panchmatia</div>
           <div class="sig-tl">Founder, New Learning Horizons</div>
         </div>
+        <img class="mascot-img" src="${mascotUrl}" alt="" onerror="this.style.display='none'">
         <div class="dt-blk">
           <div class="dt-val">${dateStr}</div>
           <div class="dt-lbl">Date</div>
         </div>
-        <div class="brand-blk">
-          <img src="${origin}/acem-abacus-logo.png" alt="ACEM Abacus"
-               onerror="this.style.display='none'">
-          <img src="${origin}/writewell-logo.png" alt="WriteWell"
-               onerror="this.style.display='none'">
-          <img src="${origin}/easy-math-logo.png" alt="Easy Math"
-               onerror="this.style.display='none'">
-        </div>
       </div>
-
     </div>
+
+    <!-- ── Right sidebar ── -->
+    <div class="sidebar">
+      <div class="estd">Estd. 2008</div>
+      <img class="sb-logo" src="${logoUrl}" alt="NLH" onerror="this.style.display='none'">
+      <div class="iso">ISO 9001:2015</div>
+      <div class="tagline">Enriching Children's<br>Future since 2008</div>
+      <div class="social">
+        <span>📸 /newlearninghorizon</span>
+        <span>📘 /nlhnag</span>
+        <span>🌐 nlhnagpur.info</span>
+      </div>
+      <div class="brand-row">
+        <img src="${origin}/acem-abacus-logo.png" alt="ACEM Abacus" onerror="this.style.display='none'">
+        <img src="${origin}/writewell-logo.png" alt="WriteWell" onerror="this.style.display='none'">
+        <img src="${origin}/easy-math-logo.png" alt="Easy Math" onerror="this.style.display='none'">
+      </div>
+    </div>
+
   </div>
 </body>
 </html>`
@@ -223,7 +220,7 @@ export default function StudentCertModal({ student, enrollment, centre, onClose 
 
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 540 }}>
+      <div className="modal" style={{ maxWidth: 560 }}>
         <div className="ch">
           <span>🎓 Certificate of Accomplishment</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -236,70 +233,93 @@ export default function StudentCertModal({ student, enrollment, centre, onClose 
             border: '1px solid #D6D0C4',
             backgroundImage: 'url(/Certificate%20Background.png)',
             backgroundSize: 'cover', backgroundPosition: 'center',
-            padding: '14px 18px 12px',
-            textAlign: 'center', fontFamily: 'Arial,sans-serif',
-            marginBottom: 12,
+            display: 'flex', marginBottom: 12,
+            fontFamily: 'Arial,sans-serif',
           }}>
-            {/* Header: logo + social */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+            {/* Main area */}
+            <div style={{ flex: 1, padding: '12px 14px 10px', display: 'flex', flexDirection: 'column' }}>
               <img
                 src="/NLH Logo.png" alt="NLH"
-                style={{ height: 38, objectFit: 'contain' }}
+                style={{ height: 32, objectFit: 'contain', alignSelf: 'flex-start', marginBottom: 6 }}
                 onError={e => { e.target.style.display = 'none' }}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                <span style={{ fontSize: 9, color: '#1A3A6A' }}>📸 /newlearninghorizon</span>
-                <span style={{ fontSize: 9, color: '#1A3A6A' }}>📘 /nlhnag</span>
-                <span style={{ fontSize: 9, color: '#1A3A6A' }}>🌐 nlhnagpur.info</span>
+              <div style={{ fontFamily: 'Georgia,serif', fontSize: 16, fontStyle: 'italic', fontWeight: 700, color: '#CC0000', marginBottom: 2 }}>
+                Certificate of Accomplishment
               </div>
-            </div>
-
-            <div style={{ fontFamily: 'Georgia,serif', fontSize: 17, fontStyle: 'italic', fontWeight: 700, color: '#CC0000', marginBottom: 3 }}>
-              Certificate of Accomplishment
-            </div>
-            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: '#1A3A6A', marginBottom: 8 }}>
-              THIS IS TO CERTIFY THAT
-            </div>
-
-            <div style={{ fontFamily: 'Georgia,serif', fontSize: 21, fontWeight: 700, color: '#CC0000', marginBottom: 3, lineHeight: 1.2 }}>
-              {student.full_name}
-            </div>
-            {student.parent_name && (
-              <div style={{ fontSize: 9, fontStyle: 'italic', color: '#1A1916', marginBottom: 6 }}>
-                S/o. {student.parent_name}{student.city ? `, R/o. ${student.city}` : ''}
+              <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: '#1A3A6A', marginBottom: 8 }}>
+                THIS IS TO CERTIFY THAT
               </div>
-            )}
 
-            <div style={{ fontSize: 9, color: '#555', marginBottom: 2 }}>Has successfully completed</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#1A3A6A', marginBottom: 2, lineHeight: 1.3 }}>
-              {fullCourse}
-            </div>
-            <div style={{ fontSize: 9, color: '#1A1916', marginBottom: 10 }}>
-              at {centre?.business_name || 'New Learning Horizons'}{centre?.city ? ', ' + centre.city : ''}
-            </div>
+              <div style={{ fontFamily: 'Georgia,serif', fontSize: 20, fontWeight: 700, color: '#CC0000', marginBottom: 2, lineHeight: 1.15 }}>
+                {student.full_name}
+              </div>
+              {student.parent_name && (
+                <div style={{ fontSize: 9, fontStyle: 'italic', color: '#1A1916', marginBottom: 5 }}>
+                  S/o. {student.parent_name}{student.city ? ` • R/o. ${student.city}` : ''}
+                </div>
+              )}
 
-            {/* Footer: signature | date | brand logos */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
-              paddingTop: 8, borderTop: '1px solid rgba(26,58,106,0.18)',
-            }}>
-              <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 9, color: '#555', marginBottom: 2 }}>Has successfully completed</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#1A3A6A', marginBottom: 2, lineHeight: 1.3 }}>
+                {fullCourse}
+              </div>
+              <div style={{ fontSize: 9, color: '#1A1916', marginBottom: 8 }}>
+                at {centre?.business_name || 'New Learning Horizons'}{centre?.city ? ', ' + centre.city : ''}
+              </div>
+
+              {/* Footer: sig | mascot | date */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
+                marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(26,58,106,0.18)',
+              }}>
+                <div style={{ textAlign: 'left' }}>
+                  <img
+                    src="/DRP Signature.png" alt="Signature"
+                    style={{ height: 26, objectFit: 'contain', display: 'block', marginBottom: 1 }}
+                    onError={e => { e.target.style.display = 'none' }}
+                  />
+                  <div style={{ fontSize: 10, fontStyle: 'italic', color: '#1A1916', fontWeight: 700 }}>Dhiral Panchmatia</div>
+                  <div style={{ fontSize: 8, color: '#1A3A6A' }}>Founder, New Learning Horizons</div>
+                </div>
                 <img
-                  src="/DRP Signature.png" alt="Signature"
-                  style={{ height: 30, objectFit: 'contain', display: 'block', marginBottom: 1 }}
+                  src="/NLH Mascot.png" alt=""
+                  style={{ height: 40, objectFit: 'contain' }}
                   onError={e => { e.target.style.display = 'none' }}
                 />
-                <div style={{ fontSize: 11, fontStyle: 'italic', color: '#1A1916', fontWeight: 700 }}>Dhiral Panchmatia</div>
-                <div style={{ fontSize: 8, color: '#1A3A6A' }}>Founder, New Learning Horizons</div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916' }}>{todayDMY()}</div>
+                  <div style={{ fontSize: 8, color: '#555', letterSpacing: 1 }}>DATE</div>
+                </div>
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916' }}>{todayDMY()}</div>
-                <div style={{ fontSize: 8, color: '#555', letterSpacing: 1 }}>DATE</div>
+            </div>
+
+            {/* Right sidebar */}
+            <div style={{
+              width: 78, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 6px', textAlign: 'center',
+              borderLeft: '1.5px solid rgba(204,0,0,0.2)',
+              background: 'rgba(255,255,255,0.1)',
+            }}>
+              <div style={{ fontSize: 8, fontWeight: 700, color: '#CC0000' }}>Estd. 2008</div>
+              <img
+                src="/NLH Logo.png" alt="NLH"
+                style={{ height: 28, objectFit: 'contain' }}
+                onError={e => { e.target.style.display = 'none' }}
+              />
+              <div style={{ fontSize: 7, fontWeight: 700, color: '#1A3A6A' }}>ISO 9001:2015</div>
+              <div style={{ fontSize: 7, color: '#555', fontStyle: 'italic', lineHeight: 1.4 }}>
+                Enriching Children's Future
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-                <img src="/acem-abacus-logo.png" alt="ACEM" style={{ height: 26, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
-                <img src="/writewell-logo.png" alt="WriteWell" style={{ height: 26, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
-                <img src="/easy-math-logo.png" alt="Easy Math" style={{ height: 26, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 7, color: '#534AB7' }}>
+                <span>📸 /newlearninghorizon</span>
+                <span>📘 /nlhnag</span>
+                <span>🌐 nlhnagpur.info</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+                <img src="/acem-abacus-logo.png" alt="ACEM" style={{ height: 16, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
+                <img src="/writewell-logo.png" alt="WriteWell" style={{ height: 16, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
+                <img src="/easy-math-logo.png" alt="Easy Math" style={{ height: 16, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
               </div>
             </div>
           </div>

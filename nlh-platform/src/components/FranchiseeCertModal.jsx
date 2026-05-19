@@ -32,21 +32,17 @@ function buildAddress(fr) {
 // ── print window ───────────────────────────────────────────────────────────────
 
 export function printFranchiseeCert(franchisee, courseNames) {
-  const label    = tierLabel(franchisee)
-  const till     = validTill(franchisee)
-  const address  = buildAddress(franchisee)
-  const courses  = courseNames.join(', ')
-  const isSMF    = franchisee.tier === 'SMF'
-  const origin   = window.location.origin
-  const bgUrl    = origin + '/Franchisee%20Certificate%20Blank.png'
-  const logoUrl  = origin + '/NLH%20Logo.png'
-  const sigUrl   = origin + '/DRP%20Signature.png'
-  const mascotUrl = origin + '/NLH%20Mascot.png'
+  const label   = tierLabel(franchisee)
+  const till    = validTill(franchisee)
+  const address = buildAddress(franchisee)
+  const courses = courseNames.join(', ')
+  const isSMF   = franchisee.tier === 'SMF'
+  const origin  = window.location.origin
+  const bgUrl   = origin + '/Certificate%20Background.png'
+  const logoUrl = origin + '/NLH%20Logo.png'
+  const sigUrl  = origin + '/DRP%20Signature.png'
 
-  // mask height is taller for SMF because state name adds an extra line
-  const maskH    = isSMF ? '145mm' : '138mm'
-  const nameSz   = isSMF ? '26pt'  : '30pt'
-  const nameGap  = isSMF ? '1mm'   : '2mm'
+  const nameSz  = isSMF ? '24pt' : '30pt'
 
   const html = `<!DOCTYPE html>
 <html>
@@ -58,60 +54,67 @@ export function printFranchiseeCert(franchisee, courseNames) {
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     @page{size:A4 landscape;margin:0}
-    body{margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:Arial,sans-serif}
+
+    /* ── Full canvas: main area + right sidebar ── */
     .cert{
       width:297mm;height:210mm;
-      position:relative;overflow:hidden;
+      display:flex;overflow:hidden;
       background:url('${bgUrl}') center/cover no-repeat;
     }
-    /* White mask covers the pre-printed text area */
-    .mask{
-      position:absolute;
-      top:8mm;left:3mm;width:211mm;height:${maskH};
-      background:#fff;
-      display:flex;flex-direction:column;
-      align-items:center;
-      padding:3mm 8mm 2mm;
+
+    /* ── Main content area ── */
+    .main{
+      flex:1;display:flex;flex-direction:column;
+      padding:7mm 9mm 5mm;
     }
-    /* ── Header ── */
-    .lg{height:28px;object-fit:contain;margin-bottom:1.5mm}
-    .t1{font-family:Arial,sans-serif;font-size:13pt;font-weight:900;letter-spacing:1.5px;
-        color:#1A1916;margin-bottom:2mm;text-align:center}
-    .t2{font-family:Arial,sans-serif;font-size:8.5pt;color:#3A3830;
-        margin-bottom:2.5mm;text-align:center}
-    /* ── Main content ── */
-    .body{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;width:100%}
-    .nm{font-family:'Dancing Script',cursive;font-size:${nameSz};font-weight:700;
-        color:#CC0000;margin-bottom:${nameGap};text-align:center;line-height:1.1}
-    .st{font-family:'Dancing Script',cursive;font-size:17pt;font-weight:700;
-        color:#CC0000;margin-bottom:2mm;text-align:center}
-    .t3{font-family:Arial,sans-serif;font-size:8.5pt;color:#3A3830;
-        margin-bottom:1mm;text-align:center}
-    .tl{font-family:Arial,sans-serif;font-size:10.5pt;font-weight:700;
-        color:#CC0000;margin-bottom:2mm;text-align:center}
-    .t4{font-family:Arial,sans-serif;font-size:12pt;font-weight:700;
-        color:#1A1916;margin-bottom:2mm;text-align:center}
-    .ad{font-family:Arial,sans-serif;font-size:8pt;color:#1A1916;
-        margin-bottom:2mm;text-align:center;line-height:1.4}
-    .cr{font-family:Arial,sans-serif;font-size:8.5pt;color:#1A1916;
-        text-align:center;line-height:1.4;max-width:200mm}
-    /* ── Footer: sig | social+date | mascot ── */
+    .nlh-logo{height:18mm;width:auto;object-fit:contain;margin-bottom:3mm}
+    .c-title{font-size:20pt;font-weight:900;letter-spacing:2px;color:#1A1916;margin-bottom:1.5mm}
+    .c-sub{font-size:9pt;font-style:italic;color:#3A3830;margin-bottom:5mm}
+    .nm{
+      font-family:'Dancing Script',cursive;font-size:${nameSz};font-weight:700;
+      color:#CC0000;line-height:1.1;margin-bottom:2mm;
+    }
+    .st{
+      font-family:'Dancing Script',cursive;font-size:17pt;font-weight:700;
+      color:#CC0000;margin-bottom:2mm;
+    }
+    .is-reg{font-size:8.5pt;color:#555;margin-bottom:1mm}
+    .tier{font-size:11pt;font-weight:700;color:#CC0000;margin-bottom:2mm}
+    .nlh-at{font-size:10pt;font-weight:700;color:#1A1916;margin-bottom:1mm}
+    .addr{font-size:8.5pt;color:#3A3830;line-height:1.4;margin-bottom:1.5mm}
+    .courses{font-size:8.5pt;color:#1A1916;line-height:1.4;max-width:180mm}
+
+    /* Footer: sig left, valid-till right */
     .ft{
-      width:100%;display:flex;justify-content:space-between;align-items:flex-end;
-      border-top:1px solid #ddd;margin-top:2mm;padding-top:2mm;
+      display:flex;justify-content:space-between;align-items:flex-end;
+      border-top:1.5px solid rgba(26,58,106,0.2);
+      padding-top:2.5mm;margin-top:auto;
     }
-    .sig-blk{display:flex;flex-direction:column;align-items:flex-start;min-width:55mm}
+    .sig-blk{display:flex;flex-direction:column;align-items:flex-start}
     .sig-img{height:13mm;object-fit:contain;margin-bottom:0.5mm}
-    .sig-nm{font-family:'Dancing Script',cursive;font-size:11pt;font-weight:700;color:#1A1916}
-    .sig-tl{font-family:Arial,sans-serif;font-size:7pt;color:#3A3830}
-    .mid-blk{display:flex;flex-direction:column;align-items:center;gap:1.5mm}
-    .sm-row{display:flex;gap:4mm;font-family:Arial,sans-serif;font-size:6.5pt;color:#534AB7}
-    .vt-blk{display:flex;flex-direction:column;align-items:center}
-    .vt-lbl{font-family:Arial,sans-serif;font-size:6.5pt;color:#3A3830}
-    .vt-val{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;color:#1A1916}
-    .mascot-blk{display:flex;align-items:flex-end;min-width:30mm;justify-content:flex-end}
-    .mascot-img{height:20mm;object-fit:contain}
-    /* print button */
+    .sig-nm{font-family:'Dancing Script',cursive;font-size:12pt;font-weight:700;color:#1A1916}
+    .sig-tl{font-size:7.5pt;color:#3A3830}
+    .vt-blk{text-align:right}
+    .vt-lbl{font-size:7pt;color:#555;letter-spacing:1px;text-transform:uppercase}
+    .vt-val{font-size:11pt;font-weight:700;color:#1A1916}
+
+    /* ── Right sidebar ── */
+    .sidebar{
+      width:55mm;display:flex;flex-direction:column;
+      align-items:center;justify-content:space-between;
+      padding:6mm 5mm;text-align:center;
+      border-left:2px solid rgba(204,0,0,0.22);
+      background:rgba(255,255,255,0.10);
+    }
+    .estd{font-size:9pt;font-weight:700;color:#CC0000;letter-spacing:1px}
+    .sb-logo{height:18mm;width:auto;object-fit:contain}
+    .iso{font-size:7.5pt;font-weight:700;color:#1A3A6A;letter-spacing:0.5px}
+    .tagline{font-size:7.5pt;color:#3A3830;font-style:italic;line-height:1.45}
+    .social{display:flex;flex-direction:column;gap:2mm;font-size:7.5pt;color:#534AB7}
+    .brand-row{display:flex;flex-direction:column;gap:2mm;align-items:center}
+    .brand-row img{height:9mm;width:auto;object-fit:contain}
+
     .np{text-align:right;padding:10px 20px;background:#f4f4f4}
     @media print{.np{display:none}}
   </style>
@@ -124,49 +127,56 @@ export function printFranchiseeCert(franchisee, courseNames) {
       🖨️ Print / Save as PDF
     </button>
   </div>
+
   <div class="cert">
-    <div class="mask">
 
-      <!-- Header -->
-      <img class="lg" src="${logoUrl}" alt="NLH" onerror="this.style.display='none'">
-      <div class="t1">FRANCHISE CERTIFICATE</div>
-      <div class="t2">This is to Certify that</div>
+    <!-- ── Main content ── -->
+    <div class="main">
+      <img class="nlh-logo" src="${logoUrl}" alt="NLH" onerror="this.style.display='none'">
 
-      <!-- Main content -->
-      <div class="body">
-        <div class="nm">${franchisee.business_name}</div>
-        ${isSMF ? `<div class="st">${franchisee.state || ''}</div>` : ''}
-        <div class="t3">Is a Registered</div>
-        <div class="tl">${label}</div>
-        <div class="t4">New Learning Horizons at</div>
-        <div class="ad">${address}</div>
-        ${courses ? `<div class="cr">for ${courses}</div>` : ''}
-      </div>
+      <div class="c-title">FRANCHISE CERTIFICATE</div>
+      <div class="c-sub">This is to Certify that</div>
 
-      <!-- Footer -->
+      <div class="nm">${franchisee.business_name}</div>
+      ${isSMF ? `<div class="st">${franchisee.state || ''}</div>` : ''}
+
+      <div class="is-reg">Is a Registered</div>
+      <div class="tier">${label}</div>
+      <div class="nlh-at">New Learning Horizons at</div>
+      <div class="addr">${address}</div>
+      ${courses ? `<div class="courses">for ${courses}</div>` : ''}
+
       <div class="ft">
         <div class="sig-blk">
           <img class="sig-img" src="${sigUrl}" alt="Signature" onerror="this.style.display='none'">
           <div class="sig-nm">Dhiral Panchmatia</div>
           <div class="sig-tl">Founder, New Learning Horizons</div>
         </div>
-        <div class="mid-blk">
-          <div class="sm-row">
-            <span>📸 /newlearninghorizon</span>
-            <span>📘 /nlhnag</span>
-            <span>🌐 nlhnagpur.info</span>
-          </div>
-          <div class="vt-blk">
-            <div class="vt-val">${till}</div>
-            <div class="vt-lbl">Valid Till</div>
-          </div>
-        </div>
-        <div class="mascot-blk">
-          <img class="mascot-img" src="${mascotUrl}" alt="" onerror="this.style.display='none'">
+        <div class="vt-blk">
+          <div class="vt-val">${till}</div>
+          <div class="vt-lbl">Valid Till</div>
         </div>
       </div>
-
     </div>
+
+    <!-- ── Right sidebar ── -->
+    <div class="sidebar">
+      <div class="estd">Estd. 2008</div>
+      <img class="sb-logo" src="${logoUrl}" alt="NLH" onerror="this.style.display='none'">
+      <div class="iso">ISO 9001:2015</div>
+      <div class="tagline">Enriching Children's<br>Future since 2008</div>
+      <div class="social">
+        <span>📸 /newlearninghorizon</span>
+        <span>📘 /nlhnag</span>
+        <span>🌐 nlhnagpur.info</span>
+      </div>
+      <div class="brand-row">
+        <img src="${origin}/acem-abacus-logo.png" alt="ACEM Abacus" onerror="this.style.display='none'">
+        <img src="${origin}/writewell-logo.png" alt="WriteWell" onerror="this.style.display='none'">
+        <img src="${origin}/easy-math-logo.png" alt="Easy Math" onerror="this.style.display='none'">
+      </div>
+    </div>
+
   </div>
 </body>
 </html>`
@@ -217,74 +227,90 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
         {/* ── Preview card ── */}
         <div style={{ padding: '0 20px' }}>
           <div style={{
-            border: '2px solid var(--border)', borderRadius: 10,
-            background: 'linear-gradient(135deg,#fffef8 0%,#f8f6ff 100%)',
-            padding: '16px 20px', textAlign: 'center',
-            fontFamily: 'Arial,sans-serif', marginBottom: 12,
+            borderRadius: 10, overflow: 'hidden',
+            border: '1px solid #D6D0C4',
+            backgroundImage: 'url(/Certificate%20Background.png)',
+            backgroundSize: 'cover', backgroundPosition: 'center',
+            display: 'flex', marginBottom: 12,
+            fontFamily: 'Arial,sans-serif',
           }}>
-            {/* Logo + social row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            {/* Main area */}
+            <div style={{ flex: 1, padding: '12px 14px 10px', display: 'flex', flexDirection: 'column' }}>
               <img
                 src="/NLH Logo.png" alt="NLH"
-                style={{ height: 40, objectFit: 'contain' }}
+                style={{ height: 32, objectFit: 'contain', alignSelf: 'flex-start', marginBottom: 6 }}
                 onError={e => { e.target.style.display = 'none' }}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                <span style={{ fontSize: 9, color: '#534AB7' }}>📸 /newlearninghorizon</span>
-                <span style={{ fontSize: 9, color: '#534AB7' }}>📘 /nlhnag</span>
-                <span style={{ fontSize: 9, color: '#534AB7' }}>🌐 nlhnagpur.info</span>
+              <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 2 }}>
+                FRANCHISE CERTIFICATE
+              </div>
+              <div style={{ fontSize: 9, fontStyle: 'italic', color: '#555', marginBottom: 8 }}>This is to Certify that</div>
+
+              <div style={{ fontFamily: 'Georgia,serif', fontSize: 20, fontWeight: 700, color: '#CC0000', lineHeight: 1.1, marginBottom: 2 }}>
+                {franchisee.business_name}
+              </div>
+              {franchisee.tier === 'SMF' && (
+                <div style={{ fontFamily: 'Georgia,serif', fontSize: 13, color: '#CC0000', marginBottom: 3 }}>
+                  {franchisee.state}
+                </div>
+              )}
+
+              <div style={{ fontSize: 9, color: '#555', marginTop: 6, marginBottom: 1 }}>Is a Registered</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#CC0000', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916', marginBottom: 2 }}>New Learning Horizons at</div>
+              <div style={{ fontSize: 9, color: '#3A3830', marginBottom: courses ? 3 : 0, lineHeight: 1.4 }}>{address}</div>
+              {courses && (
+                <div style={{ fontSize: 9, color: '#1A1916', lineHeight: 1.4 }}>for {courses}</div>
+              )}
+
+              {/* Footer */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
+                marginTop: 'auto', paddingTop: 8, borderTop: '1px solid rgba(26,58,106,0.18)',
+              }}>
+                <div style={{ textAlign: 'left' }}>
+                  <img
+                    src="/DRP Signature.png" alt="Signature"
+                    style={{ height: 26, objectFit: 'contain', display: 'block', marginBottom: 1 }}
+                    onError={e => { e.target.style.display = 'none' }}
+                  />
+                  <div style={{ fontSize: 10, fontStyle: 'italic', color: '#1A1916', fontWeight: 600 }}>Dhiral Panchmatia</div>
+                  <div style={{ fontSize: 8, color: '#3A3830' }}>Founder, NLH</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916' }}>{till}</div>
+                  <div style={{ fontSize: 8, color: '#555', letterSpacing: 1 }}>VALID TILL</div>
+                </div>
               </div>
             </div>
 
-            <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 4 }}>
-              FRANCHISE CERTIFICATE
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>This is to Certify that</div>
-
+            {/* Right sidebar */}
             <div style={{
-              fontFamily: 'Georgia,serif', fontSize: 22, fontWeight: 700,
-              color: '#CC0000', marginBottom: 2, lineHeight: 1.15,
+              width: 80, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 6px', textAlign: 'center',
+              borderLeft: '1.5px solid rgba(204,0,0,0.2)',
+              background: 'rgba(255,255,255,0.1)',
             }}>
-              {franchisee.business_name}
-            </div>
-            {franchisee.tier === 'SMF' && (
-              <div style={{ fontFamily: 'Georgia,serif', fontSize: 14, color: '#CC0000', marginBottom: 4 }}>
-                {franchisee.state}
+              <div style={{ fontSize: 8, fontWeight: 700, color: '#CC0000' }}>Estd. 2008</div>
+              <img
+                src="/NLH Logo.png" alt="NLH"
+                style={{ height: 28, objectFit: 'contain' }}
+                onError={e => { e.target.style.display = 'none' }}
+              />
+              <div style={{ fontSize: 7, fontWeight: 700, color: '#1A3A6A' }}>ISO 9001:2015</div>
+              <div style={{ fontSize: 7, color: '#555', fontStyle: 'italic', lineHeight: 1.4 }}>
+                Enriching Children's Future
               </div>
-            )}
-
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, marginBottom: 2 }}>Is a Registered</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#CC0000', marginBottom: 5 }}>{label}</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 4 }}>New Learning Horizons at</div>
-            <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: courses ? 4 : 0 }}>{address}</div>
-            {courses && (
-              <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5, marginBottom: 2 }}>for {courses}</div>
-            )}
-
-            {/* Footer: sig | valid till | mascot */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
-              marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)',
-            }}>
-              <div style={{ textAlign: 'left' }}>
-                <img
-                  src="/DRP Signature.png" alt="Signature"
-                  style={{ height: 32, objectFit: 'contain', display: 'block', marginBottom: 2 }}
-                  onError={e => { e.target.style.display = 'none' }}
-                />
-                <div style={{ fontSize: 11, fontStyle: 'italic', color: '#1A1916', fontWeight: 600 }}>Dhiral Panchmatia</div>
-                <div style={{ fontSize: 9, color: 'var(--text3)' }}>Founder, NLH</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 7, color: '#534AB7' }}>
+                <span>📸 /newlearninghorizon</span>
+                <span>📘 /nlhnag</span>
+                <span>🌐 nlhnagpur.info</span>
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 9, color: 'var(--text3)' }}>Valid Till</div>
-                <div style={{ fontSize: 11, fontWeight: 700 }}>{till}</div>
-              </div>
-              <div>
-                <img
-                  src="/NLH Mascot.png" alt=""
-                  style={{ height: 52, objectFit: 'contain' }}
-                  onError={e => { e.target.style.display = 'none' }}
-                />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+                <img src="/acem-abacus-logo.png" alt="ACEM" style={{ height: 16, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
+                <img src="/writewell-logo.png" alt="WriteWell" style={{ height: 16, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
+                <img src="/easy-math-logo.png" alt="Easy Math" style={{ height: 16, objectFit: 'contain' }} onError={e => { e.target.style.display = 'none' }} />
               </div>
             </div>
           </div>
