@@ -387,7 +387,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                               centre = data || null
                               setCentreCache(centre)
                             }
-                            setCertModal({ enrollment: en, centre })
+                            setCertModal({ enrollments, centre })
                           }}
                         >
                           {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
@@ -590,7 +590,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
         {certModal && (
           <StudentCertModal
             student={{ ...student, ...form }}
-            enrollment={certModal.enrollment}
+            enrollments={certModal.enrollments}
             centre={certModal.centre}
             onClose={function () { setCertModal(null) }}
           />
