@@ -1373,7 +1373,10 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ color: 'var(--text2)' }}>{s.parent_name || '—'}</td>
+                      <td style={{ color: 'var(--text2)' }}>
+                        <div>{s.parent_name || '—'}</div>
+                        {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
+                      </td>
                       <td>
                         {courseNames.length === 0
                           ? <span style={{ color: 'var(--text3)' }}>None</span>
