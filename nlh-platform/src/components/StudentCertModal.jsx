@@ -18,23 +18,39 @@ function todayDMY() {
 
 export function printStudentCert(student, enrollment, centre) {
   const courseName = enrollment.skus?.courses?.group_name || 'Course'
-  const levelName  = enrollment.skus?.level_name || 'Level'
-  const fullCourse = `${courseName} — ${levelName}`
-  const parentLine = [
-    student.parent_name ? `S/o. ${student.parent_name}` : null,
-    student.city
-      ? `R/o. ${student.city}${student.country && student.country !== 'India' ? ', ' + student.country : ''}`
-      : null,
-  ].filter(Boolean).join(' • ')
-  const centreLine = `${centre?.business_name || 'New Learning Horizons'}${centre?.city ? ', ' + centre.city : ''}`
+  const levelName  = enrollment.skus?.level_name || ''
+
+  // Title & relation derived from gender
+  const isMale = (student.gender || '').toLowerCase() === 'male'
+  const title  = isMale ? 'Mast.' : 'Miss.'
+  const rel    = isMale ? 'S/o.' : 'D/o.'
+
+  // Location: city + country (omit India)
+  const location = [
+    student.city,
+    student.country && student.country !== 'India' ? student.country : null,
+  ].filter(Boolean).join(', ')
+
+  // Centre full name
+  const centreBase = centre?.business_name || 'New Learning Horizons'
+  const centerFull = centre?.city ? `${centreBase}, ${centre.city}` : centreBase
+
+  // Date in YYYY-MM-DD for the <input type="date"> in cert-app.js
+  const d    = new Date()
+  const date = d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0')
 
   const params = new URLSearchParams({
-    type:   'student',
-    name:   student.full_name,
-    parent: parentLine,
-    course: fullCourse,
-    centre: centreLine,
-    date:   todayDMY(),
+    name:     student.full_name,
+    title,
+    rel,
+    parent:   student.parent_name || '',
+    location,
+    program:  courseName,
+    level:    levelName,
+    center:   centerFull,
+    date,
   })
   window.open(`/certificate/Issue%20Certificate.html?${params}`, '_blank', 'width=1120,height=820')
 }

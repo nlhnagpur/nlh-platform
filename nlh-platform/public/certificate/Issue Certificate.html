@@ -1,24 +1,213 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Certificate — NLH</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="cert-page.css">
+  <meta charset="utf-8" />
+  <title>Issue Certificate · NLH</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Allura&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="cert-page.css" />
 </head>
 <body>
+<div class="shell">
 
-<div class="print-bar" id="print-bar">
-  <span class="bar-label" id="bar-label">Certificate Preview</span>
-  <button onclick="window.print()">⬇ Download / Print as PDF</button>
+  <!-- ─── Sidebar ─── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="assets/logo-square.jpg" alt="NLH" />
+      <div>
+        <div class="brand-name">NLH Platform</div>
+        <div class="brand-tag">Admin · Franchisee</div>
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Overview</div>
+      <div class="nav-item"><span>▦</span> Dashboard</div>
+      <div class="nav-item"><span>📦</span> Orders</div>
+      <div class="nav-item"><span>💰</span> Payments</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Network</div>
+      <div class="nav-item"><span>🏢</span> Franchisees</div>
+      <div class="nav-item"><span>🎓</span> Students</div>
+      <div class="nav-item active"><span>📜</span> Certificates</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Catalog</div>
+      <div class="nav-item"><span>📚</span> Programs</div>
+      <div class="nav-item"><span>📐</span> Levels</div>
+      <div class="nav-item"><span>⚙️</span> Settings</div>
+    </div>
+  </aside>
+
+  <!-- ─── Main ─── -->
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">Issue Certificate</h1>
+        <div class="page-sub">Certificates · Student completion</div>
+      </div>
+      <div class="action-bar">
+        <button class="btn" id="btn-print">🖨 Print / Save PDF</button>
+        <button class="btn" id="btn-email">✉ Email to Student</button>
+        <button class="btn primary" id="btn-download">↓ Download PNG</button>
+      </div>
+    </div>
+
+    <div class="layout">
+
+      <!-- ─── Left: form ─── -->
+      <aside class="form-col">
+
+        <div class="card">
+          <div class="card-hd"><span>Recipient</span></div>
+          <div class="card-bd">
+            <div class="field">
+              <label>Salutation</label>
+              <select id="f-title">
+                <option value="Mast.">Mast.</option>
+                <option value="Miss.">Miss.</option>
+                <option value="Master">Master</option>
+                <option value="Ms.">Ms.</option>
+                <option value="">(none)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Student name</label>
+              <input id="f-name" type="text" value="Ayaan Ahmad Khan" />
+              <p class="hint">Appears as large script on the certificate</p>
+            </div>
+            <div class="field">
+              <label>Relation &amp; parent name</label>
+              <div class="two-col">
+                <select id="f-rel">
+                  <option value="S/o.">S/o.</option>
+                  <option value="D/o.">D/o.</option>
+                  <option value="W/o.">W/o.</option>
+                </select>
+                <input id="f-parent" type="text" value="Faizan Ahmad Khan" />
+              </div>
+            </div>
+            <div class="field">
+              <label>Resident of</label>
+              <input id="f-location" type="text" value="Nagpur, Maharashtra" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="card-hd"><span>Program</span></div>
+          <div class="card-bd">
+            <div class="field">
+              <label>Quick select</label>
+              <div class="chips" id="program-chips"></div>
+            </div>
+            <div class="field">
+              <label>Program name</label>
+              <input id="f-program" type="text" value="ACEM Abacus" />
+            </div>
+            <div class="field">
+              <label>Level</label>
+              <input id="f-level" type="text" value="Senior Level 1" />
+            </div>
+            <div class="field">
+              <label>Training centre</label>
+              <input id="f-center" type="text" value="New Learning Horizons, Nagpur" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="card-hd"><span>Details</span></div>
+          <div class="card-bd">
+            <div class="field">
+              <label>Date of completion</label>
+              <input id="f-date" type="date" />
+            </div>
+            <div class="field">
+              <label>Certificate ID</label>
+              <input id="f-id" type="text" />
+              <p class="hint">Printed at the bottom of the certificate</p>
+            </div>
+            <div class="field field-readonly">
+              <label>Signatory</label>
+              <div class="readonly-val">Dhiral Panchmatia · Director</div>
+              <p class="hint">Preset on template</p>
+            </div>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- ─── Right: preview ─── -->
+      <section class="preview-col">
+        <div class="preview-header">
+          <span class="preview-label">Live preview · A4 landscape · 297 × 210 mm</span>
+          <span class="preview-badge" id="preview-badge">Ready to issue</span>
+        </div>
+        <div class="preview-stage" id="preview-stage">
+          <div class="preview-scaler" id="preview-scaler">
+
+            <!-- ══════════════════════════════════════════
+                 CERTIFICATE  —  2000 × 1414 px native
+                 Background = Student Certificate blank.png
+                 All elements below are dynamic overlays.
+                 ══════════════════════════════════════════ -->
+            <div class="cert" id="cert">
+
+              <!-- Blank template as background -->
+              <img class="cert-bg" src="assets/cert-bg.png" alt="" aria-hidden="true" />
+
+              <!-- 1. Student name (large, above rainbow bar) -->
+              <div class="co co-name" id="c-name">Mast. Ayaan Ahmad Khan</div>
+
+              <!-- 2–5. Body text block -->
+              <div class="co co-body">
+                <div id="c-parent">S/o. Faizan Ahmad Khan, R/o. Nagpur, Maharashtra</div>
+                <div class="co-body-sm">has successfully completed</div>
+                <div class="co-program" id="c-program">ACEM Abacus — Senior Level 1</div>
+                <div class="co-body-sm">at <span id="c-center">New Learning Horizons, Nagpur</span></div>
+              </div>
+
+              <!-- 6. Date value -->
+              <div class="co co-date" id="c-date">01.05.2026</div>
+
+              <!-- 7. Certificate ID at very bottom -->
+              <div class="co co-certid" id="c-certid">NLH-2026-ACEM-SR1-04821</div>
+
+              <!-- 8. NLH Mascot (right side) -->
+              <img class="cert-mascot" src="assets/mascot.png" alt="NLH mascot" />
+
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
 </div>
 
-<div class="cert" id="cert">
-  <div class="main"  id="cert-main"></div>
-  <div class="sidebar" id="cert-sidebar"></div>
+<!-- ─── Email modal ─── -->
+<div class="modal-overlay" id="email-modal">
+  <div class="modal" role="dialog">
+    <h3>Email Certificate</h3>
+    <p class="modal-sub">Sends a copy to the student's registered address</p>
+    <div class="field"><label>To</label><input id="em-to" type="email" placeholder="student@example.com" /></div>
+    <div class="field"><label>CC (parent / franchisee)</label><input id="em-cc" type="email" placeholder="Optional" /></div>
+    <div class="field">
+      <label>Message</label>
+      <textarea id="em-msg" rows="3">Dear Student, congratulations on completing your program! Your certificate is attached. — NLH Team</textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="em-cancel">Cancel</button>
+      <button class="btn primary" id="em-send">Send Certificate →</button>
+    </div>
+  </div>
 </div>
 
+<div class="toast" id="toast"><span id="toast-msg"></span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.min.js"></script>
 <script src="cert-app.js"></script>
 </body>
 </html>

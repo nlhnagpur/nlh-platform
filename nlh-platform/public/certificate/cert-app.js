@@ -1,145 +1,229 @@
-;(function () {
-  'use strict'
+/* ============================================================
+   NLH Certificate — cert-app.js
+   ============================================================ */
+'use strict';
 
-  // ── URL params ──────────────────────────────────────────────────────────────
-  var p    = new URLSearchParams(location.search)
-  var type = p.get('type') || 'student'   // 'student' | 'franchise'
+const $ = id => document.getElementById(id);
 
-  // Base path for local assets (e.g. /certificate)
-  var base = location.pathname.replace(/\/[^/]+$/, '')
+/* ── Programs quick-pick ── */
+const PROGRAMS = [
+  { e: '🧮', n: 'ACEM Abacus' },
+  { e: '✍️', n: 'Write Well' },
+  { e: '💻', n: 'Coding' },
+  { e: '🎲', n: "Rubik's Cube" },
+  { e: '🔤', n: 'Phonics' },
+  { e: '🎨', n: 'Art and Craft' },
+  { e: '📖', n: 'Storytelling' },
+  { e: '🎭', n: 'Public Speaking' },
+  { e: '🌟', n: 'Personality Dev' },
+  { e: '➗', n: 'Easy Math' },
+  { e: '♟', n: 'Chess' },
+  { e: '📝', n: 'Creative Writing' },
+  { e: '📚', n: 'English Grammar' },
+  { e: '🗣', n: 'Reading' },
+];
 
-  // ── DOM refs ────────────────────────────────────────────────────────────────
-  var cert     = document.getElementById('cert')
-  var main     = document.getElementById('cert-main')
-  var sidebar  = document.getElementById('cert-sidebar')
-  var barLabel = document.getElementById('bar-label')
+const chipsEl = $('program-chips');
+PROGRAMS.forEach(p => {
+  const c = document.createElement('button');
+  c.className = 'chip';
+  c.type = 'button';
+  c.textContent = `${p.e} ${p.n}`;
+  c.dataset.name = p.n;
+  c.addEventListener('click', () => {
+    chipsEl.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active');
+    $('f-program').value = p.n;
+    render();
+  });
+  chipsEl.appendChild(c);
+});
 
-  // ── Background ──────────────────────────────────────────────────────────────
-  cert.style.backgroundImage = "url('" + base + "/assets/cert-bg.png')"
+/* ── Pre-fill from URL params (opened from StudentCertModal) ── */
+(function prefillFromUrl() {
+  const p = new URLSearchParams(location.search);
+  function set(id, val) {
+    if (!val) return;
+    const el = $(id);
+    if (!el) return;
+    el.value = val;
+  }
+  set('f-name',     p.get('name'));
+  set('f-parent',   p.get('parent'));
+  set('f-location', p.get('location'));
+  set('f-program',  p.get('program'));
+  set('f-level',    p.get('level'));
+  set('f-center',   p.get('center'));
+  set('f-date',     p.get('date'));
+  set('f-id',       p.get('certid'));
 
-  // ── Sidebar (same for both cert types) ──────────────────────────────────────
-  sidebar.innerHTML = [
-    '<div class="estd">Estd. 2008</div>',
-    '<img class="sb-logo" src="' + base + '/assets/logo-square.jpg" alt="NLH" onerror="this.style.display=\'none\'">',
-    '<div class="iso">ISO 9001:2015</div>',
-    '<div class="tagline">Enriching Children\'s<br>Future since 2008</div>',
-    '<div class="social">',
-    '  <span>📸 /newlearninghorizon</span>',
-    '  <span>📘 /nlhnag</span>',
-    '  <span>🌐 nlhnagpur.info</span>',
-    '</div>',
-    '<div class="brand-row">',
-    '  <img src="/acem-abacus-logo.png" alt="ACEM Abacus" onerror="this.style.display=\'none\'">',
-    '  <img src="/writewell-logo.png" alt="WriteWell" onerror="this.style.display=\'none\'">',
-    '  <img src="/easy-math-logo.png" alt="Easy Math" onerror="this.style.display=\'none\'">',
-    '</div>',
-  ].join('\n')
-
-  // ── Dispatch ─────────────────────────────────────────────────────────────────
-  if (type === 'franchise') {
-    buildFranchiseCert()
-  } else {
-    buildStudentCert()
+  // Handle select fields
+  const titleEl = $('f-title');
+  const relEl   = $('f-rel');
+  const titleParam = p.get('title');
+  const relParam   = p.get('rel');
+  if (titleParam) {
+    for (const opt of titleEl.options) { if (opt.value === titleParam) { opt.selected = true; break; } }
+  }
+  if (relParam) {
+    for (const opt of relEl.options) { if (opt.value === relParam) { opt.selected = true; break; } }
   }
 
-  // ── Student certificate ──────────────────────────────────────────────────────
-  function buildStudentCert() {
-    var name   = p.get('name')   || ''
-    var parent = p.get('parent') || ''
-    var course = p.get('course') || ''
-    var centre = p.get('centre') || ''
-    var date   = p.get('date')   || todayDMY()
-
-    document.title = 'Certificate — ' + name
-    barLabel.textContent = 'Certificate · ' + name + ' · ' + course
-
-    main.innerHTML = [
-      '<img class="nlh-logo" src="' + base + '/assets/logo-square.jpg" alt="NLH" onerror="this.style.display=\'none\'">',
-      '<div class="acc">Certificate of Accomplishment</div>',
-      '<div class="certify">THIS IS TO CERTIFY THAT</div>',
-      '<div class="nm">' + esc(name) + '</div>',
-      parent ? '<div class="pr">' + esc(parent) + '</div>' : '',
-      '<div class="comp">Has successfully completed</div>',
-      '<div class="cr">' + esc(course) + '</div>',
-      centre ? '<div class="ct">at ' + esc(centre) + '</div>' : '',
-      '<div class="ft">',
-      '  <div class="sig-blk">',
-      '    <img class="sig-img" src="/DRP%20Signature.png" alt="Signature" onerror="this.style.display=\'none\'">',
-      '    <div class="sig-nm">Dhiral Panchmatia</div>',
-      '    <div class="sig-tl">Founder, New Learning Horizons</div>',
-      '  </div>',
-      '  <img class="mascot-img" src="' + base + '/assets/mascot.png" alt="" onerror="this.style.display=\'none\'">',
-      '  <div class="dt-blk">',
-      '    <div class="dt-val">' + esc(date) + '</div>',
-      '    <div class="dt-lbl">Date</div>',
-      '  </div>',
-      '</div>',
-    ].join('\n')
+  // Set default date to today if not provided
+  if (!p.get('date')) {
+    const d = new Date();
+    const iso = d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+    $('f-date').value = iso;
   }
 
-  // ── Franchise certificate ────────────────────────────────────────────────────
-  function buildFranchiseCert() {
-    var name    = p.get('name')    || ''
-    var tier    = p.get('tier')    || 'UF'
-    var city    = p.get('city')    || ''
-    var state   = p.get('state')   || ''
-    var address = p.get('address') || ''
-    var courses = p.get('courses') || ''
-    var till    = p.get('till')    || ''
-
-    var isSMF  = tier === 'SMF'
-    var nameSz = isSMF ? '24pt' : '30pt'
-    var label  = tierLabel(tier, city)
-
-    document.title = 'Franchise Certificate — ' + name
-    barLabel.textContent = 'Franchise Certificate · ' + name
-
-    main.innerHTML = [
-      '<img class="nlh-logo" src="' + base + '/assets/logo-square.jpg" alt="NLH" onerror="this.style.display=\'none\'">',
-      '<div class="c-title">FRANCHISE CERTIFICATE</div>',
-      '<div class="c-sub">This is to Certify that</div>',
-      '<div class="fr-nm" style="font-size:' + nameSz + '">' + esc(name) + '</div>',
-      (isSMF && state) ? '<div class="fr-state">' + esc(state) + '</div>' : '',
-      '<div class="is-reg">Is a Registered</div>',
-      '<div class="tier">' + esc(label) + '</div>',
-      '<div class="nlh-at">New Learning Horizons at</div>',
-      address ? '<div class="addr">' + esc(address) + '</div>' : '',
-      courses ? '<div class="courses">for ' + esc(courses) + '</div>' : '',
-      '<div class="ft">',
-      '  <div class="sig-blk">',
-      '    <img class="sig-img" src="/DRP%20Signature.png" alt="Signature" onerror="this.style.display=\'none\'">',
-      '    <div class="sig-nm">Dhiral Panchmatia</div>',
-      '    <div class="sig-tl">Founder, New Learning Horizons</div>',
-      '  </div>',
-      '  <div class="vt-blk">',
-      '    <div class="vt-val">' + esc(till) + '</div>',
-      '    <div class="vt-lbl">Valid Till</div>',
-      '  </div>',
-      '</div>',
-    ].join('\n')
+  // Generate cert ID if not provided
+  if (!p.get('certid')) {
+    const year  = new Date().getFullYear();
+    const prog  = (p.get('program') || 'NLH').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
+    const lvl   = (p.get('level')   || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase() || 'L1';
+    const seq   = String(Math.floor(Math.random() * 90000) + 10000);
+    $('f-id').value = `NLH-${year}-${prog}-${lvl}-${seq}`;
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  function tierLabel(tier, city) {
-    if (tier === 'SMF') return 'State Master Franchisee of'
-    if (tier === 'CF')  return (city ? city + ' ' : '') + 'City Master Franchisee of'
-    return 'Unit Franchisee of'
+  // Sync chip highlight
+  const progVal = $('f-program').value;
+  const match = [...chipsEl.querySelectorAll('.chip')].find(c => c.dataset.name === progVal);
+  if (match) match.classList.add('active');
+})();
+
+/* ── Date formatter DD.MM.YYYY ── */
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  if (isNaN(d)) return iso;
+  return String(d.getDate()).padStart(2, '0') + '.' +
+         String(d.getMonth() + 1).padStart(2, '0') + '.' +
+         d.getFullYear();
+}
+
+/* ── Live render ── */
+function render() {
+  const title   = $('f-title').value.trim();
+  const name    = $('f-name').value.trim();
+  const rel     = $('f-rel').value.trim();
+  const parent  = $('f-parent').value.trim();
+  const loc     = $('f-location').value.trim();
+  const prog    = $('f-program').value.trim();
+  const level   = $('f-level').value.trim();
+  const center  = $('f-center').value.trim();
+  const date    = $('f-date').value;
+  const certid  = $('f-id').value.trim();
+
+  $('c-name').textContent    = [title, name].filter(Boolean).join(' ');
+  $('c-parent').textContent  = [rel && parent ? `${rel} ${parent}` : parent, loc ? `R/o. ${loc}` : ''].filter(Boolean).join(', ');
+  $('c-program').textContent = level ? `${prog} — ${level}` : prog;
+  $('c-center').textContent  = center;
+  $('c-date').textContent    = fmtDate(date);
+  $('c-certid').textContent  = certid;
+
+  autoSizeName();
+}
+
+function autoSizeName() {
+  const el   = $('c-name');
+  const maxW = 1840; // cert canvas 2000 - 80px padding each side
+
+  function getScale() {
+    const scaler = document.querySelector('.preview-scaler');
+    if (!scaler) return 1;
+    const m = (scaler.style.transform || '').match(/scale\(([0-9.]+)\)/);
+    return m ? parseFloat(m[1]) : 1;
   }
 
-  function todayDMY() {
-    var d = new Date()
-    return [
-      String(d.getDate()).padStart(2, '0'),
-      String(d.getMonth() + 1).padStart(2, '0'),
-      d.getFullYear(),
-    ].join('.')
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  function textW() {
+    return range.getBoundingClientRect().width / getScale();
   }
 
-  function esc(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
+  let size = 110;
+  el.style.fontSize  = size + 'px';
+  el.style.whiteSpace = 'nowrap';
+
+  while (textW() > maxW && size > 56) {
+    size -= 3;
+    el.style.fontSize = size + 'px';
   }
-})()
+}
+
+// Wire all inputs
+['f-title','f-name','f-rel','f-parent','f-location','f-program','f-level','f-center','f-date','f-id']
+  .forEach(id => {
+    const el = $(id);
+    if (el) { el.addEventListener('input', render); el.addEventListener('change', render); }
+  });
+
+render();
+
+/* ── Preview scaling ── */
+function fitPreview() {
+  const stage  = document.querySelector('.preview-stage');
+  const scaler = document.querySelector('.preview-scaler');
+  if (!stage || !scaler) return;
+  const certW  = 2000, certH = 1414;
+  const availW = stage.clientWidth - 48;
+  const availH = Math.max(window.innerHeight - 280, 500);
+  const scale  = Math.min(availW / certW, availH / certH, 1);
+  scaler.style.transform = `scale(${scale})`;
+  scaler.style.width     = certW + 'px';
+  scaler.style.height    = certH + 'px';
+  stage.style.minHeight  = Math.round(certH * scale + 48) + 'px';
+}
+window.addEventListener('resize', fitPreview);
+fitPreview();
+
+/* ── Toast ── */
+function toast(msg, dur) {
+  const t = $('toast');
+  $('toast-msg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), dur || 2600);
+}
+
+/* ── Print ── */
+$('btn-print').addEventListener('click', () => window.print());
+
+/* ── Download PNG ── */
+$('btn-download').addEventListener('click', async function () {
+  const cert   = $('cert');
+  const scaler = document.querySelector('.preview-scaler');
+  const prev   = scaler.style.transform;
+  scaler.style.transform = 'scale(1)';
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  try {
+    const dataUrl = await htmlToImage.toPng(cert, {
+      width: 2000, height: 1414, pixelRatio: 1, cacheBust: true,
+    });
+    const a = document.createElement('a');
+    const safeName = ($('f-name').value || 'certificate')
+      .replace(/[^a-z0-9 \-]/gi, '').trim().replace(/\s+/g, '-');
+    a.download = `NLH-Certificate-${safeName}.png`;
+    a.href = dataUrl;
+    a.click();
+    toast('Certificate saved as PNG ✓');
+  } catch (err) {
+    console.error(err);
+    toast('Download failed — use Print → Save as PDF instead');
+  } finally {
+    scaler.style.transform = prev;
+  }
+});
+
+/* ── Email modal ── */
+const modal = document.querySelector('.modal-overlay');
+$('btn-email').addEventListener('click',  () => modal.classList.add('open'));
+$('em-cancel').addEventListener('click',  () => modal.classList.remove('open'));
+modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
+$('em-send').addEventListener('click', () => {
+  const to = $('em-to').value.trim();
+  modal.classList.remove('open');
+  toast('Certificate emailed to ' + (to || 'student'));
+});
