@@ -122,15 +122,10 @@ function render() {
   // Support pipe-separated programs/levels for multi-course certificates
   const progs  = prog.split('|').map(s => s.trim()).filter(Boolean);
   const levels = level.split('|').map(s => s.trim());
-  if (progs.length <= 1) {
-    $('c-program').textContent = level ? `${prog} — ${level}` : prog;
-  } else {
-    const fontSize = progs.length > 3 ? '38px' : progs.length > 2 ? '42px' : '50px';
-    $('c-program').innerHTML = progs.map(function (p, i) {
-      const l = levels[i] || '';
-      return `<span style="display:block;font-size:${fontSize}">${l ? p + ' — ' + l : p}</span>`;
-    }).join('');
-  }
+  const programLine = progs.length <= 1
+    ? (level ? `${prog} — ${level}` : prog)
+    : progs.map(function (p, i) { const l = levels[i] || ''; return l ? `${p} — ${l}` : p; }).join(', ');
+  $('c-program').textContent = programLine;
 
   $('c-center').textContent = center;
   $('c-date').textContent   = fmtDate(date);

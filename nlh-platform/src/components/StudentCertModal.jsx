@@ -169,19 +169,14 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
                 </div>
 
                 {selected.length > 0
-                  ? selected.map(function (e, i) {
-                      const course = e.skus?.courses?.group_name || 'Course'
-                      const level  = e.skus?.level_name || ''
-                      return (
-                        <div key={i} style={{
-                          fontSize: selected.length > 2 ? 38 : 46,
-                          fontWeight: 700, color: '#0A1A33',
-                          margin: '4px 0', lineHeight: 1.2,
-                        }}>
-                          {level ? `${course} — ${level}` : course}
-                        </div>
-                      )
-                    })
+                  ? <div style={{ fontSize: 46, fontWeight: 700, color: '#0A1A33', margin: '6px 0', lineHeight: 1.3 }}>
+                      {selected.map(function (e, i) {
+                        const course = e.skus?.courses?.group_name || 'Course'
+                        const level  = e.skus?.level_name || ''
+                        const text   = level ? `${course} — ${level}` : course
+                        return i === 0 ? text : `, ${text}`
+                      }).join('')}
+                    </div>
                   : <div style={{ fontSize: 46, fontWeight: 700, color: '#ccc', margin: '6px 0' }}>
                       — select courses below —
                     </div>
