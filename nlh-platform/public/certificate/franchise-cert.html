@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Franchise Certificate · NLH</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,900;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & base ────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: #F7F6F3;
+      color: #1A1916;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout: form | preview ──────────────────────────── */
+    .shell {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Form panel ──────────────────────────────────────── */
+    .form-panel {
+      width: 310px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #E2E0D8;
+      padding: 18px 14px 40px;
+      overflow-y: auto;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+    }
+    .form-brand {
+      display: flex; align-items: center; gap: 9px;
+      margin-bottom: 16px; padding-bottom: 14px;
+      border-bottom: 1px solid #E2E0D8;
+    }
+    .form-brand img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; }
+    .form-brand-name { font-size: 13px; font-weight: 700; }
+    .form-brand-tag  { font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .07em; color: #9C9A92; margin-top: 1px; }
+
+    .action-bar {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 8px 12px; border-radius: 7px;
+      border: 1px solid #D0CEC6;
+      background: #fff; color: #1A1916;
+      font: 500 12px 'DM Sans', sans-serif; cursor: pointer;
+      transition: background .12s, transform .08s;
+      flex: 1;
+      justify-content: center;
+    }
+    .btn:hover  { background: #F0EEE9; }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary { background: #534AB7; border-color: #534AB7; color: #fff; }
+    .btn.primary:hover { background: #3D35A0; border-color: #3D35A0; }
+
+    .section-label {
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: #9C9A92; margin: 14px 0 8px; font-weight: 600;
+    }
+
+    .field { margin-bottom: 11px; }
+    .field:last-child { margin-bottom: 0; }
+    label {
+      display: block;
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: #9C9A92; margin-bottom: 4px;
+    }
+    input, select, textarea {
+      width: 100%; padding: 7px 9px;
+      border: 1px solid #D0CEC6; border-radius: 7px;
+      font: 13px 'DM Sans', sans-serif; color: #1A1916; background: #fff;
+      transition: border-color .12s, box-shadow .12s;
+      appearance: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #534AB7;
+      box-shadow: 0 0 0 3px rgba(83,74,183,.10);
+    }
+    .hint { margin: 3px 0 0; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: .04em; color: #9C9A92; text-transform: uppercase; }
+
+    /* Tier buttons */
+    .tier-btns { display: flex; gap: 5px; }
+    .tier-btn {
+      flex: 1; padding: 7px 4px; border-radius: 7px;
+      border: 1px solid #D0CEC6; background: #F7F6F3;
+      font: 600 12px 'DM Sans', sans-serif; color: #5C5A54;
+      cursor: pointer; text-align: center; transition: all .12s;
+    }
+    .tier-btn:hover { background: #EEEDFE; border-color: #534AB7; color: #534AB7; }
+    .tier-btn.active { background: #534AB7; border-color: #534AB7; color: #fff; }
+
+    /* Course checkboxes */
+    .course-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+    .course-row {
+      display: flex; align-items: center; gap: 7px;
+      padding: 5px 8px; border-radius: 6px; cursor: pointer;
+      border: 1px solid transparent; transition: all .1s;
+    }
+    .course-row:hover { background: #F7F6F3; }
+    .course-row input[type=checkbox] { accent-color: #534AB7; width: 13px; height: 13px; flex-shrink: 0; }
+    .course-row-name { font-size: 12px; font-weight: 500; color: #1A1916; }
+    .course-row.checked { background: #EEEDFE; border-color: #C7C3F7; }
+    .course-row.checked .course-row-name { color: #534AB7; }
+
+    /* ── Preview panel ───────────────────────────────────── */
+    .preview-panel {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .preview-header {
+      background: #fff;
+      border-bottom: 1px solid #E2E0D8;
+      padding: 10px 18px;
+      display: flex; justify-content: space-between; align-items: center;
+      flex-shrink: 0;
+    }
+    .preview-label { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #9C9A92; }
+    .preview-badge {
+      display: flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 20px;
+      background: #E6F5ED; color: #1D7A4F;
+      font-size: 11px; font-weight: 600;
+    }
+    .preview-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #16A34A; }
+    .preview-stage {
+      flex: 1;
+      background: radial-gradient(circle at 1px 1px, rgba(0,0,0,.04) 1px, transparent 0) 0 0 / 18px 18px, #F7F6F3;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 24px;
+      overflow: auto;
+    }
+    .preview-scaler {
+      transform-origin: top center;
+      flex-shrink: 0;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       CERTIFICATE CANVAS — 1122 × 794 px
+       ══════════════════════════════════════════════════════ */
+    #certificate {
+      width: 1122px;
+      height: 794px;
+      position: relative;
+      overflow: hidden;
+      background: #fff url('assets/cert-background.png') center / cover no-repeat;
+      font-family: 'DM Sans', Arial, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,.18);
+    }
+
+    /* Left content area */
+    .cert-left {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      right: 218px;
+      padding: 52px 46px 36px 52px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* NLH logo in cert */
+    .cert-nlh-logo {
+      width: 154px;
+      height: auto;
+      margin-bottom: 22px;
+      object-fit: contain;
+    }
+
+    .c-title {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #1A1916;
+      line-height: 1;
+      margin-bottom: 10px;
+    }
+    .c-sub {
+      font-size: 14px;
+      font-style: italic;
+      color: #5C5A54;
+      margin-bottom: 8px;
+    }
+    .c-name {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-style: italic;
+      font-weight: 700;
+      color: #C41818;
+      line-height: 1.1;
+      margin-bottom: 4px;
+      font-size: 56px;
+      word-break: break-word;
+    }
+    .c-state-label {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 26px;
+      color: #C41818;
+      margin-bottom: 6px;
+      display: none;
+    }
+    .c-type {
+      font-size: 13px;
+      color: #5C5A54;
+      margin-bottom: 2px;
+      font-style: italic;
+    }
+    .c-is-registered {
+      font-size: 11px;
+      color: #5C5A54;
+      margin-bottom: 3px;
+      font-style: italic;
+    }
+    .c-franchise-label {
+      font-size: 15px;
+      font-weight: 700;
+      color: #C41818;
+      margin-bottom: 8px;
+    }
+    .c-org {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1A1916;
+      margin-bottom: 2px;
+    }
+    .c-addr {
+      font-size: 12px;
+      color: #3A3830;
+      line-height: 1.5;
+      margin-bottom: 5px;
+    }
+    .c-courses {
+      font-size: 12px;
+      color: #1A1916;
+      line-height: 1.5;
+    }
+
+    /* Footer row */
+    .cert-footer {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-top: 12px;
+      border-top: 1px solid rgba(26,58,106,.18);
+    }
+    .cert-sig-block { text-align: left; }
+    .cert-sig-img {
+      height: 48px;
+      object-fit: contain;
+      display: block;
+      margin-bottom: 3px;
+    }
+    .cert-sig-name {
+      font-size: 12px;
+      font-style: italic;
+      font-weight: 600;
+      color: #1A1916;
+    }
+    .cert-sig-role {
+      font-size: 10px;
+      color: #3A3830;
+    }
+    .cert-date-block { text-align: right; }
+    .c-till {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1A1916;
+    }
+    .cert-date-label {
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #5C5A54;
+      margin-top: 2px;
+    }
+
+    /* Right sidebar */
+    .cert-right {
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 218px;
+      background: #fff;
+      border-left: 1.5px solid rgba(204,0,0,.2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 22px 12px 18px;
+      gap: 0;
+    }
+    .cert-right-logo {
+      width: 140px;
+      height: auto;
+      object-fit: contain;
+      margin-bottom: 12px;
+    }
+    .cert-right-contact {
+      text-align: center;
+      font-size: 9px;
+      color: #534AB7;
+      line-height: 1.8;
+      margin-bottom: 10px;
+    }
+    .cert-right-contact a { color: #534AB7; text-decoration: none; }
+    .cert-mascot-img {
+      width: 110px;
+      height: auto;
+      object-fit: contain;
+      margin-bottom: 10px;
+    }
+    .cert-right-divider {
+      width: 100%;
+      border: none;
+      border-top: 1px solid rgba(204,0,0,.15);
+      margin: 6px 0 10px;
+    }
+    .cert-brand-logos {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-top: auto;
+    }
+    .cert-brand-logos img {
+      max-width: 100px;
+      height: 28px;
+      object-fit: contain;
+    }
+    .cert-estd {
+      font-size: 9px;
+      font-weight: 700;
+      color: #C41818;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    /* ── Toast ───────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: #0F1C3A; color: #fff;
+      padding: 10px 18px; border-radius: 8px;
+      font-size: 13px; display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 16px 40px rgba(0,0,0,.25);
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s, transform .2s;
+      z-index: 300;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast::before {
+      content: "✓"; width: 18px; height: 18px; border-radius: 50%;
+      background: #16A34A; display: flex; align-items: center;
+      justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+
+    /* ── Print ───────────────────────────────────────────── */
+    @media print {
+      @page { size: A4 landscape; margin: 0; }
+      body * { visibility: hidden; }
+      #certificate, #certificate * { visibility: visible; }
+      #certificate {
+        position: fixed !important;
+        top: 0 !important; left: 0 !important;
+        width: 297mm !important; height: 210mm !important;
+        box-shadow: none !important;
+        transform: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ─── Form panel ─── -->
+  <div class="form-panel">
+    <div class="form-brand">
+      <img src="assets/logo-square.jpg" alt="NLH" onerror="this.style.display='none'" />
+      <div>
+        <div class="form-brand-name">NLH Platform</div>
+        <div class="form-brand-tag">Franchise Certificate</div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn" id="btn-print">🖨 Print / PDF</button>
+      <button class="btn primary" id="btn-download">↓ Download PNG</button>
+    </div>
+
+    <div class="section-label">Franchisee Type</div>
+    <div class="tier-btns" id="tier-btns">
+      <button class="tier-btn" data-tier="UF"  onclick="setTier('UF')">Unit</button>
+      <button class="tier-btn" data-tier="CF"  onclick="setTier('CF')">City</button>
+      <button class="tier-btn" data-tier="SMF" onclick="setTier('SMF')">State</button>
+    </div>
+
+    <div class="section-label">Details</div>
+    <div class="field">
+      <label>Franchisee / Business Name</label>
+      <input id="f-name" type="text" placeholder="NLH Khamla" oninput="render()" />
+    </div>
+    <div class="field" id="grp-city" style="display:none">
+      <label>City</label>
+      <input id="f-city" type="text" placeholder="Nagpur" oninput="render()" />
+    </div>
+    <div class="field" id="grp-state" style="display:none">
+      <label>State</label>
+      <input id="f-state" type="text" placeholder="Maharashtra" oninput="render()" />
+    </div>
+    <div class="field">
+      <label>Full Address</label>
+      <textarea id="f-address" rows="2" placeholder="Shop 3, Main Road, Khamla, Nagpur, Maharashtra" oninput="render()"></textarea>
+    </div>
+    <div class="field">
+      <label>Valid Till (DD.MM.YYYY)</label>
+      <input id="f-till" type="text" placeholder="31.12.2027" oninput="render()" />
+    </div>
+
+    <div class="section-label">Courses Authorised</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span class="hint" style="margin:0">Select applicable</span>
+      <button onclick="toggleAllCourses()" style="background:none;border:none;color:#534AB7;cursor:pointer;font:500 11px 'DM Sans',sans-serif;text-decoration:underline" id="toggle-all-btn">Select all</button>
+    </div>
+    <div class="course-list" id="course-list"></div>
+  </div>
+
+  <!-- ─── Preview panel ─── -->
+  <div class="preview-panel">
+    <div class="preview-header">
+      <span class="preview-label">Live preview · A4 landscape · 297 × 210 mm</span>
+      <span class="preview-badge">Ready to issue</span>
+    </div>
+    <div class="preview-stage" id="preview-stage">
+      <div class="preview-scaler" id="preview-scaler">
+
+        <!-- ══════════════════════════════════
+             CERTIFICATE  —  1122 × 794 px
+             ══════════════════════════════════ -->
+        <div id="certificate">
+
+          <!-- Left content area -->
+          <div class="cert-left">
+            <img class="cert-nlh-logo" src="assets/nlh-logo.png" alt="NLH" onerror="this.style.display='none'" />
+
+            <div class="c-title">Franchise Certificate</div>
+            <div class="c-sub">This is to Certify that</div>
+
+            <div class="c-name" id="c-name">NLH Khamla</div>
+            <div class="c-state-label" id="c-state-label"></div>
+
+            <div class="c-is-registered">Is a Registered</div>
+            <div class="c-franchise-label" id="c-franchise-label">Unit Franchisee of</div>
+
+            <div class="c-org">New Learning Horizons at</div>
+            <div class="c-addr" id="c-addr"></div>
+            <div class="c-courses" id="c-courses"></div>
+
+            <div class="cert-footer">
+              <div class="cert-sig-block">
+                <img class="cert-sig-img" src="assets/drp-signature.png" alt="Signature" onerror="this.style.display='none'" />
+                <div class="cert-sig-name">Dhiral Panchmatia</div>
+                <div class="cert-sig-role">Founder &amp; Director, NLH</div>
+              </div>
+              <div class="cert-date-block">
+                <div class="c-till" id="c-till"></div>
+                <div class="cert-date-label">Valid Till</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right sidebar -->
+          <div class="cert-right">
+            <div class="cert-estd">Estd. 2008</div>
+            <img class="cert-right-logo" src="assets/nlh-logo.png" alt="NLH" onerror="this.style.display='none'" />
+            <div class="cert-right-contact">
+              <div>admin@nlhnagpur.info</div>
+              <div>www.nlhnagpur.info</div>
+              <div>📸 /newlearninghorizon</div>
+              <div>📘 /nlhnag</div>
+            </div>
+            <img class="cert-mascot-img" src="assets/nlh-mascot.png" alt="" onerror="this.style.display='none'" />
+            <hr class="cert-right-divider" />
+            <div class="cert-brand-logos">
+              <img src="assets/logo-acem-abacus.png" alt="ACEM Abacus" onerror="this.style.display='none'" />
+              <img src="assets/logo-write-well.png" alt="Write Well" onerror="this.style.display='none'" />
+              <img src="assets/logo-easy-math.png" alt="Easy Math" onerror="this.style.display='none'" />
+            </div>
+          </div>
+
+        </div>
+        <!-- /certificate -->
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg"></span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.min.js"></script>
+<script>
+'use strict';
+
+/* ── Data ─────────────────────────────────────────────────── */
+const COURSES = [
+  'ACEM Abacus', 'Write Well', 'Coding', "Rubik's Cube", 'Phonics',
+  'Art and Craft', 'Storytelling', 'Public Speaking', 'Personality Dev',
+  'Easy Math', 'Chess', 'Creative Writing', 'English Grammar', 'Reading',
+];
+
+let currentTier = 'UF';
+let selectedCourses = new Set();
+
+/* ── Course list ──────────────────────────────────────────── */
+const courseListEl = document.getElementById('course-list');
+COURSES.forEach(function (c) {
+  const row = document.createElement('label');
+  row.className = 'course-row';
+  row.innerHTML = `<input type="checkbox" data-course="${c}" /> <span class="course-row-name">${c}</span>`;
+  const cb = row.querySelector('input');
+  cb.addEventListener('change', function () {
+    if (cb.checked) selectedCourses.add(c);
+    else selectedCourses.delete(c);
+    row.classList.toggle('checked', cb.checked);
+    updateToggleBtn();
+    render();
+  });
+  courseListEl.appendChild(row);
+});
+
+function updateToggleBtn() {
+  document.getElementById('toggle-all-btn').textContent =
+    selectedCourses.size === COURSES.length ? 'Deselect all' : 'Select all';
+}
+
+function toggleAllCourses() {
+  const allSelected = selectedCourses.size === COURSES.length;
+  courseListEl.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+    cb.checked = !allSelected;
+    const c = cb.dataset.course;
+    if (!allSelected) selectedCourses.add(c);
+    else selectedCourses.delete(c);
+    cb.closest('label').classList.toggle('checked', !allSelected);
+  });
+  updateToggleBtn();
+  render();
+}
+
+/* ── Tier switcher ────────────────────────────────────────── */
+function setTier(tier) {
+  currentTier = tier;
+  document.querySelectorAll('.tier-btn').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.tier === tier);
+  });
+  document.getElementById('grp-city').style.display  = (tier === 'CF')  ? 'block' : 'none';
+  document.getElementById('grp-state').style.display = (tier === 'SMF') ? 'block' : 'none';
+  render();
+}
+
+/* ── Pre-fill from URL params ─────────────────────────────── */
+(function prefill() {
+  const p = new URLSearchParams(location.search);
+
+  function set(id, val) {
+    if (!val) return;
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  }
+
+  const tier = p.get('tier') || 'UF';
+  setTier(tier);
+
+  set('f-name',    p.get('name'));
+  set('f-city',    p.get('city'));
+  set('f-state',   p.get('state'));
+  set('f-address', p.get('address'));
+  set('f-till',    p.get('till'));
+
+  // Pre-select courses
+  const coursesParam = p.get('courses');
+  if (coursesParam) {
+    const incoming = coursesParam.split(',').map(function (s) { return s.trim(); });
+    courseListEl.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+      const match = incoming.some(function (ic) {
+        return ic.toLowerCase() === cb.dataset.course.toLowerCase();
+      });
+      if (match) {
+        cb.checked = true;
+        selectedCourses.add(cb.dataset.course);
+        cb.closest('label').classList.add('checked');
+      }
+    });
+    updateToggleBtn();
+  }
+
+  render();
+})();
+
+/* ── Build course text ────────────────────────────────────── */
+function buildCourseText(list) {
+  if (!list.length) return '';
+  if (list.length === 1) return 'for ' + list[0];
+  return 'for ' + list.slice(0, -1).join(', ') + ' & ' + list[list.length - 1];
+}
+
+/* ── Tier label ───────────────────────────────────────────── */
+function tierLabel(tier, city) {
+  if (tier === 'SMF') return 'State Master Franchisee of';
+  if (tier === 'CF')  return (city ? city + ' ' : '') + 'City Master Franchisee of';
+  return 'Unit Franchisee of';
+}
+
+/* ── Auto-size name ───────────────────────────────────────── */
+function autoSizeName(name) {
+  const len = name.length;
+  if (len > 40) return '28px';
+  if (len > 32) return '34px';
+  if (len > 24) return '42px';
+  if (len > 18) return '50px';
+  return '56px';
+}
+
+/* ── Live render ──────────────────────────────────────────── */
+function render() {
+  const name    = document.getElementById('f-name').value.trim();
+  const city    = document.getElementById('f-city')    ? document.getElementById('f-city').value.trim()    : '';
+  const state   = document.getElementById('f-state')   ? document.getElementById('f-state').value.trim()   : '';
+  const address = document.getElementById('f-address').value.trim();
+  const till    = document.getElementById('f-till').value.trim();
+
+  const displayName = name || 'Franchisee Name';
+  const cName = document.getElementById('c-name');
+  cName.textContent    = displayName;
+  cName.style.fontSize = autoSizeName(displayName);
+
+  // State label (SMF only)
+  const stateLabel = document.getElementById('c-state-label');
+  if (currentTier === 'SMF' && state) {
+    stateLabel.textContent   = state;
+    stateLabel.style.display = 'block';
+  } else {
+    stateLabel.style.display = 'none';
+  }
+
+  // Tier label
+  document.getElementById('c-franchise-label').textContent = tierLabel(currentTier, city);
+
+  // Address
+  document.getElementById('c-addr').textContent = address;
+
+  // Courses
+  const list = COURSES.filter(function (c) { return selectedCourses.has(c); });
+  const coursesEl = document.getElementById('c-courses');
+  coursesEl.textContent = buildCourseText(list);
+
+  // Valid till
+  document.getElementById('c-till').textContent = till || '—';
+}
+
+/* ── Preview scaling ──────────────────────────────────────── */
+function fitPreview() {
+  const stage  = document.getElementById('preview-stage');
+  const scaler = document.getElementById('preview-scaler');
+  if (!stage || !scaler) return;
+  const certW = 1122, certH = 794;
+  const availW = stage.clientWidth - 48;
+  const availH = Math.max(window.innerHeight - 80, 400);
+  const scale  = Math.min(availW / certW, availH / certH, 1);
+  scaler.style.transform = 'scale(' + scale + ')';
+  scaler.style.width     = certW + 'px';
+  scaler.style.height    = certH + 'px';
+  stage.style.minHeight  = Math.round(certH * scale + 48) + 'px';
+}
+window.addEventListener('resize', fitPreview);
+fitPreview();
+
+/* ── Toast ────────────────────────────────────────────────── */
+function toast(msg, dur) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { t.classList.remove('show'); }, dur || 2600);
+}
+
+/* ── Print ────────────────────────────────────────────────── */
+document.getElementById('btn-print').addEventListener('click', function () { window.print(); });
+
+/* ── Download PNG ─────────────────────────────────────────── */
+document.getElementById('btn-download').addEventListener('click', async function () {
+  const cert   = document.getElementById('certificate');
+  const scaler = document.getElementById('preview-scaler');
+  const prev   = scaler.style.transform;
+  scaler.style.transform = 'scale(1)';
+  await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+  try {
+    const dataUrl = await htmlToImage.toPng(cert, {
+      width: 1122, height: 794, pixelRatio: 2, cacheBust: true,
+    });
+    const a = document.createElement('a');
+    const safeName = (document.getElementById('f-name').value || 'franchise')
+      .replace(/[^a-z0-9 \-]/gi, '').trim().replace(/\s+/g, '-');
+    a.download = 'NLH-Franchise-Certificate-' + safeName + '.png';
+    a.href = dataUrl;
+    a.click();
+    toast('Certificate saved as PNG ✓');
+  } catch (err) {
+    console.error(err);
+    toast('Download failed — use Print → Save as PDF instead');
+  } finally {
+    scaler.style.transform = prev;
+  }
+});
+</script>
+</body>
+</html>

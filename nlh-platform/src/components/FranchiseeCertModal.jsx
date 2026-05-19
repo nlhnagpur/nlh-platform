@@ -42,7 +42,7 @@ export function printFranchiseeCert(franchisee, courseNames) {
     courses: courseNames.join(', '),
     till:    validTill(franchisee),
   })
-  window.open(`/certificate/Issue%20Certificate.html?${params}`, '_blank', 'width=1120,height=820')
+  window.open(`/certificate/franchise-cert.html?${params}`, '_blank', 'width=1120,height=820')
 }
 
 // ── modal component ────────────────────────────────────────────────────────────
