@@ -17,166 +17,26 @@ function todayDMY() {
 // ── print window ───────────────────────────────────────────────────────────────
 
 export function printStudentCert(student, enrollment, centre) {
-  const courseName  = enrollment.skus?.courses?.group_name || 'Course'
-  const levelName   = enrollment.skus?.level_name || 'Level'
-  const fullCourse  = `${courseName} — ${levelName}`
-  const parentLine  = [
+  const courseName = enrollment.skus?.courses?.group_name || 'Course'
+  const levelName  = enrollment.skus?.level_name || 'Level'
+  const fullCourse = `${courseName} — ${levelName}`
+  const parentLine = [
     student.parent_name ? `S/o. ${student.parent_name}` : null,
     student.city
       ? `R/o. ${student.city}${student.country && student.country !== 'India' ? ', ' + student.country : ''}`
       : null,
   ].filter(Boolean).join(' • ')
-  const centreLine  = `${centre?.business_name || 'New Learning Horizons'}${centre?.city ? ', ' + centre.city : ''}`
-  const dateStr     = todayDMY()
-  const origin      = window.location.origin
-  const bgUrl       = origin + '/Certificate%20Background.png'
-  const sigUrl      = origin + '/DRP%20Signature.png'
-  const logoUrl     = origin + '/NLH%20Logo.png'
-  const mascotUrl   = origin + '/NLH%20Mascot.png'
+  const centreLine = `${centre?.business_name || 'New Learning Horizons'}${centre?.city ? ', ' + centre.city : ''}`
 
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Certificate of Accomplishment — ${student.full_name}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    @page{size:A4 landscape;margin:0}
-    body{margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:Arial,sans-serif}
-
-    /* ── Full canvas: main area + right sidebar ── */
-    .cert{
-      width:297mm;height:210mm;
-      display:flex;overflow:hidden;
-      background:url('${bgUrl}') center/cover no-repeat;
-    }
-
-    /* ── Main content area ── */
-    .main{
-      flex:1;display:flex;flex-direction:column;
-      padding:7mm 9mm 5mm;
-    }
-    .nlh-logo{height:18mm;width:auto;object-fit:contain;margin-bottom:3mm}
-
-    /* Title */
-    .acc{
-      font-family:'Dancing Script',cursive;font-size:30pt;font-weight:700;
-      color:#CC0000;margin-bottom:1mm;
-    }
-    .certify{
-      font-size:9pt;font-weight:700;letter-spacing:2.5px;
-      color:#1A3A6A;margin-bottom:5mm;
-    }
-
-    /* Student name */
-    .nm{
-      font-family:'Dancing Script',cursive;font-size:42pt;font-weight:700;
-      color:#CC0000;line-height:1.05;margin-bottom:2mm;
-    }
-    .pr{font-size:10pt;color:#1A1916;font-style:italic;margin-bottom:2mm}
-    .comp{font-size:10pt;color:#555;margin-bottom:1.5mm}
-    .cr{font-size:15pt;font-weight:700;color:#1A3A6A;line-height:1.3;margin-bottom:1.5mm}
-    .ct{font-size:10pt;color:#1A1916}
-
-    /* Footer: sig | mascot | date */
-    .ft{
-      display:flex;justify-content:space-between;align-items:flex-end;
-      border-top:1.5px solid rgba(26,58,106,0.2);
-      padding-top:2.5mm;margin-top:auto;
-    }
-    .sig-blk{display:flex;flex-direction:column;align-items:flex-start}
-    .sig-img{height:13mm;object-fit:contain;margin-bottom:0.5mm}
-    .sig-nm{font-family:'Dancing Script',cursive;font-size:12pt;font-weight:700;color:#1A1916}
-    .sig-tl{font-size:7.5pt;color:#1A3A6A}
-    .mascot-img{height:24mm;width:auto;object-fit:contain}
-    .dt-blk{text-align:right}
-    .dt-val{font-size:11pt;font-weight:700;color:#1A1916}
-    .dt-lbl{font-size:7pt;color:#555;letter-spacing:1px;text-transform:uppercase}
-
-    /* ── Right sidebar ── */
-    .sidebar{
-      width:55mm;display:flex;flex-direction:column;
-      align-items:center;justify-content:space-between;
-      padding:6mm 5mm;text-align:center;
-      border-left:2px solid rgba(204,0,0,0.22);
-      background:rgba(255,255,255,0.10);
-    }
-    .estd{font-size:9pt;font-weight:700;color:#CC0000;letter-spacing:1px}
-    .sb-logo{height:18mm;width:auto;object-fit:contain}
-    .iso{font-size:7.5pt;font-weight:700;color:#1A3A6A;letter-spacing:0.5px}
-    .tagline{font-size:7.5pt;color:#3A3830;font-style:italic;line-height:1.45}
-    .social{display:flex;flex-direction:column;gap:2mm;font-size:7.5pt;color:#534AB7}
-    .brand-row{display:flex;flex-direction:column;gap:2mm;align-items:center}
-    .brand-row img{height:9mm;width:auto;object-fit:contain}
-
-    .np{text-align:right;padding:10px 20px;background:#f0f0f0}
-    @media print{.np{display:none}}
-  </style>
-</head>
-<body>
-  <div class="np">
-    <button onclick="window.print()"
-      style="background:#534AB7;color:#fff;border:none;padding:10px 24px;
-             border-radius:8px;font:700 13px Arial;cursor:pointer">
-      🖨️ Print / Save as PDF
-    </button>
-  </div>
-
-  <div class="cert">
-
-    <!-- ── Main content ── -->
-    <div class="main">
-      <img class="nlh-logo" src="${logoUrl}" alt="NLH" onerror="this.style.display='none'">
-
-      <div class="acc">Certificate of Accomplishment</div>
-      <div class="certify">THIS IS TO CERTIFY THAT</div>
-
-      <div class="nm">${student.full_name}</div>
-      ${parentLine ? `<div class="pr">${parentLine}</div>` : ''}
-      <div class="comp">Has successfully completed</div>
-      <div class="cr">${fullCourse}</div>
-      <div class="ct">at ${centreLine}</div>
-
-      <div class="ft">
-        <div class="sig-blk">
-          <img class="sig-img" src="${sigUrl}" alt="Signature" onerror="this.style.display='none'">
-          <div class="sig-nm">Dhiral Panchmatia</div>
-          <div class="sig-tl">Founder, New Learning Horizons</div>
-        </div>
-        <img class="mascot-img" src="${mascotUrl}" alt="" onerror="this.style.display='none'">
-        <div class="dt-blk">
-          <div class="dt-val">${dateStr}</div>
-          <div class="dt-lbl">Date</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Right sidebar ── -->
-    <div class="sidebar">
-      <div class="estd">Estd. 2008</div>
-      <img class="sb-logo" src="${logoUrl}" alt="NLH" onerror="this.style.display='none'">
-      <div class="iso">ISO 9001:2015</div>
-      <div class="tagline">Enriching Children's<br>Future since 2008</div>
-      <div class="social">
-        <span>📸 /newlearninghorizon</span>
-        <span>📘 /nlhnag</span>
-        <span>🌐 nlhnagpur.info</span>
-      </div>
-      <div class="brand-row">
-        <img src="${origin}/acem-abacus-logo.png" alt="ACEM Abacus" onerror="this.style.display='none'">
-        <img src="${origin}/writewell-logo.png" alt="WriteWell" onerror="this.style.display='none'">
-        <img src="${origin}/easy-math-logo.png" alt="Easy Math" onerror="this.style.display='none'">
-      </div>
-    </div>
-
-  </div>
-</body>
-</html>`
-
-  const win = window.open('', '_blank', 'width=1120,height=820')
-  if (win) { win.document.write(html); win.document.close() }
+  const params = new URLSearchParams({
+    type:   'student',
+    name:   student.full_name,
+    parent: parentLine,
+    course: fullCourse,
+    centre: centreLine,
+    date:   todayDMY(),
+  })
+  window.open(`/certificate/Issue%20Certificate.html?${params}`, '_blank', 'width=1120,height=820')
 }
 
 // ── modal component ────────────────────────────────────────────────────────────
