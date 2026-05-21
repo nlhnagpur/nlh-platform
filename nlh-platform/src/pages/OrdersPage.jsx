@@ -388,7 +388,13 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
         if (error) { showToast('Error adding item: ' + error.message); setSaving(false); return }
       }
     }
-    await sb.from('orders').update({ courier_charges: parseInt(courierCharges, 10) || 0 }).eq('id', order.id)
+    const cc = parseInt(courierCharges, 10) || 0
+    const subTotal = items.reduce(function (s, it) { return s + (it.ordered_qty || 0) * (it.rate || 0) }, 0)
+    await sb.from('orders').update({
+      courier_charges: cc,
+      subtotal:        subTotal,
+      grand_total:     subTotal + cc,
+    }).eq('id', order.id)
     showToast('Invoice updated.')
     onSaved()
     setSaving(false)
@@ -1259,25 +1265,23 @@ export default function OrdersPage() {
     let data, error
 
     const PLACER_FIELDS = 'business_name, tier, email, city, state, phone, address'
+    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name, tier)'
     if (isAdmin) {
-      // Admins see all orders with placer info
       ;({ data, error } = await sb
         .from('orders')
-        .select('*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + ')')
+        .select(SELECT)
         .order('created_at', { ascending: false }))
     } else if (currentRole === 'smf' || currentRole === 'cf') {
-      // SMF / CF see own orders + all orders from their sub-network
       const treeIds = await getTreeIds(currentFranchiseeId)
       ;({ data, error } = await sb
         .from('orders')
-        .select('*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + ')')
+        .select(SELECT)
         .in('placer_id', treeIds.length > 0 ? treeIds : [currentFranchiseeId])
         .order('created_at', { ascending: false }))
     } else {
-      // UF sees only their own orders
       ;({ data, error } = await sb
         .from('orders')
-        .select('*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + ')')
+        .select(SELECT)
         .eq('placer_id', currentFranchiseeId)
         .order('created_at', { ascending: false }))
     }
@@ -1293,38 +1297,34 @@ export default function OrdersPage() {
   async function handleMarkInvoiced(order) {
     setActionLoading(order.id + '_invoice')
 
+    // Compute grand_total from items before invoicing
+    const { data: itemRows } = await sb
+      .from('order_items').select('ordered_qty, rate').eq('order_id', order.id)
+    const itemsTotal = (itemRows || []).reduce(function (sum, it) {
+      return sum + (it.ordered_qty || 0) * (it.rate || 0)
+    }, 0)
+    const grandTotal = itemsTotal + (order.courier_charges || 0)
+
     // Let the DB trigger (trg_invoice_no) assign invoice_no atomically from invoice_seq.
-    // We only set status → the trigger fires on BEFORE UPDATE and fills invoice_no.
     const { error } = await sb
       .from('orders')
-      .update({ status: 'invoiced' })
+      .update({ status: 'invoiced', grand_total: grandTotal, subtotal: itemsTotal })
       .eq('id', order.id)
-      .eq('status', 'pending')   // guard: only invoice pending orders
+      .eq('status', 'pending')
 
     if (error) {
       showToast('Failed to invoice order: ' + error.message)
     } else {
-      // Fetch the order back to get the trigger-assigned invoice_no
       const { data: refreshed } = await sb
-        .from('orders')
-        .select('invoice_no')
-        .eq('id', order.id)
-        .single()
+        .from('orders').select('invoice_no').eq('id', order.id).single()
       const invoiceNo = refreshed?.invoice_no || ''
       showToast('Invoiced as ' + invoiceNo)
       try {
-        const { data: itemRows } = await sb
-          .from('order_items')
-          .select('ordered_qty, rate')
-          .eq('order_id', order.id)
-        const total = (itemRows || []).reduce(function (sum, it) {
-          return sum + (it.ordered_qty || 0) * (it.rate || 0)
-        }, 0)
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
         const placerEmail = order.placer?.email || ''
         const placerName  = order.placer?.business_name || order.placer?.email || ''
         if (placerEmail) {
-          await sendInvoiceEmail(invoicedOrder, placerEmail, placerName, total)
+          await sendInvoiceEmail(invoicedOrder, placerEmail, placerName, grandTotal)
         }
       } catch (emailErr) {
         console.warn('Invoice email failed:', emailErr.message)
@@ -1526,19 +1526,25 @@ export default function OrdersPage() {
                       <td className="mono">{order.invoice_no || '—'}</td>
                       {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && (
                         <td>
-                          {order.placer ? (
-                            <div className="placer-cell">
-                              <div className="placer-av" style={{ background: 'var(--purple)' }}>
-                                {(order.placer.business_name || '').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()}
+                          {(() => {
+                            const displayFr = order.bill_to_fr || order.placer
+                            const isBillDiff = order.bill_to_fr && order.bill_to_fr.business_name !== order.placer?.business_name
+                            if (!displayFr) return <span className="tier t-uf">{order.placer_tier}</span>
+                            return (
+                              <div className="placer-cell">
+                                <div className="placer-av" style={{ background: isBillDiff ? '#D97706' : 'var(--purple)' }}>
+                                  {(displayFr.business_name || '').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="placer-name">{displayFr.business_name}</div>
+                                  <div className="placer-loc">
+                                    <TierBadge tier={displayFr.tier} />
+                                    {isBillDiff && <span style={{ fontSize: 9, color: '#D97706', marginLeft: 4 }}>billed to</span>}
+                                  </div>
+                                </div>
                               </div>
-                              <div>
-                                <div className="placer-name">{order.placer.business_name}</div>
-                                <div className="placer-loc"><TierBadge tier={order.placer.tier} /></div>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="tier t-uf">{order.placer_tier}</span>
-                          )}
+                            )
+                          })()}
                         </td>
                       )}
                       <td className="mono">{fmtDate(order.created_at)}</td>
