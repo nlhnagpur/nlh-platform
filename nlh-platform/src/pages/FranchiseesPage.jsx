@@ -5,6 +5,7 @@ import { fmtAmt, fmtDate, showToast, statusBadge } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds } from '../utils/hierarchy'
 import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
+import { sendWAPaymentReceived } from '../services/whatsapp'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 
 // ── RecordFranchiseePaymentModal ───────────────────────────────────────────────
@@ -33,9 +34,21 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     if (insErr) { showToast('Failed: ' + insErr.message, 'err'); setSaving(false); return }
 
     const newFeePaid = (franchisee.fee_paid || 0) + amt
+    const newBalance = (Number(franchisee.enrollment_fee) || 0) - newFeePaid
     await sb.from('franchisees').update({ fee_paid: newFeePaid }).eq('id', franchisee.id)
     setSaving(false)
     showToast('Payment of ₹' + fmtAmt(amt) + ' recorded')
+    try {
+      if (franchisee.phone) {
+        await sendWAPaymentReceived(franchisee.phone, {
+          name:    franchisee.business_name || 'Partner',
+          amount:  fmtAmt(amt),
+          balance: newBalance,
+        })
+      }
+    } catch (waErr) {
+      console.warn('WhatsApp payment notification failed:', waErr.message)
+    }
     onSaved(newFeePaid)
   }
 

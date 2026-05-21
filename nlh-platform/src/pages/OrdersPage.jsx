@@ -6,6 +6,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
+import { sendWAOrderInvoiced, sendWAOrderDispatched } from '../services/whatsapp'
 import InvoiceView from '../components/InvoiceView'
 
 // JSX badge components
@@ -263,6 +264,19 @@ function DispatchModal({ order, onClose, onSaved }) {
       showToast('Failed to update dispatch: ' + error.message)
     } else {
       showToast('Dispatched!')
+      try {
+        const phone = order.placer?.phone || ''
+        if (phone && awb.trim()) {
+          await sendWAOrderDispatched(phone, {
+            name:      order.placer?.business_name || 'Partner',
+            invoiceNo: order.invoice_no || order.id,
+            awb:       awb.trim(),
+            courier:   courier.trim() || 'courier',
+          })
+        }
+      } catch (waErr) {
+        console.warn('WhatsApp dispatch notification failed:', waErr.message)
+      }
       onSaved()
     }
     setSaving(false)
@@ -1344,6 +1358,18 @@ export default function OrdersPage() {
         }
       } catch (emailErr) {
         console.warn('Invoice email failed:', emailErr.message)
+      }
+      try {
+        const phone = order.placer?.phone || ''
+        if (phone) {
+          await sendWAOrderInvoiced(phone, {
+            name:      order.placer?.business_name || 'Partner',
+            invoiceNo: invoiceNo,
+            amount:    fmtAmt(grandTotal),
+          })
+        }
+      } catch (waErr) {
+        console.warn('WhatsApp invoice notification failed:', waErr.message)
       }
       await loadOrders()
     }
