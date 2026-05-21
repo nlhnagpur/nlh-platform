@@ -85,13 +85,19 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const [sending,      setSending]      = useState(false)
 
   // Edit tab state
-  const [editBillToId,  setEditBillToId]  = useState(order.bill_to_franchisee_id || null)
-  const [editBillToFr,  setEditBillToFr]  = useState(null)  // explicit — avoids derived-state race
-  const [editShipToId,  setEditShipToId]  = useState(order.ship_to_franchisee_id || null)
-  const [billSearch,    setBillSearch]    = useState('')
-  const [billResults,   setBillResults]   = useState([])
-  const [searching,     setSearching]     = useState(false)
-  const [saving,        setSaving]        = useState(false)
+  const [editBillToId,       setEditBillToId]       = useState(order.bill_to_franchisee_id || null)
+  const [editBillToFr,       setEditBillToFr]       = useState(null)  // explicit — avoids derived-state race
+  const [editShipToId,       setEditShipToId]       = useState(order.ship_to_franchisee_id || null)
+  const [editCourierCharges, setEditCourierCharges] = useState(order.courier_charges || 0)
+  const [editNotes,          setEditNotes]          = useState(order.notes || '')
+  const [billSearch,         setBillSearch]         = useState('')
+  const [billResults,        setBillResults]        = useState([])
+  const [searching,          setSearching]          = useState(false)
+  const [saving,             setSaving]             = useState(false)
+
+  // Live display values for PDF (updated after each save)
+  const [liveCourier, setLiveCourier] = useState(order.courier_charges || 0)
+  const [liveNotes,   setLiveNotes]   = useState(order.notes || '')
 
   // Cancel
   const [cancelling,    setCancelling]   = useState(false)
@@ -194,6 +200,8 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     const { error } = await sb.from('orders').update({
       bill_to_franchisee_id: editBillToId || null,
       ship_to_franchisee_id: editShipToId || null,
+      courier_charges:       editCourierCharges || 0,
+      notes:                 editNotes.trim() || null,
     }).eq('id', order.id)
     setSaving(false)
     if (error) { alert('Save failed: ' + error.message); return }
@@ -205,6 +213,8 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       ? (hierarchy.find(function(f) { return f.id === editShipToId }) || null)
       : null
     setShipToFr(stFr)
+    setLiveCourier(editCourierCharges || 0)
+    setLiveNotes(editNotes.trim())
 
     setActiveTab('view')
   }
@@ -266,7 +276,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const fr         = billToFr || placer || {}
   const shipFr     = shipToFr
   const subtotal   = items.reduce(function(sum, i) { return sum + (i.rate || 0) * (i.ordered_qty || 0) }, 0)
-  const courier    = order.courier_charges || 0
+  const courier    = liveCourier
   const grandTotal = order.grand_total || (subtotal + courier)
   const amtPaid    = order.amount_paid || 0
   const balance    = grandTotal - amtPaid
@@ -538,6 +548,63 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               </div>
             </section>
 
+            {/* ── CHARGES & NOTES ── */}
+            <section>
+              <div style={{ font: '700 10px "DM Mono",monospace', color: '#534AB7', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'inline-block', width: 3, height: 14, background: '#534AB7', borderRadius: 2 }} />
+                Charges &amp; Notes
+              </div>
+
+              {/* Courier charges */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ font: '600 9px "DM Mono",monospace', color: '#9C9A92', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>
+                  Courier / Shipping Charges (₹)
+                </label>
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ position: 'absolute', left: 11, font: '600 13px "DM Mono",monospace', color: '#9C9A92', pointerEvents: 'none' }}>₹</span>
+                  <input
+                    type="number" min="0" step="1"
+                    value={editCourierCharges}
+                    onChange={function(e) { setEditCourierCharges(parseInt(e.target.value, 10) || 0) }}
+                    style={{
+                      padding: '9px 12px 9px 26px', width: 180,
+                      border: '1.5px solid #D0CEC6', borderRadius: 9,
+                      font: '600 14px "DM Mono",monospace', color: '#1A1916', outline: 'none'
+                    }}
+                    onFocus={function(e) { e.target.style.borderColor = '#534AB7' }}
+                    onBlur={function(e) { e.target.style.borderColor = '#D0CEC6' }}
+                  />
+                </div>
+                <div style={{ font: '500 10px "DM Mono",monospace', color: '#9C9A92', marginTop: 5 }}>
+                  Enter 0 if shipping is free or included in kit price
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label style={{ font: '600 9px "DM Mono",monospace', color: '#9C9A92', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>
+                  Invoice Note / Remarks
+                </label>
+                <textarea
+                  value={editNotes}
+                  onChange={function(e) { setEditNotes(e.target.value) }}
+                  rows={4}
+                  placeholder={'e.g. Phonics kits included as part of franchise kit & training books — not charged separately.\ne.g. Rate adjusted as per agreement dated 12 May 2026.'}
+                  style={{
+                    width: '100%', padding: '10px 12px', boxSizing: 'border-box',
+                    border: '1.5px solid #D0CEC6', borderRadius: 9, resize: 'vertical',
+                    font: '13px "DM Sans",sans-serif', color: '#1A1916',
+                    lineHeight: 1.55, outline: 'none'
+                  }}
+                  onFocus={function(e) { e.target.style.borderColor = '#534AB7' }}
+                  onBlur={function(e) { e.target.style.borderColor = '#D0CEC6' }}
+                />
+                <div style={{ font: '500 10px "DM Mono",monospace', color: '#9C9A92', marginTop: 5 }}>
+                  This note prints on the invoice below the totals
+                </div>
+              </div>
+            </section>
+
           </div>
 
           {/* ── sticky save footer ── */}
@@ -799,6 +866,19 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 </div>
               </div>
             </div>
+
+            {/* notes — only when set */}
+            {liveNotes && (
+              <div style={{
+                border: '1.5px solid #E2E0D8', borderRadius: 12,
+                padding: '12px 16px', background: '#FAFAF8',
+                position: 'relative', overflow: 'hidden'
+              }}>
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 3, background: '#9C9A92' }} />
+                <div style={{ font: '700 8.5px "DM Mono",monospace', color: '#9C9A92', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 6 }}>Note / Remarks</div>
+                <div style={{ font: '500 11px "DM Sans",sans-serif', color: '#3D3B35', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{liveNotes}</div>
+              </div>
+            )}
 
             {/* thank you */}
             <div style={{ marginTop: 14, background: 'linear-gradient(115deg, #FFE89B 0%, #FFD234 100%)', borderRadius: 12, padding: '14px 16px 14px 90px', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
