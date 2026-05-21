@@ -3,6 +3,8 @@ import { sb } from '../supabase'
 import { fmtAmt } from '../utils'
 import { sendInvoiceEmail } from '../services/email'
 
+const CANCEL_ROLES = ['owner', 'super_admin', 'admin']
+
 function fmtDateLong(d) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -31,7 +33,7 @@ function numToWords(num) {
   return convert(Math.round(num)) + ' Rupees Only'
 }
 
-export default function InvoiceView({ order, onClose }) {
+export default function InvoiceView({ order, onClose, onCancelled, currentRole, currentUser }) {
   const [items,   setItems]   = useState([])
   const [placer,  setPlacer]  = useState(order.placer || order.franchisees || null)
   const [loading, setLoading] = useState(true)
@@ -43,6 +45,12 @@ export default function InvoiceView({ order, onClose }) {
   const [editingBillTo,  setEditingBillTo]  = useState(false)
   const [editingShipTo,  setEditingShipTo]  = useState(false)
   const [saving,         setSaving]         = useState(false)
+  const [cancelling,     setCancelling]     = useState(false)
+  const [showCancelDlg,  setShowCancelDlg]  = useState(false)
+  const [cancelReason,   setCancelReason]   = useState('')
+
+  const canCancel = CANCEL_ROLES.includes(currentRole) &&
+    ['invoiced', 'payment_submitted'].includes(order.status)
 
   const printRef = useRef(null)
 
@@ -81,6 +89,25 @@ export default function InvoiceView({ order, onClose }) {
     await sb.from('orders').update({ ship_to: shipTo }).eq('id', order.id)
     setSaving(false)
     setEditingShipTo(false)
+  }
+
+  async function handleCancelInvoice() {
+    setCancelling(true)
+    const { error } = await sb.from('orders').update({
+      status:                 'pending',
+      invoice_no:             null,
+      invoiced_at:            null,
+      invoice_cancelled_at:   new Date().toISOString(),
+      invoice_cancelled_by:   currentUser?.email || currentRole || 'admin',
+    }).eq('id', order.id)
+    setCancelling(false)
+    setShowCancelDlg(false)
+    if (error) {
+      alert('Failed to cancel invoice: ' + error.message)
+    } else {
+      if (onCancelled) onCancelled()
+      onClose()
+    }
   }
 
   function handlePrint() {
@@ -209,7 +236,67 @@ export default function InvoiceView({ order, onClose }) {
         <button onClick={handlePrint} style={{ background:'#534AB7', color:'#fff', border:'none', padding:'8px 16px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}>
           Print / Save PDF
         </button>
+        {canCancel && (
+          <button
+            onClick={function() { setShowCancelDlg(true) }}
+            style={{ background:'rgba(220,38,38,.1)', color:'#A32D2D', border:'1.5px solid rgba(220,38,38,.35)', padding:'8px 16px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}
+          >
+            ✕ Cancel Invoice
+          </button>
+        )}
       </div>
+
+      {/* ── Cancel confirmation dialog ── */}
+      {showCancelDlg && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 400,
+          background: 'rgba(0,0,0,.55)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 14, padding: 28, maxWidth: 440, width: '100%',
+            boxShadow: '0 20px 60px rgba(0,0,0,.25)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 22 }}>⚠️</span>
+              <div style={{ font: '700 16px "DM Sans",sans-serif', color: '#A32D2D' }}>Cancel Invoice {order.invoice_no}?</div>
+            </div>
+            <p style={{ font: '400 13px "DM Sans",sans-serif', color: '#5C5A54', lineHeight: 1.6, marginBottom: 16 }}>
+              This will <strong>void the invoice number</strong> and return the order to <em>Pending</em> status.
+              The invoice number will not be reused. This action is logged and cannot be undone.
+            </p>
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ font: '600 10px "DM Mono",monospace', color: '#9C9A92', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>
+                Reason for cancellation (optional)
+              </label>
+              <input
+                autoFocus
+                value={cancelReason}
+                onChange={function(e) { setCancelReason(e.target.value) }}
+                placeholder="e.g. Wrong franchisee, duplicate order…"
+                style={{ width: '100%', padding: '8px 11px', border: '1.5px solid #E2E0D8', borderRadius: 8, font: '13px "DM Sans",sans-serif', color: '#1A1916', outline: 'none' }}
+                onKeyDown={function(e) { if (e.key === 'Escape') setShowCancelDlg(false) }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={function() { setShowCancelDlg(false); setCancelReason('') }}
+                style={{ padding: '9px 20px', border: '1px solid #D0CEC6', borderRadius: 8, background: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', color: '#5C5A54' }}
+              >
+                Keep Invoice
+              </button>
+              <button
+                onClick={handleCancelInvoice}
+                disabled={cancelling}
+                style={{ padding: '9px 20px', border: 'none', borderRadius: 8, background: '#DC2626', color: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', opacity: cancelling ? .7 : 1 }}
+              >
+                {cancelling ? 'Cancelling…' : 'Yes, Cancel Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── A4 sheet ── */}
       {loading ? (

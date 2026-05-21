@@ -1233,7 +1233,7 @@ async function generateInvoicePDF(order, items) {
 const ORDER_FILTERS = ['all', 'pending', 'invoiced', 'payment_submitted', 'closed']
 
 export default function OrdersPage() {
-  const { currentRole, currentFranchiseeId } = useAuth()
+  const { currentRole, currentFranchiseeId, currentUser } = useAuth()
   const isAdmin = isAdminRole(currentRole)
 
   const [orders, setOrders] = useState([])
@@ -1604,7 +1604,13 @@ export default function OrdersPage() {
       )}
 
       {invoiceViewOrder && (
-        <InvoiceView order={invoiceViewOrder} onClose={function() { setInvoiceViewOrder(null) }} />
+        <InvoiceView
+          order={invoiceViewOrder}
+          onClose={function() { setInvoiceViewOrder(null) }}
+          onCancelled={async function() { setInvoiceViewOrder(null); await loadOrders() }}
+          currentRole={currentRole}
+          currentUser={currentUser}
+        />
       )}
     </div>
   )
