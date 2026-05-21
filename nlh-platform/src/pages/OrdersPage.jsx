@@ -1292,35 +1292,27 @@ export default function OrdersPage() {
 
   async function handleMarkInvoiced(order) {
     setActionLoading(order.id + '_invoice')
-    // Atomic invoice number generation
-    const { data: inv, error: invErr } = await sb
-      .from('orders')
-      .select('id')
-      .not('invoice_no', 'is', null)
-      .order('invoice_no', { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
-    let nextNum = 1
-    if (!invErr && inv) {
-      const parts = (inv.invoice_no || '').split('-')
-      nextNum = (parseInt(parts[parts.length - 1], 10) || 0) + 1
-    }
-    const year = new Date().getFullYear()
-    const invoiceNo = 'INV-' + year + '-' + String(nextNum).padStart(4, '0')
-
+    // Let the DB trigger (trg_invoice_no) assign invoice_no atomically from invoice_seq.
+    // We only set status → the trigger fires on BEFORE UPDATE and fills invoice_no.
     const { error } = await sb
       .from('orders')
-      .update({ status: 'invoiced', invoice_no: invoiceNo })
+      .update({ status: 'invoiced' })
       .eq('id', order.id)
-      .is('invoice_no', null)
+      .eq('status', 'pending')   // guard: only invoice pending orders
 
     if (error) {
       showToast('Failed to invoice order: ' + error.message)
     } else {
+      // Fetch the order back to get the trigger-assigned invoice_no
+      const { data: refreshed } = await sb
+        .from('orders')
+        .select('invoice_no')
+        .eq('id', order.id)
+        .single()
+      const invoiceNo = refreshed?.invoice_no || ''
       showToast('Invoiced as ' + invoiceNo)
       try {
-        // Fetch items to compute total
         const { data: itemRows } = await sb
           .from('order_items')
           .select('ordered_qty, rate')
@@ -1328,7 +1320,6 @@ export default function OrdersPage() {
         const total = (itemRows || []).reduce(function (sum, it) {
           return sum + (it.ordered_qty || 0) * (it.rate || 0)
         }, 0)
-
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
         const placerEmail = order.placer?.email || ''
         const placerName  = order.placer?.business_name || order.placer?.email || ''
