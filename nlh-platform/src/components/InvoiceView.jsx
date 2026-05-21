@@ -85,12 +85,13 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const [sending,      setSending]      = useState(false)
 
   // Edit tab state
-  const [editBillToId, setEditBillToId] = useState(order.bill_to_franchisee_id || null)
-  const [editShipToId, setEditShipToId] = useState(order.ship_to_franchisee_id || null)
-  const [billSearch,   setBillSearch]   = useState('')
-  const [billResults,  setBillResults]  = useState([])
-  const [searching,    setSearching]    = useState(false)
-  const [saving,       setSaving]       = useState(false)
+  const [editBillToId,  setEditBillToId]  = useState(order.bill_to_franchisee_id || null)
+  const [editBillToFr,  setEditBillToFr]  = useState(null)  // explicit — avoids derived-state race
+  const [editShipToId,  setEditShipToId]  = useState(order.ship_to_franchisee_id || null)
+  const [billSearch,    setBillSearch]    = useState('')
+  const [billResults,   setBillResults]   = useState([])
+  const [searching,     setSearching]     = useState(false)
+  const [saving,        setSaving]        = useState(false)
 
   // Cancel
   const [cancelling,    setCancelling]   = useState(false)
@@ -146,16 +147,17 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       const btId = order.bill_to_franchisee_id || (placerFr ? placerFr.id : null)
       setEditBillToId(btId)
 
-      // Resolve Bill To display franchisee
+      // Resolve Bill To display franchisee (and seed the edit picker)
+      let resolvedBillTo = placerFr
       if (order.bill_to_franchisee_id && order.bill_to_franchisee_id !== order.placer_id) {
         const { data: btData } = await sb.from('franchisees')
           .select(FRANCHISEE_FIELDS)
           .eq('id', order.bill_to_franchisee_id)
           .single()
-        setBillToFr(btData || placerFr)
-      } else {
-        setBillToFr(placerFr)
+        resolvedBillTo = btData || placerFr
       }
+      setBillToFr(resolvedBillTo)
+      setEditBillToFr(resolvedBillTo)  // seed edit picker explicitly
 
       // Resolve Ship To display franchisee
       if (order.ship_to_franchisee_id) {
@@ -196,11 +198,8 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     setSaving(false)
     if (error) { alert('Save failed: ' + error.message); return }
 
-    // Update display state
-    const btFr = hierarchy.find(function(f) { return f.id === editBillToId })
-      || billResults.find(function(f) { return f.id === editBillToId })
-      || placer
-    setBillToFr(btFr || placer)
+    // Update invoice display from the explicit edit state
+    if (editBillToFr) setBillToFr(editBillToFr)
 
     const stFr = editShipToId
       ? (hierarchy.find(function(f) { return f.id === editShipToId }) || null)
@@ -216,7 +215,6 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     const { error } = await sb.from('orders').update({
       status:               'pending',
       invoice_no:           null,
-      invoiced_at:          null,
       invoice_cancelled_at: new Date().toISOString(),
       invoice_cancelled_by: currentUser?.email || currentRole || 'admin',
     }).eq('id', order.id)
@@ -285,12 +283,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     }
   }
 
-  // ── selected bill-to franchisee for edit tab display ──────────────────────
-  const editBillToFr = editBillToId
-    ? (hierarchy.find(function(f) { return f.id === editBillToId })
-      || billResults.find(function(f) { return f.id === editBillToId })
-      || (placer && placer.id === editBillToId ? placer : null))
-    : placer
+
 
   return (
     <div style={{
@@ -420,10 +413,10 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               </div>
 
               {/* current selection preview */}
-              {editBillToFr && (
+              {(editBillToFr || placer) && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ font: '600 9px "DM Mono",monospace', color: '#9C9A92', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Currently selected</div>
-                  <FranchiseeCard fr={editBillToFr} selected={true} showRadio={false} />
+                  <FranchiseeCard fr={editBillToFr || placer} selected={true} showRadio={false} />
                 </div>
               )}
 
@@ -460,7 +453,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                     fr={placer}
                     selected={editBillToId === placer.id}
                     showRadio={true}
-                    onClick={function() { setEditBillToId(placer.id); setBillSearch(''); setBillResults([]) }}
+                    onClick={function() { setEditBillToId(placer.id); setEditBillToFr(placer); setBillSearch(''); setBillResults([]) }}
                   />
                 </div>
               )}
@@ -475,7 +468,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                         fr={fr}
                         selected={editBillToId === fr.id}
                         showRadio={true}
-                        onClick={function() { setEditBillToId(fr.id); setBillSearch(''); setBillResults([]) }}
+                        onClick={function() { setEditBillToId(fr.id); setEditBillToFr(fr); setBillSearch(''); setBillResults([]) }}
                       />
                     )
                   })}
