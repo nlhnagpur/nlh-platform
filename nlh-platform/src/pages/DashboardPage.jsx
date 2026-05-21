@@ -283,7 +283,7 @@ function TierDonut({ tierBreakdown, total }) {
 function ActivityFeed({ orders, isAdmin }) {
   const items = orders.slice(0, 6).map(function(o) {
     const act = STATUS_ACT[o.status] || STATUS_ACT.pending
-    const name = o.franchisees?.business_name || o.franchisees?.city || 'Franchisee'
+    const name = o.placer?.business_name || o.placer?.city || 'Franchisee'
     return {
       em:    act.em,
       bg:    act.bg,
@@ -457,7 +457,7 @@ export default function DashboardPage({ onNavigate }) {
       sb.from('franchisees').select('tier').eq('status', 'active'),
       sb.from('students').select('id', { count: 'exact', head: true }),
       sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, franchisees(business_name, city, tier)'),
+      sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, placer:franchisees!orders_placer_id_fkey(business_name, city, tier)'),
     ])
     setFranchiseeCount(fr.count || 0)
     setStudentCount(st.count || 0)
@@ -480,9 +480,9 @@ export default function DashboardPage({ onNavigate }) {
 
     const countMap = {}
     allOrders.forEach(function(o) {
-      const name = o.franchisees?.business_name || 'Unknown'
-      const city = o.franchisees?.city || ''
-      const tier = o.franchisees?.tier || 'UF'
+      const name = o.placer?.business_name || 'Unknown'
+      const city = o.placer?.city || ''
+      const tier = o.placer?.tier || 'UF'
       if (!countMap[name]) countMap[name] = { count: 0, city, tier }
       countMap[name].count++
     })
@@ -769,9 +769,9 @@ export default function DashboardPage({ onNavigate }) {
                 </thead>
                 <tbody>
                   {displayOrders.map(function(o, i) {
-                    const name = o.franchisees?.business_name
-                    const city = o.franchisees?.city
-                    const tier = o.franchisees?.tier
+                    const name = o.placer?.business_name
+                    const city = o.placer?.city
+                    const tier = o.placer?.tier
                     return (
                       <tr key={o.id || i}>
                         <td className="mono" style={{ fontSize: 11 }}>
