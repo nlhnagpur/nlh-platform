@@ -455,22 +455,18 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
 <script>
 'use strict';
 
-const COURSES = [
-  'Abacus', 'Handwriting', 'Vedic Math', 'Coding',
-  'Phonics', "Rubik's Cube", 'Robotics', 'Reading',
-  'Public Speaking', 'Storytelling', 'Creative Writing',
-  'Art & Craft', 'Personality Dev', 'Chess',
-];
+const SUPABASE_URL = 'https://frnnoxudtlvhyyoqdqzx.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE';
 
 let currentType = 'UF';
 
-/* ── Build course checkboxes ──────────────────────────── */
-(function buildCourses() {
+/* ── Build course checkboxes from live DB data ────────── */
+function buildCourses(courseNames) {
   const grid = document.getElementById('coursesGrid');
-  grid.innerHTML = COURSES.map(function (c) {
+  grid.innerHTML = courseNames.map(function (c) {
     return '<label class="cck"><input type="checkbox" value="' + c + '" onchange="updateCert()"> ' + c + '</label>';
   }).join('');
-})();
+}
 
 /* ── Type switcher ────────────────────────────────────── */
 function setType(type, btn) {
@@ -482,8 +478,8 @@ function setType(type, btn) {
   updateCert();
 }
 
-/* ── Pre-fill from URL params ─────────────────────────── */
-(function prefill() {
+/* ── Pre-fill fields from URL params ──────────────────── */
+function prefill(preselectedCourses) {
   const p = new URLSearchParams(location.search);
 
   const tier = p.get('tier') || 'UF';
@@ -511,18 +507,56 @@ function setType(type, btn) {
     }
   }
 
-  // Pre-check courses from comma-separated param
-  const coursesParam = p.get('courses');
-  if (coursesParam) {
-    const incoming = coursesParam.split(',').map(function (s) { return s.trim().toLowerCase(); });
+  // Pre-check registered courses (passed via URL param OR resolved from DB)
+  const toCheck = preselectedCourses && preselectedCourses.length
+    ? preselectedCourses.map(function (s) { return s.trim().toLowerCase(); })
+    : (p.get('courses') || '').split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+
+  if (toCheck.length) {
     document.querySelectorAll('#coursesGrid input[type=checkbox]').forEach(function (cb) {
-      if (incoming.some(function (ic) { return ic === cb.value.toLowerCase(); })) {
+      if (toCheck.some(function (ic) { return ic === cb.value.toLowerCase(); })) {
         cb.checked = true;
       }
     });
   }
 
   updateCert();
+}
+
+/* ── Bootstrap: fetch courses from DB, then prefill ──── */
+(async function init() {
+  const coursesParam = new URLSearchParams(location.search).get('courses') || '';
+
+  // Fetch all unique group_names from courses table
+  try {
+    const res = await fetch(
+      SUPABASE_URL + '/rest/v1/courses?select=group_name&order=group_name',
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY } }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      // Deduplicate group_names, preserving order
+      const seen = {};
+      const names = [];
+      rows.forEach(function (r) {
+        const n = r.group_name || '';
+        if (n && !seen[n]) { seen[n] = true; names.push(n); }
+      });
+      buildCourses(names);
+    } else {
+      throw new Error('fetch failed');
+    }
+  } catch (e) {
+    // Fallback to hardcoded list if DB unreachable
+    buildCourses([
+      'Abacus','Handwriting','Vedic Math','Coding','Phonics',
+      "Rubik's Cube",'Robotics','Reading','Public Speaking',
+      'Storytelling','Creative Writing','Art & Craft','Personality Dev','Chess',
+    ]);
+  }
+
+  // Pre-check courses: prefer URL param (already the right group_names from the platform)
+  prefill(coursesParam ? coursesParam.split(',') : []);
 })();
 
 /* ── Helpers ──────────────────────────────────────────── */
