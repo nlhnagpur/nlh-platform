@@ -2,18 +2,22 @@
 // GET  → Meta verification handshake
 // POST → Incoming messages + status updates
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://frnnoxudtlvhyyoqdqzx.supabase.co'
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
+const SUPABASE_URL = 'https://frnnoxudtlvhyyoqdqzx.supabase.co'
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE'
+
+function getKey() {
+  return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || SUPABASE_ANON
+}
 
 async function saveMessage(payload) {
-  if (!SUPABASE_KEY) return
+  const key = getKey()
   await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_messages`, {
     method: 'POST',
     headers: {
-      'apikey':        SUPABASE_KEY,
-      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'apikey':        key,
+      'Authorization': 'Bearer ' + key,
       'Content-Type':  'application/json',
-      'Prefer':        'resolution=ignore-duplicates',
+      'Prefer':        'return=minimal',
     },
     body: JSON.stringify(payload),
   })
@@ -63,12 +67,13 @@ export default async function handler(req, res) {
 
       // Status updates (delivered, read, failed)
       const statuses = changes.statuses || []
+      const key = getKey()
       for (const s of statuses) {
         await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_messages?wa_message_id=eq.${s.id}`, {
           method: 'PATCH',
           headers: {
-            'apikey':        SUPABASE_KEY,
-            'Authorization': 'Bearer ' + SUPABASE_KEY,
+            'apikey':        key,
+            'Authorization': 'Bearer ' + key,
             'Content-Type':  'application/json',
           },
           body: JSON.stringify({ status: s.status }),
