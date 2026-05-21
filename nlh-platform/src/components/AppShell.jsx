@@ -11,6 +11,7 @@ import UsersPage from '../pages/UsersPage'
 import AccessRequestsPage from '../pages/AccessRequestsPage'
 import InstructorsPage from '../pages/InstructorsPage'
 import BatchesPage from '../pages/BatchesPage'
+import WhatsAppInboxPage from '../pages/WhatsAppInboxPage'
 
 const PAGE_MAP = {
   dashboard:       DashboardPage,
@@ -22,8 +23,9 @@ const PAGE_MAP = {
   'price-history': PriceHistoryPage,
   users:           UsersPage,
   requests:        AccessRequestsPage,
-  instructors:     InstructorsPage,
-  batches:         BatchesPage,
+  instructors:      InstructorsPage,
+  batches:          BatchesPage,
+  'whatsapp-inbox': WhatsAppInboxPage,
 }
 
 export default function AppShell() {

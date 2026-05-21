@@ -5,6 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
+import { sendWAStudentEnrolled } from '../services/whatsapp'
 import StudentCertModal from '../components/StudentCertModal'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -876,6 +877,19 @@ function AddStudentModal({ onClose, onSaved }) {
       }
 
       showToast('Student added successfully')
+      try {
+        if (form.phone && selectedSkus.length > 0) {
+          const courseNames = selectedSkus.map(function (s) { return s.courses?.group_name || s.name }).join(', ')
+          await sendWAStudentEnrolled(form.phone, {
+            parentName:  form.parent_name || 'Parent',
+            studentName: form.full_name,
+            courses:     courseNames,
+            centre:      'New Learning Horizons',
+          })
+        }
+      } catch (waErr) {
+        console.warn('WhatsApp enrollment notification failed:', waErr.message)
+      }
       onSaved(st)
     } catch (err) {
       showToast('Unexpected error: ' + err.message, 'err')

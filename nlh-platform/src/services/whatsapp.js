@@ -80,6 +80,27 @@ export async function sendWAPaymentReceived(to, { name, amount, balance }) {
   })
 }
 
+// ── Template: student_enrolled ────────────────────────────────────────────────
+// Params: {{1}} parent name, {{2}} student name, {{3}} courses, {{4}} centre
+export async function sendWAStudentEnrolled(to, { parentName, studentName, courses, centre }) {
+  return sendWA(to, {
+    type: 'template',
+    template: {
+      name: 'student_enrolled',
+      language: { code: 'en' },
+      components: [{
+        type: 'body',
+        parameters: [
+          { type: 'text', text: parentName || 'Parent' },
+          { type: 'text', text: studentName },
+          { type: 'text', text: courses },
+          { type: 'text', text: centre },
+        ],
+      }],
+    },
+  })
+}
+
 // ── Template: fee_reminder ────────────────────────────────────────────────────
 // Params: {{1}} franchisee name, {{2}} balance amount
 export async function sendWAFeeReminder(to, { name, balance }) {
