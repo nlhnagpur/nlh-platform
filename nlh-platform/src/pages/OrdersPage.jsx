@@ -112,30 +112,36 @@ function PaySubmitModal({ order, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 function RecordPaymentModal({ order, onClose, onSaved }) {
   const total = order.grand_total || 0
-  const [amountPaid, setAmountPaid] = useState(order.amount_paid || '')
+  const remaining = Math.max(0, total - (order.amount_paid || 0))
+  const [amountPaid, setAmountPaid] = useState(remaining > 0 ? String(remaining) : '')
   const [mode, setMode]             = useState(order.payment_mode || 'UPI')
   const [ref,  setRef]              = useState(order.payment_ref  || '')
   const [saving, setSaving]         = useState(false)
 
-  const amt     = parseInt(amountPaid, 10) || 0
-  const balance = total - amt
-  const isFull  = amt >= total && total > 0
-  const isPart  = amt > 0 && !isFull
+  const amt    = parseInt(amountPaid, 10) || 0
+  const isFull = amt >= total && total > 0
+  const isPart = amt > 0 && !isFull
+
+  // Close a zero-value order directly (free / gifted / already noted)
+  async function handleCloseZero() {
+    setSaving(true)
+    const { error } = await sb.from('orders').update({ status: 'closed', payment_verified_at: new Date().toISOString() }).eq('id', order.id)
+    setSaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err') }
+    else { showToast('Order closed.'); onSaved() }
+  }
 
   async function handleSave() {
-    if (isNaN(amt) || amt <= 0) { showToast('Enter a valid amount.', 'warn'); return }
+    if (isNaN(amt) || amt <= 0) { showToast('Enter a valid amount greater than zero.', 'warn'); return }
     setSaving(true)
     const newStatus = isFull ? 'closed' : 'part_paid'
-    const { error } = await sb
-      .from('orders')
-      .update({
-        amount_paid:          amt,
-        payment_mode:         mode,
-        payment_ref:          ref.trim() || null,
-        payment_verified_at:  isFull ? new Date().toISOString() : null,
-        status:               newStatus,
-      })
-      .eq('id', order.id)
+    const { error } = await sb.from('orders').update({
+      amount_paid:         amt,
+      payment_mode:        mode,
+      payment_ref:         ref.trim() || null,
+      payment_verified_at: isFull ? new Date().toISOString() : null,
+      status:              newStatus,
+    }).eq('id', order.id)
     if (error) {
       showToast('Failed to record payment: ' + error.message, 'err')
     } else {
@@ -170,55 +176,65 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
             )}
           </div>
 
-          <div className="form-grid">
-            <label>Payment Mode
-              <select value={mode} onChange={function (e) { setMode(e.target.value) }}>
-                <option value="UPI">UPI</option>
-                <option value="NEFT">NEFT / RTGS</option>
-                <option value="Cash">Cash</option>
-                <option value="Cheque">Cheque</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label>Amount Paid (₹)
-              <input
-                type="number" placeholder={`Up to ₹${fmtAmt(total)}`}
-                value={amountPaid}
-                onChange={function (e) { setAmountPaid(e.target.value) }}
-                style={{ fontWeight:700, fontSize:16 }}
-              />
-            </label>
-            <label className="col-span-2">UTR / Reference Number
-              <input
-                type="text" placeholder="Transaction ID / cheque no. / cash ref"
-                value={ref}
-                onChange={function (e) { setRef(e.target.value) }}
-              />
-            </label>
-          </div>
+          {total === 0 ? (
+            /* ── Zero-value order — no payment needed ── */
+            <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8, padding:'14px 16px', marginTop:4, textAlign:'center' }}>
+              <div style={{ fontSize:22, marginBottom:6 }}>🎁</div>
+              <div style={{ fontWeight:700, fontSize:14, color:'#15803d', marginBottom:4 }}>No payment required</div>
+              <div style={{ fontSize:12, color:'#166534', lineHeight:1.5 }}>
+                This order has a total of ₹0. It may be a free kit, a gifted order, or the invoice hasn't been updated with rates yet.<br/>
+                You can close it directly, or go to the invoice Edit tab to set the correct amounts first.
+              </div>
+            </div>
+          ) : (
+            /* ── Normal payment form ── */
+            <div className="form-grid">
+              <label>Payment Mode
+                <select value={mode} onChange={function (e) { setMode(e.target.value) }}>
+                  <option value="UPI">UPI</option>
+                  <option value="NEFT">NEFT / RTGS</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label>Amount Paid (₹)
+                <input
+                  type="number" placeholder={`Up to ₹${fmtAmt(total)}`}
+                  value={amountPaid}
+                  onChange={function (e) { setAmountPaid(e.target.value) }}
+                  style={{ fontWeight:700, fontSize:16 }}
+                />
+              </label>
+              <label className="col-span-2">UTR / Reference Number
+                <input
+                  type="text" placeholder="Transaction ID / cheque no. / cash ref"
+                  value={ref}
+                  onChange={function (e) { setRef(e.target.value) }}
+                />
+              </label>
+            </div>
+          )}
 
           {/* Live balance indicator */}
-          {amt > 0 && (
+          {total > 0 && amt > 0 && (
             <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:12,
               padding:'8px 14px', borderRadius:8,
               background: isFull ? 'var(--green-bg,#f0fdf4)' : '#fffbeb',
               border: '1px solid ' + (isFull ? 'var(--green)' : '#fbbf24') }}>
               {isFull
-                ? <span style={{ color:'var(--green)', fontWeight:700, fontSize:13 }}>
-                    ✓ Full payment — order will be marked <b>Closed</b>
-                  </span>
-                : <span style={{ color:'#92400e', fontWeight:600, fontSize:13 }}>
-                    Part payment — balance remaining: <b>₹{fmtAmt(balance)}</b> — order marked <b>Part Paid</b>
-                  </span>
+                ? <span style={{ color:'var(--green)', fontWeight:700, fontSize:13 }}>✓ Full payment — order will be marked <b>Closed</b></span>
+                : <span style={{ color:'#92400e', fontWeight:600, fontSize:13 }}>Part payment — balance: <b>₹{fmtAmt(total - amt)}</b> — order marked <b>Part Paid</b></span>
               }
             </div>
           )}
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
-          <button className="btn-p" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : isFull ? 'Record Full Payment' : isPart ? 'Record Part Payment' : 'Save'}
-          </button>
+          {total === 0
+            ? <button className="btn-p" onClick={handleCloseZero} disabled={saving}>{saving ? 'Closing…' : 'Close Order (₹0)'}</button>
+            : <button className="btn-p" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : isFull ? 'Record Full Payment' : isPart ? 'Record Part Payment' : 'Save'}</button>
+          }
         </div>
       </div>
     </div>
