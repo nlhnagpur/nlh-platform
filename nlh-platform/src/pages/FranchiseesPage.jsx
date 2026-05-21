@@ -7,6 +7,88 @@ import { getDescendantIds } from '../utils/hierarchy'
 import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 
+// ── RecordFranchiseePaymentModal ───────────────────────────────────────────────
+
+function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSaved, onClose }) {
+  const [amount,  setAmount]  = useState(balance > 0 ? String(balance) : '')
+  const [date,    setDate]    = useState(new Date().toISOString().slice(0, 10))
+  const [mode,    setMode]    = useState('UPI')
+  const [ref,     setRef]     = useState('')
+  const [notes,   setNotes]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+
+  async function handleSave() {
+    const amt = Number(amount)
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    setSaving(true)
+    const { error: insErr } = await sb.from('franchisee_payments').insert({
+      franchisee_id: franchisee.id,
+      amount:        amt,
+      payment_date:  date,
+      payment_mode:  mode,
+      reference_no:  ref.trim() || null,
+      notes:         notes.trim() || null,
+      recorded_by:   currentUser || null,
+    })
+    if (insErr) { showToast('Failed: ' + insErr.message, 'err'); setSaving(false); return }
+
+    const newFeePaid = (franchisee.fee_paid || 0) + amt
+    await sb.from('franchisees').update({ fee_paid: newFeePaid }).eq('id', franchisee.id)
+    setSaving(false)
+    showToast('Payment of ₹' + fmtAmt(amt) + ' recorded')
+    onSaved(newFeePaid)
+  }
+
+  return (
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 420 }}>
+        <div className="ch">
+          <span>📥 Record Payment — {franchisee.business_name}</span>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '0 20px 4px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: '#f8f7ff', border: '1px solid #ddd9f9', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
+            <span style={{ color: 'var(--text2)' }}>Outstanding balance: </span>
+            <strong style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)', fontSize: 15 }}>
+              ₹{fmtAmt(balance)}
+            </strong>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <label>Amount Received (₹)
+              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" autoFocus />
+            </label>
+            <label>Payment Date
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+            </label>
+            <label>Payment Mode
+              <select value={mode} onChange={e => setMode(e.target.value)}>
+                <option>UPI</option>
+                <option>NEFT</option>
+                <option>RTGS</option>
+                <option>Cash</option>
+                <option>Cheque</option>
+                <option>DD</option>
+              </select>
+            </label>
+            <label>Reference / UTR No.
+              <input value={ref} onChange={e => setRef(e.target.value)} placeholder="Optional" />
+            </label>
+            <label style={{ gridColumn: '1 / -1' }}>Notes (optional)
+              <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Part payment, balance next month" />
+            </label>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : '✓ Record Payment'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────────
 
 function TierBadge({ tier }) {
@@ -59,7 +141,7 @@ function renewalStatus(fr) {
 // ── FranchiseeDetailModal ──────────────────────────────────────────────────────
 
 function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
-  const { currentRole } = useAuth()
+  const { currentRole, currentUser } = useAuth()
   const admin = isAdminRole(currentRole)
 
   const [tab, setTab] = useState('info')
@@ -88,6 +170,16 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   const [certEmailing, setCertEmailing] = useState(false)
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
   const [resending, setResending] = useState(false)
+  const [payments, setPayments] = useState([])
+  const [showPayModal, setShowPayModal] = useState(false)
+
+  useEffect(function () {
+    sb.from('franchisee_payments')
+      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at')
+      .eq('franchisee_id', franchisee.id)
+      .order('payment_date', { ascending: false })
+      .then(function ({ data }) { setPayments(data || []) })
+  }, [franchisee.id])
 
   function field(k) {
     return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) }
@@ -195,6 +287,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   }
 
   return (
+    <>
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 680 }}>
         <div className="ch">
@@ -266,8 +359,13 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   <option value="pending">Pending</option>
                 </select>
               </label>
-              <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+              <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <strong>Fee Tracking</strong>
+                {admin && balance > 0 && (
+                  <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
+                    📥 Record Payment
+                  </button>
+                )}
               </div>
               <label>Enrollment Fee (₹)
                 <input type="number" value={form.enrollment_fee} onChange={field('enrollment_fee')} disabled={!admin} />
@@ -278,6 +376,47 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               <label>Balance
                 <input value={'₹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />
               </label>
+
+              {/* ── Payment History ── */}
+              {payments.length > 0 && (
+                <div className="col-span-2" style={{ marginTop: 4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+                    Payment History
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {payments.map(function (p) {
+                      return (
+                        <div key={p.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '7px 10px', borderRadius: 7,
+                          background: '#f8f7ff', border: '1px solid #e8e6fb',
+                          fontSize: 12,
+                        }}>
+                          <span style={{ fontWeight: 700, color: 'var(--green)', minWidth: 72 }}>
+                            +₹{fmtAmt(p.amount)}
+                          </span>
+                          <span style={{ color: 'var(--text2)', minWidth: 80 }}>
+                            {new Date(p.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                          <span style={{ background: '#ede9fc', color: 'var(--purple)', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600 }}>
+                            {p.payment_mode || '—'}
+                          </span>
+                          {p.reference_no && (
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>
+                              {p.reference_no}
+                            </span>
+                          )}
+                          {p.notes && (
+                            <span style={{ color: 'var(--text3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {p.notes}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* ── Validity & Renewal ── */}
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
@@ -576,6 +715,25 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         )}
       </div>
     </div>
+
+    {showPayModal && (
+      <RecordFranchiseePaymentModal
+        franchisee={{ ...franchisee, fee_paid: Number(form.fee_paid) || 0 }}
+        balance={balance}
+        currentUser={currentUser?.email}
+        onSaved={function (newFeePaid) {
+          setForm(f => ({ ...f, fee_paid: String(newFeePaid) }))
+          setShowPayModal(false)
+          sb.from('franchisee_payments')
+            .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at')
+            .eq('franchisee_id', franchisee.id)
+            .order('payment_date', { ascending: false })
+            .then(function ({ data }) { setPayments(data || []) })
+        }}
+        onClose={function () { setShowPayModal(false) }}
+      />
+    )}
+    </>
   )
 }
 
