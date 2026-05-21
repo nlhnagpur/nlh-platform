@@ -32,33 +32,56 @@ function numToWords(num) {
 }
 
 export default function InvoiceView({ order, onClose }) {
-  const [items, setItems] = useState([])
-  const [placer, setPlacer] = useState(order.placer || order.franchisees || null)
+  const [items,   setItems]   = useState([])
+  const [placer,  setPlacer]  = useState(order.placer || order.franchisees || null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+
+  // Editable fields
+  const [billToName,     setBillToName]     = useState(order.bill_to_name || '')
+  const [shipTo,         setShipTo]         = useState(order.ship_to || '')
+  const [editingBillTo,  setEditingBillTo]  = useState(false)
+  const [editingShipTo,  setEditingShipTo]  = useState(false)
+  const [saving,         setSaving]         = useState(false)
+
   const printRef = useRef(null)
 
   useEffect(function() {
     async function loadData() {
-      // Load line items
       const { data: itemData } = await sb.from('order_items')
         .select('*, skus(level_name, uf_rate, cf_rate, smf_rate, courses(group_name))')
         .eq('order_id', order.id)
       setItems(itemData || [])
 
-      // Always fetch full franchisee details so address is never missing
       if (order.placer_id) {
         const { data: frData } = await sb.from('franchisees')
           .select('business_name, tier, email, city, state, area, country, phone, address')
           .eq('id', order.placer_id)
           .single()
-        if (frData) setPlacer(frData)
+        if (frData) {
+          setPlacer(frData)
+          // Default bill_to_name to franchisee name if not overridden
+          if (!order.bill_to_name) setBillToName(frData.business_name || '')
+        }
       }
-
       setLoading(false)
     }
     loadData()
-  }, [order.id, order.placer_id])
+  }, [order.id, order.placer_id, order.bill_to_name])
+
+  async function saveBillTo() {
+    setSaving(true)
+    await sb.from('orders').update({ bill_to_name: billToName }).eq('id', order.id)
+    setSaving(false)
+    setEditingBillTo(false)
+  }
+
+  async function saveShipTo() {
+    setSaving(true)
+    await sb.from('orders').update({ ship_to: shipTo }).eq('id', order.id)
+    setSaving(false)
+    setEditingShipTo(false)
+  }
 
   function handlePrint() {
     const el = printRef.current
@@ -85,18 +108,19 @@ export default function InvoiceView({ order, onClose }) {
   }
 
   const fr = placer || {}
-  const subtotal = items.reduce(function(sum, item) {
-    return sum + (item.rate || 0) * (item.ordered_qty || 0)
-  }, 0)
-  const courier = order.courier_charges || 0
+  const subtotal   = items.reduce(function(sum, item) { return sum + (item.rate || 0) * (item.ordered_qty || 0) }, 0)
+  const courier    = order.courier_charges || 0
   const grandTotal = order.grand_total || (subtotal + courier)
+  const amtPaid    = order.amount_paid || 0
+  const balance    = grandTotal - amtPaid
+  const payStatus  = order.status === 'closed' ? 'paid' : (amtPaid > 0 ? 'part' : 'unpaid')
+
+  const displayBillTo = billToName || fr.business_name || '—'
+  const hasShipTo     = !!shipTo
 
   async function handleSendEmail() {
     const email = fr.email
-    if (!email) {
-      alert('No email address found for this franchisee.')
-      return
-    }
+    if (!email) { alert('No email address found for this franchisee.'); return }
     setSending(true)
     try {
       await sendInvoiceEmail(order, email, fr.business_name || email, grandTotal)
@@ -107,10 +131,41 @@ export default function InvoiceView({ order, onClose }) {
       setSending(false)
     }
   }
-  const amtPaid = order.amount_paid || 0
-  const balance = grandTotal - amtPaid
 
-  const payStatus = order.status === 'closed' ? 'paid' : (amtPaid > 0 ? 'part' : 'unpaid')
+  // ── Inline edit popover ──────────────────────────────────────────────────
+  function EditPopover({ label, value, onChange, onSave, onCancel, placeholder }) {
+    return (
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        background: 'rgba(255,255,255,.96)', borderRadius: 12, zIndex: 10,
+        display: 'flex', flexDirection: 'column', padding: '12px 14px', gap: 8,
+        boxShadow: '0 0 0 2px #534AB7'
+      }}>
+        <div style={{ font: '700 9px "DM Mono",monospace', color: '#534AB7', textTransform: 'uppercase', letterSpacing: '.1em' }}>
+          Edit {label}
+        </div>
+        <input
+          autoFocus
+          value={value}
+          onChange={function(e) { onChange(e.target.value) }}
+          placeholder={placeholder}
+          onKeyDown={function(e) { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel(); }}
+          style={{
+            border: '1.5px solid #534AB7', borderRadius: 7, padding: '7px 10px',
+            font: '600 13px "DM Sans",sans-serif', color: '#1A1916', outline: 'none', width: '100%'
+          }}
+        />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={onSave} disabled={saving} style={{ flex: 1, padding: '7px', background: '#534AB7', color: '#fff', border: 'none', borderRadius: 7, font: '600 11px "DM Sans",sans-serif', cursor: 'pointer' }}>
+            {saving ? 'Saving…' : '✓ Save'}
+          </button>
+          <button onClick={onCancel} style={{ padding: '7px 12px', background: '#F0EEE9', color: '#5C5A54', border: 'none', borderRadius: 7, font: '600 11px "DM Sans",sans-serif', cursor: 'pointer' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -120,14 +175,14 @@ export default function InvoiceView({ order, onClose }) {
       alignItems: 'center', overflowY: 'auto',
       padding: '24px 16px 60px'
     }}>
-      {/* toolbar */}
+      {/* ── toolbar ── */}
       <div style={{
         display: 'flex', gap: 10, alignItems: 'center', marginBottom: 20,
         background: '#fff', borderRadius: 30, padding: '6px 6px 6px 18px',
         boxShadow: '0 4px 14px rgba(0,0,0,.12)',
         font: '500 12px "DM Mono",monospace', color: '#5C5A54',
         textTransform: 'uppercase', letterSpacing: '.05em',
-        flexShrink: 0
+        flexShrink: 0, flexWrap: 'wrap', justifyContent: 'center'
       }}>
         <span>
           <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#16A34A', marginRight:6, verticalAlign:'middle' }}></span>
@@ -135,6 +190,18 @@ export default function InvoiceView({ order, onClose }) {
         </span>
         <button onClick={onClose} style={{ background:'#fff', color:'#5C5A54', border:'1px solid #D0CEC6', padding:'8px 16px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}>
           ← Back
+        </button>
+        <button
+          onClick={function() { setEditingBillTo(true); setEditingShipTo(false) }}
+          style={{ background:'#FFF7DA', color:'#D97706', border:'1px solid #F59E0B', padding:'8px 16px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}
+        >
+          ✏ Bill To
+        </button>
+        <button
+          onClick={function() { setEditingShipTo(true); setEditingBillTo(false) }}
+          style={{ background: hasShipTo ? '#E6F5ED' : '#F7F6F3', color: hasShipTo ? '#1D7A4F' : '#5C5A54', border: '1px solid ' + (hasShipTo ? '#16A34A' : '#D0CEC6'), padding:'8px 16px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}
+        >
+          {hasShipTo ? '✓ Ship To' : '＋ Ship To'}
         </button>
         <button onClick={handleSendEmail} disabled={sending || !fr.email} style={{ background: fr.email ? '#16A34A' : '#9C9A92', color:'#fff', border:'none', padding:'8px 16px', borderRadius:24, cursor: fr.email ? 'pointer' : 'not-allowed', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase', opacity: sending ? .7 : 1 }}>
           {sending ? 'Sending…' : '📧 Send Email'}
@@ -144,7 +211,7 @@ export default function InvoiceView({ order, onClose }) {
         </button>
       </div>
 
-      {/* A4 sheet */}
+      {/* ── A4 sheet ── */}
       {loading ? (
         <div style={{ background:'#fff', borderRadius:12, padding:40, color:'#9C9A92', fontFamily:'DM Mono,monospace', fontSize:13 }}>Loading invoice…</div>
       ) : (
@@ -161,24 +228,17 @@ export default function InvoiceView({ order, onClose }) {
             background: 'linear-gradient(115deg, #FFF6D9 0%, #FFE89B 40%, #FFD234 75%, #FFB347 100%)',
             flexShrink: 0, overflow: 'hidden'
           }}>
-            {/* wave */}
             <svg style={{ position:'absolute', left:0, right:0, bottom:-1, width:'100%', height:30, pointerEvents:'none' }} viewBox="0 0 800 30" preserveAspectRatio="none">
               <path d="M0 30 L0 18 Q 100 4, 200 16 T 400 16 T 600 16 T 800 18 L 800 30 Z" fill="#fff" />
             </svg>
-
             <div style={{ display:'grid', gridTemplateColumns:'130px 1fr 200px', alignItems:'start', gap:16, position:'relative', zIndex:2 }}>
-              {/* logo */}
               <div style={{ width:130, height:130, flexShrink:0, background:'#fff', borderRadius:14, padding:6, boxShadow:'0 4px 14px rgba(217,119,6,.22)', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <img src="/NLH%20Logo.png" alt="NLH" style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }} />
               </div>
-
-              {/* centre title */}
               <div style={{ textAlign:'center', paddingTop:22 }}>
                 <div style={{ font:'800 56px "DM Sans",sans-serif', color:'#1E40AF', letterSpacing:'-.02em', lineHeight:1, marginBottom:6 }}>INVOICE</div>
                 <div style={{ font:'700 10px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.25em' }}>Tax invoice · Original copy</div>
               </div>
-
-              {/* address */}
               <div style={{ textAlign:'right', paddingTop:2, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
                 <span style={{ display:'inline-flex', alignItems:'center', gap:6, background:'#1E40AF', color:'#fff', padding:'4px 12px 4px 8px', borderRadius:24, font:'800 8.5px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.12em', whiteSpace:'nowrap' }}>
                   <span style={{ width:6, height:6, borderRadius:'50%', background:'#FBBF24', display:'inline-block' }}></span>
@@ -193,8 +253,6 @@ export default function InvoiceView({ order, onClose }) {
                 </div>
               </div>
             </div>
-
-            {/* mascot */}
             <div style={{ position:'absolute', bottom:-8, left:'50%', transform:'translateX(-50%)', width:80, height:80, zIndex:1, filter:'drop-shadow(0 4px 10px rgba(217,119,6,.35))' }}>
               <img src="/NLH%20Mascot.png" alt="" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
             </div>
@@ -235,9 +293,10 @@ export default function InvoiceView({ order, onClose }) {
           {/* ── BODY ── */}
           <div style={{ padding:'18px 22mm 0', flex:1, display:'flex', flexDirection:'column', gap:14 }}>
 
-            {/* parties */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              {/* from */}
+            {/* ── parties row: From | Bill To | Ship To ── */}
+            <div style={{ display:'grid', gridTemplateColumns: hasShipTo ? '1fr 1fr 1fr' : '1fr 1fr', gap:12 }}>
+
+              {/* From */}
               <div style={{ borderRadius:12, padding:'14px 16px', background:'#EEEDFE', position:'relative', overflow:'hidden' }}>
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#534AB7' }}></div>
                 <div style={{ font:'700 8.5px "DM Mono",monospace', color:'#534AB7', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:7 }}>From</div>
@@ -249,17 +308,29 @@ export default function InvoiceView({ order, onClose }) {
                   <span style={{ color:'#9C9A92' }}>Ph · <b style={{ color:'#1A1916' }}>9373 111 311</b></span>
                 </div>
               </div>
-              {/* to */}
+
+              {/* Bill To */}
               <div style={{ borderRadius:12, padding:'14px 16px', background:'linear-gradient(135deg, #FFF7DA 0%, #FFEAA0 100%)', position:'relative', overflow:'hidden' }}>
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#F59E0B' }}></div>
+
+                {/* edit popover */}
+                {editingBillTo && (
+                  <EditPopover
+                    label="Bill To name"
+                    value={billToName}
+                    onChange={setBillToName}
+                    onSave={saveBillTo}
+                    onCancel={function() { setEditingBillTo(false) }}
+                    placeholder={fr.business_name || 'Franchisee name'}
+                  />
+                )}
+
                 <div style={{ font:'700 8.5px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:7 }}>Bill to</div>
-                <div style={{ font:'700 14px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2, marginBottom:5 }}>{fr.business_name || '—'}</div>
+                <div style={{ font:'700 14px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2, marginBottom:5 }}>{displayBillTo}</div>
                 <div style={{ font:'500 10px "DM Mono",monospace', color:'#5C5A54', lineHeight:1.7 }}>
                   {fr.address && <div>📍 {fr.address}</div>}
                   {fr.area && <div>&nbsp;&nbsp;&nbsp; {fr.area}</div>}
-                  {(fr.city || fr.state) && (
-                    <div>{[fr.city, fr.state].filter(Boolean).join(', ')}</div>
-                  )}
+                  {(fr.city || fr.state) && <div>{[fr.city, fr.state].filter(Boolean).join(', ')}</div>}
                   {fr.country && fr.country !== 'India' && <div>{fr.country}</div>}
                   {fr.phone && <div>☎️ {fr.phone}</div>}
                   {fr.email && <div>✉️ {fr.email}</div>}
@@ -269,6 +340,32 @@ export default function InvoiceView({ order, onClose }) {
                   {order.order_ref && <span style={{ color:'#9C9A92' }}>Ref · <b style={{ color:'#1A1916' }}>{order.order_ref}</b></span>}
                 </div>
               </div>
+
+              {/* Ship To — only shown when set */}
+              {hasShipTo && (
+                <div style={{ borderRadius:12, padding:'14px 16px', background:'linear-gradient(135deg, #E6F5ED 0%, #C6EDD8 100%)', position:'relative', overflow:'hidden' }}>
+                  <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#16A34A' }}></div>
+
+                  {editingShipTo && (
+                    <EditPopover
+                      label="Ship To"
+                      value={shipTo}
+                      onChange={setShipTo}
+                      onSave={saveShipTo}
+                      onCancel={function() { setEditingShipTo(false) }}
+                      placeholder="e.g. NLH Dharampeth, CF Nagpur"
+                    />
+                  )}
+
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:7 }}>
+                    <div style={{ font:'700 8.5px "DM Mono",monospace', color:'#1D7A4F', textTransform:'uppercase', letterSpacing:'.1em' }}>Ship / Deliver to</div>
+                  </div>
+                  <div style={{ font:'700 13px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.35, whiteSpace:'pre-wrap' }}>{shipTo}</div>
+                  <div style={{ marginTop:8, paddingTop:7, borderTop:'1px dashed rgba(0,0,0,.12)', font:'600 9px "DM Mono",monospace', color:'#1D7A4F', textTransform:'uppercase', letterSpacing:'.06em' }}>
+                    Goods dispatched to this address
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* items table */}
@@ -281,11 +378,11 @@ export default function InvoiceView({ order, onClose }) {
                 <div style={{ textAlign:'right' }}>Amount</div>
               </div>
               {items.map(function(item, i) {
-                const course = item.skus?.courses?.group_name || ''
-                const level = item.skus?.level_name || item.sku_id || '—'
-                const name = course ? course + ' — ' + level : level
+                const course  = item.skus?.courses?.group_name || ''
+                const level   = item.skus?.level_name || item.sku_id || '—'
+                const name    = course ? course + ' — ' + level : level
                 const lineAmt = (item.rate || 0) * (item.ordered_qty || 0)
-                const sent = item.sent_qty || 0
+                const sent    = item.sent_qty || 0
                 return (
                   <div key={item.id} style={{ display:'grid', gridTemplateColumns:'32px 1fr 50px 50px 80px 100px', gap:10, padding:'10px 16px', borderBottom: i < items.length - 1 ? '1px solid #E2E0D8' : 'none', background: i % 2 === 1 ? '#FAFAFE' : '#fff', alignItems:'center' }}>
                     <div style={{ font:'600 9px "DM Mono",monospace', color:'#9C9A92' }}>{String(i + 1).padStart(2, '0')}</div>
@@ -328,7 +425,6 @@ export default function InvoiceView({ order, onClose }) {
                       ⚡ Instant · NEFT · IMPS accepted
                     </div>
                   </div>
-                  {/* QR */}
                   <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
                     <div style={{ font:'700 8.5px "DM Mono",monospace', color:'#1E40AF', textTransform:'uppercase', letterSpacing:'.1em', textAlign:'center', lineHeight:1.3 }}>Scan to pay</div>
                     <img src="/nlh-upi-qr.png" alt="Pay QR" style={{ width:110, height:110, display:'block', background:'#fff', borderRadius:6, padding:4, border:'2px solid #1E40AF', objectFit:'contain' }} />
@@ -344,9 +440,9 @@ export default function InvoiceView({ order, onClose }) {
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#534AB7' }}></div>
                 <div style={{ font:'700 9px "DM Mono",monospace', color:'#534AB7', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Invoice summary</div>
                 {[
-                  { l: 'Kit subtotal', v: '₹' + fmtAmt(subtotal) },
+                  { l: 'Kit subtotal',    v: '₹' + fmtAmt(subtotal) },
                   { l: 'Courier charges', v: courier > 0 ? '₹' + fmtAmt(courier) : '—' },
-                  { l: 'Amount paid', v: amtPaid > 0 ? '₹' + fmtAmt(amtPaid) : '—', muted: amtPaid === 0 },
+                  { l: 'Amount paid',     v: amtPaid > 0 ? '₹' + fmtAmt(amtPaid) : '—', muted: amtPaid === 0 },
                 ].map(function(row, i) {
                   return (
                     <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom:'1px dashed rgba(83,74,183,.25)' }}>
@@ -362,9 +458,7 @@ export default function InvoiceView({ order, onClose }) {
                   </div>
                 )}
                 <div style={{ marginTop:10, background:'linear-gradient(135deg, #534AB7 0%, #6F66CC 100%)', borderRadius:10, padding:'14px 16px', display:'flex', justifyContent:'space-between', alignItems:'baseline', color:'#fff', boxShadow:'0 4px 14px rgba(83,74,183,.25)' }}>
-                  <div>
-                    <div style={{ font:'700 9.5px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.12em' }}>Grand total</div>
-                  </div>
+                  <div style={{ font:'700 9.5px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.12em' }}>Grand total</div>
                   <div style={{ font:'800 22px "DM Sans",sans-serif', letterSpacing:'-.01em', lineHeight:1 }}>
                     <span style={{ font:'700 11px "DM Sans",sans-serif', marginRight:4, opacity:.85 }}>₹</span>
                     {fmtAmt(grandTotal)}
