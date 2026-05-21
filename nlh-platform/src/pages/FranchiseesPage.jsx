@@ -1054,6 +1054,11 @@ export default function FranchiseesPage() {
     uf:  filtered.filter(function (f) { return f.tier === 'UF' }).length,
   }
 
+  const totalOutstanding = franchisees.reduce(function (sum, f) {
+    const bal = (Number(f.enrollment_fee) || 0) - (Number(f.fee_paid) || 0)
+    return sum + (bal > 0 ? bal : 0)
+  }, 0)
+
   // Avatar color by tier
   function tierColor(tier) {
     return { SMF: '#F59E0B', CF: '#16A34A', UF: '#2563EB' }[tier] || '#534AB7'
@@ -1116,6 +1121,13 @@ export default function FranchiseesPage() {
             <div className="mini-num">{counts.uf}</div>
             <div className="mini-lbl">UF · Urban</div>
           </div>
+          {admin && totalOutstanding > 0 && (
+            <div className="mini" style={{ borderLeft: '3px solid var(--red)', background: '#fff8f8' }}>
+              <div className="mini-ic" style={{ background: '#fee2e2' }}>💰</div>
+              <div className="mini-num" style={{ color: 'var(--red)', fontSize: 15 }}>₹{fmtAmt(totalOutstanding)}</div>
+              <div className="mini-lbl">Total fee outstanding</div>
+            </div>
+          )}
         </div>
 
         {/* Toolbar with search + tier filter */}
@@ -1213,6 +1225,8 @@ export default function FranchiseesPage() {
                           ? `⏳ ${rs2.daysLeft}d`
                           : '✓ Active'
 
+                      const frBalance = (Number(f.enrollment_fee) || 0) - (Number(f.fee_paid) || 0)
+
                       return (
                         <div
                           key={f.id}
@@ -1237,6 +1251,16 @@ export default function FranchiseesPage() {
                             {f.phone && <span className="fr-row-phone">{f.phone}</span>}
                             {(f.registered_courses || []).length > 0 && (
                               <span className="fr-row-courses">{(f.registered_courses || []).length} courses</span>
+                            )}
+                            {frBalance > 0 && (
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, fontFamily: 'var(--mono)',
+                                color: 'var(--red)', background: '#fee2e2',
+                                border: '1px solid #fecaca', borderRadius: 4,
+                                padding: '1px 6px', letterSpacing: '.01em',
+                              }}>
+                                ₹{fmtAmt(frBalance)} due
+                              </span>
                             )}
                           </div>
 
