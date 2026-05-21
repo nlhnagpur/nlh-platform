@@ -391,12 +391,13 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
         ══════════════════════════════════════════════════════════════════ */
         <div style={{
           width: '100%', maxWidth: 720, background: '#fff', borderRadius: 16,
-          boxShadow: '0 8px 28px rgba(0,0,0,.10)', overflow: 'hidden',
-          fontFamily: '"DM Sans",system-ui,sans-serif'
+          boxShadow: '0 8px 28px rgba(0,0,0,.10)',
+          fontFamily: '"DM Sans",system-ui,sans-serif',
+          display: 'flex', flexDirection: 'column'
         }}>
 
           {/* header */}
-          <div style={{ background: 'linear-gradient(90deg,#534AB7,#6F66CC)', padding: '20px 28px' }}>
+          <div style={{ background: 'linear-gradient(90deg,#534AB7,#6F66CC)', padding: '20px 28px', borderRadius: '16px 16px 0 0', flexShrink: 0 }}>
             <div style={{ font: '800 18px "DM Sans",sans-serif', color: '#fff', marginBottom: 4 }}>Edit Invoice Details</div>
             <div style={{ font: '500 11px "DM Mono",monospace', color: 'rgba(255,255,255,.7)', textTransform: 'uppercase', letterSpacing: '.1em' }}>
               {order.invoice_no} · Bill To &amp; Ship To
@@ -537,18 +538,22 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               </div>
             </section>
 
-            {/* save */}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 8, borderTop: '1px solid #E2E0D8' }}>
-              <button onClick={function() { setActiveTab('view') }}
-                style={{ padding: '10px 22px', border: '1px solid #D0CEC6', borderRadius: 10, background: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', color: '#5C5A54' }}>
-                Cancel
-              </button>
-              <button onClick={saveEdits} disabled={saving}
-                style={{ padding: '10px 28px', border: 'none', borderRadius: 10, background: '#534AB7', color: '#fff', font: '700 13px "DM Sans",sans-serif', cursor: 'pointer', opacity: saving ? .7 : 1 }}>
-                {saving ? 'Saving…' : '✓ Save & View Invoice'}
-              </button>
-            </div>
+          </div>
 
+          {/* ── sticky save footer ── */}
+          <div style={{
+            display: 'flex', gap: 10, justifyContent: 'flex-end',
+            padding: '14px 28px', borderTop: '1px solid #E2E0D8',
+            background: '#F7F6F3', borderRadius: '0 0 16px 16px', flexShrink: 0
+          }}>
+            <button onClick={function() { setActiveTab('view') }}
+              style={{ padding: '10px 22px', border: '1px solid #D0CEC6', borderRadius: 10, background: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', color: '#5C5A54' }}>
+              Discard
+            </button>
+            <button onClick={saveEdits} disabled={saving}
+              style={{ padding: '10px 32px', border: 'none', borderRadius: 10, background: '#534AB7', color: '#fff', font: '700 14px "DM Sans",sans-serif', cursor: 'pointer', opacity: saving ? .7 : 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {saving ? 'Saving…' : '✓ Save Changes'}
+            </button>
           </div>
         </div>
 
