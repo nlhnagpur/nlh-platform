@@ -1354,11 +1354,11 @@ export default function StudentsPage() {
               <thead>
                 <tr>
                   <th>Student</th>
-                  <th>Parent</th>
+                  <th className="hide-mobile">Parent</th>
                   <th>Courses</th>
-                  <th style={{ textAlign: 'right' }}>Fee Total</th>
-                  <th style={{ textAlign: 'right' }}>Fee Paid</th>
-                  <th style={{ textAlign: 'right' }}>Balance</th>
+                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Total</th>
+                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Paid</th>
+                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Balance</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -1387,7 +1387,7 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ color: 'var(--text2)' }}>
+                      <td className="hide-mobile" style={{ color: 'var(--text2)' }}>
                         <div>{s.parent_name || '—'}</div>
                         {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
                       </td>
@@ -1401,9 +1401,9 @@ export default function StudentsPage() {
                           })
                         }
                       </td>
-                      <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(s.fee_total)}</div></td>
-                      <td style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</div></td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(s.fee_total)}</div></td>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</div></td>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</div>
                       </td>
                       <td><StatusBadge status={s.payment_status} /></td>

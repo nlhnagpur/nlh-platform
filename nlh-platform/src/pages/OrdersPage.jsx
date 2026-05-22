@@ -1551,12 +1551,12 @@ export default function OrdersPage() {
               <thead>
                 <tr>
                   <th>Order Ref</th>
-                  <th>Invoice No</th>
+                  <th className="hide-mobile">Invoice No</th>
                   {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && <th>Franchisee</th>}
-                  <th>Date</th>
+                  <th className="hide-mobile">Date</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Total</th>
-                  <th style={{ textAlign: 'right' }}>Paid</th>
+                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Paid</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -1565,7 +1565,7 @@ export default function OrdersPage() {
                   return (
                     <tr key={order.id}>
                       <td className="mono" style={{ color: 'var(--purple)', fontWeight: 600 }}>{order.order_ref}</td>
-                      <td className="mono">{order.invoice_no || '—'}</td>
+                      <td className="mono hide-mobile">{order.invoice_no || '—'}</td>
                       {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && (
                         <td>
                           {(() => {
@@ -1589,10 +1589,10 @@ export default function OrdersPage() {
                           })()}
                         </td>
                       )}
-                      <td className="mono">{fmtDate(order.created_at)}</td>
+                      <td className="mono hide-mobile">{fmtDate(order.created_at)}</td>
                       <td><StatusBadge status={order.status} /></td>
                       <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(order.grand_total || 0)}</div></td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         <div className="amt" style={{ color: order.amount_paid > 0 ? 'var(--green)' : 'var(--text3)' }}>
                           ₹{fmtAmt(order.amount_paid || 0)}
                         </div>

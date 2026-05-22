@@ -1303,9 +1303,9 @@ vercel-toolbar { display: none !important; }
   /* ── Topbar improvements ── */
   .tb { padding: 0 12px 0 56px; height: 52px; }
 
-  /* ── Table horizontal scroll on all tables ── */
-  .big-tbl { min-width: 520px; }
-  .card > .big-tbl, .card-new > .big-tbl { overflow-x: auto; }
+  /* ── Hide non-essential columns on mobile ── */
+  .hide-mobile { display: none !important; }
+  .big-tbl { min-width: 0; }
 
   /* ── Invoice hero stack ── */
   .inv-hero { grid-template-columns: 1fr !important; gap: 10px; }

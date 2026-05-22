@@ -1652,9 +1652,9 @@ export default function InstructorsPage() {
               <thead>
                 <tr>
                   <th>Instructor</th>
-                  <th>Contact</th>
+                  <th className="hide-mobile">Contact</th>
                   <th>Courses Appointed</th>
-                  <th>Caution</th>
+                  <th className="hide-mobile">Caution</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -1682,7 +1682,7 @@ export default function InstructorsPage() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ fontSize: 12, color: 'var(--text2)' }}>
+                      <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text2)' }}>
                         <div>{ins.phone || '—'}</div>
                         <div style={{ color: 'var(--text3)' }}>{ins.city || ''}</div>
                       </td>
@@ -1699,7 +1699,7 @@ export default function InstructorsPage() {
                           })
                         }
                       </td>
-                      <td style={{ fontSize: 12 }}>
+                      <td className="hide-mobile" style={{ fontSize: 12 }}>
                         {ins.caution_amount > 0
                           ? <>
                               <div style={{ fontWeight: 600 }}>
