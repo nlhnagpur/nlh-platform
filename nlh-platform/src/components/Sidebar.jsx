@@ -137,10 +137,8 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
         <button
           onClick={signOut}
           title="Sign out"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 14, padding: 4, borderRadius: 6, flexShrink: 0 }}
-          onMouseEnter={function(e) { e.currentTarget.style.color = 'var(--red)' }}
-          onMouseLeave={function(e) { e.currentTarget.style.color = 'var(--text3)' }}
-        >⏻</button>
+          style={{ background: 'var(--red-bg)', border: '1px solid var(--red)', cursor: 'pointer', color: 'var(--red)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 6, flexShrink: 0, fontFamily: 'var(--font)' }}
+        >⏻ Sign out</button>
       </div>
     </div>
   )
