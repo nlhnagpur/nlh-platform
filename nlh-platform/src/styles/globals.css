@@ -824,7 +824,7 @@ vercel-toolbar { display: none !important; }
     transform: translateX(-100%);
     transition: transform .25s cubic-bezier(.4,0,.2,1);
     box-shadow: 4px 0 28px rgba(0,0,0,.18);
-    overflow-y: auto;
+    overflow: hidden;
   }
   .sb.open { transform: translateX(0); }
 
