@@ -137,6 +137,32 @@ export default function CoursesPage() {
 
   const PROGRAM_EMOJIS = ['🧮','💻','🔤','🎨','🎲','🎭','✍️','📖','🎤','📝','♟️','🧠','🐝','🔬','🤖','🧘']
 
+  // ── price columns visible to each role ────────────────────────────────────────
+  function getPriceCols() {
+    if (admin) return [
+      { field: 'uf_rate',     label: 'UF Rate' },
+      { field: 'cf_rate',     label: 'CF Rate' },
+      { field: 'smf_rate',    label: 'SMF Rate' },
+      { field: 'student_fee', label: 'Student Fee' },
+    ]
+    if (currentRole === 'smf') return [
+      { field: 'smf_rate', label: 'My Rate (SMF)' },
+      { field: 'cf_rate',  label: 'CF Rate' },
+    ]
+    if (currentRole === 'cf') return [
+      { field: 'cf_rate', label: 'My Rate (CF)' },
+      { field: 'uf_rate', label: 'UF Rate' },
+    ]
+    if (currentRole === 'student') return [
+      { field: 'student_fee', label: 'Course Fee' },
+    ]
+    // UF (default)
+    return [
+      { field: 'uf_rate',     label: 'Kit Rate' },
+      { field: 'student_fee', label: 'Student Fee' },
+    ]
+  }
+
   function renderLevelsPanel(groupName) {
     const idx = courseCards.findIndex(function (c) { return c.groupName === groupName })
     const tone = ((idx >= 0 ? idx : 0) % 8) + 1
@@ -144,6 +170,7 @@ export default function CoursesPage() {
     const levelSkus = rows.filter(function (s) {
       return (s.courses?.group_name || s.courses?.name) === groupName
     })
+    const priceCols = getPriceCols()
     return (
       <div className="progs-levels" style={{ borderTop: '3px solid ' + tones.color }}>
         <div className="progs-levels-h">
@@ -161,10 +188,9 @@ export default function CoursesPage() {
               <tr>
                 <th style={{ width: 32 }}>#</th>
                 <th>Level / SKU</th>
-                <th style={{ textAlign: 'right' }}>UF Rate</th>
-                <th style={{ textAlign: 'right' }}>CF Rate</th>
-                <th style={{ textAlign: 'right' }}>SMF Rate</th>
-                <th style={{ textAlign: 'right' }}>Student Fee</th>
+                {priceCols.map(function (col) {
+                  return <th key={col.field} style={{ textAlign: 'right' }}>{col.label}</th>
+                })}
               </tr>
             </thead>
             <tbody>
@@ -176,10 +202,14 @@ export default function CoursesPage() {
                       <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{sku.level_name || '—'}</div>
                       <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.04em' }}>{sku.id.slice(0, 8).toUpperCase()}</div>
                     </td>
-                    <td style={{ textAlign: 'right' }} className="mono">{sku.uf_rate != null ? '₹' + fmtAmt(sku.uf_rate) : '—'}</td>
-                    <td style={{ textAlign: 'right' }} className="mono">{sku.cf_rate != null ? '₹' + fmtAmt(sku.cf_rate) : '—'}</td>
-                    <td style={{ textAlign: 'right' }} className="mono">{sku.smf_rate != null ? '₹' + fmtAmt(sku.smf_rate) : '—'}</td>
-                    <td style={{ textAlign: 'right' }} className="mono">{sku.student_fee != null ? '₹' + fmtAmt(sku.student_fee) : '—'}</td>
+                    {priceCols.map(function (col) {
+                      const val = sku[col.field]
+                      return (
+                        <td key={col.field} style={{ textAlign: 'right' }} className="mono">
+                          {val != null ? '₹' + fmtAmt(val) : '—'}
+                        </td>
+                      )
+                    })}
                   </tr>
                 )
               })}
@@ -279,8 +309,9 @@ export default function CoursesPage() {
                 <tr>
                   <th>Program</th>
                   <th>Level / SKU</th>
-                  <th style={{ textAlign: 'right' }}>UF Rate</th>
-                  <th style={{ textAlign: 'right' }}>Student Fee</th>
+                  {getPriceCols().map(function (col) {
+                    return <th key={col.field} style={{ textAlign: 'right' }}>{col.label}</th>
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -289,8 +320,14 @@ export default function CoursesPage() {
                     <tr key={sku.id}>
                       <td style={{ font: '500 12px var(--mono)', color: 'var(--text2)' }}>{sku.courses?.group_name || sku.courses?.name || '—'}</td>
                       <td>{sku.level_name || '—'}</td>
-                      <td style={{ textAlign: 'right' }} className="mono">{sku.uf_rate != null ? '₹' + fmtAmt(sku.uf_rate) : '—'}</td>
-                      <td style={{ textAlign: 'right' }} className="mono">{sku.student_fee != null ? '₹' + fmtAmt(sku.student_fee) : '—'}</td>
+                      {getPriceCols().map(function (col) {
+                        const val = sku[col.field]
+                        return (
+                          <td key={col.field} style={{ textAlign: 'right' }} className="mono">
+                            {val != null ? '₹' + fmtAmt(val) : '—'}
+                          </td>
+                        )
+                      })}
                     </tr>
                   )
                 })}

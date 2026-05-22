@@ -115,17 +115,12 @@ function AddUserModal({ myRole, onClose, onSaved }) {
     if (dbErr) {
       showToast('User created in Auth but role save failed: ' + dbErr.message)
     } else {
-      // Send login credentials email
-      const emailResult = await sendWelcomeEmail(
-        email.trim().toLowerCase(),
-        name.trim() || email.split('@')[0],
-        role,
-        password.trim()
-      )
-      if (emailResult.success) {
-        showToast('User created and credentials emailed to ' + email.trim() + '!')
+      // Send credentials via email (non-fatal)
+      const emailResult = await sendWelcomeEmail(email.trim().toLowerCase(), name.trim() || email.split('@')[0], role, password.trim())
+      if (emailResult?.success !== false) {
+        showToast('User created! Credentials emailed to ' + email.trim() + '.')
       } else {
-        showToast('User created! (Credentials email failed — share details manually.)')
+        showToast('User created! (Email delivery failed — share credentials manually.)', 'warn')
       }
       onSaved()
     }
@@ -292,16 +287,14 @@ export default function UsersPage() {
   }
 
   async function sendInvite(user) {
-    // Send our branded invite email via Brevo
-    const emailResult = await sendInviteEmail(
-      user.email,
-      user.full_name || user.email.split('@')[0],
-      user.role
-    )
-    // Also trigger Supabase's password-reset so they get the actual set-password link
-    await sb.auth.resetPasswordForEmail(user.email, {
-      redirectTo: 'https://nlh-platform.vercel.app/login',
-    })
+    const displayName = user.full_name || user.email.split('@')[0]
+
+    // Fire invite email + Supabase password reset link in parallel
+    const [emailResult] = await Promise.all([
+      sendInviteEmail(user.email, displayName, user.role),
+      sb.auth.resetPasswordForEmail(user.email, { redirectTo: 'https://nlh-platform.vercel.app/login' }),
+    ])
+
     if (emailResult.success) {
       showToast('Invite sent to ' + user.email + '!')
     } else {

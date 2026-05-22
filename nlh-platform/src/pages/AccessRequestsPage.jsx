@@ -123,19 +123,13 @@ export default function AccessRequestsPage() {
       .update({ status: 'approved' })
       .eq('id', req.id)
 
-    // Send welcome email
-    try {
-      await sendWelcomeEmail({
-        email: req.email,
-        name: req.name,
-        tempPassword: tempPass,
-      })
-    } catch (emailErr) {
-      // Non-fatal
-      showToast('Approved, but welcome email failed: ' + emailErr.message)
+    // Send welcome email (non-fatal)
+    const emailResult = await sendWelcomeEmail({ email: req.email, name: req.name, tempPassword: tempPass })
+    if (emailResult?.success === false) {
+      showToast('Approved, but email delivery failed — share credentials manually.', 'warn')
+    } else {
+      showToast('Approved! Credentials sent via email.')
     }
-
-    showToast('Approved! Login credentials created.')
     setCredentials({ email: req.email, password: tempPass })
     await loadRequests()
     setActionLoading(null)

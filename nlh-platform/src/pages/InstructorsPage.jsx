@@ -1506,6 +1506,7 @@ export default function InstructorsPage() {
   const [loading,       setLoading]        = useState(true)
   const [search,        setSearch]         = useState('')
   const [statusFilter,  setStatusFilter]   = useState('active')
+  const [exporting,     setExporting]      = useState(false)
   const [selected,      setSelected]       = useState(null)
   const [showAdd,       setShowAdd]        = useState(false)
 
@@ -1576,6 +1577,37 @@ export default function InstructorsPage() {
     }).filter(Boolean)
   )].length
 
+  async function exportCSV() {
+    setExporting(true)
+    showToast('Preparing export…')
+    try {
+      const date = new Date().toISOString().slice(0, 10)
+      const { data } = await sb.from('instructors')
+        .select('full_name,phone,email,status,franchisee:franchisees(business_name,city)')
+        .order('full_name')
+      function esc(v) {
+        if (v == null || v === '') return ''
+        const s = String(v)
+        return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
+      }
+      const headers = ['Name','Phone','Email','Status','Centre','City']
+      const rows    = (data || []).map(function (r) {
+        return [r.full_name, r.phone, r.email, r.status, r.franchisee?.business_name, r.franchisee?.city]
+      })
+      const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url; a.download = 'nlh-instructors-' + date + '.csv'
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast(rows.length + ' instructors exported ✓')
+    } catch (err) {
+      showToast('Export failed: ' + err.message, 'err')
+    }
+    setExporting(false)
+  }
+
   return (
     <div className="pg">
       {/* topbar */}
@@ -1584,6 +1616,9 @@ export default function InstructorsPage() {
         <div className="tb-r">
           <input className="search tb-search" placeholder="Search by name, phone, city…"
             value={search} onChange={function (e) { setSearch(e.target.value) }} />
+          <button className="btn btn-s" onClick={exportCSV} disabled={exporting}>
+            {exporting ? 'Exporting…' : '↓ Export'}
+          </button>
           {admin && (
             <button className="btn btn-p" onClick={function () { setShowAdd(true) }}>+ Add CI</button>
           )}

@@ -1,6 +1,21 @@
 // ── WhatsApp messaging service (via /api/send-whatsapp) ───────────────────────
 // All messages go through the NLH landline +91 712 351 4575 (Meta Cloud API)
 
+/**
+ * Normalise any phone string to WhatsApp-ready format (digits only, with country code).
+ * Handles Indian 10-digit, 0-prefix, +91, and already-normalised numbers.
+ * Returns null if the number can't be normalised.
+ */
+export function toWAPhone(raw) {
+  if (!raw) return null
+  const digits = String(raw).replace(/\D/g, '')
+  if (digits.length === 10) return '91' + digits                          // 9876543210  → 919876543210
+  if (digits.length === 11 && digits.startsWith('0')) return '91' + digits.slice(1) // 09876543210 → 919876543210
+  if (digits.length === 12 && digits.startsWith('91')) return digits      // already correct
+  if (digits.length > 10) return digits                                   // other country codes — pass through
+  return null
+}
+
 async function sendWA(to, payload) {
   if (!to) return { success: false, error: 'No phone number' }
   const res = await fetch('/api/send-whatsapp', {
@@ -100,6 +115,7 @@ export async function sendWAStudentEnrolled(to, { parentName, studentName, cours
     },
   })
 }
+
 
 // ── Template: fee_reminder ────────────────────────────────────────────────────
 // Params: {{1}} franchisee name, {{2}} balance amount

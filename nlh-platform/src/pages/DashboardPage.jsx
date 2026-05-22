@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { isAdminRole } from '../constants/roles'
-import { fmtAmt, fmtDate } from '../utils'
+import { fmtAmt, fmtDate, showToast } from '../utils'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -438,6 +438,14 @@ export default function DashboardPage({ onNavigate }) {
   const [ownOutstanding, setOwnOutstanding]   = useState(0)
   const [ownOrders, setOwnOrders]             = useState([])
 
+  // search & export
+  const [searchQ, setSearchQ]               = useState('')
+  const [searchRes, setSearchRes]           = useState(null)
+  const [searchLoading, setSearchLoading]   = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const searchWrapRef = useRef(null)
+  const exportRef     = useRef(null)
+
   useEffect(function() {
     if (currentRole === null) return
     async function load() {
@@ -526,6 +534,119 @@ export default function DashboardPage({ onNavigate }) {
     setChartData({ labels: months.map(function(m) { return m.label }), values: counts })
   }
 
+  // ── global search (debounced) ──────────────────────────────────────────────────
+  useEffect(function() {
+    if (!searchQ.trim() || searchQ.trim().length < 2) { setSearchRes(null); return }
+    const q    = searchQ.trim()
+    const like = '%' + q + '%'
+    setSearchLoading(true)
+    const timer = setTimeout(async function() {
+      const [fr, st, or_, ins] = await Promise.all([
+        sb.from('franchisees').select('id,business_name,owner_name,city,tier').or('business_name.ilike.' + like + ',owner_name.ilike.' + like + ',city.ilike.' + like).limit(4),
+        sb.from('students').select('id,full_name,parent_name,phone').or('full_name.ilike.' + like + ',parent_name.ilike.' + like + ',phone.ilike.' + like).limit(4),
+        sb.from('orders').select('id,invoice_no,status,grand_total').ilike('invoice_no', like).limit(4),
+        sb.from('instructors').select('id,full_name,phone').or('full_name.ilike.' + like + ',phone.ilike.' + like).limit(4),
+      ])
+      setSearchRes({
+        franchisees: fr.data  || [],
+        students:    st.data  || [],
+        orders:      or_.data || [],
+        instructors: ins.data || [],
+      })
+      setSearchLoading(false)
+    }, 300)
+    return function() { clearTimeout(timer) }
+  }, [searchQ])
+
+  // ── click-outside closes search & export menus ──────────────────────────────
+  useEffect(function() {
+    function handle(e) {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) {
+        setSearchRes(null); setSearchQ('')
+      }
+      if (exportRef.current && !exportRef.current.contains(e.target)) {
+        setShowExportMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handle)
+    return function() { document.removeEventListener('mousedown', handle) }
+  }, [])
+
+  // ── CSV export ───────────────────────────────────────────────────────────────
+  async function exportCSV(type) {
+    setShowExportMenu(false)
+    showToast('Preparing export…')
+    const date = new Date().toISOString().slice(0, 10)
+
+    function esc(v) {
+      if (v == null || v === '') return ''
+      const s = String(v)
+      return (s.includes(',') || s.includes('"') || s.includes('\n'))
+        ? '"' + s.replace(/"/g, '""') + '"'
+        : s
+    }
+
+    try {
+      let headers = [], rows = [], filename = ''
+
+      if (type === 'franchisees') {
+        const { data } = await sb.from('franchisees')
+          .select('business_name,owner_name,tier,email,phone,city,state,country,status,enrollment_fee,fee_paid')
+          .order('tier').order('city').order('business_name')
+        headers  = ['Business Name','Owner Name','Tier','Email','Phone','City','State','Country','Status','Enrollment Fee','Fee Paid']
+        rows     = (data || []).map(function(r) {
+          return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.city, r.state, r.country, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
+        })
+        filename = 'nlh-franchisees-' + date + '.csv'
+
+      } else if (type === 'students') {
+        const { data } = await sb.from('students')
+          .select('full_name,parent_name,phone,email,city,state,payment_status,fee_total,fee_paid,franchisee:franchisees(business_name,city)')
+          .order('full_name')
+        headers  = ['Student Name','Parent Name','Phone','Email','City','State','Centre','Centre City','Fee Total','Fee Paid','Payment Status']
+        rows     = (data || []).map(function(r) {
+          return [r.full_name, r.parent_name, r.phone, r.email, r.city, r.state, r.franchisee?.business_name, r.franchisee?.city, r.fee_total || 0, r.fee_paid || 0, r.payment_status]
+        })
+        filename = 'nlh-students-' + date + '.csv'
+
+      } else if (type === 'orders') {
+        const { data } = await sb.from('orders')
+          .select('invoice_no,id,status,grand_total,amount_paid,created_at,placer:franchisees!orders_placer_id_fkey(business_name,city,tier)')
+          .order('created_at', { ascending: false })
+        headers  = ['Invoice / Ref','Franchisee','City','Tier','Status','Total (₹)','Paid (₹)','Balance (₹)','Date']
+        rows     = (data || []).map(function(r) {
+          const bal = Math.max(0, (r.grand_total || 0) - (r.amount_paid || 0))
+          return [r.invoice_no || ('#' + String(r.id).slice(0, 8)), r.placer?.business_name, r.placer?.city, r.placer?.tier, r.status, r.grand_total || 0, r.amount_paid || 0, bal, r.created_at ? r.created_at.slice(0, 10) : '']
+        })
+        filename = 'nlh-orders-' + date + '.csv'
+
+      } else if (type === 'instructors') {
+        const { data } = await sb.from('instructors')
+          .select('full_name,phone,email,status,franchisee:franchisees(business_name,city)')
+          .order('full_name')
+        headers  = ['Name','Phone','Email','Status','Centre','City']
+        rows     = (data || []).map(function(r) {
+          return [r.full_name, r.phone, r.email, r.status, r.franchisee?.business_name, r.franchisee?.city]
+        })
+        filename = 'nlh-instructors-' + date + '.csv'
+      }
+
+      const csv  = headers.join(',') + '\n' + rows.map(function(r) { return r.map(esc).join(',') }).join('\n')
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast(rows.length + ' records exported ✓')
+    } catch (err) {
+      showToast('Export failed: ' + err.message, 'err')
+    }
+  }
+
   // ── derived values ──
   const userName    = currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || 'Admin'
   const firstName   = userName.split(' ')[0]
@@ -553,8 +674,113 @@ export default function DashboardPage({ onNavigate }) {
       <div className="tb">
         <div className="crumb">Operations <span className="sep">›</span> <b>Dashboard</b></div>
         <div className="tb-r">
-          <input className="tb-search" placeholder="Search orders, franchisees, students…" readOnly />
-          <button className="btn" onClick={function() {}}>Export</button>
+
+          {/* ── global search ── */}
+          <div ref={searchWrapRef} style={{ position: 'relative' }}>
+            <input
+              className="tb-search"
+              placeholder="Search franchisees, students, orders…"
+              value={searchQ}
+              onChange={function(e) { setSearchQ(e.target.value) }}
+              onFocus={function() { if (searchQ.length >= 2 && searchRes) setSearchRes(searchRes) }}
+            />
+            {/* dropdown */}
+            {(searchRes !== null || searchLoading) && searchQ.length >= 2 && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                width: 340, background: 'var(--bg2)',
+                border: '1px solid var(--border)', borderRadius: 12,
+                boxShadow: '0 8px 32px rgba(0,0,0,.14)', zIndex: 1000, overflow: 'hidden',
+              }}>
+                {searchLoading ? (
+                  <div style={{ padding: '14px 16px', color: 'var(--text3)', fontSize: 12 }}>Searching…</div>
+                ) : (function() {
+                  const SECS = [
+                    { key: 'franchisees', icon: '🏢', label: 'Franchisees', page: 'franchisees',
+                      render: function(f) { return (f.business_name || '?') + (f.city ? ' · ' + f.city : '') + ' [' + f.tier + ']' } },
+                    { key: 'students', icon: '🎓', label: 'Students', page: 'students',
+                      render: function(s) { return (s.full_name || '?') + (s.parent_name ? ' — ' + s.parent_name : '') } },
+                    { key: 'orders', icon: '📦', label: 'Orders', page: 'orders',
+                      render: function(o) { return (o.invoice_no || '#' + String(o.id).slice(0, 8)) + ' · ' + o.status } },
+                    { key: 'instructors', icon: '👩‍🏫', label: 'Instructors', page: 'instructors',
+                      render: function(i) { return (i.full_name || '?') + (i.phone ? ' · ' + i.phone : '') } },
+                  ]
+                  const hasAny = SECS.some(function(s) { return (searchRes[s.key] || []).length > 0 })
+                  if (!hasAny) return (
+                    <div style={{ padding: '14px 16px', color: 'var(--text3)', fontSize: 12 }}>
+                      No results for "{searchQ}"
+                    </div>
+                  )
+                  return (
+                    <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+                      {SECS.map(function(sec) {
+                        const items = (searchRes || {})[sec.key] || []
+                        if (!items.length) return null
+                        return (
+                          <div key={sec.key}>
+                            <div style={{ padding: '8px 14px 3px', fontSize: 10, fontWeight: 700, color: 'var(--text3)', letterSpacing: '.07em', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                              {sec.icon} {sec.label}
+                            </div>
+                            {items.map(function(item) {
+                              return (
+                                <div key={item.id}
+                                  onClick={function() { setSearchQ(''); setSearchRes(null); onNavigate && onNavigate(sec.page) }}
+                                  style={{ padding: '8px 14px', cursor: 'pointer', fontSize: 12, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, transition: 'background .1s' }}
+                                  onMouseEnter={function(e) { e.currentTarget.style.background = 'var(--purple-bg)' }}
+                                  onMouseLeave={function(e) { e.currentTarget.style.background = 'none' }}
+                                >
+                                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--purple)', flexShrink: 0 }} />
+                                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.render(item)}</span>
+                                  <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>→</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+
+          {/* ── export dropdown ── */}
+          <div ref={exportRef} style={{ position: 'relative' }}>
+            <button className="btn" onClick={function() { setShowExportMenu(function(o) { return !o }) }}>
+              ↓ Export
+            </button>
+            {showExportMenu && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                width: 210, background: 'var(--bg2)',
+                border: '1px solid var(--border)', borderRadius: 12,
+                boxShadow: '0 8px 32px rgba(0,0,0,.14)', zIndex: 1000,
+                padding: 6,
+              }}>
+                {[
+                  { type: 'franchisees', icon: '🏢', label: 'Franchisee list' },
+                  { type: 'students',    icon: '🎓', label: 'Student list' },
+                  { type: 'orders',      icon: '📦', label: 'Order list' },
+                  { type: 'instructors', icon: '👩‍🏫', label: 'Instructor list' },
+                ].map(function(item) {
+                  return (
+                    <button key={item.type}
+                      onClick={function() { exportCSV(item.type) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 12px', background: 'none', border: 'none', borderRadius: 8, cursor: 'pointer', font: '500 12px var(--font)', color: 'var(--text)', textAlign: 'left' }}
+                      onMouseEnter={function(e) { e.currentTarget.style.background = 'var(--purple-bg)' }}
+                      onMouseLeave={function(e) { e.currentTarget.style.background = 'none' }}
+                    >
+                      <span style={{ fontSize: 14 }}>{item.icon}</span>
+                      <span style={{ flex: 1 }}>{item.label}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)' }}>CSV</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
           <button className="btn-p" onClick={function() { onNavigate && onNavigate('orders') }}>+ New order</button>
         </div>
       </div>

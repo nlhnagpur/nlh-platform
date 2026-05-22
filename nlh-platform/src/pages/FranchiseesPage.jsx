@@ -279,7 +279,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         .filter(function (n, i, a) { return a.indexOf(n) === i }) // dedupe
       await sendFranchiseeWelcomeLetter(franchisee, courseNames)
 
-      showToast('Welcome letter + password reset link sent to ' + franchisee.email)
+      showToast('Access sent to ' + franchisee.email + ' — welcome letter + reset link dispatched.')
     } catch (err) {
       showToast('Failed to send: ' + err.message, 'err')
     } finally {
@@ -906,7 +906,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         courseNames
       )
 
-      showToast(`Franchisee created. Temp password: ${tempPass}`)
+      showToast('Franchisee created. Credentials sent via email.')
       onSaved(fr)
     } catch (err) {
       showToast('Unexpected error: ' + err.message, 'err')
@@ -997,8 +997,9 @@ export default function FranchiseesPage() {
 
   const [franchisees, setFranchisees] = useState([])
   const [allCourses, setAllCourses] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+  const [loading, setLoading]       = useState(true)
+  const [search, setSearch]         = useState('')
+  const [exporting, setExporting]   = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
 
@@ -1081,6 +1082,37 @@ export default function FranchiseesPage() {
     return (name || '').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
   }
 
+  async function exportCSV() {
+    setExporting(true)
+    showToast('Preparing export…')
+    try {
+      const date = new Date().toISOString().slice(0, 10)
+      const { data } = await sb.from('franchisees')
+        .select('business_name,owner_name,tier,email,phone,city,state,country,status,enrollment_fee,fee_paid')
+        .order('tier').order('city').order('business_name')
+      function esc(v) {
+        if (v == null || v === '') return ''
+        const s = String(v)
+        return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
+      }
+      const headers = ['Business Name','Owner Name','Tier','Email','Phone','City','State','Country','Status','Enrollment Fee','Fee Paid']
+      const rows    = (data || []).map(function (r) {
+        return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.city, r.state, r.country, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
+      })
+      const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url; a.download = 'nlh-franchisees-' + date + '.csv'
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast(rows.length + ' franchisees exported ✓')
+    } catch (err) {
+      showToast('Export failed: ' + err.message, 'err')
+    }
+    setExporting(false)
+  }
+
   return (
     <div className="pg">
       {/* Topbar */}
@@ -1093,6 +1125,9 @@ export default function FranchiseesPage() {
             value={search}
             onChange={function (e) { setSearch(e.target.value) }}
           />
+          <button className="btn btn-s" onClick={exportCSV} disabled={exporting}>
+            {exporting ? 'Exporting…' : '↓ Export'}
+          </button>
           {admin && (
             <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>
           )}
