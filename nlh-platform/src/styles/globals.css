@@ -1282,3 +1282,90 @@ vercel-toolbar { display: none !important; }
   .progs-grid { grid-template-columns: repeat(2, 1fr) !important; }
   .big-tbl th, .big-tbl td { padding: 10px 12px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE DESIGN IMPROVEMENTS — form grids, topbar, tables, WhatsApp
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Form grids collapse on mobile ── */
+@media (max-width: 768px) {
+  .g2, .g3 { grid-template-columns: 1fr !important; gap: 10px !important; }
+  .form-grid { grid-template-columns: 1fr !important; }
+  .order-lines-header { display: none; }
+  .order-line { grid-template-columns: 1fr 72px 72px 32px; gap: 6px; }
+
+  /* ── Topbar improvements ── */
+  .tb { padding: 0 12px 0 56px; height: 52px; }
+
+  /* ── Table horizontal scroll on all tables ── */
+  .big-tbl { min-width: 520px; }
+  .card > .big-tbl, .card-new > .big-tbl { overflow-x: auto; }
+
+  /* ── Invoice hero stack ── */
+  .inv-hero { grid-template-columns: 1fr !important; gap: 10px; }
+  .inv-hero-l .big { font-size: 32px; }
+  .inv-hero-l { padding: 20px; }
+
+  /* ── Login card full width ── */
+  .login-card { width: 100%; max-width: 100%; border-radius: 0; border-left: none; border-right: none; padding: 28px 20px; }
+  .login-wrap { align-items: flex-start; padding-top: 0; }
+
+  /* ── Programs strip ── */
+  .programs { grid-template-columns: repeat(4, 1fr) !important; }
+
+  /* ── Page header on mobile ── */
+  .ph { flex-direction: column; gap: 12px; }
+  .ph-r { width: 100%; justify-content: flex-start; }
+  .ph-title { font-size: 22px; }
+
+  /* ── Modal full screen on mobile ── */
+  .modal-bg { align-items: flex-end; }
+  .modal, .modal-box { width: 100% !important; max-width: 100% !important; border-radius: 18px 18px 0 0 !important; max-height: 92vh; margin: 0; }
+  .modal-lg { width: 100% !important; }
+
+  /* ── Topbar right side buttons compact ── */
+  .tb-r .btn-s { display: none; }
+
+  /* ── Content padding tighter ── */
+  .content { padding: 12px 12px 80px; gap: 12px; }
+  .pg { padding: 12px; }
+
+  /* ── KPI cards compact ── */
+  .kpi { gap: 8px; }
+  .kc { padding: 14px 14px 16px; min-height: 124px; }
+  .kc-num { font-size: 24px; }
+
+  /* ── Hero strip compact ── */
+  .hero { padding: 16px; }
+  .hero-title { font-size: 19px; }
+
+  /* ── Status pills scrollable ── */
+  .status-pills { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 10px 12px; }
+  .sp { flex-shrink: 0; }
+
+  /* ── mini stats 2-col ── */
+  .mini-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
+
+  /* ── Franchisee toolbar ── */
+  .fr-toolbar { gap: 8px; }
+  .fr-search { min-width: 0; }
+
+  /* ── Row meta hidden on mobile ── */
+  .fr-row-meta { display: none; }
+  .fr-row { padding: 12px; gap: 10px; }
+  .fr-row-name { font-size: 13px; }
+
+  /* ── Courses grid ── */
+  .progs-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+}
+
+@media (max-width: 480px) {
+  .kc-num { font-size: 20px; }
+  .hero-title { font-size: 17px; }
+  .tb { padding: 0 10px 0 54px; }
+  .crumb { font-size: 11px; }
+  .programs { grid-template-columns: repeat(2, 1fr) !important; }
+  .prog-em { width: 32px; height: 32px; font-size: 16px; }
+  .prog-name { font-size: 9.5px; }
+  .mini-num { font-size: 20px; }
+}

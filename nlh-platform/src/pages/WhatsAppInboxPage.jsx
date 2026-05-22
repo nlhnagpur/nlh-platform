@@ -17,13 +17,20 @@ function fmtTime(ts) {
 }
 
 export default function WhatsAppInboxPage() {
-  const [messages,   setMessages]   = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [selected,   setSelected]   = useState(null)  // selected contact number
-  const [reply,      setReply]      = useState('')
-  const [sending,    setSending]    = useState(false)
+  const [messages,    setMessages]   = useState([])
+  const [loading,     setLoading]    = useState(true)
+  const [selected,    setSelected]   = useState(null)
+  const [reply,       setReply]      = useState('')
+  const [sending,     setSending]    = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [isMobile,    setIsMobile]   = useState(window.innerWidth < 768)
   const bottomRef = useRef(null)
+
+  useEffect(function () {
+    function onResize() { setIsMobile(window.innerWidth < 768) }
+    window.addEventListener('resize', onResize)
+    return function () { window.removeEventListener('resize', onResize) }
+  }, [])
 
   async function load() {
     const { data } = await sb
@@ -82,7 +89,6 @@ export default function WhatsAppInboxPage() {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error || 'Send failed')
-      // Log outbound message locally
       await sb.from('whatsapp_messages').insert({
         direction:    'outbound',
         from_number:  '917123514575',
@@ -100,134 +106,191 @@ export default function WhatsAppInboxPage() {
     setSending(false)
   }
 
+  // On mobile: show thread panel when a contact is selected
+  const showList   = !isMobile || !selected
+  const showThread = !isMobile || !!selected
+
   return (
-    <div className="pg" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      {/* Topbar */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+
+      {/* ── Topbar ── */}
       <header className="tb">
-        <div className="crumb">Communications <span className="sep">›</span> <b>WhatsApp Inbox</b></div>
-        <div className="tb-r" style={{ gap: 10 }}>
+        {isMobile && selected ? (
+          <button
+            onClick={function () { setSelected(null) }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--text2)', padding: '0 8px 0 0', lineHeight: 1 }}
+          >
+            ←
+          </button>
+        ) : null}
+        <div className="crumb">
+          {isMobile && selected
+            ? <b style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>+{selected}</b>
+            : <><span style={{ color: 'var(--text3)' }}>WhatsApp</span> <span className="sep">›</span> <b>Inbox</b></>
+          }
+        </div>
+        <div className="tb-r" style={{ gap: 8 }}>
           {unreadCount > 0 && (
             <span style={{ background: '#25D366', color: '#fff', borderRadius: 12, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>
               {unreadCount} new
             </span>
           )}
-          <button className="btn" onClick={load}>↻ Refresh</button>
+          {!isMobile && <button className="btn" onClick={load}>↻ Refresh</button>}
+          {isMobile && !selected && (
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text2)' }} onClick={load}>↻</button>
+          )}
         </div>
       </header>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
-        {/* ── Contact list ─────────────────────────────────────────────── */}
-        <div style={{
-          width: 300, flexShrink: 0, borderRight: '1px solid var(--border)',
-          overflowY: 'auto', background: '#fff',
-        }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-            💬 Conversations ({contactList.length})
-          </div>
-          {loading ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
-          ) : contactList.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>
-              No messages yet.<br />Messages from franchisees will appear here.
+        {/* ── Contact list ── */}
+        {showList && (
+          <div style={{
+            width: isMobile ? '100%' : 300,
+            flexShrink: 0,
+            borderRight: isMobile ? 'none' : '1px solid var(--border)',
+            overflowY: 'auto',
+            background: '#fff',
+          }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>💬 Conversations ({contactList.length})</span>
             </div>
-          ) : contactList.map(function (c) {
-            const isSelected = selected === c.number
-            const hasNew = (contacts[c.number]?.messages || []).some(function (m) { return m.direction === 'inbound' && m.status === 'received' })
-            return (
-              <div
-                key={c.number}
-                onClick={function () { setSelected(c.number) }}
-                style={{
-                  padding: '12px 14px', cursor: 'pointer',
-                  background: isSelected ? '#f0eeff' : '#fff',
-                  borderBottom: '1px solid var(--border)',
-                  borderLeft: isSelected ? '3px solid var(--purple)' : '3px solid transparent',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--text)' }}>
-                    +{c.number}
-                  </span>
-                  <span style={{ fontSize: 10, color: 'var(--text3)' }}>{timeAgo(c.lastAt)}</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {hasNew && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#25D366', flexShrink: 0, display: 'inline-block' }} />}
-                  {c.lastMsg || '—'}
+            {loading ? (
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
+            ) : contactList.length === 0 ? (
+              <div style={{ padding: '60px 24px', textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>
+                <div style={{ fontSize: 40, marginBottom: 14 }}>💬</div>
+                <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>No messages yet</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>
+                  Messages from franchisees will appear here once they send a WhatsApp to +91 712 351 4575
                 </div>
               </div>
-            )
-          })}
-        </div>
-
-        {/* ── Message thread ───────────────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f0f0f0' }}>
-          {!selected ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', fontSize: 14 }}>
-              ← Select a conversation
-            </div>
-          ) : (
-            <>
-              {/* Thread header */}
-              <div style={{ padding: '10px 16px', background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16 }}>
-                  💬
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>+{selected}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)' }}>{thread.length} messages</div>
-                </div>
-              </div>
-
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {thread.map(function (m) {
-                  const isOut = m.direction === 'outbound'
-                  return (
-                    <div key={m.id} style={{ display: 'flex', justifyContent: isOut ? 'flex-end' : 'flex-start' }}>
-                      <div style={{
-                        maxWidth: '70%', padding: '8px 12px', borderRadius: isOut ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
-                        background: isOut ? '#dcf8c6' : '#fff',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                        fontSize: 13, lineHeight: 1.5,
-                      }}>
-                        <div>{m.message_body || '[' + m.message_type + ']'}</div>
-                        <div style={{ fontSize: 10, color: '#999', marginTop: 3, textAlign: 'right', display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
-                          {fmtTime(m.created_at)}
-                          {isOut && <span title={m.status}>{m.status === 'read' ? '✓✓' : m.status === 'delivered' ? '✓✓' : '✓'}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-                <div ref={bottomRef} />
-              </div>
-
-              {/* Reply bar */}
-              <div style={{ padding: '10px 16px', background: '#fff', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-                <input
-                  style={{ flex: 1, padding: '9px 13px', borderRadius: 22, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }}
-                  placeholder="Type a reply… (free-form within 24h window)"
-                  value={reply}
-                  onChange={function (e) { setReply(e.target.value) }}
-                  onKeyDown={function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() } }}
-                />
-                <button
-                  onClick={sendReply}
-                  disabled={sending || !reply.trim()}
+            ) : contactList.map(function (c) {
+              const isSelected = selected === c.number
+              const hasNew = (contacts[c.number]?.messages || []).some(function (m) { return m.direction === 'inbound' && m.status === 'received' })
+              return (
+                <div
+                  key={c.number}
+                  onClick={function () { setSelected(c.number) }}
                   style={{
-                    background: '#25D366', color: '#fff', border: 'none', borderRadius: '50%',
-                    width: 40, height: 40, fontSize: 18, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    opacity: (!reply.trim() || sending) ? 0.5 : 1,
+                    padding: '14px 16px',
+                    cursor: 'pointer',
+                    background: isSelected && !isMobile ? '#f0eeff' : '#fff',
+                    borderBottom: '1px solid var(--border)',
+                    borderLeft: isSelected && !isMobile ? '3px solid var(--purple)' : '3px solid transparent',
+                    transition: 'background .1s',
                   }}
                 >
-                  ➤
-                </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {/* Avatar */}
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#25D366,#128C7E)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18, flexShrink: 0 }}>
+                      💬
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--text)' }}>
+                          +{c.number}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>{timeAgo(c.lastAt)}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {hasNew && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#25D366', flexShrink: 0, display: 'inline-block' }} />}
+                        {c.lastMsg || '—'}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 16, color: 'var(--text3)', flexShrink: 0 }}>›</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── Message thread ── */}
+        {showThread && (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#ECE5DD', width: isMobile ? '100%' : undefined }}>
+            {!selected ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', fontSize: 14, gap: 12 }}>
+                <div style={{ fontSize: 48, opacity: 0.3 }}>💬</div>
+                <div>Select a conversation</div>
               </div>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                {/* Thread header (desktop only — mobile uses topbar) */}
+                {!isMobile && (
+                  <div style={{ padding: '12px 18px', background: '#075E54', borderBottom: '1px solid rgba(0,0,0,.1)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18, flexShrink: 0 }}>
+                      💬
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#fff', fontFamily: 'var(--mono)' }}>+{selected}</div>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>{thread.length} messages</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Messages */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {thread.map(function (m) {
+                    const isOut = m.direction === 'outbound'
+                    return (
+                      <div key={m.id} style={{ display: 'flex', justifyContent: isOut ? 'flex-end' : 'flex-start', marginBottom: 4 }}>
+                        <div style={{
+                          maxWidth: isMobile ? '82%' : '70%',
+                          padding: '8px 12px 6px',
+                          borderRadius: isOut ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                          background: isOut ? '#DCF8C6' : '#fff',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
+                          fontSize: 13.5, lineHeight: 1.5,
+                        }}>
+                          <div style={{ color: '#1a1a1a' }}>{m.message_body || '[' + m.message_type + ']'}</div>
+                          <div style={{ fontSize: 10, color: '#999', marginTop: 4, textAlign: 'right', display: 'flex', gap: 3, justifyContent: 'flex-end', alignItems: 'center' }}>
+                            {fmtTime(m.created_at)}
+                            {isOut && (
+                              <span style={{ color: m.status === 'read' ? '#34B7F1' : '#aaa' }} title={m.status}>
+                                {m.status === 'read' || m.status === 'delivered' ? '✓✓' : '✓'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div ref={bottomRef} />
+                </div>
+
+                {/* Reply bar */}
+                <div style={{ padding: '8px 10px', background: '#F0F0F0', borderTop: '1px solid rgba(0,0,0,.08)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    style={{
+                      flex: 1, padding: '10px 16px', borderRadius: 24,
+                      border: '1px solid var(--border)', fontSize: 14,
+                      outline: 'none', background: '#fff',
+                    }}
+                    placeholder="Type a message…"
+                    value={reply}
+                    onChange={function (e) { setReply(e.target.value) }}
+                    onKeyDown={function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() } }}
+                  />
+                  <button
+                    onClick={sendReply}
+                    disabled={sending || !reply.trim()}
+                    style={{
+                      background: reply.trim() && !sending ? '#25D366' : '#ccc',
+                      color: '#fff', border: 'none', borderRadius: '50%',
+                      width: 44, height: 44, fontSize: 20, cursor: reply.trim() && !sending ? 'pointer' : 'default',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0, transition: 'background .15s',
+                    }}
+                  >
+                    ➤
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
