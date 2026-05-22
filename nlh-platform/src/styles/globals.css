@@ -1306,6 +1306,9 @@ vercel-toolbar { display: none !important; }
   /* ── Hide non-essential columns on mobile ── */
   .hide-mobile { display: none !important; }
   .big-tbl { min-width: 0; }
+  /* course / sku badges wrap tightly on mobile */
+  .big-tbl td .badge, .big-tbl td .stu-chip, .big-tbl td span.badge { font-size: 10px !important; padding: 2px 7px !important; margin-bottom: 3px; display: inline-block; }
+  .big-tbl td { padding: 10px 10px; }
 
   /* ── Invoice hero stack ── */
   .inv-hero { grid-template-columns: 1fr !important; gap: 10px; }

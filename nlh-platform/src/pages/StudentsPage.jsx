@@ -1360,7 +1360,7 @@ export default function StudentsPage() {
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Paid</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Balance</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1407,7 +1407,7 @@ export default function StudentsPage() {
                         <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</div>
                       </td>
                       <td><StatusBadge status={s.payment_status} /></td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         <button className="row-action" onClick={function (e) { e.stopPropagation(); setSelected(s) }}>View</button>
                       </td>
                     </tr>

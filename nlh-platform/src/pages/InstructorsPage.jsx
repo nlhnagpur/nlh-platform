@@ -1655,8 +1655,8 @@ export default function InstructorsPage() {
                   <th className="hide-mobile">Contact</th>
                   <th>Courses Appointed</th>
                   <th className="hide-mobile">Caution</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="hide-mobile">Status</th>
+                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1710,8 +1710,8 @@ export default function InstructorsPage() {
                           : <span style={{ color: 'var(--text3)' }}>—</span>
                         }
                       </td>
-                      <td><StatusBadge status={ins.status} /></td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td className="hide-mobile"><StatusBadge status={ins.status} /></td>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         <button className="row-action"
                           onClick={function (e) { e.stopPropagation(); setSelected(ins) }}>
                           View
