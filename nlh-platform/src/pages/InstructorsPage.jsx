@@ -411,12 +411,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         </div>
 
         {/* tabs */}
-        <div className="tabs" style={{ overflowX: 'auto', flexWrap: 'nowrap', scrollbarWidth: 'none' }}>
+        <div className="tabs">
           {[['profile','👤 Profile'],['caution','🔒 Caution'],['courses','📚 Courses'],['batches','📦 Batches']].map(function ([id, label]) {
             return (
               <button key={id}
                 className={'tab ' + (tab === id ? 'active' : '')}
-                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                 onClick={function () { loadTab(id) }}>
                 {label}
               </button>
