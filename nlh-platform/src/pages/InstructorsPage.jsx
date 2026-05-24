@@ -1577,22 +1577,26 @@ export default function InstructorsPage() {
     }).filter(Boolean)
   )].length
 
-  async function exportCSV() {
+  function exportCSV() {
+    // Use the already-loaded instructors state
+    if (!instructors.length) { showToast('No instructors to export.', 'warn'); return }
     setExporting(true)
-    showToast('Preparing export…')
     try {
       const date = new Date().toISOString().slice(0, 10)
-      const { data } = await sb.from('instructors')
-        .select('full_name,phone,email,status,franchisee:franchisees(business_name,city)')
-        .order('full_name')
       function esc(v) {
         if (v == null || v === '') return ''
         const s = String(v)
         return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
       }
-      const headers = ['Name','Phone','Email','Status','Centre','City']
-      const rows    = (data || []).map(function (r) {
-        return [r.full_name, r.phone, r.email, r.status, r.franchisee?.business_name, r.franchisee?.city]
+      const headers = ['Name','Phone','Email','Status','Courses']
+      const rows    = instructors.map(function (r) {
+        const courses = (r.instructor_courses || [])
+          .filter(function (c) { return c.status === 'active' })
+          .map(function (c) { return c.skus?.courses?.group_name })
+          .filter(Boolean)
+          .filter(function (c, i, a) { return a.indexOf(c) === i })
+          .join('; ')
+        return [r.full_name, r.phone, r.email, r.status, courses]
       })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
       const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })

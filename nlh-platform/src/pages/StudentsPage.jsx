@@ -1294,22 +1294,25 @@ export default function StudentsPage() {
     return (idx % 8) + 1
   }
 
-  async function exportCSV() {
+  function exportCSV() {
+    // Use the already-loaded, role-filtered students state
+    if (!students.length) { showToast('No students to export.', 'warn'); return }
     setExporting(true)
-    showToast('Preparing export…')
     try {
       const date = new Date().toISOString().slice(0, 10)
-      const { data } = await sb.from('students')
-        .select('full_name,parent_name,phone,email,city,state,payment_status,fee_total,fee_paid,franchisee:franchisees(business_name,city)')
-        .order('full_name')
       function esc(v) {
         if (v == null || v === '') return ''
         const s = String(v)
         return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
       }
-      const headers = ['Student Name','Parent Name','Phone','Email','City','State','Centre','Centre City','Fee Total','Fee Paid','Payment Status']
-      const rows    = (data || []).map(function (r) {
-        return [r.full_name, r.parent_name, r.phone, r.email, r.city, r.state, r.franchisee?.business_name, r.franchisee?.city, r.fee_total || 0, r.fee_paid || 0, r.payment_status]
+      const headers = ['Student Name','Parent Name','Phone','Email','City','State','Fee Total','Fee Paid','Payment Status','Courses']
+      const rows    = students.map(function (r) {
+        const courses = (r.enrollments || [])
+          .map(function (e) { return e.skus?.courses?.group_name })
+          .filter(Boolean)
+          .filter(function (c, i, a) { return a.indexOf(c) === i })
+          .join('; ')
+        return [r.full_name, r.parent_name, r.phone, r.email, r.city, r.state, r.fee_total || 0, r.fee_paid || 0, r.payment_status, courses]
       })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
       const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })

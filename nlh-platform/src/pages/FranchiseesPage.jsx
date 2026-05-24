@@ -1082,21 +1082,19 @@ export default function FranchiseesPage() {
     return (name || '').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
   }
 
-  async function exportCSV() {
+  function exportCSV() {
+    // Use the already-loaded, role-filtered franchisees state — no extra DB query needed
+    if (!franchisees.length) { showToast('No franchisees to export.', 'warn'); return }
     setExporting(true)
-    showToast('Preparing export…')
     try {
       const date = new Date().toISOString().slice(0, 10)
-      const { data } = await sb.from('franchisees')
-        .select('business_name,owner_name,tier,email,phone,area,city,state,country,pin_code,status,enrollment_fee,fee_paid')
-        .order('tier').order('city').order('business_name')
       function esc(v) {
         if (v == null || v === '') return ''
         const s = String(v)
         return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
       }
       const headers = ['Business Name','Owner Name','Tier','Email','Phone','Area','City','State','Country','PIN Code','Status','Enrollment Fee','Fee Paid']
-      const rows    = (data || []).map(function (r) {
+      const rows    = franchisees.map(function (r) {
         return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pin_code, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
       })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
