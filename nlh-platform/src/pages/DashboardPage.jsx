@@ -595,7 +595,7 @@ export default function DashboardPage({ onNavigate }) {
           .order('tier').order('city').order('business_name')
         headers  = ['Business Name','Owner Name','Tier','Email','Phone','Area','City','State','Country','PIN Code','Status','Enrollment Fee','Fee Paid']
         rows     = (data || []).map(function(r) {
-          return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pin_code, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
+          return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pincode, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
         })
         filename = 'nlh-franchisees-' + date + '.csv'
 

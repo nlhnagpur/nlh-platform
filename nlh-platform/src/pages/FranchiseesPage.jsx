@@ -1095,7 +1095,7 @@ export default function FranchiseesPage() {
       }
       const headers = ['Business Name','Owner Name','Tier','Email','Phone','Area','City','State','Country','PIN Code','Status','Enrollment Fee','Fee Paid']
       const rows    = franchisees.map(function (r) {
-        return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pin_code, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
+        return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pincode, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
       })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
       const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
