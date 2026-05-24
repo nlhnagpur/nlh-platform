@@ -28,6 +28,7 @@ const adminNav = [
   { id: 'instructors',      l: 'Instructors',       c: '#6D28D9' },
   { id: 'batches',          l: 'Batches',           c: '#0F766E' },
   { id: 'whatsapp-inbox',   l: 'WhatsApp Inbox',    c: '#25D366' },
+  { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
@@ -43,6 +44,7 @@ const managerNav = [
   { id: 'instructors',    l: 'Instructors',      c: '#6D28D9' },
   { id: 'batches',        l: 'Batches',          c: '#0F766E' },
   { id: 'whatsapp-inbox', l: 'WhatsApp Inbox',   c: '#25D366' },
+  { id: 'accounting',     l: 'HO Accounting',    c: '#0F766E' },
   { id: 'courses',        l: 'Courses & SKUs',   c: '#534AB7' },
   { id: 'prices',         l: 'Kit prices',       c: '#1D7A4F' },
 ]

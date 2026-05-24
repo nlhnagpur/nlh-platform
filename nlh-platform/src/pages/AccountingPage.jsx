@@ -1432,12 +1432,12 @@ export default function AccountingPage() {
   const { currentRole } = useAuth()
   const [tab, setTab] = useState('overview')
 
-  if (!['owner', 'super_admin'].includes(currentRole)) {
+  if (!['owner', 'super_admin', 'admin', 'manager'].includes(currentRole)) {
     return (
       <div style={{ padding:40, textAlign:'center', color:'var(--text3)' }}>
         <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
         <div style={{ fontSize:16, fontWeight:600 }}>HO Accounting — Restricted</div>
-        <div style={{ marginTop:8 }}>This section is only accessible to Owner and Super Admin.</div>
+        <div style={{ marginTop:8 }}>This section is only accessible to HO admin team.</div>
       </div>
     )
   }
