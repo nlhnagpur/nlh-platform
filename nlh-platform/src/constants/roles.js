@@ -4,6 +4,22 @@ export function isAdminRole(r) {
   return ADMIN_ROLES.includes(r)
 }
 
+const ownerNav = [
+  { id: 'dashboard',        l: 'Dashboard',        c: '#534AB7' },
+  { id: 'franchisees',      l: 'Franchisees',       c: '#1D7A4F' },
+  { id: 'orders',           l: 'Orders',            c: '#8A5200' },
+  { id: 'students',         l: 'Students',          c: '#1A5FA8' },
+  { id: 'instructors',      l: 'Instructors',       c: '#6D28D9' },
+  { id: 'batches',          l: 'Batches',           c: '#0F766E' },
+  { id: 'whatsapp-inbox',   l: 'WhatsApp Inbox',    c: '#25D366' },
+  { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
+  { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
+  { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
+  { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
+  { id: 'users',            l: 'Manage logins',     c: '#A32D2D' },
+  { id: 'requests',         l: 'Access requests',   c: '#534AB7' },
+]
+
 const adminNav = [
   { id: 'dashboard',        l: 'Dashboard',        c: '#534AB7' },
   { id: 'franchisees',      l: 'Franchisees',       c: '#1D7A4F' },
@@ -39,8 +55,8 @@ const staffNav = [
 ]
 
 export const NAV_ITEMS = {
-  owner:       adminNav,
-  super_admin: adminNav,
+  owner:       ownerNav,
+  super_admin: ownerNav,
   admin:       adminNav,
   manager:     managerNav,
   staff:       staffNav,

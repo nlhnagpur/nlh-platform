@@ -11,14 +11,16 @@ const NAV_ICONS = {
   batches:          '🗓️',
   invoices:         '🧾',
   'whatsapp-inbox': '💬',
-  courses:          '📚',
+  accounting:       '📚',
+  courses:          '📖',
   prices:           '🏷️',
   'price-history':  '📜',
   users:            '🔑',
   requests:         '🤝',
 }
 
-const SETTINGS_IDS = ['prices', 'courses', 'price-history', 'users', 'requests']
+const SETTINGS_IDS   = ['prices', 'courses', 'price-history', 'users', 'requests']
+const ACCOUNTING_IDS = ['accounting']
 
 function initials(name) {
   if (!name) return '?'
@@ -35,16 +37,19 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
   const userInitials = initials(userName)
 
   // Group nav items
-  const ops         = navItems.filter(function(item) {
+  const ops           = navItems.filter(function(item) {
     return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'batches', 'invoices', 'whatsapp-inbox'].includes(item.id)
   })
-  const settingsAll = navItems.filter(function(item) {
+  const accountingAll = navItems.filter(function(item) {
+    return ACCOUNTING_IDS.includes(item.id)
+  })
+  const settingsAll   = navItems.filter(function(item) {
     return SETTINGS_IDS.includes(item.id)
   })
 
   // Fallback: items not in any known section
   const other = navItems.filter(function(item) {
-    return !['dashboard','franchisees','orders','students','instructors','batches','invoices','whatsapp-inbox',...SETTINGS_IDS].includes(item.id)
+    return !['dashboard','franchisees','orders','students','instructors','batches','invoices','whatsapp-inbox',...ACCOUNTING_IDS,...SETTINGS_IDS].includes(item.id)
   })
 
   // Auto-expand settings when current page lives there
@@ -86,6 +91,14 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
           <>
             <div className="sect">Operations</div>
             {ops.map(function(item) { return <NavItem key={item.id} item={item} /> })}
+          </>
+        )}
+
+        {/* Accounting — HO only, owner + super_admin */}
+        {accountingAll.length > 0 && (
+          <>
+            <div className="sect">Accounting</div>
+            {accountingAll.map(function(item) { return <NavItem key={item.id} item={item} /> })}
           </>
         )}
 
