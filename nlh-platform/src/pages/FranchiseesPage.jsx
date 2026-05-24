@@ -1125,8 +1125,8 @@ export default function FranchiseesPage() {
             value={search}
             onChange={function (e) { setSearch(e.target.value) }}
           />
-          <button className="btn btn-s" onClick={exportCSV} disabled={exporting}>
-            {exporting ? 'Exporting…' : '↓ Export'}
+          <button className="btn btn-s" onClick={exportCSV} disabled={exporting} title="Export CSV">
+            {exporting ? '…' : '↓'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
           </button>
           {admin && (
             <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>

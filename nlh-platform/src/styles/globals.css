@@ -1290,91 +1290,171 @@ vercel-toolbar { display: none !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   MOBILE DESIGN IMPROVEMENTS — form grids, topbar, tables, WhatsApp
+   MOBILE DESIGN IMPROVEMENTS
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* ── Form grids collapse on mobile ── */
+/* ── Table scroll: enforced min-widths + right-edge fade hint ── */
+.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
+.tbl-scroll::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 28px;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,.85));
+  pointer-events: none;
+  border-radius: 0 8px 8px 0;
+}
+.tbl-scroll .big-tbl  { min-width: 640px; }
+.tbl-scroll .tbl      { min-width: 560px; }
+.tbl-scroll .prices-tbl { min-width: 540px; }
+
+/* ── Touch targets: inputs, buttons ≥ 44px ── */
 @media (max-width: 768px) {
-  .g2, .g3 { grid-template-columns: 1fr !important; gap: 10px !important; }
-  .form-grid { grid-template-columns: 1fr !important; }
+  /* Touch-friendly inputs */
+  input, select, textarea,
+  .inp, .fr input, .fr select, .fr textarea,
+  .form-grid input, .form-grid select,
+  .search, .tb-search, .fr-search {
+    min-height: 44px;
+    font-size: 16px !important; /* prevents iOS zoom on focus */
+    border-radius: 10px;
+  }
+
+  /* Touch-friendly buttons */
+  .btn, .btn-p, .btn-s, .btn-sm,
+  .row-action, .sp, .card-link,
+  .lbl, button {
+    min-height: 40px;
+  }
+  .btn-sm { min-height: 36px; padding: 6px 12px; }
+
+  /* ── Form grids collapse ── */
+  .g2, .g3 { grid-template-columns: 1fr !important; gap: 12px !important; }
+  .form-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+  .col-span-2 { grid-column: span 1 !important; }
   .order-lines-header { display: none; }
   .order-line { grid-template-columns: 1fr 72px 72px 32px; gap: 6px; }
 
-  /* ── Topbar improvements ── */
-  .tb { padding: 0 12px 0 56px; height: 52px; }
+  /* ── Topbar ── */
+  .tb { padding: 0 10px 0 56px; height: 56px; }
+  .crumb { font-size: 12px; }
+  .tb-r { gap: 6px; }
+  /* hide text label on export button, keep icon only */
+  .tb-r .btn-s { padding: 0 10px; font-size: 13px; min-width: 40px; justify-content: center; }
+  .tb-r .btn-s .btn-label { display: none; }
+  .tb-r .btn-p { padding: 8px 12px; font-size: 12px; }
+  .tb-search { width: 140px; font-size: 14px !important; }
 
-  /* ── Hide non-essential columns on mobile ── */
+  /* ── Tables: less padding, hide non-essential columns ── */
   .hide-mobile { display: none !important; }
-  .big-tbl { min-width: 0; }
-  /* course / sku badges wrap tightly on mobile */
-  .big-tbl td .badge, .big-tbl td .stu-chip, .big-tbl td span.badge { font-size: 10px !important; padding: 2px 7px !important; margin-bottom: 3px; display: inline-block; }
-  .big-tbl td { padding: 10px 10px; }
+  .big-tbl th { padding: 10px 10px; font-size: 9px; }
+  .big-tbl td { padding: 11px 10px; font-size: 12px; }
+  .big-tbl td .badge, .big-tbl td .stu-chip { font-size: 10px !important; padding: 2px 7px !important; }
+
+  /* ── Content area ── */
+  .content { padding: 14px 12px 88px; gap: 14px; }
+  .pg { padding: 14px 12px; }
+
+  /* ── Page header ── */
+  .ph { flex-direction: column; gap: 10px; }
+  .ph-title { font-size: 22px; }
+  .ph-r { width: 100%; }
+
+  /* ── KPI grid ── */
+  .kpi { gap: 10px; }
+  .kc { padding: 14px 14px 16px; min-height: 120px; }
+  .kc-num { font-size: 24px; }
+
+  /* ── Hero strip ── */
+  .hero { padding: 16px; }
+  .hero-title { font-size: 19px; }
+
+  /* ── Mini-stats 2-col ── */
+  .mini-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  .mini { padding: 14px; }
+  .mini-num { font-size: 22px; }
+
+  /* ── Status pills scrollable ── */
+  .status-pills { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 10px 12px; gap: 6px; }
+  .sp { flex-shrink: 0; min-height: 36px; }
+
+  /* ── Modal → bottom sheet ── */
+  .modal-bg { align-items: flex-end; }
+  .modal, .modal-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 90vh;
+    margin: 0;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  .modal-lg { width: 100% !important; }
+  /* Drag handle on modal */
+  .modal::before, .modal-box::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: var(--border2);
+    border-radius: 2px;
+    margin: 0 auto 16px;
+  }
 
   /* ── Invoice hero stack ── */
   .inv-hero { grid-template-columns: 1fr !important; gap: 10px; }
   .inv-hero-l .big { font-size: 32px; }
-  .inv-hero-l { padding: 20px; }
+  .inv-hero-l { padding: 20px 18px; }
+  .inv-hero-l .actions { flex-wrap: wrap; gap: 6px; }
+  .inv-hero-l .actions button { min-height: 40px; flex: 1; }
 
   /* ── Login card full width ── */
   .login-card { width: 100%; max-width: 100%; border-radius: 0; border-left: none; border-right: none; padding: 28px 20px; }
   .login-wrap { align-items: flex-start; padding-top: 0; }
 
-  /* ── Programs strip ── */
+  /* ── Programs grid ── */
   .programs { grid-template-columns: repeat(4, 1fr) !important; }
+  .progs-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  .progs-card { padding: 14px; }
+  .progs-em { width: 44px; height: 44px; font-size: 22px; }
+  .progs-name { font-size: 14px; }
 
-  /* ── Page header on mobile ── */
-  .ph { flex-direction: column; gap: 12px; }
-  .ph-r { width: 100%; justify-content: flex-start; }
-  .ph-title { font-size: 22px; }
-
-  /* ── Modal full screen on mobile ── */
-  .modal-bg { align-items: flex-end; }
-  .modal, .modal-box { width: 100% !important; max-width: 100% !important; border-radius: 18px 18px 0 0 !important; max-height: 92vh; margin: 0; }
-  .modal-lg { width: 100% !important; }
-
-  /* ── Topbar right side buttons compact ── */
-  .tb-r .btn-s { display: none; }
-
-  /* ── Content padding tighter ── */
-  .content { padding: 12px 12px 80px; gap: 12px; }
-  .pg { padding: 12px; }
-
-  /* ── KPI cards compact ── */
-  .kpi { gap: 8px; }
-  .kc { padding: 14px 14px 16px; min-height: 124px; }
-  .kc-num { font-size: 24px; }
-
-  /* ── Hero strip compact ── */
-  .hero { padding: 16px; }
-  .hero-title { font-size: 19px; }
-
-  /* ── Status pills scrollable ── */
-  .status-pills { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 10px 12px; }
-  .sp { flex-shrink: 0; }
-
-  /* ── mini stats 2-col ── */
-  .mini-stats { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
-
-  /* ── Franchisee toolbar ── */
+  /* ── Franchisee rows ── */
   .fr-toolbar { gap: 8px; }
-  .fr-search { min-width: 0; }
-
-  /* ── Row meta hidden on mobile ── */
+  .fr-search { min-width: 0; min-height: 44px; }
   .fr-row-meta { display: none; }
   .fr-row { padding: 12px; gap: 10px; }
   .fr-row-name { font-size: 13px; }
 
-  /* ── Courses grid ── */
-  .progs-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  /* ── Prices layout ── */
+  .prices-layout { grid-template-columns: 1fr !important; }
+  .prices-rail { max-height: none; }
+
+  /* ── Row actions: full-width tap zones ── */
+  .row-action { min-height: 36px; padding: 6px 12px; }
+
+  /* ── Toast at bottom centre ── */
+  .toast { bottom: 16px; left: 50%; right: auto; transform: translateX(-50%); white-space: nowrap; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   480px — Phone portrait (very small screens)
+   ═══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 480px) {
   .kc-num { font-size: 20px; }
   .hero-title { font-size: 17px; }
-  .tb { padding: 0 10px 0 54px; }
+  .tb { padding: 0 8px 0 54px; height: 52px; }
   .crumb { font-size: 11px; }
+  .crumb b { display: none; }  /* just show breadcrumb label */
   .programs { grid-template-columns: repeat(2, 1fr) !important; }
   .prog-em { width: 32px; height: 32px; font-size: 16px; }
   .prog-name { font-size: 9.5px; }
   .mini-num { font-size: 20px; }
+  .ph-title { font-size: 20px; }
+  /* full-width action buttons in tight spaces */
+  .ph-r .btn, .ph-r .btn-p, .ph-r .btn-s { width: 100%; justify-content: center; }
+  /* compact status pills */
+  .sp { padding: 6px 10px; font-size: 10px; }
+  .sp .ct { display: none; }  /* hide count badges on very small screens */
+  /* topbar: icon-only mode */
+  .tb-r .btn-p { width: 40px; overflow: hidden; }
+  .tb-r .btn-p .btn-label { display: none; }
 }
