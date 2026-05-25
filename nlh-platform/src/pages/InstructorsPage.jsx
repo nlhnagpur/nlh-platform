@@ -2042,7 +2042,19 @@ export default function InstructorsPage() {
           instructor={selected}
           allSkus={allSkus}
           nlhCentreId={nlhCentreId}
-          onClose={function () { setSelected(null) }}
+          onClose={async function () {
+            // Re-fetch this instructor so the list reflects any appointment changes
+            const { data } = await sb.from('instructors')
+              .select('*, instructor_courses(id,status,remuneration_mode,remuneration_rate,skus(level_name,courses(group_name)))')
+              .eq('id', selected.id)
+              .single()
+            if (data) {
+              setInstructors(function (prev) {
+                return prev.map(function (i) { return i.id === data.id ? { ...i, ...data } : i })
+              })
+            }
+            setSelected(null)
+          }}
           onSaved={handleSaved}
         />
       )}
