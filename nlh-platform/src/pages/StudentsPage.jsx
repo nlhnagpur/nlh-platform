@@ -63,6 +63,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const [saving,      setSaving]      = useState(false)
 
   // ── Courses / Batch state ──
+  const [localEnrollments, setLocalEnrollments] = useState(student.enrollments || [])
   const [nlhCentreId,     setNlhCentreId]     = useState(null)
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
@@ -73,8 +74,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const [newBatchForm,    setNewBatchForm]    = useState({ name: '', days: [], time: '', is_individual: false })
   const [panelSaving,     setPanelSaving]     = useState(false)
 
-  const balance     = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
-  const enrollments = student.enrollments || []
+  // ── Add-enrollment state ──
+  const [showAddEnrollment, setShowAddEnrollment] = useState(false)
+  const [availableSkus,     setAvailableSkus]     = useState([])   // SKUs the centre offers, minus already enrolled
+  const [selectedNewSkus,   setSelectedNewSkus]   = useState([])
+  const [addingEnrollment,  setAddingEnrollment]  = useState(false)
+
+  const balance = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
 
   function field(k) {
     return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
@@ -126,15 +132,33 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     }
 
     // Load batch assignments for all enrollments of this student
-    const enrIds = enrollments.map(function (e) { return e.id })
-    if (!enrIds.length) return
-    const { data: bsRows } = await sb.from('batch_students')
-      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
-      .in('enrollment_id', enrIds)
-      .is('removed_at', null)
-    const map = {}
-    ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
-    setBatchAssignments(map)
+    const enrIds = localEnrollments.map(function (e) { return e.id })
+    if (enrIds.length > 0) {
+      const { data: bsRows } = await sb.from('batch_students')
+        .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+        .in('enrollment_id', enrIds)
+        .is('removed_at', null)
+      const map = {}
+      ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
+      setBatchAssignments(map)
+    }
+
+    // Load available SKUs for the "+ Add Course" panel
+    const [{ data: fr }, { data: allSkuRows }] = await Promise.all([
+      sb.from('franchisees').select('tier, registered_skus, registered_courses').eq('id', student.franchisee_id).single(),
+      sb.from('skus').select('id, level_name, student_fee, course_id, courses(group_name)').order('sort_order'),
+    ])
+    const filter = deriveFilter(fr)
+    const enrolledSkuIds = localEnrollments.map(function (e) { return e.sku_id })
+    let candidates = []
+    if (filter === 'all') {
+      candidates = allSkuRows || []
+    } else if (filter && filter.skuIds) {
+      candidates = (allSkuRows || []).filter(function (s) { return filter.skuIds.includes(s.id) })
+    } else if (filter && filter.courseIds) {
+      candidates = (allSkuRows || []).filter(function (s) { return filter.courseIds.includes(s.course_id) })
+    }
+    setAvailableSkus(candidates.filter(function (s) { return !enrolledSkuIds.includes(s.id) }))
   }
 
   // ── Open batch assignment panel for one enrollment ──
@@ -231,6 +255,60 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setBatchAssignments(function (prev) { return { ...prev, [enrollment.id]: bs } })
     setBatchPanelEnrId(null)
     showToast('Batch created and student assigned ✓')
+  }
+
+  // ── Remove an enrollment ──
+  async function removeEnrollment(enrollment) {
+    // Soft-delete any active batch_student row first
+    const { data: bsRows } = await sb.from('batch_students')
+      .select('id')
+      .eq('enrollment_id', enrollment.id)
+      .is('removed_at', null)
+    if (bsRows && bsRows.length > 0) {
+      await sb.from('batch_students')
+        .update({ removed_at: new Date().toISOString() })
+        .in('id', bsRows.map(function (b) { return b.id }))
+    }
+    const { error } = await sb.from('enrollments').delete().eq('id', enrollment.id)
+    if (error) { showToast('Remove failed: ' + error.message, 'err'); return }
+    setLocalEnrollments(function (prev) { return prev.filter(function (e) { return e.id !== enrollment.id }) })
+    setBatchAssignments(function (prev) { const n = { ...prev }; delete n[enrollment.id]; return n })
+    // Re-add the SKU to the available list
+    setAvailableSkus(function (prev) {
+      if (prev.some(function (s) { return s.id === enrollment.sku_id })) return prev
+      return [...prev, { id: enrollment.sku_id, sku_id: enrollment.sku_id, level_name: enrollment.skus?.level_name, student_fee: null, courses: enrollment.skus?.courses }]
+    })
+    showToast('Course removed')
+    const { data: updated } = await sb.from('students')
+      .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
+      .eq('id', student.id).single()
+    if (updated) onSaved(updated)
+  }
+
+  // ── Add new enrollments ──
+  async function addEnrollments() {
+    if (!selectedNewSkus.length) { showToast('Select at least one course', 'warn'); return }
+    setAddingEnrollment(true)
+    const rows = selectedNewSkus.map(function (sku) { return {
+      student_id:    student.id,
+      sku_id:        sku.id,
+      franchisee_id: student.franchisee_id,
+    } })
+    const { data, error } = await sb.from('enrollments').insert(rows)
+      .select('id, sku_id, cert_emailed_at, skus(level_name, courses(group_name))')
+    setAddingEnrollment(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    const added = data || []
+    setLocalEnrollments(function (prev) { return [...prev, ...added] })
+    const addedSkuIds = added.map(function (e) { return e.sku_id })
+    setAvailableSkus(function (prev) { return prev.filter(function (s) { return !addedSkuIds.includes(s.id) }) })
+    setSelectedNewSkus([])
+    setShowAddEnrollment(false)
+    showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added ✓')
+    const { data: updated } = await sb.from('students')
+      .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
+      .eq('id', student.id).single()
+    if (updated) onSaved(updated)
   }
 
   return (
@@ -359,11 +437,11 @@ function StudentDetailModal({ student, onClose, onSaved }) {
         {/* ── COURSES & BATCHES TAB ── */}
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
-            {enrollments.length === 0 ? (
+            {localEnrollments.length === 0 && !showAddEnrollment ? (
               <p className="hint" style={{ textAlign: 'center', padding: 24 }}>No courses enrolled yet.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {enrollments.map(function (en) {
+                {localEnrollments.map(function (en) {
                   const bs          = batchAssignments[en.id]
                   const isOpen      = batchPanelEnrId === en.id
                   const courseName  = en.skus?.courses?.group_name || '—'
@@ -417,7 +495,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                               centre = data || null
                               setCentreCache(centre)
                             }
-                            setCertModal({ enrollments, centre })
+                            setCertModal({ enrollments: localEnrollments, centre })
                           }}
                         >
                           {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
@@ -430,7 +508,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}
                             onClick={function () { openBatchPanel(en) }}
                           >
-                            {isOpen ? 'Close' : bs ? '✏️ Change Batch' : '+ Assign Batch'}
+                            {isOpen ? 'Close' : bs ? '✏️ Batch' : '+ Batch'}
                           </button>
                         )}
 
@@ -441,7 +519,21 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)' }}
                             onClick={function () { removeFromBatch(en.id) }}
                             title="Remove from batch"
-                          >✕</button>
+                          >✕ Batch</button>
+                        )}
+
+                        {/* Remove enrollment entirely */}
+                        {admin && (
+                          <button
+                            className="btn-s"
+                            style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)', borderColor: 'var(--red)' }}
+                            onClick={function () {
+                              if (window.confirm('Remove ' + courseName + ' ' + levelName + ' enrollment for ' + student.full_name + '?')) {
+                                removeEnrollment(en)
+                              }
+                            }}
+                            title="Remove course enrollment"
+                          >🗑</button>
                         )}
                       </div>
 
@@ -611,6 +703,89 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                     </div>
                   )
                 })}
+
+                {/* ── Add Course panel ── */}
+                {admin && (
+                  <div style={{ marginTop: 4 }}>
+                    {!showAddEnrollment ? (
+                      <button
+                        className="btn-s"
+                        style={{ fontSize: 12, width: '100%' }}
+                        onClick={function () { setShowAddEnrollment(true) }}
+                        disabled={availableSkus.length === 0}
+                      >
+                        {availableSkus.length === 0 ? 'All available courses enrolled' : '+ Add Course'}
+                      </button>
+                    ) : (
+                      <div style={{ border: '1.5px dashed var(--purple)', borderRadius: 10, padding: 16, background: 'var(--bg)' }}>
+                        <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: 12 }}>
+                          Add Course Enrollment
+                        </div>
+                        {(function () {
+                          // Group available SKUs by course name
+                          const groupMap = {}
+                          availableSkus.forEach(function (s) {
+                            const g = s.courses?.group_name || 'Other'
+                            if (!groupMap[g]) groupMap[g] = []
+                            groupMap[g].push(s)
+                          })
+                          const groups = Object.entries(groupMap)
+                          if (groups.length === 0) {
+                            return <p className="hint" style={{ color: 'var(--red)' }}>No additional courses available for this centre.</p>
+                          }
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {groups.map(function ([groupName, skus]) {
+                                return (
+                                  <div key={groupName}>
+                                    <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 5 }}>
+                                      {groupName}
+                                    </div>
+                                    <div className="checkbox-grid">
+                                      {skus.map(function (sku) {
+                                        const checked = selectedNewSkus.some(function (s) { return s.id === sku.id })
+                                        return (
+                                          <label key={sku.id} className="checkbox-item">
+                                            <input
+                                              type="checkbox"
+                                              checked={checked}
+                                              onChange={function () {
+                                                setSelectedNewSkus(function (prev) {
+                                                  return checked
+                                                    ? prev.filter(function (s) { return s.id !== sku.id })
+                                                    : [...prev, sku]
+                                                })
+                                              }}
+                                            />
+                                            {sku.level_name}
+                                            {sku.student_fee ? <span className="hint"> ₹{fmtAmt(sku.student_fee)}</span> : null}
+                                          </label>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                          <button className="btn" style={{ fontSize: 12 }} onClick={function () { setShowAddEnrollment(false); setSelectedNewSkus([]) }}>
+                            Cancel
+                          </button>
+                          <button
+                            className="btn-p"
+                            style={{ fontSize: 12 }}
+                            disabled={!selectedNewSkus.length || addingEnrollment}
+                            onClick={addEnrollments}
+                          >
+                            {addingEnrollment ? 'Adding…' : 'Enroll in ' + selectedNewSkus.length + ' Course' + (selectedNewSkus.length !== 1 ? 's' : '')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
