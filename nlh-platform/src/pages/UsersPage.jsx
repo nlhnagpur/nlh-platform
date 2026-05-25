@@ -290,12 +290,14 @@ export default function UsersPage() {
     const displayName = user.full_name || user.email.split('@')[0]
 
     // Fire invite email + Supabase password reset link in parallel
-    const [emailResult] = await Promise.all([
+    const [emailResult, { error: resetError }] = await Promise.all([
       sendInviteEmail(user.email, displayName, user.role),
       sb.auth.resetPasswordForEmail(user.email, { redirectTo: 'https://nlh-platform.vercel.app/login' }),
     ])
 
-    if (emailResult.success) {
+    if (resetError) {
+      showToast('Warning: password reset link failed — ' + resetError.message, 'warn')
+    } else if (emailResult.success) {
       showToast('Invite sent to ' + user.email + '!')
     } else {
       showToast('Invite sent (email delivery may be delayed).')

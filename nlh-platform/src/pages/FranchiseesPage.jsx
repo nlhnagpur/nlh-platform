@@ -35,7 +35,8 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
 
     const newFeePaid = (franchisee.fee_paid || 0) + amt
     const newBalance = (Number(franchisee.enrollment_fee) || 0) - newFeePaid
-    await sb.from('franchisees').update({ fee_paid: newFeePaid }).eq('id', franchisee.id)
+    const { error: feeErr } = await sb.from('franchisees').update({ fee_paid: newFeePaid }).eq('id', franchisee.id)
+    if (feeErr) { showToast('Failed to update fee record: ' + feeErr.message, 'err'); setSaving(false); return }
     setSaving(false)
     showToast('Payment of ₹' + fmtAmt(amt) + ' recorded')
     try {
@@ -237,9 +238,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
       valid_till: form.valid_till || null,
       renewal_fee: form.renewal_fee === '' ? null : Number(form.renewal_fee),
     }
-    if (tab === 'courses') {
-      payload.registered_courses = registeredCourses
-    }
+    payload.registered_courses = registeredCourses
     const { error } = await sb.from('franchisees').update(payload).eq('id', franchisee.id)
     setSaving(false)
     if (error) { showToast('Save failed: ' + error.message, 'err'); return }
@@ -1041,7 +1040,7 @@ export default function FranchiseesPage() {
 
   const filtered = franchisees.filter(f => {
     const q = search.toLowerCase()
-    return !q || f.business_name?.toLowerCase().includes(q) || f.city?.toLowerCase().includes(q) || f.state?.toLowerCase().includes(q) || f.country?.toLowerCase().includes(q)
+    return !q || f.business_name?.toLowerCase().includes(q) || f.owner_name?.toLowerCase().includes(q) || f.city?.toLowerCase().includes(q) || f.state?.toLowerCase().includes(q) || f.country?.toLowerCase().includes(q)
   })
 
   function handleSaved(updated) {

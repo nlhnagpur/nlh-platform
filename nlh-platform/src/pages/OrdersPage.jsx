@@ -120,7 +120,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
   const [saving, setSaving]         = useState(false)
 
   const amt    = parseInt(amountPaid, 10) || 0
-  const isFull = amt >= total && total > 0
+  const isFull = (order.amount_paid || 0) + amt >= total && total > 0
   const isPart = amt > 0 && !isFull
 
   // Close a zero-value order directly (free / gifted / already noted)
@@ -137,7 +137,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
     setSaving(true)
     const newStatus = isFull ? 'closed' : 'part_paid'
     const { error } = await sb.from('orders').update({
-      amount_paid:         amt,
+      amount_paid:         (order.amount_paid || 0) + amt,
       payment_mode:        mode,
       payment_ref:         ref.trim() || null,
       payment_verified_at: isFull ? new Date().toISOString() : null,
@@ -732,12 +732,15 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     const orderRef = refData || ('ORD-' + Date.now())
     const total = calcTotal()
 
+    // Derive tier from loaded franchisees if not already set (e.g. admin didn't change selection)
+    const resolvedTier = placerTier || (franchisees.find(function (f) { return f.id === fid })?.tier) || 'UF'
+
     const { data: orderData, error: orderErr } = await sb
       .from('orders')
       .insert({
         order_ref: orderRef,
         placer_id: fid,
-        placer_tier: placerTier || 'UF',
+        placer_tier: resolvedTier,
         deliver_to: deliverTo.trim(),
         grand_total: total,
         status: 'pending',
@@ -839,7 +842,6 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                         value={line.sku_id}
                         onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }}
                       >
-                        <option value="">-- Select SKU --</option>
                         <option value="">-- Select SKU --</option>
                         {Object.entries(
                           visibleSkus.reduce(function (acc, s) {
@@ -1380,7 +1382,7 @@ export default function OrdersPage() {
     setActionLoading(order.id + '_verify')
     const { error } = await sb
       .from('orders')
-      .update({ status: 'closed' })
+      .update({ status: 'closed', payment_verified_at: new Date().toISOString() })
       .eq('id', order.id)
     if (error) {
       showToast('Failed to verify payment: ' + error.message)

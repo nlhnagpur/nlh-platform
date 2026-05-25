@@ -477,7 +477,7 @@ export default function DashboardPage({ onNavigate }) {
 
     const allOrders = orAll.data || []
     const totalOutstanding = allOrders
-      .filter(function(o) { return o.status === 'invoiced' || o.status === 'payment_submitted' })
+      .filter(function(o) { return o.status === 'invoiced' || o.status === 'payment_submitted' || o.status === 'part_paid' })
       .reduce(function(sum, o) { return sum + Math.max(0, (o.grand_total || 0) - (o.amount_paid || 0)) }, 0)
     setOutstanding(totalOutstanding)
 
@@ -513,7 +513,7 @@ export default function DashboardPage({ onNavigate }) {
     setOwnOrders([...orders].sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at) }).slice(0, 8))
     setOwnPending(orders.filter(function(o) { return o.status === 'pending' }).length)
     const outs = orders
-      .filter(function(o) { return o.status === 'invoiced' || o.status === 'payment_submitted' })
+      .filter(function(o) { return o.status === 'invoiced' || o.status === 'payment_submitted' || o.status === 'part_paid' })
       .reduce(function(sum, o) { return sum + Math.max(0, (o.grand_total || 0) - (o.amount_paid || 0)) }, 0)
     setOwnOutstanding(outs)
     const { count: sc } = await sb.from('students')
@@ -595,7 +595,7 @@ export default function DashboardPage({ onNavigate }) {
           .order('tier').order('city').order('business_name')
         headers  = ['Business Name','Owner Name','Tier','Email','Phone','Area','City','State','Country','PIN Code','Status','Enrollment Fee','Fee Paid']
         rows     = (data || []).map(function(r) {
-          return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pincode, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
+          return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pin_code, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
         })
         filename = 'nlh-franchisees-' + date + '.csv'
 

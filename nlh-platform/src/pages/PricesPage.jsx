@@ -108,15 +108,16 @@ export default function PricesPage() {
         new_cf_rate: ch.cf_rate,
         old_smf_rate: ch.old_smf_rate,
         new_smf_rate: ch.smf_rate,
-        changed_by: currentUser.email,
+        changed_by: currentUser?.email || 'unknown',
         changed_at: new Date().toISOString(),
       })
     }
     if (!errorOccurred) {
       showToast('Prices saved successfully.')
-      setPriceChanges({})
-      await loadSkus()
     }
+    // Always clear and reload so UI reflects actual DB state (avoids stale old_* values on retry)
+    setPriceChanges({})
+    await loadSkus()
     setSaving(false)
   }
 

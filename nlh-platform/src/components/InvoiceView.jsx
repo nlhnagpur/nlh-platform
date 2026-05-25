@@ -621,10 +621,10 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 <div style={{ font:'500 9px "DM Mono",monospace', color:'#5C5A54', marginBottom:8, letterSpacing:'.02em' }}>NEFT / IMPS / UPI accepted</div>
                 <div style={{ background:'#fff', borderRadius:8, padding:'8px 10px', display:'grid', gridTemplateColumns:'1fr 90px', gap:10, boxShadow:'0 1px 3px rgba(0,0,0,.06)', alignItems:'center' }}>
                   <div>
-                    <div style={{ font:'700 10px "DM Sans",sans-serif', color:'#1E40AF' }}>🏦 IDFC First Bank · Dharampeth</div>
+                    <div style={{ font:'700 10px "DM Sans",sans-serif', color:'#1E40AF' }}>🏦 IDFC First Bank · Byramji Town</div>
                     <div style={{ display:'grid', gridTemplateColumns:'34px 1fr', gap:'3px 6px', font:'500 9.5px "DM Mono",monospace', marginTop:5, alignItems:'center' }}>
-                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600 }}>A/C</span><span style={{ color:'#1A1916', fontWeight:700 }}>10049219082</span>
-                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600 }}>IFSC</span><span style={{ color:'#1A1916', fontWeight:700 }}>IDFB0022022</span>
+                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600 }}>A/C</span><span style={{ color:'#1A1916', fontWeight:700 }}>10278096847</span>
+                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600 }}>IFSC</span><span style={{ color:'#1A1916', fontWeight:700 }}>IDFB0042504</span>
                     </div>
                     <div style={{ marginTop:6, background:'#EEEDFE', borderRadius:6, padding:'4px 8px', font:'700 8.5px "DM Mono",monospace', color:'#534AB7' }}>📱 UPI: newlearninghorizons@idfcbank</div>
                   </div>
@@ -651,7 +651,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                     </div>
                   )
                 })}
-                {balance < liveGrandTotal && (
+                {balance > 0 && (
                   <div style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px dashed rgba(83,74,183,.2)' }}>
                     <span style={{ font:'500 10px "DM Sans",sans-serif', color:'#5C5A54' }}>Balance due</span>
                     <span style={{ font:'600 10px "DM Mono",monospace', color:balance>0?'#A32D2D':'#1D7A4F' }}>₹{fmtAmt(balance)}</span>
