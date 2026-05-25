@@ -44,6 +44,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     address: student.address || '',
     channel: student.channel || 'franchise',
     payment_status: student.payment_status || '',
+    payment_mode: student.payment_mode || '',
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
   })
@@ -62,15 +63,32 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const [newBatchForm,    setNewBatchForm]    = useState({ name: '', days: [], time: '', is_individual: false })
   const [panelSaving,     setPanelSaving]     = useState(false)
 
-  function field(k) {
-    return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
-  }
-
   const balance     = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
   const enrollments = student.enrollments || []
 
+  // Auto-derive payment_status from amounts when fee fields change
+  function field(k) {
+    return function (e) {
+      setForm(function (f) {
+        const next = { ...f, [k]: e.target.value }
+        // Auto-update payment_status when fee amounts change
+        if (k === 'fee_paid' || k === 'fee_total') {
+          const total = Number(k === 'fee_total' ? e.target.value : f.fee_total) || 0
+          const paid  = Number(k === 'fee_paid'  ? e.target.value : f.fee_paid)  || 0
+          if (total === 0) next.payment_status = 'none'
+          else if (paid <= 0) next.payment_status = 'pending'
+          else if (paid >= total) next.payment_status = 'paid'
+          else next.payment_status = 'partial'
+        }
+        return next
+      })
+    }
+  }
+
   async function save() {
     setSaving(true)
+    const feeTotal = form.fee_total === '' ? null : Number(form.fee_total)
+    const feePaid  = form.fee_paid  === '' ? null : Number(form.fee_paid)
     const payload = {
       full_name:      form.full_name.trim(),
       parent_name:    form.parent_name.trim(),
@@ -84,8 +102,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       area:           form.area.trim(),
       address:        form.address.trim(),
       channel:        form.channel || 'walk-in',
-      fee_total:      form.fee_total === '' ? null : Number(form.fee_total),
-      fee_paid:       form.fee_paid  === '' ? null : Number(form.fee_paid),
+      fee_total:      feeTotal,
+      fee_paid:       feePaid,
+      payment_mode:   form.payment_mode || null,
+      payment_status: form.payment_status || null,
     }
     const { error } = await sb.from('students').update(payload).eq('id', student.id)
     setSaving(false)
@@ -321,6 +341,17 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                     disabled
                     style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
                   />
+                </label>
+                <label>Payment Mode
+                  <select value={form.payment_mode} onChange={field('payment_mode')} disabled={!admin}>
+                    <option value="">—</option>
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="bank_transfer">Bank Transfer / NEFT</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="card">Card</option>
+                    <option value="online">Online Payment</option>
+                  </select>
                 </label>
               </div>
             </div>
