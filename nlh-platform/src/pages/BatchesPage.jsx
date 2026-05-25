@@ -777,6 +777,14 @@ export default function BatchesPage() {
     return true
   })
 
+  const sorted = [...filtered].sort(function (a, b) {
+    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+    const ta = a.schedule_time || 'ZZ'
+    const tb = b.schedule_time || 'ZZ'
+    if (ta !== tb) return ta < tb ? -1 : 1
+    return (a.name || '').localeCompare(b.name || '')
+  })
+
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
@@ -836,7 +844,7 @@ export default function BatchesPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {filtered.map(function (batch) {
+          {sorted.map(function (batch) {
             const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
             const sessLabel      = String(batch.sessions_done || 0)
             const courses        = batchCourses(batch)

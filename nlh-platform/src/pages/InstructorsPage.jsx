@@ -871,7 +871,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             )}
 
             {/* ── Batch cards (flat list) ── */}
-            {batchList.map(function (batch) {
+            {[...batchList].sort(function (a, b) {
+              if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+              const ta = a.schedule_time || 'ZZ'
+              const tb = b.schedule_time || 'ZZ'
+              if (ta !== tb) return ta < tb ? -1 : 1
+              return (a.name || '').localeCompare(b.name || '')
+            }).map(function (batch) {
               const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
               const rosterOpen     = !!openRoster[batch.id]
               const sessLabel      = (batch.sessions_done || 0) + ' sessions'
