@@ -8,6 +8,13 @@ import { fmtDate, showToast } from '../utils'
 const DAYS       = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
 
+function timeRange(t) {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  const end = ((h + 1) % 24).toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0')
+  return t.slice(0, 5) + ' – ' + end
+}
+
 // ── AttendanceModal ───────────────────────────────────────────────────────────
 
 function AttendanceModal({ batch, onClose, onSaved }) {
@@ -335,6 +342,102 @@ function avatar(name) {
   return (name || '?').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
 }
 
+// ── EditBatchModal ────────────────────────────────────────────────────────────
+
+function EditBatchModal({ batch, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name:          batch.name || '',
+    days:          batch.schedule_days ? batch.schedule_days.split(', ').filter(Boolean) : [],
+    time:          batch.schedule_time ? batch.schedule_time.slice(0, 5) : '',
+    start_date:    batch.start_date || '',
+    notes:         batch.notes || '',
+    is_individual: batch.is_individual || false,
+  })
+  const [saving, setSaving] = useState(false)
+
+  function toggleDay(day) {
+    setForm(function (f) {
+      const days = f.days.includes(day) ? f.days.filter(function (d) { return d !== day }) : [...f.days, day]
+      return { ...f, days }
+    })
+  }
+
+  async function save() {
+    if (!form.name.trim()) { showToast('Batch name required', 'err'); return }
+    setSaving(true)
+    const { error } = await sb.from('batches').update({
+      name:          form.name.trim(),
+      is_individual: form.is_individual,
+      schedule_days: form.days.join(', '),
+      schedule_time: form.time || null,
+      start_date:    form.start_date || null,
+      notes:         form.notes.trim() || null,
+    }).eq('id', batch.id)
+    setSaving(false)
+    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
+    showToast('Batch updated ✓')
+    onSaved()
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <div className="ch">
+          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.skus?.courses?.group_name} {batch.skus?.level_name}</span>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px 20px 20px' }}>
+          <div className="form-grid">
+            <label className="col-span-2">Batch Name *
+              <input value={form.name} onChange={function (e) { setForm(function (f) { return { ...f, name: e.target.value } }) }} />
+            </label>
+            <label className="col-span-2">Schedule Days
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                {DAYS.map(function (d) {
+                  const on = form.days.includes(d)
+                  return (
+                    <button key={d} type="button" onClick={function () { toggleDay(d) }}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        border: on ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                        background: on ? 'var(--purple-bg)' : 'var(--bg2)',
+                        color: on ? 'var(--purple)' : 'var(--text2)',
+                        fontWeight: on ? 700 : 400,
+                      }}>{d}</button>
+                  )
+                })}
+              </div>
+            </label>
+            <label>Start Time
+              <input type="time" value={form.time}
+                onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
+              {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
+            </label>
+            <label>Start Date
+              <input type="date" value={form.start_date}
+                onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
+            </label>
+            <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={form.is_individual}
+                onChange={function (e) { setForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
+              Individual (1-on-1) session
+            </label>
+            <label className="col-span-2">Notes
+              <input value={form.notes}
+                onChange={function (e) { setForm(function (f) { return { ...f, notes: e.target.value } }) }}
+                placeholder="Optional remarks…" />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── AddBatchModal ─────────────────────────────────────────────────────────────
 
 function AddBatchModal({ instructorId, skuId, skuLabel, onClose, onSaved }) {
@@ -575,6 +678,7 @@ export default function BatchesPage() {
   const [rosterModal,        setRosterModal]        = useState(null) // batch object
   const [attendanceModal,    setAttendanceModal]    = useState(null) // batch object
   const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
+  const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
 
   // ── load ──────────────────────────────────────────────────────────────────
 
@@ -762,7 +866,7 @@ export default function BatchesPage() {
                       {/* Schedule */}
                       <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                         {batch.schedule_days || ''}
-                        {batch.schedule_time ? ' · ' + batch.schedule_time.slice(0, 5) : ''}
+                        {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
                         {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
                         {batch.notes         ? ' · ' + batch.notes : ''}
                       </div>
@@ -819,6 +923,13 @@ export default function BatchesPage() {
                           👤 CI
                         </button>
                       )}
+
+                      {/* Edit batch */}
+                      <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
+                        title="Edit batch schedule"
+                        onClick={function () { setEditBatchModal(batch) }}>
+                        ✏ Edit
+                      </button>
 
                       {/* Toggle active */}
                       <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
@@ -881,6 +992,15 @@ export default function BatchesPage() {
           batch={changeInstrModal}
           onClose={function () { setChangeInstrModal(null) }}
           onSaved={function () { setChangeInstrModal(null); load() }}
+        />
+      )}
+
+      {/* ── Edit batch modal ── */}
+      {editBatchModal && (
+        <EditBatchModal
+          batch={editBatchModal}
+          onClose={function () { setEditBatchModal(null) }}
+          onSaved={function () { setEditBatchModal(null); load() }}
         />
       )}
     </div>

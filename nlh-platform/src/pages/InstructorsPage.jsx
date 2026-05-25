@@ -6,6 +6,15 @@ import { isAdminRole } from '../constants/roles'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function timeRange(t) {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  const end = ((h + 1) % 24).toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0')
+  return t.slice(0, 5) + ' – ' + end
+}
+
 function StatusBadge({ status }) {
   const map = { active: 'ba', inactive: 'bd', resigned: 'bd', terminated: 'br' }
   return <span className={`badge ${map[status] || 'br'}`}>{status || '—'}</span>
@@ -46,7 +55,6 @@ function groupSkus(allSkus) {
 }
 
 const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
-const DAYS        = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSaved }) {
   const [tab, setTab]           = useState('profile')
@@ -99,7 +107,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [batchForm,     setBatchForm]     = useState({ ...BLANK_BATCH })
   const [addStudentFor, setAddStudentFor] = useState(null) // batch_id | null
   const [eligibleEnr,   setEligibleEnr]   = useState([])
-  const [batchSaving,   setBatchSaving]   = useState(false)
+  const [batchSaving,     setBatchSaving]     = useState(false)
+  const [editBatchModal,  setEditBatchModal]  = useState(null) // batch object
+  const [attendanceBatch, setAttendanceBatch] = useState(null) // batch object
 
   function fld(k)  { return function (e) { setForm(f    => ({ ...f, [k]: e.target.value })) } }
   function cfd(k)  { return function (e) { setCaution(c => ({ ...c, [k]: e.target.value })) } }
@@ -124,8 +134,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           .eq('status', 'active')
           .order('appointed_at'),
         sb.from('batches')
-          .select(`id, sku_id, name, is_individual, schedule_days, schedule_time,
+          .select(`id, sku_id, instructor_id, name, is_individual, schedule_days, schedule_time,
                    is_active, start_date, sessions_done, notes, created_at,
+                   skus(id, level_name, total_sessions, courses(group_name)),
                    batch_students(id, enrollment_id, assigned_at, removed_at,
                      enrollments(id, student_id, students(id, full_name)))`)
           .eq('instructor_id', instructor.id)
@@ -283,8 +294,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       start_date:     batchForm.start_date || null,
       is_active:      true,
       notes:          batchForm.notes.trim() || null,
-    }).select(`id, sku_id, name, is_individual, schedule_days, schedule_time,
+    }).select(`id, sku_id, instructor_id, name, is_individual, schedule_days, schedule_time,
                is_active, start_date, sessions_done, notes, created_at,
+               skus(id, level_name, total_sessions, courses(group_name)),
                batch_students(id, enrollment_id, assigned_at, removed_at,
                  enrollments(id, student_id, students(id, full_name)))`).single()
     setBatchSaving(false)
@@ -937,7 +949,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
                                 {batch.schedule_days || ''}
-                                {batch.schedule_time ? ' · ' + batch.schedule_time.slice(0, 5) : ''}
+                                {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
                                 {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
                               </div>
                             </div>
@@ -958,14 +970,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                 <span style={{ font: '600 11px var(--mono)', minWidth: 70, textAlign: 'center', color: 'var(--purple)' }}>
                                   {sessLabel}
                                 </span>
-                                <button
-                                  onClick={function () { adjustSessions(batch, 1) }}
-                                  style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border)',
-                                    background: 'var(--bg2)', cursor: 'pointer',
-                                    fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  +
-                                </button>
                               </div>
+                              {/* Attendance */}
+                              {batch.is_active && (
+                                <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }}
+                                  onClick={function () { setAttendanceBatch({ ...batch, instructors: { full_name: instructor.full_name } }) }}>
+                                  📋 Attendance
+                                </button>
+                              )}
+                              {/* Edit batch */}
+                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                                onClick={function () { setEditBatchModal(batch) }}>
+                                ✏ Edit
+                              </button>
                               <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
                                 onClick={function () { toggleBatchActive(batch) }}>
                                 {batch.is_active ? 'Deactivate' : 'Reactivate'}
@@ -1111,6 +1128,261 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           </div>
         )}
 
+      {/* ── Edit Batch Modal ── */}
+      {editBatchModal && (
+        <EditBatchModal
+          batch={editBatchModal}
+          onClose={function () { setEditBatchModal(null) }}
+          onSaved={function () { setEditBatchModal(null); loadBatches(instructor) }}
+        />
+      )}
+
+      {/* ── Attendance Modal ── */}
+      {attendanceBatch && (
+        <AttendanceModal
+          batch={attendanceBatch}
+          onClose={function () { setAttendanceBatch(null) }}
+          onSaved={function () { setAttendanceBatch(null); loadBatches(instructor) }}
+        />
+      )}
+
+      </div>
+    </div>
+  )
+}
+
+// ── EditBatchModal ─────────────────────────────────────────────────────────────
+
+function EditBatchModal({ batch, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name:          batch.name || '',
+    days:          batch.schedule_days ? batch.schedule_days.split(', ').filter(Boolean) : [],
+    time:          batch.schedule_time ? batch.schedule_time.slice(0, 5) : '',
+    start_date:    batch.start_date || '',
+    notes:         batch.notes || '',
+    is_individual: batch.is_individual || false,
+  })
+  const [saving, setSaving] = useState(false)
+
+  function toggleDay(day) {
+    setForm(function (f) {
+      const days = f.days.includes(day) ? f.days.filter(function (d) { return d !== day }) : [...f.days, day]
+      return { ...f, days }
+    })
+  }
+
+  async function save() {
+    if (!form.name.trim()) { showToast('Batch name required', 'err'); return }
+    setSaving(true)
+    const { error } = await sb.from('batches').update({
+      name:          form.name.trim(),
+      is_individual: form.is_individual,
+      schedule_days: form.days.join(', '),
+      schedule_time: form.time || null,
+      start_date:    form.start_date || null,
+      notes:         form.notes.trim() || null,
+    }).eq('id', batch.id)
+    setSaving(false)
+    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
+    showToast('Batch updated ✓')
+    onSaved()
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <div className="ch">
+          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.name}</span>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px 20px 20px' }}>
+          <div className="form-grid">
+            <label className="col-span-2">Batch Name *
+              <input value={form.name} onChange={function (e) { setForm(function (f) { return { ...f, name: e.target.value } }) }} />
+            </label>
+            <label className="col-span-2">Schedule Days
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                {DAYS.map(function (d) {
+                  const on = form.days.includes(d)
+                  return (
+                    <button key={d} type="button" onClick={function () { toggleDay(d) }}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        border: on ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                        background: on ? 'var(--purple-bg)' : 'var(--bg2)',
+                        color: on ? 'var(--purple)' : 'var(--text2)',
+                        fontWeight: on ? 700 : 400,
+                      }}>{d}</button>
+                  )
+                })}
+              </div>
+            </label>
+            <label>Start Time
+              <input type="time" value={form.time}
+                onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
+              {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
+            </label>
+            <label>Start Date
+              <input type="date" value={form.start_date}
+                onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
+            </label>
+            <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={form.is_individual}
+                onChange={function (e) { setForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
+              Individual (1-on-1) session
+            </label>
+            <label className="col-span-2">Notes
+              <input value={form.notes}
+                onChange={function (e) { setForm(function (f) { return { ...f, notes: e.target.value } }) }}
+                placeholder="Optional remarks…" />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AttendanceModal (Instructors context) ──────────────────────────────────────
+
+function AttendanceModal({ batch, onClose, onSaved }) {
+  const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+  const [sessionDate, setSessionDate] = useState(new Date().toISOString().split('T')[0])
+  const [attendance,  setAttendance]  = useState(function () {
+    var map = {}
+    activeStudents.forEach(function (bs) { map[bs.enrollment_id] = true })
+    return map
+  })
+  const [saving,     setSaving]     = useState(false)
+  const [sessionNum, setSessionNum] = useState(null)
+
+  useEffect(function () {
+    sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
+      .then(function (res) { setSessionNum((res.count || 0) + 1) })
+  }, [])
+
+  function toggle(enrollmentId) {
+    setAttendance(function (prev) {
+      var next = Object.assign({}, prev)
+      next[enrollmentId] = !prev[enrollmentId]
+      return next
+    })
+  }
+
+  function toggleAll(present) {
+    var map = {}
+    activeStudents.forEach(function (bs) { map[bs.enrollment_id] = present })
+    setAttendance(map)
+  }
+
+  async function save() {
+    if (!sessionDate) { showToast('Select a date', 'warn'); return }
+    setSaving(true)
+    var countRes = await sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
+    var sNum = (countRes.count || 0) + 1
+    var sessRes = await sb.from('batch_sessions').insert({
+      batch_id:       batch.id,
+      session_date:   sessionDate,
+      session_number: sNum,
+      instructor_id:  batch.instructor_id,
+      is_substitute:  false,
+    }).select('id').single()
+    if (sessRes.error) { showToast('Failed: ' + sessRes.error.message, 'err'); setSaving(false); return }
+    var attRows = activeStudents.map(function (bs) {
+      return {
+        session_id:    sessRes.data.id,
+        enrollment_id: bs.enrollment_id,
+        student_id:    bs.enrollments?.student_id || null,
+        attended:      attendance[bs.enrollment_id] !== false,
+      }
+    })
+    if (attRows.length > 0) await sb.from('session_attendance').insert(attRows)
+    await sb.from('batches').update({ sessions_done: (batch.sessions_done || 0) + 1 }).eq('id', batch.id)
+    setSaving(false)
+    var presentCount = activeStudents.filter(function (bs) { return attendance[bs.enrollment_id] !== false }).length
+    showToast('Session #' + sNum + ' marked — ' + presentCount + '/' + activeStudents.length + ' present ✓')
+    onSaved()
+  }
+
+  var presentCount = activeStudents.filter(function (bs) { return attendance[bs.enrollment_id] !== false }).length
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 460 }}>
+        <div className="ch">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Attendance</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+              Session #{sessionNum || '…'} · {batch.instructors?.full_name}
+            </div>
+          </div>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
+            Session Date *
+            <input type="date" value={sessionDate}
+              onChange={function (e) { setSessionDate(e.target.value) }}
+              style={{ marginTop: 4 }} />
+          </label>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                Students &nbsp;
+                <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{presentCount}</span>
+                <span style={{ color: 'var(--text3)' }}>/{activeStudents.length} present</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn-s" style={{ fontSize: 11, padding: '2px 10px' }}
+                  onClick={function () { toggleAll(true) }}>All Present</button>
+                <button className="btn-s" style={{ fontSize: 11, padding: '2px 10px' }}
+                  onClick={function () { toggleAll(false) }}>All Absent</button>
+              </div>
+            </div>
+            {activeStudents.length === 0 ? (
+              <p className="hint">No students assigned to this batch yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {activeStudents.map(function (bs) {
+                  var present = attendance[bs.enrollment_id] !== false
+                  var name = bs.enrollments?.students?.full_name || '—'
+                  return (
+                    <div key={bs.id} onClick={function () { toggle(bs.enrollment_id) }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                        border: present ? '1.5px solid var(--green)' : '1.5px solid var(--border)',
+                        background: present ? 'var(--green-bg)' : 'var(--bg2)',
+                        transition: 'all 0.12s',
+                      }}>
+                      <div style={{
+                        width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                        background: present ? 'var(--green)' : 'var(--bg4)',
+                        color: present ? '#fff' : 'var(--text3)',
+                        fontWeight: 700, fontSize: 13,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>{present ? '✓' : '✗'}</div>
+                      <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>{name}</div>
+                      <div style={{ font: '600 11px var(--mono)', color: present ? 'var(--green)' : 'var(--text3)' }}>
+                        {present ? 'Present' : 'Absent'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Mark Attendance'}
+          </button>
+        </div>
       </div>
     </div>
   )
