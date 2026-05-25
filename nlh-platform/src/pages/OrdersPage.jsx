@@ -245,24 +245,46 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 // DispatchModal — mark dispatched with AWB
 // ---------------------------------------------------------------------------
+// ── saved courier vendors (localStorage) ──────────────────────────────────────
+const COURIER_STORAGE_KEY = 'nlh_courier_vendors'
+function getSavedCouriers() {
+  try { return JSON.parse(localStorage.getItem(COURIER_STORAGE_KEY) || '[]') } catch { return [] }
+}
+function saveCourier(name) {
+  if (!name) return
+  const list = getSavedCouriers()
+  const updated = [name, ...list.filter(function (c) { return c.toLowerCase() !== name.toLowerCase() })].slice(0, 10)
+  try { localStorage.setItem(COURIER_STORAGE_KEY, JSON.stringify(updated)) } catch {}
+}
+
 function DispatchModal({ order, onClose, onSaved }) {
-  const [awb, setAwb] = useState(order.awb_number || '')
-  const [courier, setCourier] = useState(order.courier_partner || '')
-  const [saving, setSaving] = useState(false)
+  const today = new Date().toISOString().slice(0, 10)
+  const [courier,  setCourier]  = useState(order.courier_partner  || '')
+  const [awb,      setAwb]      = useState(order.awb_number       || '')
+  const [date,     setDate]     = useState(order.dispatch_date    || today)
+  const [weight,   setWeight]   = useState(order.dispatch_weight  != null ? String(order.dispatch_weight) : '')
+  const [freight,  setFreight]  = useState(order.dispatch_freight != null ? String(order.dispatch_freight) : '')
+  const [saved,    setSaved]    = useState(getSavedCouriers)
+  const [saving,   setSaving]   = useState(false)
 
   async function handleSave() {
+    if (!awb.trim()) { showToast('Enter AWB / tracking number.', 'warn'); return }
     setSaving(true)
     const { error } = await sb
       .from('orders')
       .update({
-        awb_number: awb.trim(),
-        courier_partner: courier.trim(),
-        dispatched_at: new Date().toISOString(),
+        courier_partner:  courier.trim(),
+        awb_number:       awb.trim(),
+        dispatch_date:    date || today,
+        dispatch_weight:  weight !== '' ? parseFloat(weight) || null : null,
+        dispatch_freight: freight !== '' ? parseInt(freight, 10) || 0 : 0,
+        dispatched_at:    new Date().toISOString(),
       })
       .eq('id', order.id)
     if (error) {
       showToast('Failed to update dispatch: ' + error.message)
     } else {
+      if (courier.trim()) { saveCourier(courier.trim()); setSaved(getSavedCouriers()) }
       showToast('Dispatched!')
       try {
         const phone = order.placer?.phone || ''
@@ -287,27 +309,77 @@ function DispatchModal({ order, onClose, onSaved }) {
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Mark Dispatched</h3>
-          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
+          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>×</button>
         </div>
-        <div >
-          <div className="fr">
-            <label>Courier Name</label>
+        <div className="form-grid">
+          {/* Courier — with saved-vendor datalist */}
+          <label className="col-span-2">Courier / Vendor
             <input
-              type="text"
-              placeholder="e.g. DTDC, BlueDart"
+              list="courier-list"
+              placeholder="e.g. DTDC, BlueDart, Delhivery"
               value={courier}
               onChange={function (e) { setCourier(e.target.value) }}
+              autoFocus
             />
-          </div>
-          <div className="fr">
-            <label>AWB / Tracking Number</label>
+            <datalist id="courier-list">
+              {['DTDC', 'BlueDart', 'Delhivery', 'Ekart', 'Xpressbees', 'Shree Maruti Courier', 'Professional Courier', 'India Post',
+                ...saved.filter(function (c) { return !['DTDC','BlueDart','Delhivery','Ekart','Xpressbees','Shree Maruti Courier','Professional Courier','India Post'].includes(c) })
+              ].map(function (c) { return <option key={c} value={c} /> })}
+            </datalist>
+            {saved.length > 0 && (
+              <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginTop:5 }}>
+                {saved.map(function (c) {
+                  return (
+                    <button key={c} type="button"
+                      onClick={function () { setCourier(c) }}
+                      style={{ fontSize:10, padding:'2px 8px', borderRadius:20, border:'1px solid var(--border)',
+                        background: courier === c ? 'var(--purple)' : 'var(--bg2)',
+                        color: courier === c ? '#fff' : 'var(--text2)', cursor:'pointer' }}
+                    >{c}</button>
+                  )
+                })}
+              </div>
+            )}
+          </label>
+
+          <label>AWB / Tracking Number
             <input
               type="text"
-              placeholder="Enter AWB number"
+              placeholder="Enter AWB or tracking no."
               value={awb}
               onChange={function (e) { setAwb(e.target.value) }}
             />
-          </div>
+          </label>
+
+          <label>Dispatch Date
+            <input
+              type="date"
+              value={date}
+              onChange={function (e) { setDate(e.target.value) }}
+            />
+          </label>
+
+          <label>Weight (kg)
+            <input
+              type="number"
+              min="0"
+              step="0.001"
+              placeholder="e.g. 2.5"
+              value={weight}
+              onChange={function (e) { setWeight(e.target.value) }}
+            />
+          </label>
+
+          <label>Freight Charges (₹)
+            <input
+              type="number"
+              min="0"
+              step="1"
+              placeholder="e.g. 150"
+              value={freight}
+              onChange={function (e) { setFreight(e.target.value) }}
+            />
+          </label>
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
@@ -1215,12 +1287,15 @@ async function generateInvoicePDF(order, items) {
     )
     y += 5
   }
-  if (order.awb_number) {
+  if (order.awb_number || order.dispatched_at) {
+    const dispParts = []
+    if (order.courier_partner) dispParts.push(order.courier_partner)
+    if (order.awb_number)      dispParts.push('AWB: ' + order.awb_number)
+    if (order.dispatch_date)   dispParts.push(order.dispatch_date)
+    if (order.dispatch_weight != null) dispParts.push(order.dispatch_weight + ' kg')
+    if (order.dispatch_freight > 0)    dispParts.push('Freight: Rs ' + fmtAmt(order.dispatch_freight))
     doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); tc(...TLT)
-    doc.text(
-      'Dispatched via: ' + (order.courier_partner || '') + '  |  AWB: ' + order.awb_number,
-      L, y
-    )
+    doc.text('Dispatch: ' + dispParts.join('  |  '), L, y)
     y += 5
   }
 
@@ -1486,9 +1561,21 @@ export default function OrdersPage() {
           <button className="row-action" onClick={function () { setDispatchOrder(order) }}>Dispatch</button>
         )}
         {order.dispatched_at && (
-          <span style={{ color: 'var(--text3)', fontSize: 11, fontFamily: 'var(--mono)' }}>
-            {order.awb_number || 'Dispatched'}
-          </span>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:1 }}>
+            <span style={{ color:'var(--text3)', fontSize:11, fontFamily:'var(--mono)' }}>
+              {order.awb_number || 'Dispatched'}
+            </span>
+            <span style={{ fontSize:10, color:'var(--text3)' }}>
+              {[
+                order.courier_partner,
+                order.dispatch_date,
+                order.dispatch_weight != null ? order.dispatch_weight + ' kg' : null,
+                order.dispatch_freight > 0 ? '₹' + fmtAmt(order.dispatch_freight) : null,
+              ].filter(Boolean).join(' · ')}
+            </span>
+            <button className="row-action" style={{ fontSize:10, padding:'2px 8px' }}
+              onClick={function () { setDispatchOrder(order) }}>Edit</button>
+          </div>
         )}
       </div>
     )

@@ -669,6 +669,31 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               </div>
             </div>
 
+            {/* dispatch details */}
+            {(order.awb_number || order.dispatched_at) && (
+              <div style={{ border:'1.5px solid #D1FAE5', borderRadius:9, padding:'9px 12px', background:'#F0FDF4', position:'relative', overflow:'hidden' }}>
+                <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#16A34A' }} />
+                <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#16A34A', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:5 }}>📦 Dispatch Info</div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px 20px', font:'500 9.5px "DM Mono",monospace', color:'#1A1916' }}>
+                  {order.courier_partner && (
+                    <span><span style={{ color:'#9C9A92', marginRight:4 }}>Courier</span>{order.courier_partner}</span>
+                  )}
+                  {order.awb_number && (
+                    <span><span style={{ color:'#9C9A92', marginRight:4 }}>AWB</span><b>{order.awb_number}</b></span>
+                  )}
+                  {order.dispatch_date && (
+                    <span><span style={{ color:'#9C9A92', marginRight:4 }}>Date</span>{order.dispatch_date}</span>
+                  )}
+                  {order.dispatch_weight != null && (
+                    <span><span style={{ color:'#9C9A92', marginRight:4 }}>Weight</span>{order.dispatch_weight} kg</span>
+                  )}
+                  {order.dispatch_freight > 0 && (
+                    <span><span style={{ color:'#9C9A92', marginRight:4 }}>Freight</span>₹{fmtAmt(order.dispatch_freight)}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* notes */}
             {liveNotes && (
               <div style={{ border:'1.5px solid #E2E0D8', borderRadius:9, padding:'9px 12px', background:'#FAFAF8', position:'relative', overflow:'hidden' }}>
