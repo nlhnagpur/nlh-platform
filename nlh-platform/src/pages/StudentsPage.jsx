@@ -127,7 +127,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     const enrIds = enrollments.map(function (e) { return e.id })
     if (!enrIds.length) return
     const { data: bsRows } = await sb.from('batch_students')
-      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, sku_id, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
       .in('enrollment_id', enrIds)
       .is('removed_at', null)
     const map = {}
@@ -144,23 +144,27 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setNewBatchForm({ name: '', days: [], time: '', is_individual: false })
     setPanelData({ batches: [], eligibleCIs: [], loading: true })
 
-    const [{ data: batches }, { data: ciRows }] = await Promise.all([
-      sb.from('batches')
-        .select('id, name, schedule_days, schedule_time, is_individual, sessions_done, instructor_id, instructors(id, full_name)')
-        .eq('sku_id', enrollment.sku_id)
-        .eq('is_active', true)
-        .order('created_at'),
-      sb.from('instructor_courses')
-        .select('instructor_id, instructors(id, full_name, status)')
-        .eq('sku_id', enrollment.sku_id)
-        .eq('status', 'active'),
-    ])
+    // Get CIs certified for this student's course level
+    const { data: ciRows } = await sb.from('instructor_courses')
+      .select('instructor_id, instructors(id, full_name, status)')
+      .eq('sku_id', enrollment.sku_id)
+      .eq('status', 'active')
 
     const eligibleCIs = (ciRows || [])
       .map(function (r) { return r.instructors })
       .filter(function (i) { return i && i.status === 'active' })
-      // deduplicate by id
       .filter(function (i, idx, arr) { return arr.findIndex(function (x) { return x.id === i.id }) === idx })
+
+    const eligibleCIIds = eligibleCIs.map(function (ci) { return ci.id })
+
+    // Batches taught by an instructor certified for this student's course
+    const { data: batches } = eligibleCIIds.length
+      ? await sb.from('batches')
+          .select('id, name, schedule_days, schedule_time, is_individual, sessions_done, instructor_id, instructors(id, full_name)')
+          .in('instructor_id', eligibleCIIds)
+          .eq('is_active', true)
+          .order('created_at')
+      : { data: [] }
 
     setPanelData({ batches: batches || [], eligibleCIs, loading: false })
   }
@@ -175,7 +179,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     }
     const { data, error } = await sb.from('batch_students')
       .insert({ batch_id: batchId, enrollment_id: enrollmentId })
-      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, sku_id, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
       .single()
     setPanelSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
@@ -202,7 +206,6 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setPanelSaving(true)
     const { data: batch, error } = await sb.from('batches').insert({
       instructor_id:  newBatchCI,
-      sku_id:         enrollment.sku_id,
       franchisee_id:  nlhCentreId,
       name:           newBatchForm.name.trim(),
       is_individual:  newBatchForm.is_individual,
@@ -219,7 +222,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     }
     const { data: bs, error: bsErr } = await sb.from('batch_students')
       .insert({ batch_id: batch.id, enrollment_id: enrollment.id })
-      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, sku_id, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
       .single()
     setPanelSaving(false)
     if (bsErr) { showToast('Batch created but assign failed: ' + bsErr.message, 'err'); return }
@@ -767,18 +770,21 @@ function AddStudentModal({ onClose, onSaved }) {
   async function loadBatchData(skuId) {
     if (batchData[skuId]) return   // already loaded or loading
     setBatchData(function (prev) { return { ...prev, [skuId]: { batches: [], eligibleCIs: [], loading: true } } })
-    const [{ data: batches }, { data: ciRows }] = await Promise.all([
-      sb.from('batches')
-        .select('id, name, schedule_days, schedule_time, is_individual, instructor_id, instructors(id, full_name)')
-        .eq('sku_id', skuId).eq('is_active', true).order('created_at'),
-      sb.from('instructor_courses')
-        .select('instructor_id, instructors(id, full_name, status)')
-        .eq('sku_id', skuId).eq('status', 'active'),
-    ])
+    // Get CIs certified for this SKU
+    const { data: ciRows } = await sb.from('instructor_courses')
+      .select('instructor_id, instructors(id, full_name, status)')
+      .eq('sku_id', skuId).eq('status', 'active')
     const eligibleCIs = (ciRows || [])
       .map(function (r) { return r.instructors })
       .filter(function (i) { return i && i.status === 'active' })
       .filter(function (i, idx, arr) { return arr.findIndex(function (x) { return x.id === i.id }) === idx })
+    const eligibleCIIds = eligibleCIs.map(function (ci) { return ci.id })
+    // Batches whose instructor is certified for this SKU
+    const { data: batches } = eligibleCIIds.length
+      ? await sb.from('batches')
+          .select('id, name, schedule_days, schedule_time, is_individual, instructor_id, instructors(id, full_name)')
+          .in('instructor_id', eligibleCIIds).eq('is_active', true).order('created_at')
+      : { data: [] }
     setBatchData(function (prev) { return { ...prev, [skuId]: { batches: batches || [], eligibleCIs, loading: false } } })
   }
 
@@ -858,7 +864,6 @@ function AddStudentModal({ onClose, onSaved }) {
           if (!nbf.ci || !nbf.name || !nbf.name.trim()) continue
           const { data: newBatch, error: bErr } = await sb.from('batches').insert({
             instructor_id:  nbf.ci,
-            sku_id:         sku.id,
             franchisee_id:  form.franchisee_id,
             name:           nbf.name.trim(),
             is_individual:  nbf.is_individual || false,

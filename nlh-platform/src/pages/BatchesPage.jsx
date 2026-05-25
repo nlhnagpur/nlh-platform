@@ -38,10 +38,15 @@ function AttendanceModal({ batch, onClose, onSaved }) {
     sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
       .then(function (res) { setSessionNum((res.count || 0) + 1) })
 
-    // Load eligible CIs for this sku (for substitute picker)
+    // Load eligible CIs for substitute picker — based on SKUs students are enrolled in
+    const skuIds = [...new Set(
+      (batch.batch_students || [])
+        .filter(function (bs) { return !bs.removed_at && bs.enrollments?.sku_id })
+        .map(function (bs) { return bs.enrollments.sku_id })
+    )]
     sb.from('instructor_courses')
       .select('instructor_id, instructors(id, full_name, status)')
-      .eq('sku_id', batch.sku_id)
+      .in('sku_id', skuIds.length ? skuIds : ['00000000-0000-0000-0000-000000000000'])
       .eq('status', 'active')
       .then(function (res) {
         var seen = {}
@@ -134,7 +139,7 @@ function AttendanceModal({ batch, onClose, onSaved }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Attendance</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              Session #{sessionNum || '…'} &nbsp;·&nbsp; {batch.skus?.courses?.group_name} — {batch.skus?.level_name}
+              Session #{sessionNum || '…'} &nbsp;·&nbsp; {batch.instructors?.full_name || '—'}
             </div>
           </div>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -266,19 +271,20 @@ function ChangeInstructorModal({ batch, onClose, onSaved }) {
   const [saving,       setSaving]       = useState(false)
 
   useEffect(function () {
-    sb.from('instructor_courses')
-      .select('instructor_id, instructors(id, full_name, status)')
-      .eq('sku_id', batch.sku_id)
-      .eq('status', 'active')
-      .then(function (res) {
-        var seen = {}
-        var cis = (res.data || [])
-          .map(function (r) { return r.instructors })
-          .filter(function (i) { return i && i.status === 'active' })
-          .filter(function (i) { if (seen[i.id]) return false; seen[i.id] = true; return true })
-        setEligibleCIs(cis)
-        setLoading(false)
-      })
+    // Load all active instructors at NLH centre (batch no longer tied to one SKU)
+    sb.from('franchisees').select('id').eq('tier', 'NLH').single().then(function (nlhRes) {
+      var nlhId = nlhRes.data?.id
+      if (!nlhId) { setLoading(false); return }
+      sb.from('instructors')
+        .select('id, full_name, status')
+        .eq('franchisee_id', nlhId)
+        .eq('status', 'active')
+        .order('full_name')
+        .then(function (res) {
+          setEligibleCIs(res.data || [])
+          setLoading(false)
+        })
+    })
   }, [])
 
   async function save() {
@@ -383,7 +389,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 480 }}>
         <div className="ch">
-          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.skus?.courses?.group_name} {batch.skus?.level_name}</span>
+          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.name}</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px 20px 20px' }}>
@@ -440,7 +446,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
 
 // ── AddBatchModal ─────────────────────────────────────────────────────────────
 
-function AddBatchModal({ instructorId, skuId, skuLabel, onClose, onSaved }) {
+function AddBatchModal({ instructorId, onClose, onSaved }) {
   const [form, setForm] = useState({ ...BLANK_BATCH })
   const [saving, setSaving] = useState(false)
 
@@ -462,7 +468,6 @@ function AddBatchModal({ instructorId, skuId, skuLabel, onClose, onSaved }) {
     setSaving(true)
     const payload = {
       instructor_id:  instructorId,
-      sku_id:         skuId,
       name:           form.name.trim(),
       is_individual:  form.is_individual,
       schedule_days:  form.days.join(', '),
@@ -483,7 +488,7 @@ function AddBatchModal({ instructorId, skuId, skuLabel, onClose, onSaved }) {
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 480 }}>
         <div className="ch">
-          <span style={{ fontWeight: 700 }}>New Batch — {skuLabel}</span>
+          <span style={{ fontWeight: 700 }}>New Batch</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px 20px 20px' }}>
@@ -557,11 +562,12 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   useEffect(function () {
     async function loadEligible() {
       const alreadyIn = students.map(function (bs) { return bs.enrollment_id })
+      // Any active enrollment at this centre can join — batch is multi-course
       const { data } = await sb.from('enrollments')
-        .select('id, student_id, students(id, full_name)')
-        .eq('sku_id', batch.sku_id)
+        .select('id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name))')
         .eq('franchisee_id', nlhCentreId)
         .eq('status', 'active')
+        .order('student_id')
       setEligible((data || []).filter(function (e) { return !alreadyIn.includes(e.id) }))
     }
     if (showAdd) loadEligible()
@@ -572,7 +578,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
     setSaving(true)
     const { data, error } = await sb.from('batch_students')
       .insert({ batch_id: batch.id, enrollment_id: selectedEnr })
-      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, students(id, full_name))')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))')
       .single()
     setSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
@@ -598,7 +604,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name}</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {batch.instructor_name} · {batch.level_name}
+              {batch.instructor_name} · {students.length} student{students.length !== 1 ? 's' : ''}
             </div>
           </div>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -615,7 +621,11 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
               }}>
                 <div>
                   <div style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || '—'}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>Since {fmtDate(bs.assigned_at)}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>
+                    {bs.enrollments?.skus?.courses?.group_name
+                      ? bs.enrollments.skus.courses.group_name + ' · ' + (bs.enrollments.skus.level_name || '')
+                      : 'Since ' + fmtDate(bs.assigned_at)}
+                  </div>
                 </div>
                 <button className="btn" style={{ fontSize: 11, padding: '2px 8px' }}
                   onClick={function () { remove(bs.id) }}>
@@ -635,7 +645,14 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
                       onChange={function (e) { setSelectedEnr(e.target.value) }}>
                       <option value="">— Select student —</option>
                       {eligible.map(function (e) {
-                        return <option key={e.id} value={e.id}>{e.students?.full_name || e.id}</option>
+                        const course = e.skus?.courses?.group_name || ''
+                        const level  = e.skus?.level_name || ''
+                        const label  = e.students?.full_name || e.id
+                        return (
+                          <option key={e.id} value={e.id}>
+                            {label}{course ? ' — ' + course + (level ? ' ' + level : '') : ''}
+                          </option>
+                        )
                       })}
                     </select>
                     <button className="btn-p" style={{ fontSize: 12 }}
@@ -693,10 +710,10 @@ export default function BatchesPage() {
         .select(`
           id, sku_id, instructor_id, name, is_individual, schedule_days, schedule_time,
           is_active, start_date, sessions_done, notes, created_at,
-          skus(id, level_name, total_sessions, courses(group_name)),
           instructors(id, full_name),
           batch_students(id, enrollment_id, assigned_at, removed_at,
-            enrollments(id, student_id, students(id, full_name)))
+            enrollments(id, student_id, sku_id, students(id, full_name),
+              skus(level_name, courses(group_name))))
         `)
         .eq('instructors.franchisee_id', nlh.id)
         .order('created_at', { ascending: false }),
@@ -741,15 +758,22 @@ export default function BatchesPage() {
 
   // ── filter ────────────────────────────────────────────────────────────────
 
+  // Derive course names per batch from enrolled students' SKUs
+  function batchCourses(batch) {
+    const active = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+    const names  = active.map(function (bs) { return bs.enrollments?.skus?.courses?.group_name }).filter(Boolean)
+    return [...new Set(names)]
+  }
+
   const courseNames = Array.from(new Set(
-    batches.map(function (b) { return b.skus?.courses?.group_name }).filter(Boolean)
+    batches.flatMap(function (b) { return batchCourses(b) })
   )).sort()
 
   const filtered = batches.filter(function (b) {
     if (filterStatus === 'active'   && !b.is_active) return false
     if (filterStatus === 'inactive' && b.is_active)  return false
     if (filterCI && b.instructor_id !== filterCI)    return false
-    if (filterCourse && b.skus?.courses?.group_name !== filterCourse) return false
+    if (filterCourse && !batchCourses(b).includes(filterCourse)) return false
     return true
   })
 
@@ -814,12 +838,9 @@ export default function BatchesPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {filtered.map(function (batch) {
             const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
-            const totalSessions  = batch.skus?.total_sessions
-            const sessLabel      = totalSessions
-              ? (batch.sessions_done || 0) + ' / ' + totalSessions
-              : String(batch.sessions_done || 0)
-            const courseName     = batch.skus?.courses?.group_name || '—'
-            const levelName      = batch.skus?.level_name || '—'
+            const sessLabel      = String(batch.sessions_done || 0)
+            const courses        = batchCourses(batch)
+            const coursesLabel   = courses.length > 0 ? courses.join(', ') : '—'
             const ciName         = batch.instructors?.full_name || '—'
 
             return (
@@ -854,13 +875,15 @@ export default function BatchesPage() {
                         </span>
                       </div>
 
-                      {/* CI · Course · Level */}
+                      {/* CI · Courses */}
                       <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>
                         <span style={{ fontWeight: 600 }}>{ciName}</span>
-                        <span style={{ color: 'var(--text3)', margin: '0 4px' }}>·</span>
-                        <span>{courseName}</span>
-                        <span style={{ color: 'var(--text3)', margin: '0 4px' }}>—</span>
-                        <span style={{ color: 'var(--text3)' }}>{levelName}</span>
+                        {courses.length > 0 && (
+                          <>
+                            <span style={{ color: 'var(--text3)', margin: '0 4px' }}>·</span>
+                            <span>{coursesLabel}</span>
+                          </>
+                        )}
                       </div>
 
                       {/* Schedule */}
@@ -909,7 +932,6 @@ export default function BatchesPage() {
                           setRosterModal({
                             ...batch,
                             instructor_name: ciName,
-                            level_name:      levelName,
                           })
                         }}>
                         👥 {activeStudents.length}
@@ -949,9 +971,8 @@ export default function BatchesPage() {
       {showAddBatch && showAddBatch.mode === 'pick' && (
         <NewBatchPicker
           instructors={instructors}
-          allSkus={allSkus}
-          onPicked={function (instructorId, skuId, skuLabel) {
-            setShowAddBatch({ mode: 'form', instructorId, skuId, skuLabel })
+          onPicked={function (instructorId) {
+            setShowAddBatch({ mode: 'form', instructorId })
           }}
           onClose={function () { setShowAddBatch(null) }}
         />
@@ -960,8 +981,6 @@ export default function BatchesPage() {
       {showAddBatch && showAddBatch.mode === 'form' && (
         <AddBatchModal
           instructorId={showAddBatch.instructorId}
-          skuId={showAddBatch.skuId}
-          skuLabel={showAddBatch.skuLabel}
           onClose={function () { setShowAddBatch(null) }}
           onSaved={function () { setShowAddBatch(null); load() }}
         />
@@ -1010,37 +1029,19 @@ export default function BatchesPage() {
 // ── NewBatchPicker ─────────────────────────────────────────────────────────────
 // Step-1 modal: pick instructor + level before opening the batch form
 
-function NewBatchPicker({ instructors, allSkus, onPicked, onClose }) {
-  const [ciId,    setCiId]    = useState('')
-  const [skuId,   setSkuId]   = useState('')
-
-  // Group SKUs by course for optgroup display
-  const skuGroups = (function () {
-    const map = {}
-    allSkus.forEach(function (s) {
-      const g = s.courses?.group_name || 'Other'
-      if (!map[g]) map[g] = []
-      map[g].push(s)
-    })
-    return Object.entries(map).map(function ([name, skus]) { return { name, skus } })
-  })()
-
-  const selectedSku = allSkus.find(function (s) { return s.id === skuId })
-  const skuLabel    = selectedSku
-    ? (selectedSku.courses?.group_name || '') + ' — ' + selectedSku.level_name
-    : ''
+function NewBatchPicker({ instructors, onPicked, onClose }) {
+  const [ciId, setCiId] = useState('')
 
   function proceed() {
-    if (!ciId)  { showToast('Select a Course Instructor', 'err'); return }
-    if (!skuId) { showToast('Select a course level', 'err'); return }
-    onPicked(ciId, skuId, skuLabel)
+    if (!ciId) { showToast('Select a Course Instructor', 'err'); return }
+    onPicked(ciId)
   }
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 420 }}>
+      <div className="modal" style={{ maxWidth: 380 }}>
         <div className="ch">
-          <span style={{ fontWeight: 700 }}>New Batch — Select CI &amp; Level</span>
+          <span style={{ fontWeight: 700 }}>New Batch — Select Instructor</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px 20px 20px' }}>
@@ -1053,28 +1054,13 @@ function NewBatchPicker({ instructors, allSkus, onPicked, onClose }) {
                 })}
               </select>
             </label>
-            <label className="col-span-2">Course &amp; Level *
-              <select value={skuId} onChange={function (e) { setSkuId(e.target.value) }}>
-                <option value="">— Select level —</option>
-                {skuGroups.map(function (g) {
-                  return (
-                    <optgroup key={g.name} label={g.name}>
-                      {g.skus.map(function (s) {
-                        return (
-                          <option key={s.id} value={s.id}>
-                            {s.level_name}{s.total_sessions ? ` (${s.total_sessions} sessions)` : ''}
-                          </option>
-                        )
-                      })}
-                    </optgroup>
-                  )
-                })}
-              </select>
-            </label>
           </div>
+          <p className="hint" style={{ marginTop: 10 }}>
+            Students from any course can be added to the batch — one CI can teach different courses to different students in the same time slot.
+          </p>
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn-p" onClick={proceed} disabled={!ciId || !skuId}>
+            <button className="btn-p" onClick={proceed} disabled={!ciId}>
               Next →
             </button>
           </div>
