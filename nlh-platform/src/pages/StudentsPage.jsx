@@ -66,24 +66,20 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const balance     = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
   const enrollments = student.enrollments || []
 
-  // Auto-derive payment_status from amounts when fee fields change
   function field(k) {
-    return function (e) {
-      setForm(function (f) {
-        const next = { ...f, [k]: e.target.value }
-        // Auto-update payment_status when fee amounts change
-        if (k === 'fee_paid' || k === 'fee_total') {
-          const total = Number(k === 'fee_total' ? e.target.value : f.fee_total) || 0
-          const paid  = Number(k === 'fee_paid'  ? e.target.value : f.fee_paid)  || 0
-          if (total === 0) next.payment_status = 'none'
-          else if (paid <= 0) next.payment_status = 'pending'
-          else if (paid >= total) next.payment_status = 'paid'
-          else next.payment_status = 'partial'
-        }
-        return next
-      })
-    }
+    return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
   }
+
+  // Compute payment status purely from the numbers — never set manually
+  function deriveStatus(total, paid) {
+    const t = Number(total) || 0
+    const p = Number(paid)  || 0
+    if (t === 0)   return 'none'
+    if (p <= 0)    return 'pending'
+    if (p >= t)    return 'paid'
+    return 'partial'
+  }
+  const derivedStatus = deriveStatus(form.fee_total, form.fee_paid)
 
   async function save() {
     setSaving(true)
@@ -105,7 +101,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       fee_total:      feeTotal,
       fee_paid:       feePaid,
       payment_mode:   form.payment_mode || null,
-      payment_status: form.payment_status || null,
+      payment_status: derivedStatus,
     }
     const { error } = await sb.from('students').update(payload).eq('id', student.id)
     setSaving(false)
@@ -316,13 +312,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                 </select>
               </label>
               <label>Payment Status
-                <select value={form.payment_status} onChange={field('payment_status')} disabled={!admin}>
-                  <option value="">—</option>
-                  <option value="pending">Pending</option>
-                  <option value="partial">Partial</option>
-                  <option value="paid">Paid</option>
-                  <option value="none">None</option>
-                </select>
+                <div style={{ paddingTop: 6 }}>
+                  <StatusBadge status={derivedStatus} />
+                  <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>auto-calculated</span>
+                </div>
               </label>
             </div>
 
