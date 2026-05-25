@@ -562,11 +562,21 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   useEffect(function () {
     async function loadEligible() {
       const alreadyIn = students.map(function (bs) { return bs.enrollment_id })
-      // Any active enrollment at this centre can join — batch is multi-course
+
+      // Only show students enrolled in SKUs this CI is actively appointed to teach
+      const { data: appts } = await sb.from('instructor_courses')
+        .select('sku_id')
+        .eq('instructor_id', batch.instructor_id)
+        .eq('status', 'active')
+      const ciSkuIds = (appts || []).map(function (a) { return a.sku_id })
+
+      if (ciSkuIds.length === 0) { setEligible([]); return }
+
       const { data } = await sb.from('enrollments')
         .select('id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name))')
         .eq('franchisee_id', nlhCentreId)
         .eq('status', 'active')
+        .in('sku_id', ciSkuIds)
         .order('student_id')
       setEligible((data || []).filter(function (e) { return !alreadyIn.includes(e.id) }))
     }

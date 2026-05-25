@@ -317,11 +317,21 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     const alreadyIn = (batch.batch_students || [])
       .filter(function (bs) { return !bs.removed_at })
       .map(function (bs) { return bs.enrollment_id })
-    // Any active enrollment at this centre — multi-course batches welcome all
+
+    // Only show students enrolled in SKUs this CI is actively appointed to teach
+    const { data: appts } = await sb.from('instructor_courses')
+      .select('sku_id')
+      .eq('instructor_id', instructor.id)
+      .eq('status', 'active')
+    const ciSkuIds = (appts || []).map(function (a) { return a.sku_id })
+
+    if (ciSkuIds.length === 0) { setEligibleEnr([]); return }
+
     const { data } = await sb.from('enrollments')
       .select('id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name))')
       .eq('franchisee_id', nlhCentreId)
       .eq('status', 'active')
+      .in('sku_id', ciSkuIds)
     setEligibleEnr((data || []).filter(function (e) { return !alreadyIn.includes(e.id) }))
   }
 
