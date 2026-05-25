@@ -839,16 +839,18 @@ function SplitsTab() {
 
   const totalOwed = filtered.reduce(function(s, r) { return s + (r.amount_owed - r.amount_paid) }, 0)
 
-  async function markPaid(split, ref) {
+  async function markPaid(split, ref, mode) {
     const { error } = await sb.from('revenue_splits').update({
-      amount_paid: split.amount_owed,
-      status: 'paid',
-      paid_at: new Date().toISOString(),
-      payment_ref: ref || null,
+      amount_paid:  split.amount_owed,
+      status:       'paid',
+      paid_at:      new Date().toISOString(),
+      payment_ref:  ref  || null,
+      payment_mode: mode || null,
     }).eq('id', split.id)
     if (error) { showToast('Error: ' + error.message, 'err'); return }
     showToast('Marked as paid.')
     setPaying(null)
+    setFilterStatus('paid')
     load()
   }
 
@@ -891,7 +893,7 @@ function SplitsTab() {
         <div className="tbl-scroll">
           <table className="big-tbl" style={{ minWidth:720 }}>
             <thead>
-              <tr><th>Period</th><th>Franchisee</th><th>Tier</th><th>Total Fee</th><th>Split %</th><th>Owed</th><th>Paid</th><th>Status</th><th></th></tr>
+              <tr><th>Period</th><th>Franchisee</th><th>Tier</th><th>Total Fee</th><th>Split %</th><th>Owed</th><th>Paid</th><th>Mode</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
               {filtered.map(function(s) {
@@ -909,6 +911,10 @@ function SplitsTab() {
                     <td style={{ fontFamily:'var(--mono)', textAlign:'right', fontWeight:600 }}>₹{fmtAmt(s.amount_owed)}</td>
                     <td style={{ fontFamily:'var(--mono)', textAlign:'right', color:'var(--green)' }}>
                       {s.amount_paid ? '₹' + fmtAmt(s.amount_paid) : '—'}
+                    </td>
+                    <td style={{ color:'var(--text3)', fontSize:12 }}>
+                      {s.payment_mode ? s.payment_mode.replace('_',' ') : '—'}
+                      {s.payment_ref && <div style={{ fontSize:10, color:'var(--text3)', fontFamily:'var(--mono)' }}>{s.payment_ref}</div>}
                     </td>
                     <td><SplitStatusChip status={s.status} /></td>
                     <td>
@@ -1037,23 +1043,43 @@ function AddSplitModal({ onClose, onSaved }) {
 }
 
 function MarkPaidModal({ split, onClose, onPaid }) {
-  const [ref, setRef] = useState('')
+  const [ref,  setRef]  = useState('')
+  const [mode, setMode] = useState('bank_transfer')
+  const outstanding = split.amount_owed - split.amount_paid
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" style={{ maxWidth:380 }} onClick={function(e) { e.stopPropagation() }}>
+      <div className="modal" style={{ maxWidth:400 }} onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Mark as Paid</h3>
           <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
         </div>
         <p style={{ fontSize:14, color:'var(--text2)', margin:'8px 0 16px' }}>
-          Marking <strong>₹{fmtAmt(split.amount_owed - split.amount_paid)}</strong> as received
-          from <strong>{split.franchisees?.business_name}</strong>.
+          Recording <strong style={{ fontFamily:'var(--mono)' }}>₹{fmtAmt(outstanding)}</strong> received
+          from <strong>{split.franchisees?.business_name}</strong>
+          <span style={{ color:'var(--text3)', fontSize:12 }}> ({split.franchisee_tier})</span>.
         </p>
-        <label className="lbl">Payment Reference (UTR/Cheque)</label>
-        <input className="inp" placeholder="Optional" value={ref} onChange={function(e) { setRef(e.target.value) }} />
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div>
+            <label className="lbl">Mode of Payment *</label>
+            <select className="inp" value={mode} onChange={function(e) { setMode(e.target.value) }}>
+              <option value="bank_transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
+              <option value="upi">UPI</option>
+              <option value="cheque">Cheque</option>
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+            </select>
+          </div>
+          <div>
+            <label className="lbl">UTR / Cheque No. / Reference</label>
+            <input className="inp" placeholder="Optional but recommended" value={ref}
+              onChange={function(e) { setRef(e.target.value) }} />
+          </div>
+        </div>
         <div className="ch" style={{ marginTop:16, justifyContent:'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={function() { onPaid(split, ref) }}>Confirm Paid</button>
+          <button className="btn btn-primary" onClick={function() { onPaid(split, ref, mode) }}>
+            ✓ Confirm Payment
+          </button>
         </div>
       </div>
     </div>
