@@ -101,9 +101,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [editApptForm, setEditApptForm] = useState({})
 
   // ── Batches state ──
-  const [batchesData,   setBatchesData]   = useState([])   // [{appt, batches:[]}]
+  const [batchList,     setBatchList]     = useState([])   // flat list of batches
   const [openRoster,    setOpenRoster]    = useState({})   // { batch_id: bool }
-  const [addBatchFor,   setAddBatchFor]   = useState(null) // sku_id | null
+  const [showAddBatch,  setShowAddBatch]  = useState(false)
   const [batchForm,     setBatchForm]     = useState({ ...BLANK_BATCH })
   const [addStudentFor, setAddStudentFor] = useState(null) // batch_id | null
   const [eligibleEnr,   setEligibleEnr]   = useState([])
@@ -127,29 +127,16 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       setAppointments(data || [])
     }
     if (t === 'batches') {
-      const [{ data: appts }, { data: batchRows }] = await Promise.all([
-        sb.from('instructor_courses')
-          .select('id, sku_id, skus(id,level_name,total_sessions,courses(group_name))')
-          .eq('instructor_id', instructor.id)
-          .eq('status', 'active')
-          .order('appointed_at'),
-        sb.from('batches')
-          .select(`id, sku_id, instructor_id, name, is_individual, schedule_days, schedule_time,
-                   is_active, start_date, sessions_done, notes, created_at,
-                   skus(id, level_name, total_sessions, courses(group_name)),
-                   batch_students(id, enrollment_id, assigned_at, removed_at,
-                     enrollments(id, student_id, students(id, full_name)))`)
-          .eq('instructor_id', instructor.id)
-          .order('created_at'),
-      ])
-      const batchMap = {}
-      ;(batchRows || []).forEach(function (b) {
-        if (!batchMap[b.sku_id]) batchMap[b.sku_id] = []
-        batchMap[b.sku_id].push(b)
-      })
-      setBatchesData((appts || []).map(function (a) {
-        return { appt: a, batches: batchMap[a.sku_id] || [] }
-      }))
+      const { data: batchRows } = await sb.from('batches')
+        .select(`id, instructor_id, name, is_individual, schedule_days, schedule_time,
+                 is_active, start_date, sessions_done, notes, created_at,
+                 batch_students(id, enrollment_id, assigned_at, removed_at,
+                   enrollments(id, student_id, sku_id, students(id, full_name),
+                     skus(level_name, courses(group_name))))`)
+        .eq('instructor_id', instructor.id)
+        .order('is_active', { ascending: false })
+        .order('created_at')
+      setBatchList(batchRows || [])
     }
   }
 
@@ -280,34 +267,33 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
   // ── Batch functions ──────────────────────────────────────────────────────────
 
-  async function saveBatch(sku_id) {
+  function updateBatch(id, patch) {
+    setBatchList(function (prev) { return prev.map(function (b) { return b.id === id ? { ...b, ...patch } : b }) })
+  }
+
+  async function saveBatch() {
     if (!batchForm.name.trim()) { showToast('Batch name is required', 'warn'); return }
     setBatchSaving(true)
     const { data, error } = await sb.from('batches').insert({
       instructor_id:  instructor.id,
       franchisee_id:  nlhCentreId || null,
-      sku_id,
       name:           batchForm.name.trim(),
       is_individual:  batchForm.is_individual,
       schedule_days:  batchForm.days.length ? batchForm.days.join(', ') : null,
       schedule_time:  batchForm.time || null,
       start_date:     batchForm.start_date || null,
       is_active:      true,
+      sessions_done:  0,
       notes:          batchForm.notes.trim() || null,
-    }).select(`id, sku_id, instructor_id, name, is_individual, schedule_days, schedule_time,
+    }).select(`id, instructor_id, name, is_individual, schedule_days, schedule_time,
                is_active, start_date, sessions_done, notes, created_at,
-               skus(id, level_name, total_sessions, courses(group_name)),
                batch_students(id, enrollment_id, assigned_at, removed_at,
-                 enrollments(id, student_id, students(id, full_name)))`).single()
+                 enrollments(id, student_id, sku_id, students(id, full_name),
+                   skus(level_name, courses(group_name))))`).single()
     setBatchSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    setBatchesData(function (prev) {
-      return prev.map(function (item) {
-        if (item.appt.sku_id !== sku_id) return item
-        return { ...item, batches: [...item.batches, data] }
-      })
-    })
-    setAddBatchFor(null)
+    setBatchList(function (prev) { return [data, ...prev] })
+    setShowAddBatch(false)
     setBatchForm({ ...BLANK_BATCH })
     showToast('Batch created')
   }
@@ -316,26 +302,14 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     const is_active = !batch.is_active
     const { error } = await sb.from('batches').update({ is_active }).eq('id', batch.id)
     if (error) { showToast('Update failed', 'err'); return }
-    setBatchesData(function (prev) {
-      return prev.map(function (item) {
-        return { ...item, batches: item.batches.map(function (b) {
-          return b.id === batch.id ? { ...b, is_active } : b
-        })}
-      })
-    })
+    updateBatch(batch.id, { is_active })
   }
 
   async function adjustSessions(batch, delta) {
     const sessions_done = Math.max(0, (batch.sessions_done || 0) + delta)
     const { error } = await sb.from('batches').update({ sessions_done }).eq('id', batch.id)
     if (error) { showToast('Update failed', 'err'); return }
-    setBatchesData(function (prev) {
-      return prev.map(function (item) {
-        return { ...item, batches: item.batches.map(function (b) {
-          return b.id === batch.id ? { ...b, sessions_done } : b
-        })}
-      })
-    })
+    updateBatch(batch.id, { sessions_done })
   }
 
   async function openAddStudentPanel(batch) {
@@ -343,9 +317,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     const alreadyIn = (batch.batch_students || [])
       .filter(function (bs) { return !bs.removed_at })
       .map(function (bs) { return bs.enrollment_id })
+    // Any active enrollment at this centre — multi-course batches welcome all
     const { data } = await sb.from('enrollments')
-      .select('id, student_id, students(id, full_name)')
-      .eq('sku_id', batch.sku_id)
+      .select('id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name))')
       .eq('franchisee_id', nlhCentreId)
       .eq('status', 'active')
     setEligibleEnr((data || []).filter(function (e) { return !alreadyIn.includes(e.id) }))
@@ -354,15 +328,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   async function assignStudent(batch_id, enrollment_id) {
     const { data, error } = await sb.from('batch_students')
       .insert({ batch_id, enrollment_id })
-      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, students(id, full_name))')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))')
       .single()
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    setBatchesData(function (prev) {
-      return prev.map(function (item) {
-        return { ...item, batches: item.batches.map(function (b) {
-          if (b.id !== batch_id) return b
-          return { ...b, batch_students: [...(b.batch_students || []), data] }
-        })}
+    setBatchList(function (prev) {
+      return prev.map(function (b) {
+        if (b.id !== batch_id) return b
+        return { ...b, batch_students: [...(b.batch_students || []), data] }
       })
     })
     setEligibleEnr(function (e) { return e.filter(function (x) { return x.id !== enrollment_id }) })
@@ -374,13 +346,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     const removed_at = new Date().toISOString()
     const { error } = await sb.from('batch_students').update({ removed_at }).eq('id', bs_id)
     if (error) { showToast('Remove failed', 'err'); return }
-    setBatchesData(function (prev) {
-      return prev.map(function (item) {
-        return { ...item, batches: item.batches.map(function (b) {
-          if (b.id !== batch_id) return b
-          return { ...b, batch_students: b.batch_students.map(function (bs) {
-            return bs.id === bs_id ? { ...bs, removed_at } : bs
-          })}
+    setBatchList(function (prev) {
+      return prev.map(function (b) {
+        if (b.id !== batch_id) return b
+        return { ...b, batch_students: b.batch_students.map(function (bs) {
+          return bs.id === bs_id ? { ...bs, removed_at } : bs
         })}
       })
     })
@@ -883,248 +853,221 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         {tab === 'batches' && (
           <div style={{ padding: '0 20px 16px' }}>
 
-            {batchesData.length === 0 && (
-              <p className="hint">No active course appointments — appoint this CI to course levels first.</p>
+            {/* Header row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                {batchList.filter(function (b) { return b.is_active }).length} active batch{batchList.filter(function (b) { return b.is_active }).length !== 1 ? 'es' : ''}
+              </span>
+              {!showAddBatch && (
+                <button className="btn-s" style={{ fontSize: 11 }}
+                  onClick={function () { setShowAddBatch(true); setBatchForm({ ...BLANK_BATCH }) }}>
+                  + New Batch
+                </button>
+              )}
+            </div>
+
+            {batchList.length === 0 && !showAddBatch && (
+              <p className="hint">No batches yet. Students from any of this CI's appointed courses can be added to a batch.</p>
             )}
 
-            {batchesData.map(function ({ appt, batches }) {
-              const totalSessions = appt.skus?.total_sessions
+            {/* ── Batch cards (flat list) ── */}
+            {batchList.map(function (batch) {
+              const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+              const rosterOpen     = !!openRoster[batch.id]
+              const sessLabel      = (batch.sessions_done || 0) + ' sessions'
+              // Derive courses from enrolled students
+              const courseNames = [...new Set(
+                activeStudents.map(function (bs) { return bs.enrollments?.skus?.courses?.group_name }).filter(Boolean)
+              )]
 
               return (
-                <div key={appt.sku_id} style={{ marginBottom: 20 }}>
+                <div key={batch.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
 
-                  {/* ── Level header ── */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>
-                      {appt.skus?.courses?.group_name || '—'}
-                      <span style={{ fontWeight: 400, color: 'var(--text2)', marginLeft: 6 }}>
-                        — {appt.skus?.level_name || '?'}
-                      </span>
-                      {totalSessions && (
-                        <span style={{ font: '400 10px var(--mono)', color: 'var(--text3)', marginLeft: 6 }}>
-                          {totalSessions} sessions
-                        </span>
-                      )}
-                    </div>
-                    {addBatchFor !== appt.sku_id && (
-                      <button className="btn-s" style={{ fontSize: 11 }}
-                        onClick={function () { setAddBatchFor(appt.sku_id); setBatchForm({ ...BLANK_BATCH }) }}>
-                        + New Batch
-                      </button>
-                    )}
-                  </div>
-
-                  {/* ── Batch cards ── */}
-                  {batches.length === 0 && addBatchFor !== appt.sku_id && (
-                    <p className="hint" style={{ marginBottom: 4 }}>No batches yet for this level.</p>
-                  )}
-
-                  {batches.map(function (batch) {
-                    const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
-                    const rosterOpen     = !!openRoster[batch.id]
-                    const sessLabel      = totalSessions
-                      ? (batch.sessions_done || 0) + ' / ' + totalSessions + ' sessions'
-                      : (batch.sessions_done || 0) + ' sessions'
-
-                    return (
-                      <div key={batch.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
-
-                        {/* Batch summary row */}
-                        <div style={{
-                          padding: '10px 14px',
-                          background: batch.is_active ? 'var(--bg)' : 'var(--bg3)',
-                          opacity: batch.is_active ? 1 : 0.75,
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                            {/* Left: name + badges */}
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                <span style={{ fontWeight: 700, fontSize: 13 }}>{batch.name}</span>
-                                {batch.is_individual && (
-                                  <span className="badge bp" style={{ fontSize: 9 }}>1-on-1</span>
-                                )}
-                                <span className={`badge ${batch.is_active ? 'ba' : 'bd'}`} style={{ fontSize: 9 }}>
-                                  {batch.is_active ? 'Active' : 'Inactive'}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
-                                {batch.schedule_days || ''}
-                                {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
-                                {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
-                              </div>
-                            </div>
-
-                            {/* Right: sessions counter + actions */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                              {/* Sessions counter */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <button
-                                  onClick={function () { adjustSessions(batch, -1) }}
-                                  disabled={!batch.sessions_done}
-                                  style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border)',
-                                    background: 'var(--bg2)', cursor: batch.sessions_done ? 'pointer' : 'not-allowed',
-                                    fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    opacity: batch.sessions_done ? 1 : 0.35 }}>
-                                  −
-                                </button>
-                                <span style={{ font: '600 11px var(--mono)', minWidth: 70, textAlign: 'center', color: 'var(--purple)' }}>
-                                  {sessLabel}
-                                </span>
-                              </div>
-                              {/* Attendance */}
-                              {batch.is_active && (
-                                <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }}
-                                  onClick={function () { setAttendanceBatch({ ...batch, instructors: { full_name: instructor.full_name } }) }}>
-                                  📋 Attendance
-                                </button>
-                              )}
-                              {/* Edit batch */}
-                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
-                                onClick={function () { setEditBatchModal(batch) }}>
-                                ✏ Edit
-                              </button>
-                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
-                                onClick={function () { toggleBatchActive(batch) }}>
-                                {batch.is_active ? 'Deactivate' : 'Reactivate'}
-                              </button>
-                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
-                                onClick={function () { setOpenRoster(function (r) { return { ...r, [batch.id]: !r[batch.id] } }) }}>
-                                {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} {rosterOpen ? '▲' : '▼'}
-                              </button>
-                            </div>
-                          </div>
+                  {/* Batch summary row */}
+                  <div style={{
+                    padding: '10px 14px',
+                    background: batch.is_active ? 'var(--bg)' : 'var(--bg3)',
+                    opacity: batch.is_active ? 1 : 0.75,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      {/* Left: name + badges */}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: 13 }}>{batch.name}</span>
+                          {batch.is_individual && (
+                            <span className="badge bp" style={{ fontSize: 9 }}>1-on-1</span>
+                          )}
+                          <span className={`badge ${batch.is_active ? 'ba' : 'bd'}`} style={{ fontSize: 9 }}>
+                            {batch.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                          {courseNames.map(function (cn) {
+                            return <span key={cn} className="badge" style={{ fontSize: 9, background: 'var(--amber-bg)', color: 'var(--amber)' }}>{cn}</span>
+                          })}
                         </div>
+                        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
+                          {batch.schedule_days || ''}
+                          {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
+                          {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
+                        </div>
+                      </div>
 
-                        {/* Roster panel (expandable) */}
-                        {rosterOpen && (
-                          <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px', background: 'var(--bg2)' }}>
-                            {activeStudents.length === 0 && (
-                              <p className="hint" style={{ marginBottom: 8 }}>No students assigned yet.</p>
-                            )}
-                            {activeStudents.map(function (bs) {
-                              return (
-                                <div key={bs.id} style={{
-                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                  padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12,
-                                }}>
-                                  <span style={{ fontWeight: 500 }}>
-                                    {bs.enrollments?.students?.full_name || '—'}
-                                  </span>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-                                      Since {fmtDate(bs.assigned_at)}
-                                    </span>
-                                    <button className="btn" style={{ fontSize: 10, padding: '2px 6px' }}
-                                      onClick={function () { removeStudentFromBatch(batch.id, bs.id) }}>
-                                      Remove
-                                    </button>
-                                  </div>
-                                </div>
-                              )
-                            })}
-
-                            {/* Add student */}
-                            {addStudentFor === batch.id ? (
-                              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                                {eligibleEnr.length === 0
-                                  ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                                      No eligible enrolled students found for this level.
-                                    </span>
-                                  : <select style={{ flex: 1, fontSize: 12 }} defaultValue=""
-                                      onChange={function (e) {
-                                        if (e.target.value) assignStudent(batch.id, e.target.value)
-                                      }}>
-                                      <option value="">— Select student to add —</option>
-                                      {eligibleEnr.map(function (e) {
-                                        return (
-                                          <option key={e.id} value={e.id}>
-                                            {e.students?.full_name || '—'}
-                                          </option>
-                                        )
-                                      })}
-                                    </select>
-                                }
-                                <button className="btn" style={{ fontSize: 11 }}
-                                  onClick={function () { setAddStudentFor(null); setEligibleEnr([]) }}>
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button className="btn-s" style={{ marginTop: 8, fontSize: 11 }}
-                                onClick={function () { openAddStudentPanel(batch) }}>
-                                + Add Student
-                              </button>
-                            )}
-                          </div>
+                      {/* Right: sessions counter + actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <button
+                            onClick={function () { adjustSessions(batch, -1) }}
+                            disabled={!batch.sessions_done}
+                            style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border)',
+                              background: 'var(--bg2)', cursor: batch.sessions_done ? 'pointer' : 'not-allowed',
+                              fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              opacity: batch.sessions_done ? 1 : 0.35 }}>
+                            −
+                          </button>
+                          <span style={{ font: '600 11px var(--mono)', minWidth: 70, textAlign: 'center', color: 'var(--purple)' }}>
+                            {sessLabel}
+                          </span>
+                        </div>
+                        {batch.is_active && (
+                          <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }}
+                            onClick={function () { setAttendanceBatch({ ...batch, instructors: { full_name: instructor.full_name } }) }}>
+                            📋 Attendance
+                          </button>
                         )}
-                      </div>
-                    )
-                  })}
-
-                  {/* ── New batch form ── */}
-                  {addBatchFor === appt.sku_id && (
-                    <div style={{ border: '1.5px dashed var(--purple)', borderRadius: 8, padding: 14, marginBottom: 4 }}>
-                      <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: 12 }}>
-                        New Batch — {appt.skus?.courses?.group_name} {appt.skus?.level_name}
-                      </div>
-                      <div className="form-grid">
-                        <label className="col-span-2">Batch Name *
-                          <input value={batchForm.name} autoFocus
-                            onChange={function (e) { setBatchForm(function (f) { return { ...f, name: e.target.value } }) }}
-                            placeholder="e.g. Morning Batch, Batch A, 1-on-1 Riya" />
-                        </label>
-                        <label>Start Date
-                          <input type="date" value={batchForm.start_date}
-                            onChange={function (e) { setBatchForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
-                        </label>
-                        <label>Time
-                          <input type="time" value={batchForm.time}
-                            onChange={function (e) { setBatchForm(function (f) { return { ...f, time: e.target.value } }) }} />
-                        </label>
-                        <label className="col-span-2">Schedule Days
-                          <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-                            {DAYS.map(function (d) {
-                              const checked = batchForm.days.includes(d)
-                              return (
-                                <label key={d} style={{
-                                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                                  fontSize: 11, cursor: 'pointer', fontWeight: checked ? 700 : 400,
-                                  color: checked ? 'var(--purple)' : 'var(--text2)',
-                                }}>
-                                  <input type="checkbox" checked={checked}
-                                    onChange={function (e) {
-                                      setBatchForm(function (f) {
-                                        return {
-                                          ...f,
-                                          days: e.target.checked
-                                            ? [...f.days, d]
-                                            : f.days.filter(function (x) { return x !== d })
-                                        }
-                                      })
-                                    }} />
-                                  {d}
-                                </label>
-                              )
-                            })}
-                          </div>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
-                          <input type="checkbox" checked={batchForm.is_individual}
-                            onChange={function (e) { setBatchForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
-                          <span style={{ fontSize: 12 }}>Individual (1-on-1) session</span>
-                        </label>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                        <button className="btn" onClick={function () { setAddBatchFor(null) }}>Cancel</button>
-                        <button className="btn-p" onClick={function () { saveBatch(appt.sku_id) }} disabled={batchSaving}>
-                          {batchSaving ? 'Creating…' : 'Create Batch'}
+                        <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                          onClick={function () { setEditBatchModal(batch) }}>
+                          ✏ Edit
+                        </button>
+                        <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                          onClick={function () { toggleBatchActive(batch) }}>
+                          {batch.is_active ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                        <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
+                          onClick={function () { setOpenRoster(function (r) { return { ...r, [batch.id]: !r[batch.id] } }) }}>
+                          {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} {rosterOpen ? '▲' : '▼'}
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Roster panel (expandable) */}
+                  {rosterOpen && (
+                    <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px', background: 'var(--bg2)' }}>
+                      {activeStudents.length === 0 && (
+                        <p className="hint" style={{ marginBottom: 8 }}>No students assigned yet.</p>
+                      )}
+                      {activeStudents.map(function (bs) {
+                        const course = bs.enrollments?.skus?.courses?.group_name
+                        const level  = bs.enrollments?.skus?.level_name
+                        return (
+                          <div key={bs.id} style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12,
+                          }}>
+                            <div>
+                              <span style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || '—'}</span>
+                              {course && <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 6 }}>{course}{level ? ' · ' + level : ''}</span>}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 11, color: 'var(--text3)' }}>Since {fmtDate(bs.assigned_at)}</span>
+                              <button className="btn" style={{ fontSize: 10, padding: '2px 6px' }}
+                                onClick={function () { removeStudentFromBatch(batch.id, bs.id) }}>
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {/* Add student */}
+                      {addStudentFor === batch.id ? (
+                        <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                          {eligibleEnr.length === 0
+                            ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>No eligible enrolled students found.</span>
+                            : <select style={{ flex: 1, fontSize: 12 }} defaultValue=""
+                                onChange={function (e) { if (e.target.value) assignStudent(batch.id, e.target.value) }}>
+                                <option value="">— Select student to add —</option>
+                                {eligibleEnr.map(function (e) {
+                                  const course = e.skus?.courses?.group_name || ''
+                                  const level  = e.skus?.level_name || ''
+                                  return (
+                                    <option key={e.id} value={e.id}>
+                                      {e.students?.full_name || '—'}{course ? ' — ' + course + (level ? ' ' + level : '') : ''}
+                                    </option>
+                                  )
+                                })}
+                              </select>
+                          }
+                          <button className="btn" style={{ fontSize: 11 }}
+                            onClick={function () { setAddStudentFor(null); setEligibleEnr([]) }}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="btn-s" style={{ marginTop: 8, fontSize: 11 }}
+                          onClick={function () { openAddStudentPanel(batch) }}>
+                          + Add Student
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
               )
             })}
+
+            {/* ── New batch form ── */}
+            {showAddBatch && (
+              <div style={{ border: '1.5px dashed var(--purple)', borderRadius: 8, padding: 14, marginTop: 8 }}>
+                <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: 12 }}>New Batch</div>
+                <div className="form-grid">
+                  <label className="col-span-2">Batch Name *
+                    <input value={batchForm.name} autoFocus
+                      onChange={function (e) { setBatchForm(function (f) { return { ...f, name: e.target.value } }) }}
+                      placeholder="e.g. Morning Batch A, 1-on-1 Riya" />
+                  </label>
+                  <label>Start Date
+                    <input type="date" value={batchForm.start_date}
+                      onChange={function (e) { setBatchForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
+                  </label>
+                  <label>Time
+                    <input type="time" value={batchForm.time}
+                      onChange={function (e) { setBatchForm(function (f) { return { ...f, time: e.target.value } }) }} />
+                  </label>
+                  <label className="col-span-2">Schedule Days
+                    <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+                      {DAYS.map(function (d) {
+                        const checked = batchForm.days.includes(d)
+                        return (
+                          <label key={d} style={{
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                            fontSize: 11, cursor: 'pointer', fontWeight: checked ? 700 : 400,
+                            color: checked ? 'var(--purple)' : 'var(--text2)',
+                          }}>
+                            <input type="checkbox" checked={checked}
+                              onChange={function (e) {
+                                setBatchForm(function (f) {
+                                  return { ...f, days: e.target.checked ? [...f.days, d] : f.days.filter(function (x) { return x !== d }) }
+                                })
+                              }} />
+                            {d}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+                    <input type="checkbox" checked={batchForm.is_individual}
+                      onChange={function (e) { setBatchForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
+                    <span style={{ fontSize: 12 }}>Individual (1-on-1) session</span>
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="btn" onClick={function () { setShowAddBatch(false) }}>Cancel</button>
+                  <button className="btn-p" onClick={saveBatch} disabled={batchSaving}>
+                    {batchSaving ? 'Creating…' : 'Create Batch'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1133,7 +1076,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         <EditBatchModal
           batch={editBatchModal}
           onClose={function () { setEditBatchModal(null) }}
-          onSaved={function () { setEditBatchModal(null); loadBatches(instructor) }}
+          onSaved={function () { setEditBatchModal(null); setTabLoaded(function(tl) { return { ...tl, batches: false } }); loadTab('batches') }}
         />
       )}
 
@@ -1142,7 +1085,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         <AttendanceModal
           batch={attendanceBatch}
           onClose={function () { setAttendanceBatch(null) }}
-          onSaved={function () { setAttendanceBatch(null); loadBatches(instructor) }}
+          onSaved={function () { setAttendanceBatch(null); setTabLoaded(function(tl) { return { ...tl, batches: false } }); loadTab('batches') }}
         />
       )}
 
@@ -1545,9 +1488,14 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
       if (apptErr) showToast('CI added but course appointments failed: ' + apptErr.message, 'warn')
     }
 
+    // Re-fetch with full joins so the list shows courses immediately
+    const { data: fullIns } = await sb.from('instructors')
+      .select('*, instructor_courses(id,status,remuneration_mode,remuneration_rate,skus(level_name,courses(group_name)))')
+      .eq('id', ins.id)
+      .single()
     setSaving(false)
     showToast(form.full_name.trim() + ' added as CI')
-    onSaved(ins)
+    onSaved(fullIns || ins)
   }
 
   return (

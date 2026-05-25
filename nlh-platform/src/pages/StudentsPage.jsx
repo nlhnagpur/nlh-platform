@@ -10,6 +10,16 @@ import StudentCertModal from '../components/StudentCertModal'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
+// Shared: derive payment_status from fee amounts — single source of truth
+function deriveStatus(total, paid) {
+  const t = Number(total) || 0
+  const p = Number(paid)  || 0
+  if (t === 0)   return 'none'
+  if (p <= 0)    return 'pending'
+  if (p >= t)    return 'paid'
+  return 'partial'
+}
+
 function StatusBadge({ status }) {
   const s = (status || '').toLowerCase()
   const map = { active: 'ba', inactive: 'bd', pending: 'bp' }
@@ -70,15 +80,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
   }
 
-  // Compute payment status purely from the numbers — never set manually
-  function deriveStatus(total, paid) {
-    const t = Number(total) || 0
-    const p = Number(paid)  || 0
-    if (t === 0)   return 'none'
-    if (p <= 0)    return 'pending'
-    if (p >= t)    return 'paid'
-    return 'partial'
-  }
+  // deriveStatus is defined at module level — shared with AddStudentModal
   const derivedStatus = deriveStatus(form.fee_total, form.fee_paid)
 
   async function save() {
@@ -833,7 +835,7 @@ function AddStudentModal({ onClose, onSaved }) {
         is_active: true,
         fee_total: feeTotal,
         fee_paid: 0,
-        payment_status: feeTotal > 0 ? 'pending' : 'none',
+        payment_status: deriveStatus(feeTotal, 0),
       }).select().single()
 
       if (stErr) { showToast('Failed to create student: ' + stErr.message, 'err'); setSaving(false); return }
@@ -919,7 +921,12 @@ function AddStudentModal({ onClose, onSaved }) {
       } catch (waErr) {
         console.warn('WhatsApp enrollment notification failed:', waErr.message)
       }
-      onSaved(st)
+      // Re-fetch with full joins so the list shows enrollments immediately
+      const { data: fullSt } = await sb.from('students')
+        .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
+        .eq('id', st.id)
+        .single()
+      onSaved(fullSt || st)
     } catch (err) {
       showToast('Unexpected error: ' + err.message, 'err')
     } finally {

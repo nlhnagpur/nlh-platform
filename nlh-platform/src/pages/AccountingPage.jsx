@@ -415,7 +415,7 @@ function ExpensesTab() {
 
   const filtered = expenses.filter(function(e) {
     if (filterCat !== 'all' && e.category !== filterCat) return false
-    if (filterMon && !e.date.startsWith(filterMon)) return false
+    if (filterMon && !(e.date || '').startsWith(filterMon)) return false
     return true
   })
 
@@ -837,7 +837,10 @@ function SplitsTab() {
 
   const filtered = filterStatus === 'all' ? splits : splits.filter(function(s) { return s.status === filterStatus })
 
-  const totalOwed = filtered.reduce(function(s, r) { return s + (r.amount_owed - r.amount_paid) }, 0)
+  // Only sum pending/part_paid rows — exclude paid and waived
+  const totalOwed = filtered
+    .filter(function(r) { return r.status !== 'paid' && r.status !== 'waived' })
+    .reduce(function(s, r) { return s + Math.max(0, (r.amount_owed || 0) - (r.amount_paid || 0)) }, 0)
 
   async function markPaid(split, ref, mode) {
     const { error } = await sb.from('revenue_splits').update({
