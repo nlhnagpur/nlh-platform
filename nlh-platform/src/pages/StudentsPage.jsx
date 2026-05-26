@@ -1571,28 +1571,35 @@ export default function StudentsPage() {
         </div>
 
         {/* Stats */}
-        <div className="mini-stats">
-          <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🎓</div>
-            <div className="mini-num">{students.length}</div>
-            <div className="mini-lbl">Total enrolled</div>
-          </div>
-          <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>📚</div>
-            <div className="mini-num">{courseList.length}</div>
-            <div className="mini-lbl">Programs offered</div>
-          </div>
-          <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
-            <div className="mini-num">{students.filter(s => s.payment_status === 'paid').length}</div>
-            <div className="mini-lbl">Fee paid</div>
-          </div>
-          <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--red-bg)' }}>⏳</div>
-            <div className="mini-num">{students.filter(s => s.payment_status === 'pending').length}</div>
-            <div className="mini-lbl">Fee pending</div>
-          </div>
-        </div>
+        {(function() {
+          const totalCharged  = students.reduce(function(s, r) { return s + (Number(r.fee_total) || 0) }, 0)
+          const totalReceived = students.reduce(function(s, r) { return s + (Number(r.fee_paid)  || 0) }, 0)
+          const totalBalance  = totalCharged - totalReceived
+          return (
+            <div className="mini-stats">
+              <div className="mini">
+                <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🎓</div>
+                <div className="mini-num">{students.length}</div>
+                <div className="mini-lbl">Total enrolled</div>
+              </div>
+              <div className="mini">
+                <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>💰</div>
+                <div className="mini-num" style={{ fontSize: totalCharged >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalCharged)}</div>
+                <div className="mini-lbl">Fees charged</div>
+              </div>
+              <div className="mini">
+                <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
+                <div className="mini-num" style={{ fontSize: totalReceived >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalReceived)}</div>
+                <div className="mini-lbl">Fees received</div>
+              </div>
+              <div className="mini">
+                <div className="mini-ic" style={{ background: totalBalance > 0 ? 'var(--red-bg)' : 'var(--green-bg)' }}>⏳</div>
+                <div className="mini-num" style={{ color: totalBalance > 0 ? 'var(--red, #dc2626)' : undefined, fontSize: totalBalance >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalBalance)}</div>
+                <div className="mini-lbl">Balance due</div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Students table */}
         {loading ? (
