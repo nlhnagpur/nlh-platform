@@ -491,7 +491,7 @@ function SessionHistoryModal({ batch, onClose }) {
     sb.from('batch_sessions')
       .select('id, session_date, session_number, is_substitute, is_holiday, instructor_id, instructors(full_name), session_attendance(id, enrollment_id, attended, students(full_name))')
       .eq('batch_id', batch.id)
-      .order('session_number', { ascending: false })
+      .order('session_date', { ascending: false })
       .then(function (res) { setSessions(res.data || []); setLoading(false) })
   }, [])
 
