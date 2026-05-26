@@ -39,9 +39,7 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
       .then(function (res) {
         var dates = (res.data || []).map(function (r) { return r.session_date })
         setExistingDates(dates)
-        if (dates.includes(today)) {
-          setTodayWarning(true)
-        }
+        if (dates.includes(today)) setTodayWarning(true)
       })
   }, [])
 
@@ -55,7 +53,7 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
     }
     var newIdx = sessions.length
     setSessions(function (prev) {
-      return [...prev, { date: addDateVal, attendance: initAtt() }]
+      return [...prev, { date: addDateVal, attendance: initAtt(), is_holiday: false }]
     })
     setActiveIdx(newIdx)
     setAddDateVal('')
@@ -91,6 +89,15 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
     })
   }
 
+  function toggleHoliday() {
+    setSessions(function (prev) {
+      return prev.map(function (s, i) {
+        if (i !== activeIdx) return s
+        return { ...s, is_holiday: !s.is_holiday }
+      })
+    })
+  }
+
   async function saveAll() {
     if (sessions.length === 0) { showToast('No sessions to save', 'warn'); return }
     setSaving(true)
@@ -100,7 +107,6 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
       .order('session_number', { ascending: false }).limit(1)
     var nextNum = (countRes.data?.[0]?.session_number || 0) + 1
 
-    // Save sessions in chronological order
     var ordered = [...sessions].sort(function (a, b) { return a.date < b.date ? -1 : 1 })
     var saved = 0, skipped = 0
 
@@ -116,31 +122,48 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
         session_number: nextNum,
         instructor_id:  batch.instructor_id,
         is_substitute:  false,
+        is_holiday:     sess.is_holiday || false,
       }).select('id').single()
       if (sessErr) { skipped++; continue }
 
-      var attRows = activeStudents.map(function (bs) {
-        return {
-          session_id:    sessRow.id,
-          enrollment_id: bs.enrollment_id,
-          student_id:    bs.enrollments?.student_id || null,
-          attended:      sess.attendance[bs.enrollment_id] !== false,
-        }
-      })
-      if (attRows.length > 0) await sb.from('session_attendance').insert(attRows)
+      // Only insert attendance rows for non-holiday sessions
+      if (!sess.is_holiday) {
+        var attRows = activeStudents.map(function (bs) {
+          return {
+            session_id:    sessRow.id,
+            enrollment_id: bs.enrollment_id,
+            student_id:    bs.enrollments?.student_id || null,
+            attended:      sess.attendance[bs.enrollment_id] !== false,
+          }
+        })
+        if (attRows.length > 0) await sb.from('session_attendance').insert(attRows)
+      }
       nextNum++
       saved++
     }
 
-    await sb.from('batches').update({ sessions_done: (batch.sessions_done || 0) + saved }).eq('id', batch.id)
+    // ── Sync sessions_done to actual non-holiday count in DB ──────────────────
+    // (avoids stale-prop drift if a previous save wrote rows but failed to
+    //  update sessions_done, which was the root cause of the "0 sessions" bug)
+    var { count: realCount } = await sb.from('batch_sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('batch_id', batch.id)
+      .eq('is_holiday', false)
+    await sb.from('batches').update({ sessions_done: realCount || 0 }).eq('id', batch.id)
+
     setSaving(false)
-    if (skipped > 0) showToast(saved + ' saved, ' + skipped + ' skipped (already recorded)', 'warn')
-    else showToast(saved + ' session' + (saved !== 1 ? 's' : '') + ' saved ✓')
+    var holidayCount = sessions.filter(function (s) { return s.is_holiday }).length
+    var sessionCount = saved - holidayCount
+    var parts = []
+    if (sessionCount > 0) parts.push(sessionCount + ' session' + (sessionCount !== 1 ? 's' : '') + ' saved')
+    if (holidayCount > 0) parts.push(holidayCount + ' holiday' + (holidayCount !== 1 ? 's' : '') + ' marked')
+    if (skipped > 0) parts.push(skipped + ' skipped (already recorded)')
+    showToast(parts.join(', ') + ' ✓', skipped > 0 ? 'warn' : undefined)
     onSaved()
   }
 
   var activeSession = sessions.length > 0 && activeIdx >= 0 ? sessions[activeIdx] : null
-  var presentCount = activeSession
+  var presentCount = activeSession && !activeSession.is_holiday
     ? activeStudents.filter(function (bs) { return activeSession.attendance[bs.enrollment_id] !== false }).length
     : 0
 
@@ -171,39 +194,44 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
             {sessions.length === 0 && (
               <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', padding: '4px 0' }}>
                 {todayWarning
-                  ? <span style={{ color: 'var(--orange, #d97706)' }}>Today already recorded.<br />Pick a past date ↓</span>
+                  ? <span style={{ color: '#d97706' }}>Today already recorded.<br />Pick a past date ↓</span>
                   : 'Add a date below ↓'}
               </div>
             )}
 
             {sessions.map(function (s, i) {
-              var cnt = activeStudents.filter(function (bs) { return s.attendance[bs.enrollment_id] !== false }).length
+              var cnt      = activeStudents.filter(function (bs) { return s.attendance[bs.enrollment_id] !== false }).length
               var isActive = i === activeIdx
+              var borderColor = isActive
+                ? (s.is_holiday ? '#d97706' : 'var(--purple)')
+                : 'var(--border)'
+              var bgColor = isActive
+                ? (s.is_holiday ? '#fff9f0' : 'var(--purple-bg)')
+                : 'var(--bg2)'
               return (
                 <div
                   key={s.date + '-' + i}
                   onClick={function () { setActiveIdx(i) }}
                   style={{
                     padding: '7px 9px', borderRadius: 7, cursor: 'pointer',
-                    border: isActive ? '1.5px solid var(--purple)' : '1px solid var(--border)',
-                    background: isActive ? 'var(--purple-bg)' : 'var(--bg2)',
+                    border: '1.5px solid ' + borderColor,
+                    background: bgColor,
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}
                 >
                   <div>
-                    <div style={{ font: '600 11px var(--font)', color: isActive ? 'var(--purple)' : 'var(--text)' }}>
+                    <div style={{ font: '600 11px var(--font)', color: isActive ? (s.is_holiday ? '#d97706' : 'var(--purple)') : 'var(--text)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {s.is_holiday && <span>🏖</span>}
                       {new Date(s.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </div>
                     <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>
-                      {cnt}/{activeStudents.length} present
+                      {s.is_holiday ? 'Holiday' : cnt + '/' + activeStudents.length + ' present'}
                     </div>
                   </div>
-                  {sessions.length > 1 && (
-                    <button type="button"
-                      onClick={function (e) { e.stopPropagation(); removeDate(i) }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
-                    >×</button>
-                  )}
+                  <button type="button"
+                    onClick={function (e) { e.stopPropagation(); removeDate(i) }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
+                  >×</button>
                 </div>
               )
             })}
@@ -239,22 +267,61 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
               </div>
             ) : (
               <>
+                {/* ── Session header ── */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                   <div>
-                    <div style={{ font: '700 13px var(--font)', color: 'var(--text)' }}>
+                    <div style={{ font: '700 13px var(--font)', color: activeSession.is_holiday ? '#d97706' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {activeSession.is_holiday && <span>🏖</span>}
                       {new Date(activeSession.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                     </div>
-                    <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                      <span style={{ color: 'var(--green)', fontWeight: 700 }}>{presentCount}</span>/{activeStudents.length} present
-                    </div>
+                    {!activeSession.is_holiday && (
+                      <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                        <span style={{ color: 'var(--green)', fontWeight: 700 }}>{presentCount}</span>/{activeStudents.length} present
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { toggleAll(true) }}>All Present</button>
-                    <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { toggleAll(false) }}>All Absent</button>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {/* Holiday toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleHoliday}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, border: '1.5px solid',
+                        borderColor: activeSession.is_holiday ? '#d97706' : 'var(--border)',
+                        background: activeSession.is_holiday ? '#fff9f0' : 'var(--bg)',
+                        color: activeSession.is_holiday ? '#d97706' : 'var(--text3)',
+                        font: '600 11px var(--font)', cursor: 'pointer',
+                      }}
+                    >
+                      🏖 {activeSession.is_holiday ? 'Holiday (tap to undo)' : 'Mark Holiday'}
+                    </button>
+                    {!activeSession.is_holiday && (
+                      <>
+                        <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { toggleAll(true) }}>All Present</button>
+                        <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { toggleAll(false) }}>All Absent</button>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {activeStudents.length === 0 ? (
+                {/* ── Holiday card ── */}
+                {activeSession.is_holiday ? (
+                  <div style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: 8, padding: '24px 16px', background: '#fff9f0', borderRadius: 10,
+                    border: '1.5px dashed #d97706',
+                  }}>
+                    <div style={{ fontSize: 36 }}>🏖</div>
+                    <div style={{ font: '700 14px var(--font)', color: '#d97706' }}>Holiday — No Class</div>
+                    <div style={{ font: '500 12px var(--font)', color: 'var(--text3)', textAlign: 'center' }}>
+                      This day will be recorded as a holiday.<br />Attendance is not required.
+                    </div>
+                    <button type="button" onClick={toggleHoliday}
+                      style={{ marginTop: 4, padding: '5px 14px', borderRadius: 6, border: '1.5px solid #d97706', background: 'none', color: '#d97706', font: '600 12px var(--font)', cursor: 'pointer' }}>
+                      Undo — Mark as Regular Session
+                    </button>
+                  </div>
+                ) : activeStudents.length === 0 ? (
                   <p className="hint">No students in this batch yet.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -327,7 +394,7 @@ function SessionHistoryModal({ batch, onClose }) {
 
   useEffect(function () {
     sb.from('batch_sessions')
-      .select('id, session_date, session_number, is_substitute, instructor_id, instructors(full_name), session_attendance(id, enrollment_id, attended, students(full_name))')
+      .select('id, session_date, session_number, is_substitute, is_holiday, instructor_id, instructors(full_name), session_attendance(id, enrollment_id, attended, students(full_name))')
       .eq('batch_id', batch.id)
       .order('session_number', { ascending: false })
       .then(function (res) { setSessions(res.data || []); setLoading(false) })
@@ -340,7 +407,14 @@ function SessionHistoryModal({ batch, onClose }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Session History</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {loading ? '…' : sessions.length + ' session' + (sessions.length !== 1 ? 's' : '') + ' recorded'}
+              {loading ? '…' : (function () {
+                var hols = sessions.filter(function (s) { return s.is_holiday }).length
+                var sess = sessions.length - hols
+                var parts = []
+                if (sess > 0) parts.push(sess + ' session' + (sess !== 1 ? 's' : ''))
+                if (hols > 0) parts.push(hols + ' holiday' + (hols !== 1 ? 's' : ''))
+                return parts.length ? parts.join(' · ') : 'No sessions yet'
+              })()}
             </div>
           </div>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -360,31 +434,45 @@ function SessionHistoryModal({ batch, onClose }) {
                 var present = (sess.session_attendance || []).filter(function (a) { return a.attended })
                 var absent  = (sess.session_attendance || []).filter(function (a) { return !a.attended })
                 var isOpen  = openSess === sess.id
+                var isHol   = !!sess.is_holiday
+
                 return (
-                  <div key={sess.id} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  <div key={sess.id} style={{
+                    border: '1px solid ' + (isHol ? '#f3d996' : 'var(--border)'),
+                    borderRadius: 8, overflow: 'hidden',
+                    background: isHol ? '#fffbf0' : 'var(--bg)',
+                  }}>
                     <div
-                      onClick={function () { setOpenSess(isOpen ? null : sess.id) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', background: 'var(--bg)' }}
+                      onClick={function () { if (!isHol) setOpenSess(isOpen ? null : sess.id) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: isHol ? 'default' : 'pointer' }}
                     >
-                      <div style={{ font: '700 11px var(--mono)', color: 'var(--purple)', minWidth: 30 }}>
+                      <div style={{ font: '700 11px var(--mono)', color: isHol ? '#d97706' : 'var(--purple)', minWidth: 30 }}>
                         #{sess.session_number}
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>
+                        <div style={{ font: '600 13px var(--font)', color: isHol ? '#d97706' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {isHol && <span>🏖</span>}
                           {new Date(sess.session_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </div>
                         <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 1 }}>
-                          {sess.instructors?.full_name || '—'}
-                          {sess.is_substitute && <span style={{ color: '#d97706', marginLeft: 6, fontWeight: 600 }}>· Substitute</span>}
+                          {isHol
+                            ? <span style={{ color: '#d97706', fontWeight: 600 }}>Holiday — No Class</span>
+                            : <>
+                                {sess.instructors?.full_name || '—'}
+                                {sess.is_substitute && <span style={{ color: '#d97706', marginLeft: 6, fontWeight: 600 }}>· Substitute</span>}
+                              </>
+                          }
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span style={{ font: '700 11px var(--mono)', color: 'var(--green)' }}>{present.length}✓</span>
-                        {absent.length > 0 && <span style={{ font: '700 11px var(--mono)', color: 'var(--red)' }}>{absent.length}✗</span>}
-                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? '▲' : '▼'}</span>
-                      </div>
+                      {!isHol && (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ font: '700 11px var(--mono)', color: 'var(--green)' }}>{present.length}✓</span>
+                          {absent.length > 0 && <span style={{ font: '700 11px var(--mono)', color: 'var(--red)' }}>{absent.length}✗</span>}
+                          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? '▲' : '▼'}</span>
+                        </div>
+                      )}
                     </div>
-                    {isOpen && (
+                    {isOpen && !isHol && (
                       <div style={{ padding: '8px 14px 12px', background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
                         {sess.session_attendance?.length === 0 ? (
                           <div className="hint">No attendance data.</div>
