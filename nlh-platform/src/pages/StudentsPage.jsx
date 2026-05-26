@@ -44,6 +44,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     full_name: student.full_name || '',
     parent_name: student.parent_name || '',
     dob: student.dob || '',
+    registered_at: student.registered_at || '',
     phone: student.phone || '',
     email: student.email || '',
     pincode: student.pincode || '',
@@ -101,6 +102,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       full_name:      form.full_name.trim(),
       parent_name:    form.parent_name.trim(),
       dob:            form.dob || null,
+      registered_at:  form.registered_at || null,
       phone:          form.phone.trim(),
       email:          form.email.trim() || null,
       pincode:        form.pincode.trim() || null,
@@ -378,6 +380,9 @@ function StudentDetailModal({ student, onClose, onSaved }) {
               </label>
               <label>Date of Birth
                 <input type="date" value={form.dob} onChange={field('dob')} disabled={!admin} />
+              </label>
+              <label>Date of Registration
+                <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!admin} />
               </label>
               <label>Phone
                 <input value={form.phone} onChange={field('phone')} disabled={!admin} />
@@ -907,7 +912,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const isMasterFr = currentRole === 'smf' || currentRole === 'cf'
 
   const [form, setForm] = useState({
-    full_name: '', parent_name: '', dob: '', phone: '', email: '',
+    full_name: '', parent_name: '', dob: '', registered_at: '', phone: '', email: '',
     pincode: '', city: '', area: '', state: '', country: 'India', address: '',
     channel: 'franchise',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
@@ -1076,6 +1081,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         full_name: form.full_name.trim(),
         parent_name: form.parent_name.trim(),
         dob: form.dob || null,
+        registered_at: form.registered_at || new Date().toISOString().slice(0, 10),
         phone: form.phone.trim(),
         email: form.email.trim() || null,
         pincode: form.pincode.trim() || null,
@@ -1310,6 +1316,9 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             </label>
             <label>Date of Birth
               <input type="date" value={form.dob} onChange={field('dob')} />
+            </label>
+            <label>Date of Registration
+              <input type="date" value={form.registered_at} onChange={field('registered_at')} />
             </label>
             <label>Parent Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />

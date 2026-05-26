@@ -27,21 +27,20 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
     return map
   }
 
-  const [sessions,      setSessions]      = useState([{ date: today, attendance: initAtt() }])
-  const [activeIdx,     setActiveIdx]     = useState(0)
-  const [addDateVal,    setAddDateVal]    = useState('')
+  const [sessions,      setSessions]      = useState([])
+  const [activeIdx,     setActiveIdx]     = useState(-1)
+  const [addDateVal,    setAddDateVal]    = useState(today)
   const [existingDates, setExistingDates] = useState([])
   const [saving,        setSaving]        = useState(false)
+  const [todayWarning,  setTodayWarning]  = useState(false)
 
   useEffect(function () {
     sb.from('batch_sessions').select('session_date').eq('batch_id', batch.id)
       .then(function (res) {
         var dates = (res.data || []).map(function (r) { return r.session_date })
         setExistingDates(dates)
-        // If today is already recorded, start with empty list
         if (dates.includes(today)) {
-          setSessions([])
-          setActiveIdx(-1)
+          setTodayWarning(true)
         }
       })
   }, [])
@@ -171,7 +170,9 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
 
             {sessions.length === 0 && (
               <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', padding: '4px 0' }}>
-                Add a date below ↓
+                {todayWarning
+                  ? <span style={{ color: 'var(--orange, #d97706)' }}>Today already recorded.<br />Pick a past date ↓</span>
+                  : 'Add a date below ↓'}
               </div>
             )}
 
@@ -227,8 +228,14 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
             {!activeSession ? (
               <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>📅</div>
-                <div>Add a session date on the left</div>
-                <div style={{ fontSize: 11, marginTop: 4 }}>Then mark who was present on that day</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} in this batch
+                </div>
+                <div>Pick a date on the left and click</div>
+                <div style={{ marginTop: 4 }}>
+                  <strong style={{ color: 'var(--purple)' }}>+ Add Date</strong>
+                  {' '}to mark attendance
+                </div>
               </div>
             ) : (
               <>
