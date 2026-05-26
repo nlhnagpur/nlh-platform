@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendStudentCertEmail } from '../services/email'
+import { toWAPhone, openWACertificate } from '../services/whatsapp'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,12 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
   const [showInput,  setShowInput]  = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set(allEnrollments.map(e => e.id)))
 
+  // WhatsApp state
+  const [waSending,   setWaSending]   = useState(false)
+  const [waSent,      setWaSent]      = useState(() => allEnrollments.some(e => !!e.cert_wa_sent_at))
+  const [waPhone,     setWaPhone]     = useState(student.phone || '')
+  const [showWaInput, setShowWaInput] = useState(false)
+
   const selected = allEnrollments.filter(e => selectedIds.has(e.id))
 
   const isMale     = (student.gender || '').toLowerCase() === 'male'
@@ -122,6 +129,66 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
       showToast('Email failed: ' + err.message, 'err')
     }
     setEmailing(false)
+  }
+
+  async function handleWhatsApp() {
+    const phone = waPhone.trim()
+    if (!phone || !toWAPhone(phone)) {
+      showToast('Please enter a valid WhatsApp phone number', 'warn')
+      setShowWaInput(true)
+      return
+    }
+    if (!selected.length) {
+      showToast('Select at least one course', 'warn')
+      return
+    }
+    setWaSending(true)
+    try {
+      const isMaleWA  = (student.gender || '').toLowerCase() === 'male'
+      const titleWA   = isMaleWA ? 'Mast.' : 'Miss.'
+      const relWA     = isMaleWA ? 'S/o.' : 'D/o.'
+      const locationWA = [
+        student.city,
+        student.country && student.country !== 'India' ? student.country : null,
+      ].filter(Boolean).join(', ')
+      const centreBaseWA = centre?.business_name || 'New Learning Horizons'
+      const centerFullWA = centre?.city ? `${centreBaseWA}, ${centre.city}` : centreBaseWA
+      const programs = selected.map(e => e.skus?.courses?.group_name || 'Course').join('|')
+      const levels   = selected.map(e => e.skus?.level_name || '').join('|')
+      const params = new URLSearchParams({
+        name:     student.full_name,
+        title:    titleWA,
+        rel:      relWA,
+        parent:   student.parent_name || '',
+        location: locationWA,
+        program:  programs,
+        level:    levels,
+        center:   centerFullWA,
+        date:     todayYMD(),
+      })
+      const certUrl = `${window.location.origin}/certificate/Issue%20Certificate.html?${params}`
+      const courses  = selected.map(function (e) {
+        const c = e.skus?.courses?.group_name || 'Course'
+        const l = e.skus?.level_name || ''
+        return l ? `${c} — ${l}` : c
+      }).join(', ')
+      const opened = openWACertificate(phone, {
+        studentName: student.full_name,
+        parentName:  student.parent_name,
+        courses,
+        certUrl,
+      })
+      if (!opened) throw new Error('Could not open WhatsApp — invalid phone number')
+      await sb.from('enrollments')
+        .update({ cert_wa_sent_at: new Date().toISOString() })
+        .in('id', selected.map(e => e.id))
+      setWaSent(true)
+      setShowWaInput(false)
+      showToast('WhatsApp opened — send the message to share the certificate')
+    } catch (err) {
+      showToast('WhatsApp failed: ' + err.message, 'err')
+    }
+    setWaSending(false)
   }
 
   return (
@@ -237,11 +304,18 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
                       <span style={{ fontSize: 13, fontWeight: 500, color: isChecked ? 'var(--purple)' : 'var(--text)' }}>
                         {courseName}{levelName ? ` — ${levelName}` : ''}
                       </span>
-                      {e.cert_emailed_at && (
-                        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text3)' }}>
-                          ✓ emailed {new Date(e.cert_emailed_at).toLocaleDateString('en-IN')}
-                        </span>
-                      )}
+                      <span style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                        {e.cert_emailed_at && (
+                          <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+                            ✓ emailed {new Date(e.cert_emailed_at).toLocaleDateString('en-IN')}
+                          </span>
+                        )}
+                        {e.cert_wa_sent_at && (
+                          <span style={{ fontSize: 10, color: '#25D366' }}>
+                            ✓ WhatsApp {new Date(e.cert_wa_sent_at).toLocaleDateString('en-IN')}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   )
                 })}
@@ -281,6 +355,41 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
               >Change</button>
             </p>
           )}
+
+          {/* ── WhatsApp section ── */}
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
+            {waSent && (
+              <p className="hint" style={{ color: '#25D366', marginBottom: 4 }}>
+                ✓ Certificate shared via WhatsApp
+              </p>
+            )}
+            {(showWaInput || !student.phone) && (
+              <div className="fr" style={{ marginBottom: 4 }}>
+                <label style={{ fontSize: 11, marginBottom: 4, display: 'block' }}>
+                  Parent's WhatsApp number *
+                </label>
+                <input
+                  type="tel"
+                  value={waPhone}
+                  onChange={function (e) { setWaPhone(e.target.value) }}
+                  placeholder="e.g. 9876543210"
+                  style={{ width: '100%' }}
+                />
+              </div>
+            )}
+            {student.phone && !showWaInput && (
+              <p className="hint">
+                WhatsApp to: <strong>{student.phone}</strong> &nbsp;
+                <button
+                  onClick={function () { setShowWaInput(true) }}
+                  style={{
+                    background: 'none', border: 'none', color: 'var(--purple)',
+                    cursor: 'pointer', font: '500 11px var(--font)', textDecoration: 'underline',
+                  }}
+                >Change</button>
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="modal-actions">
@@ -298,6 +407,20 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
             disabled={emailing || !selected.length}
           >
             {emailing ? 'Sending…' : emailed ? '📧 Re-send' : '📧 Email to Parent'}
+          </button>
+          <button
+            onClick={handleWhatsApp}
+            disabled={waSending || !selected.length}
+            style={{
+              padding: '8px 16px', borderRadius: 8, border: 'none',
+              background: waSending ? '#aaa' : '#25D366',
+              color: '#fff', fontWeight: 600, fontSize: 13,
+              cursor: waSending || !selected.length ? 'not-allowed' : 'pointer',
+              opacity: !selected.length ? 0.5 : 1,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            {waSending ? 'Opening…' : waSent ? '💬 Re-send WA' : '💬 WhatsApp'}
           </button>
         </div>
       </div>

@@ -285,7 +285,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -300,7 +300,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       franchisee_id: student.franchisee_id,
     } })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, cert_emailed_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     setAddingEnrollment(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
@@ -311,7 +311,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setShowAddEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added ✓')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1177,7 +1177,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
+        .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -1640,7 +1640,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
+        .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .order('created_at', { ascending: false })
 
       if (admin) {

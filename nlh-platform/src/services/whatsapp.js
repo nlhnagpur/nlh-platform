@@ -117,6 +117,24 @@ export async function sendWAStudentEnrolled(to, { parentName, studentName, cours
 }
 
 
+// ── WhatsApp certificate link ─────────────────────────────────────────────────
+// Opens WhatsApp in a new tab with a pre-filled message containing the cert URL.
+// No Meta template approval needed — this is a wa.me deep link, not a send-API call.
+// Returns true if the phone was valid and the window was opened, false otherwise.
+export function openWACertificate(phone, { studentName, parentName, courses, certUrl }) {
+  const waPhone = toWAPhone(phone)
+  if (!waPhone) return false
+  const message =
+    `🎓 *Congratulations ${studentName}!*\n\n` +
+    `Dear ${parentName || 'Parent'},\n\n` +
+    `We are delighted to share ${studentName}'s Certificate of Accomplishment for successfully completing ` +
+    `*${courses}* at New Learning Horizons.\n\n` +
+    `📜 View & Download Certificate:\n${certUrl}\n\n` +
+    `With warm regards,\nNew Learning Horizons 🌟`
+  window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(message)}`, '_blank')
+  return true
+}
+
 // ── Template: fee_reminder ────────────────────────────────────────────────────
 // Params: {{1}} franchisee name, {{2}} balance amount
 export async function sendWAFeeReminder(to, { name, balance }) {
