@@ -58,8 +58,14 @@ const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individua
 
 function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSaved }) {
   const [tab, setTab]           = useState('profile')
-  const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false, batches: false })
+  const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false, batches: false, payroll: false })
   const [saving, setSaving]     = useState(false)
+
+  // ── Payroll state ──
+  const [payrollMonth,    setPayrollMonth]    = useState(new Date().toISOString().slice(0, 7))
+  const [payrollSessions, setPayrollSessions] = useState([])
+  const [payrollAppts,    setPayrollAppts]    = useState([])
+  const [payrollLoading,  setPayrollLoading]  = useState(false)
 
   // ── Profile form ──
   const [form, setForm] = useState({
@@ -139,6 +145,35 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       setBatchList(batchRows || [])
     }
   }
+
+  // ── Payroll loader (re-runs on month change) ──
+  useEffect(function () {
+    if (tab !== 'payroll') return
+    async function loadPayroll() {
+      setPayrollLoading(true)
+      var parts    = payrollMonth.split('-')
+      var yr       = parseInt(parts[0]), mo = parseInt(parts[1])
+      var startDate = parts[0] + '-' + parts[1] + '-01'
+      var lastDay   = new Date(yr, mo, 0).getDate()
+      var endDate   = parts[0] + '-' + parts[1] + '-' + String(lastDay).padStart(2, '0')
+      var [sessRes, apptRes] = await Promise.all([
+        sb.from('batch_sessions')
+          .select('id, session_date, batch_id, batches(id, name, sku_id, skus(level_name, courses(group_name)))')
+          .eq('instructor_id', instructor.id)
+          .eq('is_substitute', false)
+          .gte('session_date', startDate)
+          .lte('session_date', endDate),
+        sb.from('instructor_courses')
+          .select('id, sku_id, remuneration_mode, remuneration_rate, skus(level_name, courses(group_name))')
+          .eq('instructor_id', instructor.id)
+          .eq('status', 'active'),
+      ])
+      setPayrollSessions(sessRes.data || [])
+      setPayrollAppts(apptRes.data || [])
+      setPayrollLoading(false)
+    }
+    loadPayroll()
+  }, [tab, payrollMonth])
 
   // ── Save profile ──
   async function saveProfile() {
@@ -404,7 +439,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
         {/* tabs */}
         <div className="tabs">
-          {[['profile','👤 Profile'],['caution','🔒 Caution'],['courses','📚 Courses'],['batches','📦 Batches']].map(function ([id, label]) {
+          {[['profile','👤 Profile'],['caution','🔒 Caution'],['courses','📚 Courses'],['batches','📦 Batches'],['payroll','💰 Payroll']].map(function ([id, label]) {
             return (
               <button key={id}
                 className={'tab ' + (tab === id ? 'active' : '')}
@@ -1104,6 +1139,183 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           onSaved={function () { setAttendanceBatch(null); setTabLoaded(function(tl) { return { ...tl, batches: false } }); loadTab('batches') }}
         />
       )}
+
+        {/* ══ Payroll tab ══════════════════════════════════════════════════════ */}
+        {tab === 'payroll' && (
+          <div style={{ padding: '0 20px 20px' }}>
+            {/* Month picker */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <label style={{ font: '500 12px var(--font)', color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                Month:
+                <input type="month" value={payrollMonth}
+                  onChange={function (e) { setPayrollMonth(e.target.value) }}
+                  style={{ fontSize: 13, padding: '4px 8px' }} />
+              </label>
+              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                {payrollLoading ? 'Loading…' : payrollSessions.length + ' session' + (payrollSessions.length !== 1 ? 's' : '') + ' conducted'}
+              </div>
+            </div>
+
+            {payrollLoading ? (
+              <div className="hint" style={{ textAlign: 'center', padding: '24px 0' }}>Calculating…</div>
+            ) : (function () {
+              // Group sessions by batch
+              var batchMap = {}
+              payrollSessions.forEach(function (sess) {
+                var bid = sess.batch_id
+                if (!batchMap[bid]) batchMap[bid] = { batch: sess.batches, sessions: [] }
+                batchMap[bid].sessions.push(sess)
+              })
+
+              // Build per-batch payment rows
+              var perSessionRows = []
+              var perStudentRows = []
+              var monthlyRows    = []
+
+              Object.values(batchMap).forEach(function (entry) {
+                var skuId = entry.batch?.sku_id
+                var appt  = skuId ? payrollAppts.find(function (a) { return a.sku_id === skuId }) : payrollAppts[0]
+                var mode  = appt?.remuneration_mode || 'per_session'
+                var rate  = appt?.remuneration_rate || 0
+                var course = entry.batch?.skus?.courses?.group_name || entry.batch?.name || '—'
+                var level  = entry.batch?.skus?.level_name || ''
+                var row = {
+                  batchName: entry.batch?.name || '—',
+                  course, level,
+                  sessionCount: entry.sessions.length,
+                  mode, rate,
+                  amount: mode === 'per_session' ? entry.sessions.length * rate : 0,
+                }
+                if (mode === 'per_session') perSessionRows.push(row)
+                else if (mode === 'per_student') perStudentRows.push(row)
+              })
+
+              // Monthly appointments (not per-batch)
+              payrollAppts.forEach(function (a) {
+                if (a.remuneration_mode === 'monthly') monthlyRows.push(a)
+              })
+
+              var sessionTotal  = perSessionRows.reduce(function (s, r) { return s + r.amount }, 0)
+              var monthlyTotal  = monthlyRows.reduce(function (s, a) { return s + (a.remuneration_rate || 0) }, 0)
+              var grandTotal    = sessionTotal + monthlyTotal
+
+              if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0) {
+                return (
+                  <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text3)', fontSize: 13 }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>💰</div>
+                    No sessions recorded for this month.
+                  </div>
+                )
+              }
+
+              return (
+                <>
+                  {/* Per-session batches */}
+                  {perSessionRows.length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Per Session
+                      </div>
+                      {perSessionRows.map(function (row, i) {
+                        return (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', padding: '10px 14px',
+                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
+                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                                {row.course}{row.level ? ' · ' + row.level : ''} · {row.sessionCount} session{row.sessionCount !== 1 ? 's' : ''} × ₹{row.rate.toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                            <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>
+                              ₹{row.amount.toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', padding: '8px 14px',
+                        borderTop: '1px solid var(--border)', background: 'var(--purple-bg)',
+                      }}>
+                        <span style={{ font: '600 12px var(--font)', color: 'var(--purple)' }}>Session Sub-total</span>
+                        <span style={{ font: '700 14px var(--font)', color: 'var(--purple)' }}>₹{sessionTotal.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Monthly fixed */}
+                  {monthlyRows.length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Monthly Fixed
+                      </div>
+                      {monthlyRows.map(function (a, i) {
+                        return (
+                          <div key={a.id} style={{
+                            display: 'flex', alignItems: 'center', padding: '10px 14px',
+                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>
+                                {a.skus?.courses?.group_name || '—'}{a.skus?.level_name ? ' · ' + a.skus.level_name : ''}
+                              </div>
+                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>Monthly rate</div>
+                            </div>
+                            <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>
+                              ₹{(a.remuneration_rate || 0).toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Per-student reference */}
+                  {perStudentRows.length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Per Student (on completion)
+                      </div>
+                      {perStudentRows.map(function (row, i) {
+                        return (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', padding: '10px 14px',
+                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
+                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                                {row.course}{row.level ? ' · ' + row.level : ''} · ₹{row.rate.toLocaleString('en-IN')}/student on completion
+                              </div>
+                            </div>
+                            <div style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>
+                              {row.sessionCount} sessions
+                            </div>
+                          </div>
+                        )
+                      })}
+                      <div style={{ padding: '6px 14px', background: 'var(--sun-bg)', font: '500 10px var(--font)', color: '#92400e' }}>
+                        ⚠ Payment calculated on course completion — not yet auto-computed
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Grand total */}
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '12px 16px', borderRadius: 8,
+                    background: 'var(--purple)', color: '#fff',
+                    marginTop: 4,
+                  }}>
+                    <span style={{ font: '700 14px var(--font)' }}>Total Payable — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</span>
+                    <span style={{ font: '700 20px var(--font)' }}>₹{grandTotal.toLocaleString('en-IN')}</span>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        )}
 
       </div>
     </div>

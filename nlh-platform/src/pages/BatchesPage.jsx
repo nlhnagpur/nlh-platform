@@ -15,247 +15,406 @@ function timeRange(t) {
   return t.slice(0, 5) + ' – ' + end
 }
 
-// ── AttendanceModal ───────────────────────────────────────────────────────────
+// ── BulkAttendanceModal ───────────────────────────────────────────────────────
 
-function AttendanceModal({ batch, onClose, onSaved }) {
-  const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+function BulkAttendanceModal({ batch, onClose, onSaved }) {
+  var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+  var today = new Date().toISOString().split('T')[0]
 
-  const [sessionDate,   setSessionDate]   = useState(new Date().toISOString().split('T')[0])
-  const [instructorId,  setInstructorId]  = useState(batch.instructor_id || '')
-  const [isSubstitute,  setIsSubstitute]  = useState(false)
-  const [makePermanent, setMakePermanent] = useState(false)
-  const [eligibleCIs,   setEligibleCIs]   = useState([])
-  const [attendance,    setAttendance]    = useState(function () {
+  function initAtt() {
     var map = {}
     activeStudents.forEach(function (bs) { map[bs.enrollment_id] = true })
     return map
-  })
+  }
+
+  const [sessions,      setSessions]      = useState([{ date: today, attendance: initAtt() }])
+  const [activeIdx,     setActiveIdx]     = useState(0)
+  const [addDateVal,    setAddDateVal]    = useState('')
+  const [existingDates, setExistingDates] = useState([])
   const [saving,        setSaving]        = useState(false)
-  const [sessionNum,    setSessionNum]    = useState(null)
 
   useEffect(function () {
-    // Get next session number
-    sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
-      .then(function (res) { setSessionNum((res.count || 0) + 1) })
-
-    // Load eligible CIs for substitute picker — based on SKUs students are enrolled in
-    const skuIds = [...new Set(
-      (batch.batch_students || [])
-        .filter(function (bs) { return !bs.removed_at && bs.enrollments?.sku_id })
-        .map(function (bs) { return bs.enrollments.sku_id })
-    )]
-    sb.from('instructor_courses')
-      .select('instructor_id, instructors(id, full_name, status)')
-      .in('sku_id', skuIds.length ? skuIds : ['00000000-0000-0000-0000-000000000000'])
-      .eq('status', 'active')
+    sb.from('batch_sessions').select('session_date').eq('batch_id', batch.id)
       .then(function (res) {
-        var seen = {}
-        var cis = (res.data || [])
-          .map(function (r) { return r.instructors })
-          .filter(function (i) { return i && i.status === 'active' })
-          .filter(function (i) {
-            if (seen[i.id]) return false
-            seen[i.id] = true
-            return true
-          })
-        setEligibleCIs(cis)
+        var dates = (res.data || []).map(function (r) { return r.session_date })
+        setExistingDates(dates)
+        // If today is already recorded, start with empty list
+        if (dates.includes(today)) {
+          setSessions([])
+          setActiveIdx(-1)
+        }
       })
   }, [])
+
+  function addDate() {
+    if (!addDateVal) { showToast('Pick a date', 'warn'); return }
+    if (existingDates.includes(addDateVal)) {
+      showToast('Session already recorded for ' + fmtDate(addDateVal), 'warn'); return
+    }
+    if (sessions.some(function (s) { return s.date === addDateVal })) {
+      showToast('Date already in list', 'warn'); return
+    }
+    var newIdx = sessions.length
+    setSessions(function (prev) {
+      return [...prev, { date: addDateVal, attendance: initAtt() }]
+    })
+    setActiveIdx(newIdx)
+    setAddDateVal('')
+  }
+
+  function removeDate(idx) {
+    setSessions(function (prev) { return prev.filter(function (_, i) { return i !== idx }) })
+    setActiveIdx(function (prev) {
+      if (sessions.length <= 1) return -1
+      if (prev === idx) return Math.max(0, idx - 1)
+      if (prev > idx) return prev - 1
+      return prev
+    })
+  }
+
+  function toggle(enrollmentId) {
+    setSessions(function (prev) {
+      return prev.map(function (s, i) {
+        if (i !== activeIdx) return s
+        return { ...s, attendance: { ...s.attendance, [enrollmentId]: !s.attendance[enrollmentId] } }
+      })
+    })
+  }
 
   function toggleAll(present) {
     var map = {}
     activeStudents.forEach(function (bs) { map[bs.enrollment_id] = present })
-    setAttendance(map)
-  }
-
-  function toggle(enrollmentId) {
-    setAttendance(function (prev) {
-      var next = Object.assign({}, prev)
-      next[enrollmentId] = !prev[enrollmentId]
-      return next
+    setSessions(function (prev) {
+      return prev.map(function (s, i) {
+        if (i !== activeIdx) return s
+        return { ...s, attendance: map }
+      })
     })
   }
 
-  async function save() {
-    if (!sessionDate) { showToast('Select a date', 'warn'); return }
+  async function saveAll() {
+    if (sessions.length === 0) { showToast('No sessions to save', 'warn'); return }
     setSaving(true)
 
-    // Fresh count for session number (avoid race)
-    var countRes = await sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
-    var sNum = (countRes.count || 0) + 1
+    var countRes = await sb.from('batch_sessions')
+      .select('session_number').eq('batch_id', batch.id)
+      .order('session_number', { ascending: false }).limit(1)
+    var nextNum = (countRes.data?.[0]?.session_number || 0) + 1
 
-    var actualInstructorId = isSubstitute && instructorId ? instructorId : batch.instructor_id
+    // Save sessions in chronological order
+    var ordered = [...sessions].sort(function (a, b) { return a.date < b.date ? -1 : 1 })
+    var saved = 0, skipped = 0
 
-    // Create the session record
-    var sessRes = await sb.from('batch_sessions').insert({
-      batch_id:       batch.id,
-      session_date:   sessionDate,
-      session_number: sNum,
-      instructor_id:  actualInstructorId,
-      is_substitute:  isSubstitute && actualInstructorId !== batch.instructor_id,
-    }).select('id').single()
+    for (var ki = 0; ki < ordered.length; ki++) {
+      var sess = ordered[ki]
+      var { data: existing } = await sb.from('batch_sessions')
+        .select('id').eq('batch_id', batch.id).eq('session_date', sess.date).maybeSingle()
+      if (existing) { skipped++; continue }
 
-    if (sessRes.error) {
-      showToast('Failed to create session: ' + sessRes.error.message, 'err')
-      setSaving(false)
-      return
+      var { data: sessRow, error: sessErr } = await sb.from('batch_sessions').insert({
+        batch_id:       batch.id,
+        session_date:   sess.date,
+        session_number: nextNum,
+        instructor_id:  batch.instructor_id,
+        is_substitute:  false,
+      }).select('id').single()
+      if (sessErr) { skipped++; continue }
+
+      var attRows = activeStudents.map(function (bs) {
+        return {
+          session_id:    sessRow.id,
+          enrollment_id: bs.enrollment_id,
+          student_id:    bs.enrollments?.student_id || null,
+          attended:      sess.attendance[bs.enrollment_id] !== false,
+        }
+      })
+      if (attRows.length > 0) await sb.from('session_attendance').insert(attRows)
+      nextNum++
+      saved++
     }
 
-    // Insert attendance rows
-    var attRows = activeStudents.map(function (bs) {
-      return {
-        session_id:    sessRes.data.id,
-        enrollment_id: bs.enrollment_id,
-        student_id:    bs.enrollments?.student_id || null,
-        attended:      attendance[bs.enrollment_id] !== false,
-      }
-    })
-    if (attRows.length > 0) {
-      var attRes = await sb.from('session_attendance').insert(attRows)
-      if (attRes.error) showToast('Attendance saved but some rows failed', 'warn')
-    }
-
-    // Increment sessions_done
-    await sb.from('batches').update({ sessions_done: (batch.sessions_done || 0) + 1 }).eq('id', batch.id)
-
-    // Permanent instructor change
-    if (isSubstitute && makePermanent && instructorId && instructorId !== batch.instructor_id) {
-      await sb.from('batches').update({ instructor_id: instructorId }).eq('id', batch.id)
-    }
-
+    await sb.from('batches').update({ sessions_done: (batch.sessions_done || 0) + saved }).eq('id', batch.id)
     setSaving(false)
-    var presentCount = activeStudents.filter(function (bs) { return attendance[bs.enrollment_id] !== false }).length
-    showToast('Session #' + sNum + ' marked — ' + presentCount + '/' + activeStudents.length + ' present ✓')
+    if (skipped > 0) showToast(saved + ' saved, ' + skipped + ' skipped (already recorded)', 'warn')
+    else showToast(saved + ' session' + (saved !== 1 ? 's' : '') + ' saved ✓')
     onSaved()
   }
 
-  var presentCount = activeStudents.filter(function (bs) { return attendance[bs.enrollment_id] !== false }).length
-  var ciName = batch.instructors?.full_name || '—'
+  var activeSession = sessions.length > 0 && activeIdx >= 0 ? sessions[activeIdx] : null
+  var presentCount = activeSession
+    ? activeStudents.filter(function (bs) { return activeSession.attendance[bs.enrollment_id] !== false }).length
+    : 0
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal" style={{ maxWidth: 660, width: '96vw' }}>
         <div className="ch">
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Attendance</div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Mark Attendance</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              Session #{sessionNum || '…'} &nbsp;·&nbsp; {batch.instructors?.full_name || '—'}
+              {batch.instructors?.full_name || '—'} · {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''}
             </div>
           </div>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', minHeight: 320 }}>
 
-          {/* Date */}
-          <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
-            Session Date *
-            <input type="date" value={sessionDate}
-              onChange={function (e) { setSessionDate(e.target.value) }}
-              style={{ marginTop: 4 }} />
-          </label>
-
-          {/* Instructor */}
-          <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px' }}>
-            <div style={{ font: '600 12px var(--font)', color: 'var(--text2)', marginBottom: 6 }}>
-              Instructor
+          {/* ── Left: date list ── */}
+          <div style={{
+            width: 186, borderRight: '1px solid var(--border)',
+            padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0,
+          }}>
+            <div style={{ font: '600 10px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>
+              Sessions to mark
             </div>
-            <div style={{ font: '500 13px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
-              {ciName}
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 7, font: '500 12px var(--font)', color: 'var(--text2)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={isSubstitute}
-                onChange={function (e) {
-                  setIsSubstitute(e.target.checked)
-                  if (!e.target.checked) { setMakePermanent(false); setInstructorId(batch.instructor_id || '') }
-                }} />
-              Different instructor today (substitute / cover)
-            </label>
 
-            {isSubstitute && (
-              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <select
-                  value={instructorId}
-                  onChange={function (e) { setInstructorId(e.target.value) }}
-                  style={{ fontSize: 13 }}
-                >
-                  <option value="">— Select CI —</option>
-                  {eligibleCIs.map(function (ci) {
-                    return <option key={ci.id} value={ci.id}>{ci.full_name}</option>
-                  })}
-                </select>
-                {instructorId && instructorId !== batch.instructor_id && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 7, font: '500 12px var(--font)', color: 'var(--text2)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={makePermanent}
-                      onChange={function (e) { setMakePermanent(e.target.checked) }} />
-                    Make permanent — reassign this batch to the new instructor
-                  </label>
-                )}
+            {sessions.length === 0 && (
+              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', padding: '4px 0' }}>
+                Add a date below ↓
               </div>
             )}
+
+            {sessions.map(function (s, i) {
+              var cnt = activeStudents.filter(function (bs) { return s.attendance[bs.enrollment_id] !== false }).length
+              var isActive = i === activeIdx
+              return (
+                <div
+                  key={s.date + '-' + i}
+                  onClick={function () { setActiveIdx(i) }}
+                  style={{
+                    padding: '7px 9px', borderRadius: 7, cursor: 'pointer',
+                    border: isActive ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                    background: isActive ? 'var(--purple-bg)' : 'var(--bg2)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}
+                >
+                  <div>
+                    <div style={{ font: '600 11px var(--font)', color: isActive ? 'var(--purple)' : 'var(--text)' }}>
+                      {new Date(s.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    </div>
+                    <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>
+                      {cnt}/{activeStudents.length} present
+                    </div>
+                  </div>
+                  {sessions.length > 1 && (
+                    <button type="button"
+                      onClick={function (e) { e.stopPropagation(); removeDate(i) }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
+                    >×</button>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Add date */}
+            <div style={{ marginTop: 4, borderTop: sessions.length > 0 ? '1px solid var(--border)' : 'none', paddingTop: sessions.length > 0 ? 8 : 0 }}>
+              <input
+                type="date" value={addDateVal}
+                onChange={function (e) { setAddDateVal(e.target.value) }}
+                max={today}
+                style={{ fontSize: 11, padding: '5px 6px', width: '100%', marginBottom: 5 }}
+              />
+              <button type="button" className="btn-s"
+                onClick={addDate} disabled={!addDateVal}
+                style={{ fontSize: 11, width: '100%', textAlign: 'center' }}
+              >+ Add Date</button>
+            </div>
           </div>
 
-          {/* Student attendance */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
-                Students &nbsp;
-                <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{presentCount}</span>
-                <span style={{ color: 'var(--text3)' }}>/{activeStudents.length} present</span>
+          {/* ── Right: student roster ── */}
+          <div style={{ flex: 1, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {!activeSession ? (
+              <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>📅</div>
+                <div>Add a session date on the left</div>
+                <div style={{ fontSize: 11, marginTop: 4 }}>Then mark who was present on that day</div>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button className="btn-s" style={{ fontSize: 11, padding: '2px 10px' }}
-                  onClick={function () { toggleAll(true) }}>All Present</button>
-                <button className="btn-s" style={{ fontSize: 11, padding: '2px 10px' }}
-                  onClick={function () { toggleAll(false) }}>All Absent</button>
-              </div>
-            </div>
-
-            {activeStudents.length === 0 ? (
-              <p className="hint">No students assigned to this batch yet.</p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                {activeStudents.map(function (bs) {
-                  var present = attendance[bs.enrollment_id] !== false
-                  var name = bs.enrollments?.students?.full_name || '—'
-                  return (
-                    <div
-                      key={bs.id}
-                      onClick={function () { toggle(bs.enrollment_id) }}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                        border: present ? '1.5px solid var(--green)' : '1.5px solid var(--border)',
-                        background: present ? 'var(--green-bg)' : 'var(--bg2)',
-                        transition: 'all 0.12s',
-                      }}
-                    >
-                      <div style={{
-                        width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                        background: present ? 'var(--green)' : 'var(--bg4)',
-                        color: present ? '#fff' : 'var(--text3)',
-                        fontWeight: 700, fontSize: 13,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {present ? '✓' : '✗'}
-                      </div>
-                      <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>{name}</div>
-                      <div style={{ font: '600 11px var(--mono)', color: present ? 'var(--green)' : 'var(--text3)' }}>
-                        {present ? 'Present' : 'Absent'}
-                      </div>
+              <>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <div>
+                    <div style={{ font: '700 13px var(--font)', color: 'var(--text)' }}>
+                      {new Date(activeSession.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                     </div>
-                  )
-                })}
-              </div>
+                    <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                      <span style={{ color: 'var(--green)', fontWeight: 700 }}>{presentCount}</span>/{activeStudents.length} present
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { toggleAll(true) }}>All Present</button>
+                    <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { toggleAll(false) }}>All Absent</button>
+                  </div>
+                </div>
+
+                {activeStudents.length === 0 ? (
+                  <p className="hint">No students in this batch yet.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {activeStudents.map(function (bs) {
+                      var present = activeSession.attendance[bs.enrollment_id] !== false
+                      var name    = bs.enrollments?.students?.full_name || '—'
+                      return (
+                        <div key={bs.id}
+                          onClick={function () { toggle(bs.enrollment_id) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                            border: present ? '1.5px solid var(--green)' : '1.5px solid var(--border)',
+                            background: present ? 'var(--green-bg)' : 'var(--bg2)',
+                            transition: 'all 0.12s',
+                          }}
+                        >
+                          <div style={{
+                            width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                            background: present ? 'var(--green)' : 'var(--bg4)',
+                            color: present ? '#fff' : 'var(--text3)',
+                            fontWeight: 700, fontSize: 13,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>{present ? '✓' : '✗'}</div>
+                          <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>{name}</div>
+                          <div style={{ font: '600 11px var(--mono)', color: present ? 'var(--green)' : 'var(--text3)' }}>
+                            {present ? 'Present' : 'Absent'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {sessions.length > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                    <button className="btn" style={{ fontSize: 11 }}
+                      onClick={function () { setActiveIdx(function (p) { return Math.max(0, p - 1) }) }}
+                      disabled={activeIdx === 0}>← Prev</button>
+                    <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', alignSelf: 'center' }}>
+                      {activeIdx + 1} / {sessions.length}
+                    </span>
+                    <button className="btn" style={{ fontSize: 11 }}
+                      onClick={function () { setActiveIdx(function (p) { return Math.min(sessions.length - 1, p + 1) }) }}
+                      disabled={activeIdx === sessions.length - 1}>Next →</button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
 
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn-p" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Mark Attendance'}
+          <button className="btn-p" onClick={saveAll} disabled={saving || sessions.length === 0}>
+            {saving ? 'Saving…' : 'Save ' + sessions.length + ' Session' + (sessions.length !== 1 ? 's' : '')}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── SessionHistoryModal ────────────────────────────────────────────────────────
+
+function SessionHistoryModal({ batch, onClose }) {
+  const [sessions, setSessions] = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [openSess, setOpenSess] = useState(null)
+
+  useEffect(function () {
+    sb.from('batch_sessions')
+      .select('id, session_date, session_number, is_substitute, instructor_id, instructors(full_name), session_attendance(id, enrollment_id, attended, students(full_name))')
+      .eq('batch_id', batch.id)
+      .order('session_number', { ascending: false })
+      .then(function (res) { setSessions(res.data || []); setLoading(false) })
+  }, [])
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 500 }}>
+        <div className="ch">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Session History</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+              {loading ? '…' : sessions.length + ' session' + (sessions.length !== 1 ? 's' : '') + ' recorded'}
+            </div>
+          </div>
+          <button className="btn-icon" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{ maxHeight: '60vh', overflowY: 'auto', padding: '8px 20px 16px' }}>
+          {loading ? (
+            <div className="hint" style={{ padding: '20px 0', textAlign: 'center' }}>Loading…</div>
+          ) : sessions.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text3)', fontSize: 13 }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
+              No sessions recorded yet.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {sessions.map(function (sess) {
+                var present = (sess.session_attendance || []).filter(function (a) { return a.attended })
+                var absent  = (sess.session_attendance || []).filter(function (a) { return !a.attended })
+                var isOpen  = openSess === sess.id
+                return (
+                  <div key={sess.id} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                    <div
+                      onClick={function () { setOpenSess(isOpen ? null : sess.id) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', background: 'var(--bg)' }}
+                    >
+                      <div style={{ font: '700 11px var(--mono)', color: 'var(--purple)', minWidth: 30 }}>
+                        #{sess.session_number}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>
+                          {new Date(sess.session_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
+                        <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 1 }}>
+                          {sess.instructors?.full_name || '—'}
+                          {sess.is_substitute && <span style={{ color: '#d97706', marginLeft: 6, fontWeight: 600 }}>· Substitute</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ font: '700 11px var(--mono)', color: 'var(--green)' }}>{present.length}✓</span>
+                        {absent.length > 0 && <span style={{ font: '700 11px var(--mono)', color: 'var(--red)' }}>{absent.length}✗</span>}
+                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? '▲' : '▼'}</span>
+                      </div>
+                    </div>
+                    {isOpen && (
+                      <div style={{ padding: '8px 14px 12px', background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
+                        {sess.session_attendance?.length === 0 ? (
+                          <div className="hint">No attendance data.</div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                            {present.length > 0 && (
+                              <div style={{ minWidth: 110 }}>
+                                <div style={{ font: '600 10px var(--mono)', color: 'var(--green)', marginBottom: 5, textTransform: 'uppercase' }}>
+                                  Present ({present.length})
+                                </div>
+                                {present.map(function (a) {
+                                  return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text)', marginBottom: 2 }}>✓ {a.students?.full_name || '—'}</div>
+                                })}
+                              </div>
+                            )}
+                            {absent.length > 0 && (
+                              <div style={{ minWidth: 110 }}>
+                                <div style={{ font: '600 10px var(--mono)', color: 'var(--red)', marginBottom: 5, textTransform: 'uppercase' }}>
+                                  Absent ({absent.length})
+                                </div>
+                                {absent.map(function (a) {
+                                  return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginBottom: 2 }}>✗ {a.students?.full_name || '—'}</div>
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-p" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -707,6 +866,7 @@ export default function BatchesPage() {
   const [showAddBatch,       setShowAddBatch]       = useState(null) // { instructorId, skuId, skuLabel }
   const [addStudentModal,    setAddStudentModal]    = useState(null) // batch object (for adding students only)
   const [attendanceModal,    setAttendanceModal]    = useState(null) // batch object
+  const [historyModal,       setHistoryModal]       = useState(null) // batch object
   const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
   const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
 
@@ -969,6 +1129,13 @@ export default function BatchesPage() {
                         </button>
                       )}
 
+                      {/* Session history */}
+                      <button className="btn" style={{ fontSize: 11, padding: '4px 10px' }}
+                        title="View session history"
+                        onClick={function () { setHistoryModal(batch) }}>
+                        🗂 History
+                      </button>
+
                       {/* Students toggle — shows count, expands inline */}
                       <button
                         className={'btn' + (rosterOpen ? ' btn-active' : '')}
@@ -1086,12 +1253,20 @@ export default function BatchesPage() {
         />
       )}
 
-      {/* ── Attendance modal ── */}
+      {/* ── Bulk attendance modal ── */}
       {attendanceModal && (
-        <AttendanceModal
+        <BulkAttendanceModal
           batch={attendanceModal}
           onClose={function () { setAttendanceModal(null) }}
           onSaved={function () { setAttendanceModal(null); load() }}
+        />
+      )}
+
+      {/* ── Session history modal ── */}
+      {historyModal && (
+        <SessionHistoryModal
+          batch={historyModal}
+          onClose={function () { setHistoryModal(null) }}
         />
       )}
 
