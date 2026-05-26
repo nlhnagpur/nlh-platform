@@ -76,9 +76,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
+  const [allCentreSkus,     setAllCentreSkus]     = useState([])   // ALL SKUs the centre offers (enrolled + available)
   const [availableSkus,     setAvailableSkus]     = useState([])   // SKUs the centre offers, minus already enrolled
   const [selectedNewSkus,   setSelectedNewSkus]   = useState([])
   const [addingEnrollment,  setAddingEnrollment]  = useState(false)
+
+  // ── Delete state ──
+  const [deleting, setDeleting] = useState(false)
 
   const balance = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
 
@@ -158,6 +162,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     } else if (filter && filter.courseIds) {
       candidates = (allSkuRows || []).filter(function (s) { return filter.courseIds.includes(s.course_id) })
     }
+    setAllCentreSkus(candidates)
     setAvailableSkus(candidates.filter(function (s) { return !enrolledSkuIds.includes(s.id) }))
   }
 
@@ -309,6 +314,23 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       .select('*, enrollments(id, sku_id, cert_emailed_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
+  }
+
+  // ── Delete student (admin only) ──
+  async function deleteStudent() {
+    if (!window.confirm('Permanently delete ' + student.full_name + ' and ALL their records (enrollments, batch assignments)?\n\nThis CANNOT be undone.')) return
+    setDeleting(true)
+    const enrIds = localEnrollments.map(function (e) { return e.id })
+    if (enrIds.length > 0) {
+      await sb.from('batch_students').delete().in('enrollment_id', enrIds)
+      await sb.from('enrollments').delete().in('id', enrIds)
+    }
+    const { error } = await sb.from('students').delete().eq('id', student.id)
+    setDeleting(false)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    showToast(student.full_name + ' deleted')
+    onSaved(null)   // null signals deletion to parent
+    onClose()
   }
 
   return (
@@ -722,9 +744,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                           Add Course Enrollment
                         </div>
                         {(function () {
-                          // Group available SKUs by course name
+                          const enrolledSkuIds = localEnrollments.map(function (e) { return e.sku_id })
+                          // Group ALL centre SKUs by course (so enrolled levels are visible too)
                           const groupMap = {}
-                          availableSkus.forEach(function (s) {
+                          allCentreSkus.forEach(function (s) {
                             const g = s.courses?.group_name || 'Other'
                             if (!groupMap[g]) groupMap[g] = []
                             groupMap[g].push(s)
@@ -734,18 +757,47 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             return <p className="hint" style={{ color: 'var(--red)' }}>No additional courses available for this centre.</p>
                           }
                           return (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                               {groups.map(function ([groupName, skus]) {
+                                // Enrolled SKUs in this group
+                                const enrolledInGroup = skus.filter(function (s) { return enrolledSkuIds.includes(s.id) })
+                                // Available (unenrolled) SKUs in this group, in curriculum order
+                                const availableInGroup = skus.filter(function (s) { return !enrolledSkuIds.includes(s.id) })
+                                // The first available SKU is the "next level" recommendation
+                                const nextLevelId = availableInGroup.length > 0 ? availableInGroup[0].id : null
+                                if (enrolledInGroup.length === 0 && availableInGroup.length === 0) return null
                                 return (
                                   <div key={groupName}>
-                                    <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 5 }}>
+                                    <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
                                       {groupName}
                                     </div>
-                                    <div className="checkbox-grid">
-                                      {skus.map(function (sku) {
-                                        const checked = selectedNewSkus.some(function (s) { return s.id === sku.id })
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                      {/* Already enrolled levels — greyed out */}
+                                      {enrolledInGroup.map(function (sku) {
                                         return (
-                                          <label key={sku.id} className="checkbox-item">
+                                          <div key={sku.id} style={{
+                                            display: 'flex', alignItems: 'center', gap: 8,
+                                            padding: '5px 10px', borderRadius: 6,
+                                            background: 'var(--bg2)', border: '1px solid var(--border)',
+                                            opacity: 0.7,
+                                          }}>
+                                            <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 13 }}>✓</span>
+                                            <span style={{ font: '500 12px var(--font)', color: 'var(--text2)', flex: 1 }}>{sku.level_name}</span>
+                                            <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px' }}>Enrolled</span>
+                                          </div>
+                                        )
+                                      })}
+                                      {/* Available levels — selectable, first one highlighted as Next Level */}
+                                      {availableInGroup.map(function (sku) {
+                                        const checked = selectedNewSkus.some(function (s) { return s.id === sku.id })
+                                        const isNext = sku.id === nextLevelId && enrolledInGroup.length > 0
+                                        return (
+                                          <label key={sku.id} style={{
+                                            display: 'flex', alignItems: 'center', gap: 8,
+                                            padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
+                                            background: isNext ? 'var(--purple-bg)' : (checked ? 'var(--purple-bg)' : 'var(--card)'),
+                                            border: isNext ? '1.5px solid var(--purple)' : (checked ? '1.5px solid var(--purple)' : '1px solid var(--border)'),
+                                          }}>
                                             <input
                                               type="checkbox"
                                               checked={checked}
@@ -756,9 +808,11 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                                     : [...prev, sku]
                                                 })
                                               }}
+                                              style={{ accentColor: 'var(--purple)' }}
                                             />
-                                            {sku.level_name}
-                                            {sku.student_fee ? <span className="hint"> ₹{fmtAmt(sku.student_fee)}</span> : null}
+                                            <span style={{ font: '500 12px var(--font)', color: 'var(--text)', flex: 1 }}>{sku.level_name}</span>
+                                            {isNext && <span style={{ font: '700 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', border: '1px solid var(--purple)', borderRadius: 4, padding: '1px 6px', whiteSpace: 'nowrap' }}>→ Next Level</span>}
+                                            {sku.student_fee ? <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>₹{fmtAmt(sku.student_fee)}</span> : null}
                                           </label>
                                         )
                                       })}
@@ -803,6 +857,16 @@ function StudentDetailModal({ student, onClose, onSaved }) {
 
         {/* Footer actions */}
         <div className="modal-actions">
+          {admin && (
+            <button
+              className="btn"
+              style={{ color: 'var(--red, #dc2626)', borderColor: 'var(--red, #dc2626)', marginRight: 'auto' }}
+              onClick={deleteStudent}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : '🗑 Delete Student'}
+            </button>
+          )}
           <button className="btn" onClick={onClose}>Close</button>
           {admin && tab === 'profile' && (
             <button className="btn-p" onClick={save} disabled={saving}>
@@ -851,6 +915,7 @@ function AddStudentModal({ onClose, onSaved }) {
   const [showAddress, setShowAddress] = useState(false)
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
+  const [dupStudent, setDupStudent] = useState(null)   // existing student with same phone
   // null = no centre chosen yet; 'all' = show everything; {skuIds} or {courseIds} = filtered
   const [regFilter, setRegFilter] = useState(null)
   const [selectedSkus, setSelectedSkus] = useState([])
@@ -905,6 +970,20 @@ function AddStudentModal({ onClose, onSaved }) {
     sb.from('skus').select('id,level_name,student_fee,course_id,courses(group_name)').order('sort_order')
       .then(({ data }) => { setAllSkus(data || []) })
   }, [])
+
+  // Phone duplicate check — debounced 600ms
+  useEffect(function () {
+    if (!form.phone || form.phone.replace(/\D/g, '').length < 10) { setDupStudent(null); return }
+    const timer = setTimeout(async function () {
+      let q = sb.from('students')
+        .select('id, full_name, enrollments(skus(level_name, courses(group_name)))')
+        .eq('phone', form.phone.trim())
+      if (form.franchisee_id) q = q.eq('franchisee_id', form.franchisee_id)
+      const { data } = await q
+      setDupStudent(data && data.length > 0 ? data[0] : null)
+    }, 600)
+    return function () { clearTimeout(timer) }
+  }, [form.phone, form.franchisee_id])
 
   // Build filtered + grouped SKU list for display
   function buildGroups() {
@@ -1138,6 +1217,31 @@ function AddStudentModal({ onClose, onSaved }) {
               <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
           </div>
+
+          {/* ── Duplicate student warning ── */}
+          {dupStudent && (
+            <div style={{
+              margin: '8px 0', padding: '10px 14px', borderRadius: 8,
+              background: '#fffbeb', border: '1.5px solid #f59e0b',
+              display: 'flex', flexDirection: 'column', gap: 4,
+            }}>
+              <div style={{ font: '700 12px var(--font)', color: '#b45309' }}>
+                ⚠ Student already registered with this number
+              </div>
+              <div style={{ font: '500 12px var(--font)', color: 'var(--text)' }}>
+                <b>{dupStudent.full_name}</b> is already enrolled
+                {dupStudent.enrollments && dupStudent.enrollments.length > 0 && (
+                  <span> in: {dupStudent.enrollments
+                    .map(function (e) { return e.skus?.courses?.group_name + ' – ' + e.skus?.level_name })
+                    .filter(Boolean).join(', ')}
+                  </span>
+                )}.
+              </div>
+              <div style={{ font: '500 11px var(--font)', color: '#b45309' }}>
+                To add a new course to this student, close this form and open their existing record.
+              </div>
+            </div>
+          )}
 
           {/* ── Section 2: Centre ── */}
           <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
@@ -1489,6 +1593,12 @@ export default function StudentsPage() {
   })
 
   function handleSaved(updated) {
+    if (updated === null) {
+      // Student was deleted — remove from list and close modal
+      setStudents(function (ss) { return ss.filter(function (s) { return s.id !== selected?.id }) })
+      setSelected(null)
+      return
+    }
     setStudents(ss => ss.map(s => s.id === updated.id ? { ...s, ...updated } : s))
     setSelected(s => s && s.id === updated.id ? { ...s, ...updated } : s)
   }
