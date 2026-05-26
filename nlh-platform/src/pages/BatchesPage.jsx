@@ -545,6 +545,26 @@ function SessionHistoryModal({ batch, onClose }) {
     loadSessions()
   }
 
+  async function deleteSession(sess) {
+    if (!window.confirm(
+      'Delete session #' + sess.session_number + ' (' +
+      new Date(sess.session_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ')?\n\nThis will also remove all attendance records for this session.'
+    )) return
+    // Delete attendance first (cascade should handle it, but explicit is safer)
+    await sb.from('session_attendance').delete().eq('session_id', sess.id)
+    var { error } = await sb.from('batch_sessions').delete().eq('id', sess.id)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    // Re-sync sessions_done to actual non-holiday count
+    var { count } = await sb.from('batch_sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('batch_id', batch.id)
+      .eq('is_holiday', false)
+    await sb.from('batches').update({ sessions_done: count || 0 }).eq('id', batch.id)
+    showToast('Session deleted ✓')
+    loadSessions()
+  }
+
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 500 }}>
@@ -621,6 +641,17 @@ function SessionHistoryModal({ batch, onClose }) {
                           }
                         </div>
                       </div>
+                      {isHol && (
+                        <button
+                          type="button"
+                          onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
+                          style={{
+                            padding: '2px 8px', borderRadius: 5, border: '1px solid #f3d996',
+                            background: 'transparent', color: '#d97706',
+                            font: '500 10px var(--font)', cursor: 'pointer',
+                          }}
+                        >🗑</button>
+                      )}
                       {!isHol && !isEditing && (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                           {noData
@@ -639,6 +670,15 @@ function SessionHistoryModal({ batch, onClose }) {
                               font: '500 10px var(--font)', cursor: 'pointer',
                             }}
                           >✏️ Edit</button>
+                          <button
+                            type="button"
+                            onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
+                            style={{
+                              padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)',
+                              background: 'var(--bg2)', color: 'var(--red, #dc2626)',
+                              font: '500 10px var(--font)', cursor: 'pointer',
+                            }}
+                          >🗑</button>
                           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? '▲' : '▼'}</span>
                         </div>
                       )}
