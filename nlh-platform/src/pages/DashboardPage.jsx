@@ -426,7 +426,6 @@ export default function DashboardPage({ onNavigate }) {
   const [franchiseeCount, setFranchiseeCount] = useState(0)
   const [tierBreakdown, setTierBreakdown]     = useState({ SMF: 0, CF: 0, UF: 0 })
   const [studentCount, setStudentCount]         = useState(0)
-  const [studentPendingFees, setStudentPendingFees] = useState(0)
   const [pendingCount, setPendingCount]         = useState(0)
   const [outstanding, setOutstanding]           = useState(0)
   const [recentOrders, setRecentOrders]       = useState([])
@@ -462,20 +461,15 @@ export default function DashboardPage({ onNavigate }) {
   }, [currentRole, isAdmin, currentFranchiseeId])
 
   async function loadAdminData() {
-    const [fr, frAll, st, stFees, orPend, orAll] = await Promise.all([
+    const [fr, frAll, st, orPend, orAll] = await Promise.all([
       sb.from('franchisees').select('id', { count: 'exact', head: true }).eq('status', 'active'),
       sb.from('franchisees').select('tier').eq('status', 'active'),
       sb.from('students').select('id', { count: 'exact', head: true }),
-      sb.from('students').select('fee_total, fee_paid').in('payment_status', ['pending', 'partial']),
       sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, placer:franchisees!orders_placer_id_fkey(business_name, city, tier)'),
     ])
     setFranchiseeCount(fr.count || 0)
     setStudentCount(st.count || 0)
-    const pendingFees = (stFees.data || []).reduce(function(sum, s) {
-      return sum + Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
-    }, 0)
-    setStudentPendingFees(pendingFees)
     setPendingCount(orPend.count || 0)
 
     const tiers = { SMF: 0, CF: 0, UF: 0 }
@@ -875,7 +869,7 @@ export default function DashboardPage({ onNavigate }) {
                 <div className="kc-top"><div className="kc-ic">🎓</div><div className="kc-arr">↗</div></div>
                 <div className="kc-num">{studentCount.toLocaleString('en-IN')}</div>
                 <div className="kc-lbl">Total students</div>
-                <div className="kc-sub"><span className="delta" style={{ color: studentPendingFees > 0 ? 'var(--orange, #ea580c)' : undefined }}>₹{fmtAmt(studentPendingFees)} pending</span>student fees</div>
+                <div className="kc-sub"><span className="delta">all centres</span>across network</div>
               </div>
               <div className="kc kc-3" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('orders') }}>
                 <div className="kc-top"><div className="kc-ic">📦</div><div className="kc-arr">↗</div></div>
