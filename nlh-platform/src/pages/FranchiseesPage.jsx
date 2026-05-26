@@ -10,17 +10,6 @@ import { printFranchiseeCert, default as FranchiseeCertModal } from '../componen
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
-const INDIA_STATES = [
-  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh',
-  'Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka',
-  'Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram',
-  'Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana',
-  'Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
-  // Union Territories
-  'Andaman & Nicobar Islands','Chandigarh','Dadra & Nagar Haveli and Daman & Diu',
-  'Delhi','Jammu & Kashmir','Ladakh','Lakshadweep','Puducherry',
-]
-
 const COUNTRIES = [
   'India','Australia','Bahrain','Bangladesh','Canada','France','Germany',
   'Kuwait','Malaysia','Maldives','Nepal','New Zealand','Oman','Qatar',
@@ -28,30 +17,88 @@ const COUNTRIES = [
   'United States',
 ]
 
+const STATE_CITIES = {
+  'Andhra Pradesh':    ['Visakhapatnam','Vijayawada','Guntur','Nellore','Kurnool','Rajahmundry','Tirupati','Kakinada','Kadapa','Anantapur','Eluru','Ongole','Nandyal','Vizianagaram','Chittoor'],
+  'Arunachal Pradesh': ['Itanagar','Naharlagun','Pasighat','Tawang','Ziro','Bomdila'],
+  'Assam':             ['Guwahati','Silchar','Dibrugarh','Jorhat','Nagaon','Tinsukia','Tezpur','Sivasagar','Karimganj','Bongaigaon','Dhubri','Barpeta','North Lakhimpur'],
+  'Bihar':             ['Patna','Gaya','Bhagalpur','Muzaffarpur','Purnia','Darbhanga','Bihar Sharif','Arrah','Begusarai','Katihar','Munger','Chhapra','Hajipur','Samastipur'],
+  'Chhattisgarh':      ['Raipur','Bhilai','Korba','Bilaspur','Durg','Rajnandgaon','Jagdalpur','Ambikapur','Raigarh','Dhamtari'],
+  'Goa':               ['Panaji','Margao','Vasco da Gama','Mapusa','Ponda','Bicholim','Curchorem','Sanquelim'],
+  'Gujarat':           ['Ahmedabad','Surat','Vadodara','Rajkot','Bhavnagar','Jamnagar','Junagadh','Gandhinagar','Anand','Bharuch','Morbi','Nadiad','Mehsana','Surendranagar','Amreli','Navsari','Valsad','Porbandar','Gondal','Gandhidham','Palanpur','Patan','Botad','Deesa','Veraval'],
+  'Haryana':           ['Faridabad','Gurugram','Panipat','Ambala','Yamunanagar','Rohtak','Hisar','Karnal','Sonipat','Panchkula','Bhiwani','Sirsa','Bahadurgarh','Jind','Thanesar'],
+  'Himachal Pradesh':  ['Shimla','Mandi','Solan','Dharamshala','Kullu','Baddi','Palampur','Hamirpur','Una','Bilaspur','Chamba','Nahan','Rampur'],
+  'Jharkhand':         ['Ranchi','Jamshedpur','Dhanbad','Bokaro','Deoghar','Hazaribagh','Giridih','Ramgarh','Medininagar','Chaibasa'],
+  'Karnataka':         ['Bengaluru','Mysuru','Mangaluru','Hubli','Belagavi','Kalaburagi','Davanagere','Ballari','Vijayapura','Shivamogga','Tumakuru','Bidar','Raichur','Hassan','Udupi','Mandya','Gadag','Dharwad','Chitradurga'],
+  'Kerala':            ['Thiruvananthapuram','Kochi','Kozhikode','Thrissur','Kollam','Alappuzha','Palakkad','Malappuram','Kannur','Kottayam','Kasaragod','Ernakulam'],
+  'Madhya Pradesh':    ['Indore','Bhopal','Jabalpur','Gwalior','Ujjain','Sagar','Dewas','Satna','Ratlam','Rewa','Singrauli','Burhanpur','Khandwa','Bhind','Chhindwara','Guna','Shivpuri','Vidisha','Chhatarpur'],
+  'Maharashtra':       ['Mumbai','Pune','Nagpur','Nashik','Aurangabad','Solapur','Kolhapur','Amravati','Nanded','Thane','Pimpri-Chinchwad','Kalyan','Vasai-Virar','Malegaon','Jalgaon','Akola','Latur','Dhule','Sangli','Satara','Ratnagiri','Ahmednagar','Chandrapur','Yavatmal','Bhusawal','Panvel','Wardha','Hinganghat','Mira-Bhayandar'],
+  'Manipur':           ['Imphal','Thoubal','Bishnupur','Churachandpur','Senapati','Ukhrul'],
+  'Meghalaya':         ['Shillong','Tura','Nongstoin','Jowai','Baghmara'],
+  'Mizoram':           ['Aizawl','Lunglei','Saiha','Champhai','Serchhip','Kolasib'],
+  'Nagaland':          ['Kohima','Dimapur','Mokokchung','Tuensang','Wokha','Mon'],
+  'Odisha':            ['Bhubaneswar','Cuttack','Rourkela','Brahmapur','Sambalpur','Puri','Balasore','Baripada','Bhadrak','Balangir','Jharsuguda','Berhampur','Rayagada','Koraput','Kendrapara'],
+  'Punjab':            ['Ludhiana','Amritsar','Jalandhar','Patiala','Bathinda','Hoshiarpur','Pathankot','Moga','Abohar','Malerkotla','Khanna','Phagwara','Muktsar','Firozpur','Mohali','Batala'],
+  'Rajasthan':         ['Jaipur','Jodhpur','Kota','Bikaner','Ajmer','Udaipur','Bhilwara','Alwar','Bharatpur','Sikar','Pali','Sri Ganganagar','Churu','Jhunjhunu','Barmer','Nagaur','Tonk','Bundi','Sawai Madhopur'],
+  'Sikkim':            ['Gangtok','Namchi','Geyzing','Mangan','Rangpo','Jorethang'],
+  'Tamil Nadu':        ['Chennai','Coimbatore','Madurai','Tiruchirappalli','Salem','Tirunelveli','Tiruppur','Vellore','Erode','Thoothukudi','Dindigul','Thanjavur','Ranipet','Sivakasi','Karur','Hosur','Nagercoil','Kancheepuram','Cuddalore','Kumbakonam','Udhagamandalam'],
+  'Telangana':         ['Hyderabad','Warangal','Nizamabad','Khammam','Karimnagar','Ramagundam','Mahbubnagar','Nalgonda','Adilabad','Suryapet','Miryalaguda','Siddipet','Jagtial'],
+  'Tripura':           ['Agartala','Dharmanagar','Udaipur','Kailashahar','Belonia','Ambassa','Khowai'],
+  'Uttar Pradesh':     ['Lucknow','Kanpur','Ghaziabad','Agra','Meerut','Varanasi','Prayagraj','Bareilly','Aligarh','Moradabad','Saharanpur','Gorakhpur','Noida','Firozabad','Jhansi','Muzaffarnagar','Mathura','Rampur','Shahjahanpur','Hapur','Sambhal','Amroha','Mau','Bulandshahr','Unnao','Etawah','Mirzapur','Faizabad','Rae Bareli','Bahraich','Sultanpur','Fatehpur','Sitapur','Hathras','Orai','Banda','Pilibhit','Mainpuri','Budaun','Hardoi','Gonda','Azamgarh','Etah','Lakhimpur','Deoria','Ballia','Bijnor','Basti'],
+  'Uttarakhand':       ['Dehradun','Haridwar','Roorkee','Haldwani','Rudrapur','Kashipur','Rishikesh','Kotdwar','Ramnagar','Pithoragarh','Almora','Nainital','Mussoorie'],
+  'West Bengal':       ['Kolkata','Howrah','Durgapur','Asansol','Siliguri','Bardhaman','Malda','Baharampur','Habra','Kharagpur','Shantipur','Ranaghat','Haldia','Raiganj','Krishnanagar','Nabadwip','Medinipur','Jalpaiguri','Balurghat','Basirhat','Bankura','Darjeeling'],
+  'Andaman & Nicobar Islands': ['Port Blair','Diglipur','Rangat'],
+  'Chandigarh':        ['Chandigarh'],
+  'Dadra & Nagar Haveli and Daman & Diu': ['Daman','Diu','Silvassa'],
+  'Delhi':             ['New Delhi','Central Delhi','North Delhi','South Delhi','East Delhi','West Delhi','Dwarka','Rohini','Janakpuri','Laxmi Nagar','Shahdara'],
+  'Jammu & Kashmir':   ['Srinagar','Jammu','Anantnag','Baramulla','Sopore','Kathua','Udhampur','Rajouri','Poonch'],
+  'Ladakh':            ['Leh','Kargil'],
+  'Lakshadweep':       ['Kavaratti','Minicoy','Andrott'],
+  'Puducherry':        ['Puducherry','Karaikal','Mahe','Yanam'],
+}
+
+const INDIA_STATES = Object.keys(STATE_CITIES).sort()
+
 function LocationFields({ form, onChange, disabled }) {
   const isIndia = (form.country || 'India').toLowerCase() === 'india'
-  function f(k) {
-    return function (e) { onChange(k, e.target.value) }
+  const cityList = isIndia ? (STATE_CITIES[form.state] || []) : []
+
+  function handleCountryChange(e) {
+    onChange('country', e.target.value)
+    onChange('state', '')
+    onChange('city', '')
   }
+  function handleStateChange(e) {
+    onChange('state', e.target.value)
+    onChange('city', '')
+  }
+  function handleCityChange(e) { onChange('city', e.target.value) }
+
   return (
     <>
       <label>Country
-        <select value={form.country || 'India'} onChange={f('country')} disabled={disabled}>
+        <select value={form.country || 'India'} onChange={handleCountryChange} disabled={disabled}>
           {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </label>
-      <label>State{isIndia ? '' : ' / Province'}
+      <label>{isIndia ? 'State' : 'State / Province'}
         {isIndia ? (
-          <select value={form.state || ''} onChange={f('state')} disabled={disabled}>
+          <select value={form.state || ''} onChange={handleStateChange} disabled={disabled}>
             <option value="">— Select State —</option>
             {INDIA_STATES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         ) : (
-          <input value={form.state || ''} onChange={f('state')} disabled={disabled} placeholder="State / Province / Region" />
+          <input value={form.state || ''} onChange={handleStateChange} disabled={disabled} placeholder="State / Province / Region" />
         )}
       </label>
       <label>City
-        <input value={form.city || ''} onChange={f('city')} disabled={disabled} placeholder="e.g. Ahmedabad" />
+        {isIndia ? (
+          <select value={form.city || ''} onChange={handleCityChange} disabled={disabled || !form.state}>
+            <option value="">— Select City —</option>
+            {cityList.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        ) : (
+          <input value={form.city || ''} onChange={handleCityChange} disabled={disabled} placeholder="City" />
+        )}
       </label>
     </>
   )
