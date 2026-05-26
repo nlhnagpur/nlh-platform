@@ -1302,23 +1302,15 @@ export default function BatchesPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
 
                       {/* Sessions counter */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <button
-                          onClick={function () { adjustSessions(batch, -1) }}
-                          disabled={!batch.sessions_done}
-                          title="Undo last session"
-                          style={{
-                            width: 24, height: 24, borderRadius: 5, border: '1px solid var(--border)',
-                            background: 'var(--bg2)', cursor: batch.sessions_done ? 'pointer' : 'not-allowed',
-                            fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            opacity: batch.sessions_done ? 1 : 0.35,
-                          }}>−</button>
-                        <div style={{
-                          font: '600 11px var(--mono)', minWidth: 78, textAlign: 'center',
-                          color: 'var(--purple)', whiteSpace: 'nowrap',
+                      <div
+                        title="Sessions conducted — click History to view dates"
+                        style={{
+                          font: '600 11px var(--mono)', padding: '3px 10px',
+                          borderRadius: 6, border: '1px solid var(--border)',
+                          background: 'var(--bg2)', color: 'var(--purple)',
+                          whiteSpace: 'nowrap', cursor: 'default',
                         }}>
-                          {sessLabel} sessions
-                        </div>
+                        {sessLabel} sessions
                       </div>
 
                       {/* Take Attendance */}
