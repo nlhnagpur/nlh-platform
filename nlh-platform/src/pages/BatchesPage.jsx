@@ -700,9 +700,12 @@ export default function BatchesPage() {
   const [filterCourse,  setFilterCourse]  = useState('')
   const [filterStatus,  setFilterStatus]  = useState('active')
 
+  // Inline roster toggle
+  const [openRosters, setOpenRosters] = useState({})
+
   // Modals
   const [showAddBatch,       setShowAddBatch]       = useState(null) // { instructorId, skuId, skuLabel }
-  const [rosterModal,        setRosterModal]        = useState(null) // batch object
+  const [addStudentModal,    setAddStudentModal]    = useState(null) // batch object (for adding students only)
   const [attendanceModal,    setAttendanceModal]    = useState(null) // batch object
   const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
   const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
@@ -764,6 +767,25 @@ export default function BatchesPage() {
     setBatches(function (prev) {
       return prev.map(function (b) { return b.id === batch.id ? { ...b, is_active } : b })
     })
+  }
+
+  async function removeFromBatch(bsId, batchId) {
+    const { error } = await sb.from('batch_students')
+      .update({ removed_at: new Date().toISOString() })
+      .eq('id', bsId)
+    if (error) { showToast('Remove failed', 'err'); return }
+    setBatches(function (prev) {
+      return prev.map(function (b) {
+        if (b.id !== batchId) return b
+        return {
+          ...b,
+          batch_students: b.batch_students.map(function (bs) {
+            return bs.id === bsId ? { ...bs, removed_at: new Date().toISOString() } : bs
+          }),
+        }
+      })
+    })
+    showToast('Student removed')
   }
 
   // ── filter ────────────────────────────────────────────────────────────────
@@ -861,12 +883,15 @@ export default function BatchesPage() {
             const coursesLabel   = courses.length > 0 ? courses.join(', ') : '—'
             const ciName         = batch.instructors?.full_name || '—'
 
+            const rosterOpen = !!openRosters[batch.id]
+
             return (
               <div key={batch.id} style={{
                 border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
                 background: batch.is_active ? 'var(--bg)' : 'var(--bg3)',
                 opacity: batch.is_active ? 1 : 0.72,
               }}>
+                {/* ── Batch header row ── */}
                 <div style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
 
@@ -916,7 +941,7 @@ export default function BatchesPage() {
                     {/* Right controls */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
 
-                      {/* Sessions counter — undo button + label only; + replaced by Take Attendance */}
+                      {/* Sessions counter */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <button
                           onClick={function () { adjustSessions(batch, -1) }}
@@ -944,15 +969,12 @@ export default function BatchesPage() {
                         </button>
                       )}
 
-                      {/* Students roster */}
-                      <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
-                        onClick={function () {
-                          setRosterModal({
-                            ...batch,
-                            instructor_name: ciName,
-                          })
-                        }}>
-                        👥 {activeStudents.length}
+                      {/* Students toggle — shows count, expands inline */}
+                      <button
+                        className={'btn' + (rosterOpen ? ' btn-active' : '')}
+                        style={{ fontSize: 11, padding: '3px 10px', background: rosterOpen ? 'var(--purple-bg)' : '', borderColor: rosterOpen ? 'var(--purple)' : '', color: rosterOpen ? 'var(--purple)' : '' }}
+                        onClick={function () { setOpenRosters(function (r) { return { ...r, [batch.id]: !r[batch.id] } }) }}>
+                        👥 {activeStudents.length} {rosterOpen ? '▲' : '▼'}
                       </button>
 
                       {/* Change instructor */}
@@ -979,6 +1001,56 @@ export default function BatchesPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* ── Inline student roster ── */}
+                {rosterOpen && (
+                  <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '10px 16px 14px' }}>
+                    {activeStudents.length === 0 ? (
+                      <div style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginBottom: 8 }}>
+                        No students assigned yet.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+                        {activeStudents.map(function (bs) {
+                          const name   = bs.enrollments?.students?.full_name || '—'
+                          const course = bs.enrollments?.skus?.courses?.group_name || ''
+                          const level  = bs.enrollments?.skus?.level_name || ''
+                          const initials = name.split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
+                          return (
+                            <div key={bs.id} style={{
+                              display: 'flex', alignItems: 'center', gap: 10,
+                              padding: '7px 10px', borderRadius: 8,
+                              background: 'var(--bg)', border: '1px solid var(--border)',
+                            }}>
+                              <div style={{
+                                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                                background: 'var(--purple-bg)', color: 'var(--purple)',
+                                fontWeight: 700, fontSize: 11,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}>{initials}</div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>{name}</div>
+                                {(course || level) && (
+                                  <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 1 }}>
+                                    {course}{level ? ' · ' + level : ''}
+                                  </div>
+                                )}
+                              </div>
+                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
+                                onClick={function () { removeFromBatch(bs.id, batch.id) }}>
+                                Remove
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <button className="btn-s" style={{ fontSize: 11 }}
+                      onClick={function () { setAddStudentModal({ ...batch, instructor_name: ciName }) }}>
+                      + Add Student
+                    </button>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -1004,13 +1076,13 @@ export default function BatchesPage() {
         />
       )}
 
-      {/* ── Roster modal ── */}
-      {rosterModal && nlhCentreId && (
+      {/* ── Add Student modal (roster for adding only) ── */}
+      {addStudentModal && nlhCentreId && (
         <RosterModal
-          batch={rosterModal}
+          batch={addStudentModal}
           nlhCentreId={nlhCentreId}
-          onClose={function () { setRosterModal(null) }}
-          onChange={function () { load() }}
+          onClose={function () { setAddStudentModal(null) }}
+          onChange={function () { setAddStudentModal(null); load() }}
         />
       )}
 
