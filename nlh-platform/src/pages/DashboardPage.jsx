@@ -425,18 +425,20 @@ export default function DashboardPage({ onNavigate }) {
   const [loading, setLoading] = useState(true)
   const [franchiseeCount, setFranchiseeCount] = useState(0)
   const [tierBreakdown, setTierBreakdown]     = useState({ SMF: 0, CF: 0, UF: 0 })
-  const [studentCount, setStudentCount]       = useState(0)
-  const [pendingCount, setPendingCount]       = useState(0)
-  const [outstanding, setOutstanding]         = useState(0)
+  const [studentCount, setStudentCount]         = useState(0)
+  const [studentPendingFees, setStudentPendingFees] = useState(0)
+  const [pendingCount, setPendingCount]         = useState(0)
+  const [outstanding, setOutstanding]           = useState(0)
   const [recentOrders, setRecentOrders]       = useState([])
   const [topFranchisees, setTopFranchisees]   = useState([])
   const [chartData, setChartData]             = useState(null)
 
   // non-admin
-  const [ownOrderCount, setOwnOrderCount]     = useState(0)
-  const [ownPending, setOwnPending]           = useState(0)
-  const [ownOutstanding, setOwnOutstanding]   = useState(0)
-  const [ownOrders, setOwnOrders]             = useState([])
+  const [ownOrderCount, setOwnOrderCount]         = useState(0)
+  const [ownPending, setOwnPending]               = useState(0)
+  const [ownOutstanding, setOwnOutstanding]       = useState(0)
+  const [ownStudentPendingFees, setOwnStudentPendingFees] = useState(0)
+  const [ownOrders, setOwnOrders]                 = useState([])
 
   // search & export
   const [searchQ, setSearchQ]               = useState('')
@@ -460,15 +462,20 @@ export default function DashboardPage({ onNavigate }) {
   }, [currentRole, isAdmin, currentFranchiseeId])
 
   async function loadAdminData() {
-    const [fr, frAll, st, orPend, orAll] = await Promise.all([
+    const [fr, frAll, st, stFees, orPend, orAll] = await Promise.all([
       sb.from('franchisees').select('id', { count: 'exact', head: true }).eq('status', 'active'),
       sb.from('franchisees').select('tier').eq('status', 'active'),
       sb.from('students').select('id', { count: 'exact', head: true }),
+      sb.from('students').select('fee_total, fee_paid').in('payment_status', ['pending', 'partial']),
       sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
       sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, placer:franchisees!orders_placer_id_fkey(business_name, city, tier)'),
     ])
     setFranchiseeCount(fr.count || 0)
     setStudentCount(st.count || 0)
+    const pendingFees = (stFees.data || []).reduce(function(sum, s) {
+      return sum + Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
+    }, 0)
+    setStudentPendingFees(pendingFees)
     setPendingCount(orPend.count || 0)
 
     const tiers = { SMF: 0, CF: 0, UF: 0 }
@@ -516,10 +523,15 @@ export default function DashboardPage({ onNavigate }) {
       .filter(function(o) { return o.status === 'invoiced' || o.status === 'payment_submitted' || o.status === 'part_paid' })
       .reduce(function(sum, o) { return sum + Math.max(0, (o.grand_total || 0) - (o.amount_paid || 0)) }, 0)
     setOwnOutstanding(outs)
-    const { count: sc } = await sb.from('students')
-      .select('id', { count: 'exact', head: true })
-      .eq('franchisee_id', currentFranchiseeId)
+    const [{ count: sc }, { data: sfRows }] = await Promise.all([
+      sb.from('students').select('id', { count: 'exact', head: true }).eq('franchisee_id', currentFranchiseeId),
+      sb.from('students').select('fee_total, fee_paid').eq('franchisee_id', currentFranchiseeId).in('payment_status', ['pending', 'partial']),
+    ])
     setStudentCount(sc || 0)
+    const ownPendFees = (sfRows || []).reduce(function(sum, s) {
+      return sum + Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
+    }, 0)
+    setOwnStudentPendingFees(ownPendFees)
     buildChartData(orders)
   }
 
@@ -863,7 +875,7 @@ export default function DashboardPage({ onNavigate }) {
                 <div className="kc-top"><div className="kc-ic">🎓</div><div className="kc-arr">↗</div></div>
                 <div className="kc-num">{studentCount.toLocaleString('en-IN')}</div>
                 <div className="kc-lbl">Total students</div>
-                <div className="kc-sub"><span className="delta">all centres</span>across network</div>
+                <div className="kc-sub"><span className="delta" style={{ color: studentPendingFees > 0 ? 'var(--orange, #ea580c)' : undefined }}>₹{fmtAmt(studentPendingFees)} pending</span>student fees</div>
               </div>
               <div className="kc kc-3" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('orders') }}>
                 <div className="kc-top"><div className="kc-ic">📦</div><div className="kc-arr">↗</div></div>
@@ -890,7 +902,7 @@ export default function DashboardPage({ onNavigate }) {
                 <div className="kc-top"><div className="kc-ic">🎓</div><div className="kc-arr">↗</div></div>
                 <div className="kc-num">{studentCount}</div>
                 <div className="kc-lbl">My students</div>
-                <div className="kc-sub"><span className="delta">active</span>enrollments</div>
+                <div className="kc-sub"><span className="delta" style={{ color: ownStudentPendingFees > 0 ? 'var(--orange, #ea580c)' : undefined }}>₹{fmtAmt(ownStudentPendingFees)} pending</span>student fees</div>
               </div>
               <div className="kc kc-3" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('orders') }}>
                 <div className="kc-top"><div className="kc-ic">⏳</div><div className="kc-arr">↗</div></div>
