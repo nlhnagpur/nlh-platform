@@ -3,7 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast, statusBadge } from '../utils'
 import { isAdminRole } from '../constants/roles'
-import { getDescendantIds } from '../utils/hierarchy'
+import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
 import { sendWAPaymentReceived } from '../services/whatsapp'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
@@ -1104,18 +1104,13 @@ export default function FranchiseesPage() {
         if (error) console.error('Franchisees load error:', error)
         setFranchisees(sortFranchisees(data || []))
       } else {
-        // SMF / CF: show full descendant tree (children + grandchildren)
+        // SMF / CF / UF: show own centre + full descendant tree
         if (!currentFranchiseeId) { setLoading(false); return }
-        const descendantIds = await getDescendantIds(currentFranchiseeId)
-        if (descendantIds.length === 0) {
-          setFranchisees([])
-          setLoading(false)
-          return
-        }
+        const treeIds = await getTreeIds(currentFranchiseeId)
         const { data, error } = await sb
           .from('franchisees')
           .select('*')
-          .in('id', descendantIds)
+          .in('id', treeIds)
           .order('city')
           .order('business_name')
         if (error) console.error('Franchisees load error:', error)
@@ -1226,8 +1221,12 @@ export default function FranchiseesPage() {
             <div className="ph-eyebrow"><span className="dot"></span>Network</div>
             <h1 className="ph-title">Franchisees</h1>
             <div className="ph-sub">
-              <b>{franchisees.length} partner{franchisees.length !== 1 ? 's' : ''}</b> in your network.
-              Organised by tier: SMF · CF · UF.
+              {(function () {
+                const partnerCount = admin
+                  ? franchisees.filter(function (f) { return f.tier !== 'NLH' }).length
+                  : franchisees.filter(function (f) { return f.id !== currentFranchiseeId }).length
+                return <><b>{partnerCount} partner{partnerCount !== 1 ? 's' : ''}</b> in your network. Organised by tier: SMF · CF · UF.</>
+              })()}
             </div>
           </div>
         </div>
@@ -1297,9 +1296,11 @@ export default function FranchiseesPage() {
         ) : tierFiltered.length === 0 ? (
           <div className="empty">No franchisees found.</div>
         ) : (function () {
-          // Separate NLH own centre
-          const nlhCentre = tierFiltered.find(function (f) { return f.tier === 'NLH' })
-          const others = tierFiltered.filter(function (f) { return f.tier !== 'NLH' })
+          // Pin own centre to top (NLH HO for admin, own franchisee for everyone else)
+          const ownCentre = admin
+            ? tierFiltered.find(function (f) { return f.tier === 'NLH' })
+            : tierFiltered.find(function (f) { return f.id === currentFranchiseeId })
+          const others = tierFiltered.filter(function (f) { return f.id !== (ownCentre && ownCentre.id) })
 
           // Group by city (fallback to state → country)
           const cityMap = {}
@@ -1321,23 +1322,27 @@ export default function FranchiseesPage() {
 
           return (
             <div>
-              {/* NLH Own Centre */}
-              {nlhCentre && (
-                <div className="nlh-own-card" onClick={function () { setSelected(nlhCentre) }}>
-                  <img
-                    className="nlh-own-logo" src="/NLH Logo.png" alt="NLH"
-                    onError={function (e) { e.target.style.display = 'none' }}
-                  />
-                  <div className="nlh-own-info">
-                    <div className="nlh-own-name">{nlhCentre.business_name || 'New Learning Horizons'}</div>
-                    <div className="nlh-own-loc">
-                      {[nlhCentre.address, nlhCentre.area, nlhCentre.city, nlhCentre.state].filter(Boolean).join(', ')}
+              {/* Own Centre — pinned at top for all tiers */}
+              {ownCentre && (function () {
+                const tierBadgeLabel = { NLH: 'NLH HQ', SMF: 'My Centre · SMF', CF: 'My Centre · CF', UF: 'My Centre · UF' }[ownCentre.tier] || 'My Centre'
+                const tierBadgeColor = { NLH: 'var(--purple)', SMF: '#b45309', CF: '#16A34A', UF: '#2563EB' }[ownCentre.tier] || 'var(--purple)'
+                return (
+                  <div className="nlh-own-card" onClick={function () { setSelected(ownCentre) }}>
+                    <img
+                      className="nlh-own-logo" src="/NLH Logo.png" alt="NLH"
+                      onError={function (e) { e.target.style.display = 'none' }}
+                    />
+                    <div className="nlh-own-info">
+                      <div className="nlh-own-name">{ownCentre.business_name || ownCentre.owner_name}</div>
+                      <div className="nlh-own-loc">
+                        {[ownCentre.area, ownCentre.city, ownCentre.state].filter(Boolean).join(', ')}
+                      </div>
                     </div>
+                    <span className="nlh-own-badge" style={{ background: tierBadgeColor + '1a', color: tierBadgeColor, border: '1px solid ' + tierBadgeColor + '40' }}>{tierBadgeLabel}</span>
+                    <span className="nlh-own-arrow">›</span>
                   </div>
-                  <span className="nlh-own-badge">NLH HQ</span>
-                  <span className="nlh-own-arrow">›</span>
-                </div>
-              )}
+                )
+              })()}
 
               {/* City sections */}
               {cityGroups.map(function (group) {
