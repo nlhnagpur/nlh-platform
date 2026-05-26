@@ -483,17 +483,67 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
 // ── SessionHistoryModal ────────────────────────────────────────────────────────
 
 function SessionHistoryModal({ batch, onClose }) {
-  const [sessions, setSessions] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [openSess, setOpenSess] = useState(null)
+  var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
 
-  useEffect(function () {
+  const [sessions,   setSessions]   = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [openSess,   setOpenSess]   = useState(null)
+  const [editSessId, setEditSessId] = useState(null)   // session being edited
+  const [editAtt,    setEditAtt]    = useState({})      // { enrollment_id: bool }
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  function loadSessions() {
+    setLoading(true)
     sb.from('batch_sessions')
-      .select('id, session_date, session_number, is_substitute, is_holiday, instructor_id, instructors(full_name), session_attendance(id, enrollment_id, attended, students(full_name))')
+      .select('id, session_date, session_number, is_substitute, is_holiday, notes, instructor_id, instructors(full_name), session_attendance(id, enrollment_id, attended, students(full_name))')
       .eq('batch_id', batch.id)
       .order('session_date', { ascending: false })
       .then(function (res) { setSessions(res.data || []); setLoading(false) })
-  }, [])
+  }
+
+  useEffect(function () { loadSessions() }, [])
+
+  function startEdit(sess) {
+    // Seed edit map from existing attendance; if none, default all present
+    var map = {}
+    if ((sess.session_attendance || []).length > 0) {
+      sess.session_attendance.forEach(function (a) { map[a.enrollment_id] = !!a.attended })
+    } else {
+      activeStudents.forEach(function (bs) { map[bs.enrollment_id] = true })
+    }
+    setEditAtt(map)
+    setEditSessId(sess.id)
+    setOpenSess(sess.id)
+  }
+
+  function cancelEdit() { setEditSessId(null); setEditAtt({}) }
+
+  function toggleEdit(enrollmentId) {
+    setEditAtt(function (prev) { return { ...prev, [enrollmentId]: !prev[enrollmentId] } })
+  }
+
+  async function saveEdit(sess) {
+    setSavingEdit(true)
+    // Delete existing attendance for this session then re-insert
+    await sb.from('session_attendance').delete().eq('session_id', sess.id)
+    var rows = activeStudents.map(function (bs) {
+      return {
+        session_id:    sess.id,
+        enrollment_id: bs.enrollment_id,
+        student_id:    bs.enrollments?.student_id || null,
+        attended:      editAtt[bs.enrollment_id] !== false,
+      }
+    })
+    if (rows.length > 0) {
+      var { error } = await sb.from('session_attendance').insert(rows)
+      if (error) { showToast('Save failed: ' + error.message, 'err'); setSavingEdit(false); return }
+    }
+    showToast('Attendance updated ✓')
+    setEditSessId(null)
+    setEditAtt({})
+    setSavingEdit(false)
+    loadSessions()
+  }
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
@@ -526,20 +576,23 @@ function SessionHistoryModal({ batch, onClose }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {sessions.map(function (sess) {
-                var present = (sess.session_attendance || []).filter(function (a) { return a.attended })
-                var absent  = (sess.session_attendance || []).filter(function (a) { return !a.attended })
-                var isOpen  = openSess === sess.id
-                var isHol   = !!sess.is_holiday
+                var present   = (sess.session_attendance || []).filter(function (a) { return a.attended })
+                var absent    = (sess.session_attendance || []).filter(function (a) { return !a.attended })
+                var isOpen    = openSess === sess.id
+                var isHol     = !!sess.is_holiday
+                var isEditing = editSessId === sess.id
+                var noData    = !isHol && (sess.session_attendance || []).length === 0
 
                 return (
                   <div key={sess.id} style={{
-                    border: '1px solid ' + (isHol ? '#f3d996' : 'var(--border)'),
+                    border: '1px solid ' + (isHol ? '#f3d996' : isEditing ? 'var(--purple)' : 'var(--border)'),
                     borderRadius: 8, overflow: 'hidden',
-                    background: isHol ? '#fffbf0' : 'var(--bg)',
+                    background: isHol ? '#fffbf0' : isEditing ? 'var(--purple-bg)' : 'var(--bg)',
                   }}>
+                    {/* ── Row header ── */}
                     <div
-                      onClick={function () { if (!isHol) setOpenSess(isOpen ? null : sess.id) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: isHol ? 'default' : 'pointer' }}
+                      onClick={function () { if (!isHol && !isEditing) setOpenSess(isOpen ? null : sess.id) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: isHol || isEditing ? 'default' : 'pointer' }}
                     >
                       <div style={{ font: '700 11px var(--mono)', color: isHol ? '#d97706' : 'var(--purple)', minWidth: 30 }}>
                         #{sess.session_number}
@@ -554,8 +607,7 @@ function SessionHistoryModal({ batch, onClose }) {
                             ? <span style={{ color: '#d97706', fontWeight: 600 }}>Holiday — No Class</span>
                             : (function () {
                                 var manualName = sess.notes && sess.notes.startsWith('Substitute: ')
-                                  ? sess.notes.slice('Substitute: '.length)
-                                  : null
+                                  ? sess.notes.slice('Substitute: '.length) : null
                                 var displayName = manualName || sess.instructors?.full_name || '—'
                                 return <>
                                   {displayName}
@@ -569,25 +621,43 @@ function SessionHistoryModal({ batch, onClose }) {
                           }
                         </div>
                       </div>
-                      {!isHol && (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <span style={{ font: '700 11px var(--mono)', color: 'var(--green)' }}>{present.length}✓</span>
-                          {absent.length > 0 && <span style={{ font: '700 11px var(--mono)', color: 'var(--red)' }}>{absent.length}✗</span>}
+                      {!isHol && !isEditing && (
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          {noData
+                            ? <span style={{ fontSize: 10, color: '#d97706', fontWeight: 600 }}>No data</span>
+                            : <>
+                                <span style={{ font: '700 11px var(--mono)', color: 'var(--green)' }}>{present.length}✓</span>
+                                {absent.length > 0 && <span style={{ font: '700 11px var(--mono)', color: 'var(--red)' }}>{absent.length}✗</span>}
+                              </>
+                          }
+                          <button
+                            type="button"
+                            onClick={function (e) { e.stopPropagation(); startEdit(sess) }}
+                            style={{
+                              padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)',
+                              background: 'var(--bg2)', color: 'var(--text3)',
+                              font: '500 10px var(--font)', cursor: 'pointer',
+                            }}
+                          >✏️ Edit</button>
                           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? '▲' : '▼'}</span>
                         </div>
                       )}
                     </div>
-                    {isOpen && !isHol && (
+
+                    {/* ── View mode (expanded) ── */}
+                    {isOpen && !isHol && !isEditing && (
                       <div style={{ padding: '8px 14px 12px', background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
-                        {sess.session_attendance?.length === 0 ? (
-                          <div className="hint">No attendance data.</div>
+                        {noData ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span className="hint" style={{ margin: 0 }}>No attendance recorded for this session.</span>
+                            <button type="button" className="btn-s" style={{ fontSize: 11 }}
+                              onClick={function () { startEdit(sess) }}>Mark Now</button>
+                          </div>
                         ) : (
                           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                             {present.length > 0 && (
                               <div style={{ minWidth: 110 }}>
-                                <div style={{ font: '600 10px var(--mono)', color: 'var(--green)', marginBottom: 5, textTransform: 'uppercase' }}>
-                                  Present ({present.length})
-                                </div>
+                                <div style={{ font: '600 10px var(--mono)', color: 'var(--green)', marginBottom: 5, textTransform: 'uppercase' }}>Present ({present.length})</div>
                                 {present.map(function (a) {
                                   return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text)', marginBottom: 2 }}>✓ {a.students?.full_name || '—'}</div>
                                 })}
@@ -595,9 +665,7 @@ function SessionHistoryModal({ batch, onClose }) {
                             )}
                             {absent.length > 0 && (
                               <div style={{ minWidth: 110 }}>
-                                <div style={{ font: '600 10px var(--mono)', color: 'var(--red)', marginBottom: 5, textTransform: 'uppercase' }}>
-                                  Absent ({absent.length})
-                                </div>
+                                <div style={{ font: '600 10px var(--mono)', color: 'var(--red)', marginBottom: 5, textTransform: 'uppercase' }}>Absent ({absent.length})</div>
                                 {absent.map(function (a) {
                                   return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginBottom: 2 }}>✗ {a.students?.full_name || '—'}</div>
                                 })}
@@ -605,6 +673,57 @@ function SessionHistoryModal({ batch, onClose }) {
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* ── Edit mode ── */}
+                    {isEditing && (
+                      <div style={{ padding: '10px 14px 14px', background: 'var(--purple-bg)', borderTop: '1px solid var(--purple)' }}>
+                        <div style={{ font: '600 11px var(--font)', color: 'var(--purple)', marginBottom: 8 }}>
+                          Mark attendance — tap to toggle
+                        </div>
+                        {activeStudents.length === 0 ? (
+                          <p className="hint">No students in batch.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+                            {activeStudents.map(function (bs) {
+                              var pres = editAtt[bs.enrollment_id] !== false
+                              var name = bs.enrollments?.students?.full_name || '—'
+                              return (
+                                <div key={bs.id}
+                                  onClick={function () { toggleEdit(bs.enrollment_id) }}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: 10,
+                                    padding: '7px 11px', borderRadius: 7, cursor: 'pointer',
+                                    border: pres ? '1.5px solid var(--green)' : '1.5px solid var(--border)',
+                                    background: pres ? 'var(--green-bg)' : 'var(--bg)',
+                                    transition: 'all 0.1s',
+                                  }}
+                                >
+                                  <div style={{
+                                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                                    background: pres ? 'var(--green)' : 'var(--bg4)',
+                                    color: pres ? '#fff' : 'var(--text3)',
+                                    fontWeight: 700, fontSize: 12,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}>{pres ? '✓' : '✗'}</div>
+                                  <span style={{ flex: 1, font: '500 12px var(--font)', color: 'var(--text)' }}>{name}</span>
+                                  <span style={{ font: '600 10px var(--mono)', color: pres ? 'var(--green)' : 'var(--text3)' }}>
+                                    {pres ? 'Present' : 'Absent'}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button type="button" className="btn" style={{ fontSize: 11 }}
+                            onClick={cancelEdit} disabled={savingEdit}>Cancel</button>
+                          <button type="button" className="btn-p" style={{ fontSize: 11 }}
+                            onClick={function () { saveEdit(sess) }} disabled={savingEdit}>
+                            {savingEdit ? 'Saving…' : 'Save Attendance'}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
