@@ -8,6 +8,55 @@ import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail 
 import { sendWAPaymentReceived } from '../services/whatsapp'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 
+// ── Location data ──────────────────────────────────────────────────────────────
+
+const INDIA_STATES = [
+  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh',
+  'Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka',
+  'Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram',
+  'Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana',
+  'Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
+  // Union Territories
+  'Andaman & Nicobar Islands','Chandigarh','Dadra & Nagar Haveli and Daman & Diu',
+  'Delhi','Jammu & Kashmir','Ladakh','Lakshadweep','Puducherry',
+]
+
+const COUNTRIES = [
+  'India','Australia','Bahrain','Bangladesh','Canada','France','Germany',
+  'Kuwait','Malaysia','Maldives','Nepal','New Zealand','Oman','Qatar',
+  'Saudi Arabia','Singapore','South Africa','Sri Lanka','UAE','United Kingdom',
+  'United States',
+]
+
+function LocationFields({ form, onChange, disabled }) {
+  const isIndia = (form.country || 'India').toLowerCase() === 'india'
+  function f(k) {
+    return function (e) { onChange(k, e.target.value) }
+  }
+  return (
+    <>
+      <label>Country
+        <select value={form.country || 'India'} onChange={f('country')} disabled={disabled}>
+          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </label>
+      <label>State{isIndia ? '' : ' / Province'}
+        {isIndia ? (
+          <select value={form.state || ''} onChange={f('state')} disabled={disabled}>
+            <option value="">— Select State —</option>
+            {INDIA_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        ) : (
+          <input value={form.state || ''} onChange={f('state')} disabled={disabled} placeholder="State / Province / Region" />
+        )}
+      </label>
+      <label>City
+        <input value={form.city || ''} onChange={f('city')} disabled={disabled} placeholder="e.g. Ahmedabad" />
+      </label>
+    </>
+  )
+}
+
 // ── RecordFranchiseePaymentModal ───────────────────────────────────────────────
 
 function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSaved, onClose }) {
@@ -346,15 +395,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               <label>Phone
                 <input value={form.phone} onChange={field('phone')} disabled={!admin} />
               </label>
-              <label>Country
-                <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
-              </label>
-              <label>State
-                <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
-              </label>
-              <label>City
-                <input value={form.city} onChange={field('city')} disabled={!admin} placeholder="Nagpur" />
-              </label>
+              <LocationFields
+                form={form}
+                onChange={function(k, v) { setForm(function(f) { return { ...f, [k]: v } }) }}
+                disabled={!admin}
+              />
               <label>Area / Locality
                 <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampeth…" />
               </label>
@@ -954,15 +999,11 @@ function AddFranchiseeModal({ onClose, onSaved }) {
                 </select>
               </label>
             )}
-            <label>Country
-              <input value={form.country} onChange={field('country')} placeholder="India" />
-            </label>
-            <label>State
-              <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
-            </label>
-            <label>City
-              <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
-            </label>
+              <LocationFields
+                form={form}
+                onChange={function(k, v) { setForm(function(f) { return { ...f, [k]: v } }) }}
+                disabled={false}
+              />
             <label>Area / Locality
               <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampeth…" />
             </label>
