@@ -485,12 +485,14 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
 function SessionHistoryModal({ batch, onClose }) {
   var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
 
-  const [sessions,   setSessions]   = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [openSess,   setOpenSess]   = useState(null)
-  const [editSessId, setEditSessId] = useState(null)   // session being edited
-  const [editAtt,    setEditAtt]    = useState({})      // { enrollment_id: bool }
-  const [savingEdit, setSavingEdit] = useState(false)
+  const [sessions,       setSessions]       = useState([])
+  const [loading,        setLoading]        = useState(true)
+  const [openSess,       setOpenSess]       = useState(null)
+  const [editSessId,     setEditSessId]     = useState(null)
+  const [editAtt,        setEditAtt]        = useState({})
+  const [savingEdit,     setSavingEdit]     = useState(false)
+  const [confirmDelId,   setConfirmDelId]   = useState(null)  // session id pending delete confirm
+  const [deleting,       setDeleting]       = useState(false)
 
   function loadSessions() {
     setLoading(true)
@@ -546,15 +548,15 @@ function SessionHistoryModal({ batch, onClose }) {
   }
 
   async function deleteSession(sess) {
-    if (!window.confirm(
-      'Delete session #' + sess.session_number + ' (' +
-      new Date(sess.session_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
-      ')?\n\nThis will also remove all attendance records for this session.'
-    )) return
+    // First click → ask for confirmation inline (window.confirm is blocked in iframes)
+    if (confirmDelId !== sess.id) { setConfirmDelId(sess.id); return }
+    // Second click (confirmed) → proceed
+    setConfirmDelId(null)
+    setDeleting(true)
     // Delete attendance first (cascade should handle it, but explicit is safer)
     await sb.from('session_attendance').delete().eq('session_id', sess.id)
     var { error } = await sb.from('batch_sessions').delete().eq('id', sess.id)
-    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); setDeleting(false); return }
     // Re-sync sessions_done to actual non-holiday count
     var { count } = await sb.from('batch_sessions')
       .select('*', { count: 'exact', head: true })
@@ -562,6 +564,7 @@ function SessionHistoryModal({ batch, onClose }) {
       .eq('is_holiday', false)
     await sb.from('batches').update({ sessions_done: count || 0 }).eq('id', batch.id)
     showToast('Session deleted ✓')
+    setDeleting(false)
     loadSessions()
   }
 
@@ -642,15 +645,39 @@ function SessionHistoryModal({ batch, onClose }) {
                         </div>
                       </div>
                       {isHol && (
-                        <button
-                          type="button"
-                          onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
-                          style={{
-                            padding: '2px 8px', borderRadius: 5, border: '1px solid #f3d996',
-                            background: 'transparent', color: '#d97706',
-                            font: '500 10px var(--font)', cursor: 'pointer',
-                          }}
-                        >🗑</button>
+                        confirmDelId === sess.id ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              type="button"
+                              onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
+                              disabled={deleting}
+                              style={{
+                                padding: '2px 8px', borderRadius: 5, border: '1px solid #dc2626',
+                                background: '#dc2626', color: '#fff',
+                                font: '600 10px var(--font)', cursor: 'pointer',
+                              }}
+                            >{deleting ? '…' : 'Confirm?'}</button>
+                            <button
+                              type="button"
+                              onClick={function (e) { e.stopPropagation(); setConfirmDelId(null) }}
+                              style={{
+                                padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border)',
+                                background: 'var(--bg2)', color: 'var(--text3)',
+                                font: '500 10px var(--font)', cursor: 'pointer',
+                              }}
+                            >✕</button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
+                            style={{
+                              padding: '2px 8px', borderRadius: 5, border: '1px solid #f3d996',
+                              background: 'transparent', color: '#d97706',
+                              font: '500 10px var(--font)', cursor: 'pointer',
+                            }}
+                          >🗑</button>
+                        )
                       )}
                       {!isHol && !isEditing && (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -670,15 +697,39 @@ function SessionHistoryModal({ batch, onClose }) {
                               font: '500 10px var(--font)', cursor: 'pointer',
                             }}
                           >✏️ Edit</button>
-                          <button
-                            type="button"
-                            onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
-                            style={{
-                              padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)',
-                              background: 'var(--bg2)', color: 'var(--red, #dc2626)',
-                              font: '500 10px var(--font)', cursor: 'pointer',
-                            }}
-                          >🗑</button>
+                          {confirmDelId === sess.id ? (
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                type="button"
+                                onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
+                                disabled={deleting}
+                                style={{
+                                  padding: '2px 8px', borderRadius: 5, border: '1px solid #dc2626',
+                                  background: '#dc2626', color: '#fff',
+                                  font: '600 10px var(--font)', cursor: 'pointer',
+                                }}
+                              >{deleting ? '…' : 'Confirm?'}</button>
+                              <button
+                                type="button"
+                                onClick={function (e) { e.stopPropagation(); setConfirmDelId(null) }}
+                                style={{
+                                  padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border)',
+                                  background: 'var(--bg2)', color: 'var(--text3)',
+                                  font: '500 10px var(--font)', cursor: 'pointer',
+                                }}
+                              >✕</button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={function (e) { e.stopPropagation(); deleteSession(sess) }}
+                              style={{
+                                padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)',
+                                background: 'var(--bg2)', color: 'var(--red, #dc2626)',
+                                font: '500 10px var(--font)', cursor: 'pointer',
+                              }}
+                            >🗑</button>
+                          )}
                           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? '▲' : '▼'}</span>
                         </div>
                       )}
