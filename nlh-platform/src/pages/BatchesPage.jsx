@@ -17,7 +17,7 @@ function timeRange(t) {
 
 // ── BulkAttendanceModal ───────────────────────────────────────────────────────
 
-function BulkAttendanceModal({ batch, onClose, onSaved }) {
+function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
   var today = new Date().toISOString().split('T')[0]
 
@@ -53,10 +53,19 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
     }
     var newIdx = sessions.length
     setSessions(function (prev) {
-      return [...prev, { date: addDateVal, attendance: initAtt(), is_holiday: false }]
+      return [...prev, { date: addDateVal, attendance: initAtt(), is_holiday: false, subMode: 'regular', subCiId: '', subManualName: '' }]
     })
     setActiveIdx(newIdx)
     setAddDateVal('')
+  }
+
+  function setSubField(field, value) {
+    setSessions(function (prev) {
+      return prev.map(function (s, i) {
+        if (i !== activeIdx) return s
+        return { ...s, [field]: value }
+      })
+    })
   }
 
   function removeDate(idx) {
@@ -116,13 +125,20 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
         .select('id').eq('batch_id', batch.id).eq('session_date', sess.date).maybeSingle()
       if (existing) { skipped++; continue }
 
+      var instrId    = (sess.subMode === 'ci' && sess.subCiId) ? sess.subCiId : batch.instructor_id
+      var isSub      = sess.subMode !== 'regular'
+      var subNotes   = sess.subMode === 'manual' && sess.subManualName.trim()
+        ? 'Substitute: ' + sess.subManualName.trim()
+        : null
+
       var { data: sessRow, error: sessErr } = await sb.from('batch_sessions').insert({
         batch_id:       batch.id,
         session_date:   sess.date,
         session_number: nextNum,
-        instructor_id:  batch.instructor_id,
-        is_substitute:  false,
+        instructor_id:  instrId,
+        is_substitute:  isSub,
         is_holiday:     sess.is_holiday || false,
+        notes:          subNotes,
       }).select('id').single()
       if (sessErr) { skipped++; continue }
 
@@ -304,6 +320,85 @@ function BulkAttendanceModal({ batch, onClose, onSaved }) {
                   </div>
                 </div>
 
+                {/* ── Substitute teacher ── */}
+                {!activeSession.is_holiday && (
+                  <div style={{
+                    padding: '8px 12px', borderRadius: 8,
+                    border: activeSession.subMode !== 'regular' ? '1.5px solid #7c3aed' : '1px solid var(--border)',
+                    background: activeSession.subMode !== 'regular' ? '#f5f3ff' : 'var(--bg2)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ font: '600 11px var(--font)', color: 'var(--text3)', whiteSpace: 'nowrap' }}>Teacher:</span>
+
+                      {/* Regular CI chip */}
+                      <button type="button"
+                        onClick={function () { setSubField('subMode', 'regular') }}
+                        style={{
+                          padding: '3px 10px', borderRadius: 20, border: '1.5px solid',
+                          borderColor: activeSession.subMode === 'regular' ? 'var(--purple)' : 'var(--border)',
+                          background: activeSession.subMode === 'regular' ? 'var(--purple-bg)' : 'var(--bg)',
+                          color: activeSession.subMode === 'regular' ? 'var(--purple)' : 'var(--text3)',
+                          font: '600 11px var(--font)', cursor: 'pointer',
+                        }}>
+                        {batch.instructors?.full_name || 'Regular CI'}
+                      </button>
+
+                      {/* Substitute from CI list */}
+                      <button type="button"
+                        onClick={function () { setSubField('subMode', 'ci') }}
+                        style={{
+                          padding: '3px 10px', borderRadius: 20, border: '1.5px solid',
+                          borderColor: activeSession.subMode === 'ci' ? 'var(--purple)' : 'var(--border)',
+                          background: activeSession.subMode === 'ci' ? 'var(--purple-bg)' : 'var(--bg)',
+                          color: activeSession.subMode === 'ci' ? 'var(--purple)' : 'var(--text3)',
+                          font: '600 11px var(--font)', cursor: 'pointer',
+                        }}>
+                        🔄 Sub from list
+                      </button>
+
+                      {/* Manual substitute */}
+                      <button type="button"
+                        onClick={function () { setSubField('subMode', 'manual') }}
+                        style={{
+                          padding: '3px 10px', borderRadius: 20, border: '1.5px solid',
+                          borderColor: activeSession.subMode === 'manual' ? 'var(--purple)' : 'var(--border)',
+                          background: activeSession.subMode === 'manual' ? 'var(--purple-bg)' : 'var(--bg)',
+                          color: activeSession.subMode === 'manual' ? 'var(--purple)' : 'var(--text3)',
+                          font: '600 11px var(--font)', cursor: 'pointer',
+                        }}>
+                        ✏️ Enter manually
+                      </button>
+                    </div>
+
+                    {/* CI picker */}
+                    {activeSession.subMode === 'ci' && (
+                      <select
+                        value={activeSession.subCiId}
+                        onChange={function (e) { setSubField('subCiId', e.target.value) }}
+                        style={{ marginTop: 8, fontSize: 12, width: '100%', padding: '5px 8px' }}
+                      >
+                        <option value="">— Select substitute CI —</option>
+                        {(instructors || [])
+                          .filter(function (ci) { return ci.id !== batch.instructor_id })
+                          .map(function (ci) {
+                            return <option key={ci.id} value={ci.id}>{ci.full_name}</option>
+                          })}
+                      </select>
+                    )}
+
+                    {/* Manual name input */}
+                    {activeSession.subMode === 'manual' && (
+                      <input
+                        type="text"
+                        value={activeSession.subManualName}
+                        onChange={function (e) { setSubField('subManualName', e.target.value) }}
+                        placeholder="Substitute teacher name"
+                        style={{ marginTop: 8, fontSize: 12, width: '100%', padding: '5px 8px' }}
+                      />
+                    )}
+                  </div>
+                )}
+
                 {/* ── Holiday card ── */}
                 {activeSession.is_holiday ? (
                   <div style={{
@@ -457,10 +552,20 @@ function SessionHistoryModal({ batch, onClose }) {
                         <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 1 }}>
                           {isHol
                             ? <span style={{ color: '#d97706', fontWeight: 600 }}>Holiday — No Class</span>
-                            : <>
-                                {sess.instructors?.full_name || '—'}
-                                {sess.is_substitute && <span style={{ color: '#d97706', marginLeft: 6, fontWeight: 600 }}>· Substitute</span>}
-                              </>
+                            : (function () {
+                                var manualName = sess.notes && sess.notes.startsWith('Substitute: ')
+                                  ? sess.notes.slice('Substitute: '.length)
+                                  : null
+                                var displayName = manualName || sess.instructors?.full_name || '—'
+                                return <>
+                                  {displayName}
+                                  {sess.is_substitute && (
+                                    <span style={{ color: '#7c3aed', marginLeft: 6, fontWeight: 600 }}>
+                                      · {manualName ? 'Sub (guest)' : 'Substitute'}
+                                    </span>
+                                  )}
+                                </>
+                              })()
                           }
                         </div>
                       </div>
@@ -1352,6 +1457,7 @@ export default function BatchesPage() {
       {attendanceModal && (
         <BulkAttendanceModal
           batch={attendanceModal}
+          instructors={instructors}
           onClose={function () { setAttendanceModal(null) }}
           onSaved={function () { setAttendanceModal(null); load() }}
         />
