@@ -901,7 +901,7 @@ function deriveFilter(fr) {
   return 'all'
 }
 
-function AddStudentModal({ onClose, onSaved }) {
+function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
   const isMasterFr = currentRole === 'smf' || currentRole === 'cf'
@@ -915,7 +915,8 @@ function AddStudentModal({ onClose, onSaved }) {
   const [showAddress, setShowAddress] = useState(false)
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
-  const [dupStudent, setDupStudent] = useState(null)   // existing student with same phone
+  const [phoneMatches, setPhoneMatches] = useState([])   // existing students with same phone
+  const [phoneConfirmed, setPhoneConfirmed] = useState(false) // user chose to add new despite matches
   // null = no centre chosen yet; 'all' = show everything; {skuIds} or {courseIds} = filtered
   const [regFilter, setRegFilter] = useState(null)
   const [selectedSkus, setSelectedSkus] = useState([])
@@ -971,19 +972,18 @@ function AddStudentModal({ onClose, onSaved }) {
       .then(({ data }) => { setAllSkus(data || []) })
   }, [])
 
-  // Phone duplicate check — debounced 600ms
+  // Phone lookup — debounced 500ms, searches ALL centres
   useEffect(function () {
-    if (!form.phone || form.phone.replace(/\D/g, '').length < 10) { setDupStudent(null); return }
+    setPhoneConfirmed(false)
+    if (!form.phone || form.phone.replace(/\D/g, '').length < 10) { setPhoneMatches([]); return }
     const timer = setTimeout(async function () {
-      let q = sb.from('students')
-        .select('id, full_name, enrollments(skus(level_name, courses(group_name)))')
+      const { data } = await sb.from('students')
+        .select('id, full_name, parent_name, franchisee_id, franchisees(business_name, city), enrollments(id, sku_id, skus(level_name, courses(group_name)))')
         .eq('phone', form.phone.trim())
-      if (form.franchisee_id) q = q.eq('franchisee_id', form.franchisee_id)
-      const { data } = await q
-      setDupStudent(data && data.length > 0 ? data[0] : null)
-    }, 600)
+      setPhoneMatches(data || [])
+    }, 500)
     return function () { clearTimeout(timer) }
-  }, [form.phone, form.franchisee_id])
+  }, [form.phone])
 
   // Build filtered + grouped SKU list for display
   function buildGroups() {
@@ -1199,13 +1199,111 @@ function AddStudentModal({ onClose, onSaved }) {
         </div>
 
         <div>
+          {/* ── Phone — primary student ID (always visible) ── */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ font: '600 12px var(--font)', color: 'var(--text)', display: 'block', marginBottom: 4 }}>
+              Mobile Number *
+              <span style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
+                (primary student ID — enter first)
+              </span>
+            </label>
+            <input
+              value={form.phone}
+              onChange={field('phone')}
+              placeholder="10-digit parent / guardian mobile"
+              autoFocus
+              style={{ fontSize: 15, letterSpacing: '0.5px', fontWeight: 600 }}
+            />
+            {form.phone.replace(/\D/g, '').length >= 10 && phoneMatches.length === 0 && (
+              <div style={{ font: '500 11px var(--font)', color: 'var(--green, #16a34a)', marginTop: 4 }}>
+                ✓ No existing student found — fill in details below
+              </div>
+            )}
+          </div>
+
+          {/* ── Phase 2a: Match picker ── */}
+          {phoneMatches.length > 0 && !phoneConfirmed && (
+            <div>
+              <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
+                {phoneMatches.length} student{phoneMatches.length > 1 ? 's' : ''} found with this number:
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                {phoneMatches.map(function (st) {
+                  const initials = (st.full_name || '?').split(' ').slice(0, 2).map(function (w) { return w[0] }).join('').toUpperCase()
+                  const courses = (st.enrollments || [])
+                    .map(function (e) { return e.skus?.courses?.group_name })
+                    .filter(Boolean)
+                    .filter(function (c, i, a) { return a.indexOf(c) === i })
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={function () { onOpenExisting(st); onClose() }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '10px 14px', borderRadius: 10,
+                        border: '1.5px solid var(--border)', background: 'var(--card)',
+                        cursor: 'pointer', textAlign: 'left', width: '100%',
+                      }}
+                    >
+                      <div style={{
+                        width: 38, height: 38, borderRadius: '50%',
+                        background: 'var(--purple-bg)', color: 'var(--purple)',
+                        font: '700 14px var(--font)', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>{initials}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ font: '700 13px var(--font)', color: 'var(--text)' }}>{st.full_name}</div>
+                        {st.parent_name && (
+                          <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                            Parent: {st.parent_name}
+                          </div>
+                        )}
+                        <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                          📍 {st.franchisees?.business_name || '—'}{st.franchisees?.city ? `, ${st.franchisees.city}` : ''}
+                        </div>
+                        {courses.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                            {courses.map(function (c) {
+                              return (
+                                <span key={c} style={{
+                                  padding: '1px 7px', borderRadius: 20,
+                                  background: 'var(--purple-bg)', color: 'var(--purple)',
+                                  font: '500 10px var(--font)',
+                                }}>{c}</span>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ font: '700 11px var(--font)', color: 'var(--purple)', flexShrink: 0 }}>
+                        Open →
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={function () { setPhoneConfirmed(true) }}
+                style={{
+                  width: '100%', padding: '9px 0', borderRadius: 8,
+                  border: '1.5px dashed var(--border)', background: 'none',
+                  font: '600 12px var(--font)', color: 'var(--text2)', cursor: 'pointer',
+                }}
+              >
+                ➕ Enrol as new student with this number anyway
+              </button>
+            </div>
+          )}
+
+          {/* ── Phase 2b: full form (no matches, or user confirmed new) ── */}
+          {(phoneMatches.length === 0 || phoneConfirmed) && (<>
+
           {/* ── Section 1: Student basics ── */}
           <div className="form-grid">
             <label>Student Name *
-              <input value={form.full_name} onChange={field('full_name')} placeholder="Full name" autoFocus />
-            </label>
-            <label>Phone *
-              <input value={form.phone} onChange={field('phone')} placeholder="Parent / guardian mobile" />
+              <input value={form.full_name} onChange={field('full_name')} placeholder="Full name" />
             </label>
             <label>Parent / Guardian
               <input value={form.parent_name} onChange={field('parent_name')} placeholder="Parent name" />
@@ -1213,35 +1311,10 @@ function AddStudentModal({ onClose, onSaved }) {
             <label>Date of Birth
               <input type="date" value={form.dob} onChange={field('dob')} />
             </label>
-            <label className="col-span-2">Parent Email *
+            <label>Parent Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
           </div>
-
-          {/* ── Duplicate student warning ── */}
-          {dupStudent && (
-            <div style={{
-              margin: '8px 0', padding: '10px 14px', borderRadius: 8,
-              background: '#fffbeb', border: '1.5px solid #f59e0b',
-              display: 'flex', flexDirection: 'column', gap: 4,
-            }}>
-              <div style={{ font: '700 12px var(--font)', color: '#b45309' }}>
-                ⚠ Student already registered with this number
-              </div>
-              <div style={{ font: '500 12px var(--font)', color: 'var(--text)' }}>
-                <b>{dupStudent.full_name}</b> is already enrolled
-                {dupStudent.enrollments && dupStudent.enrollments.length > 0 && (
-                  <span> in: {dupStudent.enrollments
-                    .map(function (e) { return e.skus?.courses?.group_name + ' – ' + e.skus?.level_name })
-                    .filter(Boolean).join(', ')}
-                  </span>
-                )}.
-              </div>
-              <div style={{ font: '500 11px var(--font)', color: '#b45309' }}>
-                To add a new course to this student, close this form and open their existing record.
-              </div>
-            </div>
-          )}
 
           {/* ── Section 2: Centre ── */}
           <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
@@ -1532,13 +1605,17 @@ function AddStudentModal({ onClose, onSaved }) {
               </div>
             )}
           </div>
+
+          </>)}
         </div>
 
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn-p" onClick={save} disabled={saving}>
-            {saving ? 'Adding…' : 'Add Student'}
-          </button>
+          {(phoneMatches.length === 0 || phoneConfirmed) && (
+            <button className="btn-p" onClick={save} disabled={saving}>
+              {saving ? 'Adding…' : 'Add Student'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1606,6 +1683,11 @@ export default function StudentsPage() {
   function handleAdded(st) {
     setStudents(ss => [{ ...st, enrollments: [] }, ...ss])
     setShowAdd(false)
+  }
+
+  function handleOpenExisting(st) {
+    setShowAdd(false)
+    setSelected(st)
   }
 
   // Tone index per course name (cycle through 8 tones)
@@ -1797,6 +1879,7 @@ export default function StudentsPage() {
         <AddStudentModal
           onClose={() => setShowAdd(false)}
           onSaved={handleAdded}
+          onOpenExisting={handleOpenExisting}
         />
       )}
     </div>
