@@ -1490,7 +1490,20 @@ export default function OrdersPage() {
     setActionLoading(order.id + '_reminder')
     try {
       await sendPaymentReminder({ order })
-      showToast('Payment reminder sent.')
+      // Stamp the order so we can show when/how many times reminder was sent
+      var now = new Date().toISOString()
+      var newCount = (order.reminder_count || 0) + 1
+      await sb.from('orders').update({
+        last_reminded_at: now,
+        reminder_count: newCount,
+      }).eq('id', order.id)
+      // Update local state so the UI reflects immediately
+      setOrders(function (prev) {
+        return prev.map(function (o) {
+          return o.id === order.id ? { ...o, last_reminded_at: now, reminder_count: newCount } : o
+        })
+      })
+      showToast('Payment reminder sent ✓')
     } catch (e) {
       showToast('Failed to send reminder: ' + e.message)
     }
@@ -1538,9 +1551,17 @@ export default function OrdersPage() {
         {order.status === 'invoiced' && isAdmin && (
           <>
             <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
-            <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
-              {isActing(order.id, 'reminder') ? '…' : 'Remind'}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+              <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
+                {isActing(order.id, 'reminder') ? '…' : 'Remind'}
+              </button>
+              {order.last_reminded_at && (
+                <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
+                  Reminded {fmtDate(order.last_reminded_at.slice(0, 10))}
+                  {order.reminder_count > 1 ? ' ×' + order.reminder_count : ''}
+                </span>
+              )}
+            </div>
             <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
           </>
         )}
