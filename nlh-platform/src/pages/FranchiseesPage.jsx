@@ -310,7 +310,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     setTabLoaded(tl => ({ ...tl, [t]: true }))
 
     if (t === 'orders') {
-      const { data } = await sb.from('orders').select('id,created_at,status,amount_paid').eq('placer_id', franchisee.id).order('created_at', { ascending: false }).limit(20)
+      const { data } = await sb.from('orders').select('id,invoice_no,created_at,status,amount_paid').eq('placer_id', franchisee.id).order('created_at', { ascending: false }).limit(20)
       setOrders(data || [])
     }
     if (t === 'students') {
@@ -514,7 +514,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 </select>
               </label>
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <strong>Fee Tracking</strong>
+                <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>💰 Fee Tracking</span>
                 {admin && balance > 0 && (
                   <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
                     📥 Record Payment
@@ -574,7 +574,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
               {/* ── Validity & Renewal ── */}
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-                <strong>Validity &amp; Renewal</strong>
+                <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>📅 Validity &amp; Renewal</span>
               </div>
               <label>Valid Till (date)
                 <input
@@ -632,62 +632,76 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
           {tab === 'courses' && (
             <div>
-              <p className="hint">Check courses this franchisee is registered to deliver.</p>
-              {(() => {
-                // Group by group_name
-                const groups = []
-                const seen = {}
-                allCourses.forEach(c => {
-                  const g = c.group_name || 'Other'
-                  if (!seen[g]) { seen[g] = []; groups.push({ name: g, courses: seen[g] }) }
-                  seen[g].push(c)
-                })
-                return groups.map(group => {
-                  const allChecked = group.courses.every(c => registeredCourses.includes(c.id))
-                  const someChecked = group.courses.some(c => registeredCourses.includes(c.id))
-                  function toggleGroup() {
-                    if (!admin) return
-                    if (allChecked) {
-                      setRegisteredCourses(prev => prev.filter(id => !group.courses.find(c => c.id === id)))
-                    } else {
-                      setRegisteredCourses(prev => [...new Set([...prev, ...group.courses.map(c => c.id)])])
+              {/* Summary bar with progress */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ font: '500 12px var(--font)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                  <b style={{ color: 'var(--text)' }}>{registeredCourses.length}</b> of <b style={{ color: 'var(--text)' }}>{allCourses.length}</b> courses
+                </span>
+                {allCourses.length > 0 && (
+                  <div style={{ flex: 1, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round(registeredCourses.length / allCourses.length * 100)}%`, background: 'var(--purple)', borderRadius: 2, transition: 'width .3s' }} />
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {(() => {
+                  const groups = []
+                  const seen = {}
+                  allCourses.forEach(c => {
+                    const g = c.group_name || 'Other'
+                    if (!seen[g]) { seen[g] = []; groups.push({ name: g, courses: seen[g] }) }
+                    seen[g].push(c)
+                  })
+                  return groups.map(group => {
+                    const allChecked = group.courses.every(c => registeredCourses.includes(c.id))
+                    const someChecked = group.courses.some(c => registeredCourses.includes(c.id))
+                    const groupCount = group.courses.filter(c => registeredCourses.includes(c.id)).length
+                    function toggleGroup() {
+                      if (!admin) return
+                      if (allChecked) {
+                        setRegisteredCourses(prev => prev.filter(id => !group.courses.find(c => c.id === id)))
+                      } else {
+                        setRegisteredCourses(prev => [...new Set([...prev, ...group.courses.map(c => c.id)])])
+                      }
                     }
-                  }
-                  return (
-                    <div key={group.name} style={{ marginBottom: 14 }}>
-                      {/* Group header with select-all toggle */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
-                        <input
-                          type="checkbox"
-                          checked={allChecked}
-                          ref={el => { if (el) el.indeterminate = someChecked && !allChecked }}
-                          onChange={toggleGroup}
-                          disabled={!admin}
-                          style={{ accentColor: 'var(--purple)', width: 14, height: 14, cursor: admin ? 'pointer' : 'default' }}
-                        />
-                        <span style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>{group.name}</span>
-                        <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginLeft: 'auto' }}>
-                          {group.courses.filter(c => registeredCourses.includes(c.id)).length}/{group.courses.length}
-                        </span>
+                    return (
+                      <div key={group.name} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                          <input
+                            type="checkbox"
+                            checked={allChecked}
+                            ref={el => { if (el) el.indeterminate = someChecked && !allChecked }}
+                            onChange={toggleGroup}
+                            disabled={!admin}
+                            style={{ accentColor: 'var(--purple)', width: 14, height: 14, cursor: admin ? 'pointer' : 'default', flexShrink: 0 }}
+                          />
+                          <span style={{ font: '600 12px var(--font)', color: 'var(--text)', flex: 1 }}>{group.name}</span>
+                          <span style={{
+                            font: '600 10px var(--mono)', padding: '2px 7px', borderRadius: 10,
+                            background: groupCount > 0 ? '#ede9fe' : 'var(--bg4)',
+                            color: groupCount > 0 ? 'var(--purple)' : 'var(--text3)',
+                          }}>
+                            {groupCount}/{group.courses.length}
+                          </span>
+                        </div>
+                        <div className="checkbox-grid" style={{ padding: '8px 12px' }}>
+                          {group.courses.map(c => (
+                            <label key={c.id} className="checkbox-item">
+                              <input
+                                type="checkbox"
+                                checked={registeredCourses.includes(c.id)}
+                                onChange={() => admin && toggleCourse(c.id)}
+                                disabled={!admin}
+                              />
+                              {c.name}
+                            </label>
+                          ))}
+                        </div>
                       </div>
-                      {/* Individual course checkboxes */}
-                      <div className="checkbox-grid" style={{ paddingLeft: 4 }}>
-                        {group.courses.map(c => (
-                          <label key={c.id} className="checkbox-item">
-                            <input
-                              type="checkbox"
-                              checked={registeredCourses.includes(c.id)}
-                              onChange={() => admin && toggleCourse(c.id)}
-                              disabled={!admin}
-                            />
-                            {c.name}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })
-              })()}
+                    )
+                  })
+                })()}
+              </div>
             </div>
           )}
 
@@ -702,13 +716,16 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               <div className="tbl-scroll">
                 <table className="data-table">
                   <thead>
-                    <tr><th>Date</th><th>Status</th><th>Paid</th></tr>
+                    <tr><th>Invoice</th><th>Date</th><th>Status</th><th>Paid</th></tr>
                   </thead>
                   <tbody>
-                    {orders.length === 0 && <tr><td colSpan={3} className="empty">No orders</td></tr>}
+                    {orders.length === 0 && <tr><td colSpan={4} className="empty">No orders</td></tr>}
                     {orders.map(function (o) {
                       return (
                         <tr key={o.id}>
+                          <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: o.invoice_no ? 'var(--text)' : 'var(--text3)' }}>
+                            {o.invoice_no || '—'}
+                          </td>
                           <td>{fmtDate(o.created_at)}</td>
                           <td><StatusBadge status={o.status} /></td>
                           <td>₹{fmtAmt(o.amount_paid)}</td>
