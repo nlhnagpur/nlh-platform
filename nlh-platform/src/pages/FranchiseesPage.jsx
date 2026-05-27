@@ -7,6 +7,7 @@ import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
 import { sendWAPaymentReceived } from '../services/whatsapp'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
+import { StudentDetailModal } from './StudentsPage'
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
@@ -283,6 +284,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   const [payments, setPayments] = useState([])
   const [showPayModal, setShowPayModal] = useState(false)
   const [studentCount, setStudentCount] = useState(null)
+  const [selectedStudent, setSelectedStudent] = useState(null)
 
   useEffect(function () {
     sb.from('franchisee_payments')
@@ -312,7 +314,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
       setOrders(data || [])
     }
     if (t === 'students') {
-      const { data } = await sb.from('students').select('id,full_name,payment_status,fee_total,fee_paid').eq('franchisee_id', franchisee.id).order('full_name').limit(50)
+      const { data } = await sb.from('students').select('id,full_name,parent_name,dob,registered_at,phone,email,pincode,country,state,city,area,address,channel,payment_status,payment_mode,fee_total,fee_paid,franchisee_id').eq('franchisee_id', franchisee.id).order('full_name').limit(50)
       setStudents(data || [])
     }
   }
@@ -737,7 +739,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                     {students.length === 0 && <tr><td colSpan={5} className="empty">No students</td></tr>}
                     {students.map(function (s) {
                       return (
-                        <tr key={s.id}>
+                        <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelectedStudent(s) }}>
                           <td>{s.full_name}</td>
                           <td><StatusBadge status={s.payment_status} /></td>
                           <td>₹{fmtAmt(s.fee_total)}</td>
@@ -888,6 +890,17 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         )}
       </div>
     </div>
+
+    {selectedStudent && (
+      <StudentDetailModal
+        student={selectedStudent}
+        onClose={function () { setSelectedStudent(null) }}
+        onSaved={function (updated) {
+          setSelectedStudent(null)
+          setStudents(function (prev) { return prev.map(function (s) { return s.id === updated.id ? { ...s, ...updated } : s }) })
+        }}
+      />
+    )}
 
     {showPayModal && (
       <RecordFranchiseePaymentModal

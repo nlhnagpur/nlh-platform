@@ -34,7 +34,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
-function StudentDetailModal({ student, onClose, onSaved }) {
+export function StudentDetailModal({ student, onClose, onSaved }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
   const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
