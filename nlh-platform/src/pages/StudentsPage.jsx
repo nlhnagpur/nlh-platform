@@ -384,10 +384,43 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ width: 860, maxWidth: '96vw' }}>
-        {/* Header */}
-        <div className="ch">
-          <span>{student.full_name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+        {/* Hero header */}
+        {(function () {
+          var av = (student.full_name || '?').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
+          var loc = [form.city, form.state].filter(Boolean).join(', ')
+          return (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 20px 14px', background: 'linear-gradient(135deg,#eff6ff,#dbeafe)', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ width: 50, height: 50, borderRadius: 13, flexShrink: 0, background: '#dbeafe', color: '#1d4ed8', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '700 17px var(--font)' }}>{av}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 2 }}>
+                  <span style={{ font: '700 15px var(--font)', color: 'var(--text)' }}>{student.full_name}</span>
+                  {derivedStatus && derivedStatus !== 'none' && (
+                    <span className={`badge ${derivedStatus === 'paid' ? 'ba' : derivedStatus === 'partial' ? 'bp' : 'br'}`}>{derivedStatus}</span>
+                  )}
+                </div>
+                {form.parent_name && <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginBottom: 2 }}>Parent: {form.parent_name}</div>}
+                {loc && <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>📍 {loc}</div>}
+              </div>
+              <button className="btn-icon" onClick={onClose} style={{ flexShrink: 0, marginTop: -2 }}>✕</button>
+            </div>
+          )
+        })()}
+
+        {/* Stats strip */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
+          {[
+            { label: 'Courses',   val: localEnrollments.length > 0 ? String(localEnrollments.length) : '—', color: 'var(--blue)' },
+            { label: 'Fee Total', val: form.fee_total !== '' && form.fee_total != null ? '₹' + fmtAmt(form.fee_total) : '—', color: 'var(--text)' },
+            { label: 'Paid',      val: form.fee_paid  !== '' && form.fee_paid  != null ? '₹' + fmtAmt(form.fee_paid)  : '—', color: 'var(--green)' },
+            { label: 'Balance',   val: form.fee_total != null && form.fee_total !== '' ? (balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared') : '—', color: balance > 0 ? 'var(--red)' : 'var(--green)' },
+          ].map(function (st, i) {
+            return (
+              <div key={i} style={{ padding: '9px 14px', borderRight: i < 3 ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ font: '500 9px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>{st.label}</div>
+                <div style={{ font: '700 14px var(--font)', color: st.color }}>{st.val}</div>
+              </div>
+            )
+          })}
         </div>
 
         {/* Tabs */}

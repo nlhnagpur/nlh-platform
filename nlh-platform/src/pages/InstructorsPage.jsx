@@ -72,6 +72,17 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [overrideForm,       setOverrideForm]       = useState({ amount: '', notes: '' })
   const [savingOverride,     setSavingOverride]     = useState(false)
   const [payrollLoading,     setPayrollLoading]     = useState(false)
+  const [coursesCount, setCoursesCount] = useState(null)
+  const [batchesCount, setBatchesCount] = useState(null)
+
+  useEffect(function () {
+    sb.from('instructor_courses').select('id', { count: 'exact', head: true })
+      .eq('instructor_id', instructor.id)
+      .then(function ({ count }) { setCoursesCount(count || 0) })
+    sb.from('batches').select('id', { count: 'exact', head: true })
+      .eq('instructor_id', instructor.id)
+      .then(function ({ count }) { setBatchesCount(count || 0) })
+  }, [instructor.id])
 
   // ── Profile form ──
   const [form, setForm] = useState({
@@ -501,25 +512,40 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ width: 700, maxWidth: '96vw' }}>
 
-        {/* header */}
-        <div className="ch">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 38, height: 38, borderRadius: '50%', background: 'var(--purple)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0,
-            }}>
-              {avatar(instructor.full_name)}
-            </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{instructor.full_name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                {instructor.city || 'Course Instructor'}
-              </div>
-            </div>
-            <StatusBadge status={instructor.status} />
+        {/* Hero header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 20px 14px', background: 'linear-gradient(135deg,#f5f3ff,#ede9fe)', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ width: 50, height: 50, borderRadius: 13, flexShrink: 0, background: '#ede9fe', color: '#6d28d9', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '700 17px var(--font)' }}>
+            {avatar(instructor.full_name)}
           </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 2 }}>
+              <span style={{ font: '700 15px var(--font)', color: 'var(--text)' }}>{instructor.full_name}</span>
+              <StatusBadge status={instructor.status} />
+            </div>
+            {(instructor.city || instructor.area) && (
+              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                📍 {[instructor.area, instructor.city].filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
+          <button className="btn-icon" onClick={onClose} style={{ flexShrink: 0, marginTop: -2 }}>✕</button>
+        </div>
+
+        {/* Stats strip */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
+          {[
+            { label: 'Batches',  val: batchesCount  === null ? '…' : String(batchesCount),  color: 'var(--purple)' },
+            { label: 'Courses',  val: coursesCount  === null ? '…' : String(coursesCount),  color: 'var(--blue)' },
+            { label: 'Since',    val: instructor.joined_at ? new Date(instructor.joined_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—', color: 'var(--text2)' },
+            { label: 'Caution',  val: form.caution_status ? (form.caution_status.charAt(0).toUpperCase() + form.caution_status.slice(1)) : '—', color: form.caution_status === 'held' ? '#b45309' : form.caution_status === 'refunded' ? 'var(--green)' : 'var(--text3)' },
+          ].map(function (st, i) {
+            return (
+              <div key={i} style={{ padding: '9px 14px', borderRight: i < 3 ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ font: '500 9px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>{st.label}</div>
+                <div style={{ font: '700 14px var(--font)', color: st.color }}>{st.val}</div>
+              </div>
+            )
+          })}
         </div>
 
         {/* tabs */}
