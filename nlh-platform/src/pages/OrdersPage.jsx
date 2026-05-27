@@ -1613,11 +1613,13 @@ export default function OrdersPage() {
         )}
         {order.status === 'invoiced' && !isAdmin && (
           <>
+            {/* Razorpay: uncomment when RAZORPAY_KEY_ID env var is set in Vercel
             <button className="row-action green" disabled={busy}
               onClick={function () { handlePayOnline(order) }}>
               {isActing(order.id, 'pay') ? '…' : '💳 Pay Online'}
             </button>
-            <button className="row-action" onClick={function () { setPaySubmitOrder(order) }}>Manual Pmt</button>
+            */}
+            <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
           </>
         )}
         {order.status === 'invoiced' && isAdmin && (
