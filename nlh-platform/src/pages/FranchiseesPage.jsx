@@ -282,6 +282,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   const [resending, setResending] = useState(false)
   const [payments, setPayments] = useState([])
   const [showPayModal, setShowPayModal] = useState(false)
+  const [studentCount, setStudentCount] = useState(null)
 
   useEffect(function () {
     sb.from('franchisee_payments')
@@ -289,6 +290,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
       .eq('franchisee_id', franchisee.id)
       .order('payment_date', { ascending: false })
       .then(function ({ data }) { setPayments(data || []) })
+  }, [franchisee.id])
+
+  useEffect(function () {
+    sb.from('students').select('id', { count: 'exact', head: true })
+      .eq('franchisee_id', franchisee.id)
+      .then(function ({ count }) { setStudentCount(count || 0) })
   }, [franchisee.id])
 
   function field(k) {
@@ -398,9 +405,50 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
     <>
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="ch">
-          <span>{franchisee.business_name} <TierBadge tier={franchisee.tier} /></span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+        {/* ── HERO HEADER ── */}
+        {(function () {
+          var ts = {
+            SMF: { bg: 'linear-gradient(135deg,#fffbeb,#fef3c7)', avBg: '#fef3c7', ac: '#b45309' },
+            CF:  { bg: 'linear-gradient(135deg,#f0fdf4,#dcfce7)', avBg: '#dcfce7', ac: '#15803d' },
+            UF:  { bg: 'linear-gradient(135deg,#eff6ff,#dbeafe)', avBg: '#dbeafe', ac: '#1d4ed8' },
+          }[franchisee.tier] || { bg: 'linear-gradient(135deg,#f5f3ff,#ede9fe)', avBg: '#ede9fe', ac: '#6d28d9' }
+          var av = (franchisee.business_name || franchisee.owner_name || '?')
+            .split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
+          var loc = [franchisee.area, franchisee.city, franchisee.state].filter(Boolean).join(', ')
+          return (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 20px 14px', background: ts.bg, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ width: 50, height: 50, borderRadius: 13, flexShrink: 0, background: ts.avBg, color: ts.ac, display: 'flex', alignItems: 'center', justifyContent: 'center', font: '700 17px var(--font)' }}>{av}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 2 }}>
+                  <span style={{ font: '700 15px var(--font)', color: 'var(--text)' }}>{franchisee.business_name || franchisee.owner_name}</span>
+                  <TierBadge tier={franchisee.tier} />
+                  <StatusBadge status={franchisee.status} />
+                </div>
+                {franchisee.owner_name && franchisee.owner_name !== franchisee.business_name && (
+                  <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginBottom: 2 }}>{franchisee.owner_name}</div>
+                )}
+                {loc && <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>📍 {loc}</div>}
+              </div>
+              <button className="btn-icon" onClick={onClose} style={{ flexShrink: 0, marginTop: -2 }}>✕</button>
+            </div>
+          )
+        })()}
+
+        {/* ── STATS STRIP ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
+          {[
+            { label: 'Students', val: studentCount === null ? '…' : String(studentCount), color: 'var(--purple)' },
+            { label: 'Courses',  val: String(registeredCourses.length), color: 'var(--blue)' },
+            { label: 'Validity', val: rs.isExpired ? 'Expired' : rs.isExpiring ? rs.daysLeft + 'd left' : 'Active', color: rs.isExpired ? 'var(--red)' : rs.isExpiring ? '#b45309' : 'var(--green)' },
+            { label: 'Balance',  val: balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared', color: balance > 0 ? 'var(--red)' : 'var(--green)' },
+          ].map(function (st, i) {
+            return (
+              <div key={i} style={{ padding: '9px 14px', borderRight: i < 3 ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ font: '500 9px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>{st.label}</div>
+                <div style={{ font: '700 14px var(--font)', color: st.color }}>{st.val}</div>
+              </div>
+            )
+          })}
         </div>
 
         <div className="tabs">
@@ -642,46 +690,67 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
           )}
 
           {tab === 'orders' && (
-            <div className="tbl-scroll">
-            <table className="data-table">
-              <thead>
-                <tr><th>Date</th><th>Status</th><th>Paid</th></tr>
-              </thead>
-              <tbody>
-                {orders.length === 0 && <tr><td colSpan={3} className="empty">No orders</td></tr>}
-                {orders.map(o => (
-                  <tr key={o.id}>
-                    <td>{fmtDate(o.created_at)}</td>
-                    <td><StatusBadge status={o.status} /></td>
-                    <td>₹{fmtAmt(o.amount_paid)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div>
+              {orders.length > 0 && (
+                <div style={{ display: 'flex', gap: 16, padding: '10px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', font: '500 12px var(--font)', color: 'var(--text2)' }}>
+                  <span><b style={{ color: 'var(--text)' }}>{orders.length}</b> {orders.length === 1 ? 'order' : 'orders'}</span>
+                  <span style={{ color: 'var(--green)' }}>₹{fmtAmt(orders.reduce(function (s, o) { return s + (o.amount_paid || 0) }, 0))} collected</span>
+                </div>
+              )}
+              <div className="tbl-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Date</th><th>Status</th><th>Paid</th></tr>
+                  </thead>
+                  <tbody>
+                    {orders.length === 0 && <tr><td colSpan={3} className="empty">No orders</td></tr>}
+                    {orders.map(function (o) {
+                      return (
+                        <tr key={o.id}>
+                          <td>{fmtDate(o.created_at)}</td>
+                          <td><StatusBadge status={o.status} /></td>
+                          <td>₹{fmtAmt(o.amount_paid)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
           {tab === 'students' && (
-            <div className="tbl-scroll">
-            <table className="data-table">
-              <thead>
-                <tr><th>Name</th><th>Status</th><th>Fee Total</th><th>Fee Paid</th><th>Balance</th></tr>
-              </thead>
-              <tbody>
-                {students.length === 0 && <tr><td colSpan={5} className="empty">No students</td></tr>}
-                {students.map(s => (
-                  <tr key={s.id}>
-                    <td>{s.full_name}</td>
-                    <td><StatusBadge status={s.payment_status} /></td>
-                    <td>₹{fmtAmt(s.fee_total)}</td>
-                    <td>₹{fmtAmt(s.fee_paid)}</td>
-                    <td style={{ color: (s.fee_total - s.fee_paid) > 0 ? 'var(--red)' : 'var(--green)' }}>
-                      ₹{fmtAmt((s.fee_total || 0) - (s.fee_paid || 0))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div>
+              {students.length > 0 && (
+                <div style={{ display: 'flex', gap: 16, padding: '10px 20px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', font: '500 12px var(--font)', color: 'var(--text2)' }}>
+                  <span><b style={{ color: 'var(--text)' }}>{students.length}</b> {students.length === 1 ? 'student' : 'students'}</span>
+                  <span style={{ color: 'var(--green)' }}>₹{fmtAmt(students.reduce(function (s, r) { return s + (r.fee_paid || 0) }, 0))} collected</span>
+                  <span style={{ color: 'var(--text3)' }}>of ₹{fmtAmt(students.reduce(function (s, r) { return s + (r.fee_total || 0) }, 0))} charged</span>
+                </div>
+              )}
+              <div className="tbl-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Name</th><th>Status</th><th>Fee Total</th><th>Fee Paid</th><th>Balance</th></tr>
+                  </thead>
+                  <tbody>
+                    {students.length === 0 && <tr><td colSpan={5} className="empty">No students</td></tr>}
+                    {students.map(function (s) {
+                      return (
+                        <tr key={s.id}>
+                          <td>{s.full_name}</td>
+                          <td><StatusBadge status={s.payment_status} /></td>
+                          <td>₹{fmtAmt(s.fee_total)}</td>
+                          <td>₹{fmtAmt(s.fee_paid)}</td>
+                          <td style={{ color: (s.fee_total - s.fee_paid) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                            ₹{fmtAmt((s.fee_total || 0) - (s.fee_paid || 0))}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

@@ -3,7 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
-import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
+import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled } from '../services/whatsapp'
 import StudentCertModal from '../components/StudentCertModal'
@@ -35,8 +35,9 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
 function StudentDetailModal({ student, onClose, onSaved }) {
-  const { currentRole } = useAuth()
+  const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
+  const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
 
   const [tab, setTab] = useState('profile')
 
@@ -418,43 +419,43 @@ function StudentDetailModal({ student, onClose, onSaved }) {
           <div>
             <div className="form-grid">
               <label>Student Name *
-                <input value={form.full_name} onChange={field('full_name')} disabled={!admin} />
+                <input value={form.full_name} onChange={field('full_name')} disabled={!canEdit} />
               </label>
               <label>Parent / Guardian
-                <input value={form.parent_name} onChange={field('parent_name')} disabled={!admin} />
+                <input value={form.parent_name} onChange={field('parent_name')} disabled={!canEdit} />
               </label>
               <label>Date of Birth
-                <input type="date" value={form.dob} onChange={field('dob')} disabled={!admin} />
+                <input type="date" value={form.dob} onChange={field('dob')} disabled={!canEdit} />
               </label>
               <label>Date of Registration
-                <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!admin} />
+                <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!canEdit} />
               </label>
               <label>Phone
-                <input value={form.phone} onChange={field('phone')} disabled={!admin} />
+                <input value={form.phone} onChange={field('phone')} disabled={!canEdit} />
               </label>
               <label>Parent Email
-                <input type="email" value={form.email} onChange={field('email')} disabled={!admin} placeholder="parent@email.com" />
+                <input type="email" value={form.email} onChange={field('email')} disabled={!canEdit} placeholder="parent@email.com" />
               </label>
               <label>PIN Code
-                <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
+                <input value={form.pincode} onChange={field('pincode')} disabled={!canEdit} placeholder="e.g. 440001" />
               </label>
               <label>City
-                <input value={form.city} onChange={field('city')} disabled={!admin} placeholder="Nagpur" />
+                <input value={form.city} onChange={field('city')} disabled={!canEdit} placeholder="Nagpur" />
               </label>
               <label>Area / Locality
-                <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Neighbourhood / Area" />
+                <input value={form.area} onChange={field('area')} disabled={!canEdit} placeholder="Neighbourhood / Area" />
               </label>
               <label>State
-                <input value={form.state} onChange={field('state')} disabled={!admin} placeholder="Maharashtra" />
+                <input value={form.state} onChange={field('state')} disabled={!canEdit} placeholder="Maharashtra" />
               </label>
               <label>Country
-                <input value={form.country} onChange={field('country')} disabled={!admin} placeholder="India" />
+                <input value={form.country} onChange={field('country')} disabled={!canEdit} placeholder="India" />
               </label>
               <label className="col-span-2">Street / Building Address
-                <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Flat/Shop no., building, street" />
+                <input value={form.address} onChange={field('address')} disabled={!canEdit} placeholder="Flat/Shop no., building, street" />
               </label>
               <label>Enrolment Channel
-                <select value={form.channel} onChange={field('channel')} disabled={!admin}>
+                <select value={form.channel} onChange={field('channel')} disabled={!canEdit}>
                   <option value="franchise">Franchise Centre</option>
                   <option value="own_centre">NLH Own Centre</option>
                   <option value="international">International / Online</option>
@@ -478,10 +479,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
               <strong>Fee Tracking</strong>
               <div className="form-grid" style={{ marginTop: 8 }}>
                 <label>Fee Total (₹)
-                  <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!admin} />
+                  <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!canEdit} />
                 </label>
                 <label>Fee Paid (₹)
-                  <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!admin} />
+                  <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!canEdit} />
                 </label>
                 <label>Balance
                   <input
@@ -491,7 +492,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                   />
                 </label>
                 <label>Payment Mode
-                  <select value={form.payment_mode} onChange={field('payment_mode')} disabled={!admin}>
+                  <select value={form.payment_mode} onChange={field('payment_mode')} disabled={!canEdit}>
                     <option value="">—</option>
                     <option value="cash">Cash</option>
                     <option value="upi">UPI</option>
@@ -563,7 +564,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                         </div>
 
                         {/* Complete / WhatsApp / Certificate buttons */}
-                        {admin && !isCompleted && (
+                        {canEdit && !isCompleted && (
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
                             onClick={function () { markCourseComplete(en) }}>
@@ -597,7 +598,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                         </button>
 
                         {/* Assign batch toggle */}
-                        {admin && (
+                        {canEdit && (
                           <button
                             className={isOpen ? 'btn' : 'btn-s'}
                             style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}
@@ -608,7 +609,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                         )}
 
                         {/* Remove from batch */}
-                        {admin && bs && !isOpen && (
+                        {canEdit && bs && !isOpen && (
                           <button
                             className="btn-s"
                             style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)' }}
@@ -807,7 +808,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                 })}
 
                 {/* ── Add Course panel ── */}
-                {admin && (
+                {canEdit && (
                   <div style={{ marginTop: 4 }}>
                     {!showAddEnrollment ? (
                       <button
@@ -948,7 +949,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             </button>
           )}
           <button className="btn" onClick={onClose}>Close</button>
-          {admin && tab === 'profile' && (
+          {canEdit && tab === 'profile' && (
             <button className="btn-p" onClick={save} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -984,7 +985,6 @@ function deriveFilter(fr) {
 function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
-  const isMasterFr = currentRole === 'smf' || currentRole === 'cf'
 
   const [form, setForm] = useState({
     full_name: '', parent_name: '', dob: '', registered_at: '', phone: '', email: '',
@@ -1023,22 +1023,8 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           .eq('status', 'active')
           .order('tier').order('business_name')
         setCentreList(data || [])
-      } else if (isMasterFr) {
-        // SMF: self + CF children + UF grandchildren
-        // CF:  self + UF children
-        const descendantIds = await getDescendantIds(currentFranchiseeId)
-        const [selfRes, descRes] = await Promise.all([
-          sb.from('franchisees').select(FR_FIELDS).eq('id', currentFranchiseeId).single(),
-          descendantIds.length > 0
-            ? sb.from('franchisees').select(FR_FIELDS).in('id', descendantIds).eq('status', 'active').order('business_name')
-            : { data: [] },
-        ])
-        const self = selfRes.data ? [selfRes.data] : []
-        // Include ALL descendant tiers (CF + UF), not just UF
-        const descendants = (descRes.data || []).filter(f => CENTRE_TIERS.includes(f.tier))
-        setCentreList([...self, ...descendants])
       } else {
-        // UF: fixed to their own centre — load their SKU filter immediately
+        // UF / CF / SMF: fixed to their own centre — registration is by the centre holder only
         const { data } = await sb.from('franchisees')
           .select('id,business_name,tier,registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
         if (data) setCentreList([data])
@@ -1258,7 +1244,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -1405,7 +1391,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:8 }}>
               Enrolment Centre *
             </div>
-            {(admin || isMasterFr) ? (() => {
+            {admin ? (() => {
               const nlhCentre = centreList.find(c => c.tier === 'NLH')
               const others    = centreList.filter(c => c.tier !== 'NLH')
               const tierOrder = { SMF: 1, CF: 2, UF: 3 }
@@ -1715,16 +1701,19 @@ export default function StudentsPage() {
   const [students, setStudents]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
+  const [centreFilter, setCentreFilter] = useState('')
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+
+  const showCentreCol = admin || currentRole === 'smf' || currentRole === 'cf'
 
   useEffect(() => {
     if (currentRole === null) return   // wait for auth to resolve
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .order('created_at', { ascending: false })
 
       if (admin) {
@@ -1748,9 +1737,19 @@ export default function StudentsPage() {
     load()
   }, [admin, currentRole, currentFranchiseeId])
 
-  const filtered = students.filter(s => {
+  const centreOptions = showCentreCol
+    ? [...new Map(
+        students.filter(function (s) { return s.franchisees }).map(function (s) {
+          return [s.franchisee_id, { id: s.franchisee_id, name: s.franchisees?.business_name, city: s.franchisees?.city }]
+        })
+      ).values()].sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
+    : []
+
+  const filtered = students.filter(function (s) {
     const q = search.toLowerCase()
-    return !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
+    const matchesSearch = !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
+    const matchesCentre = !centreFilter || s.franchisee_id === centreFilter
+    return matchesSearch && matchesCentre
   })
 
   function handleSaved(updated) {
@@ -1821,6 +1820,18 @@ export default function StudentsPage() {
       <header className="tb">
         <div className="crumb">Operations <span className="sep">›</span> <b>Students</b></div>
         <div className="tb-r">
+          {showCentreCol && centreOptions.length > 1 && (
+            <select
+              value={centreFilter}
+              onChange={function (e) { setCentreFilter(e.target.value) }}
+              style={{ fontSize: 12 }}
+            >
+              <option value="">All centres</option>
+              {centreOptions.map(function (c) {
+                return <option key={c.id} value={c.id}>{c.name}{c.city ? ' — ' + c.city : ''}</option>
+              })}
+            </select>
+          )}
           <input
             className="search tb-search"
             placeholder="Search students by name or parent…"
@@ -1841,7 +1852,10 @@ export default function StudentsPage() {
             <div className="ph-eyebrow"><span className="dot"></span>Enrollment</div>
             <h1 className="ph-title">Students</h1>
             <div className="ph-sub">
-              <b>{students.length} students</b> enrolled across all centres.
+              {currentRole === 'uf'
+                ? <><b>{students.length} students</b> enrolled at your centre.</>
+                : <><b>{students.length} students</b>{showCentreCol ? ' enrolled across your territory.' : ' enrolled across all centres.'}</>
+              }
             </div>
           </div>
         </div>
@@ -1886,6 +1900,7 @@ export default function StudentsPage() {
               <thead>
                 <tr>
                   <th>Student</th>
+                  {showCentreCol && <th className="hide-mobile">Centre</th>}
                   <th className="hide-mobile">Parent</th>
                   <th>Courses</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Total</th>
@@ -1897,7 +1912,7 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="empty">No students found</td></tr>
+                  <tr><td colSpan={showCentreCol ? 9 : 8} className="empty">No students found</td></tr>
                 )}
                 {filtered.map(function (s) {
                   const balance = (s.fee_total || 0) - (s.fee_paid || 0)
@@ -1919,6 +1934,12 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </td>
+                      {showCentreCol && (
+                        <td className="hide-mobile" style={{ color: 'var(--text2)', fontSize: 12 }}>
+                          <div>{s.franchisees?.business_name || '—'}</div>
+                          {s.franchisees?.city && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.franchisees.city}</div>}
+                        </td>
+                      )}
                       <td className="hide-mobile" style={{ color: 'var(--text2)' }}>
                         <div>{s.parent_name || '—'}</div>
                         {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
