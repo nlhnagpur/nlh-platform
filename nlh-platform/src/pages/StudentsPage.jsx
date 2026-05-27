@@ -119,8 +119,20 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       payment_status: derivedStatus,
     }
     const { error } = await sb.from('students').update(payload).eq('id', student.id)
+    if (error) { setSaving(false); showToast('Save failed: ' + error.message, 'err'); return }
+
+    // Sync batch joining date to match updated registration date
+    if (form.registered_at && form.registered_at !== student.registered_at) {
+      const enrIds = (student.enrollments || []).map(function (e) { return e.id })
+      if (enrIds.length > 0) {
+        await sb.from('batch_students')
+          .update({ assigned_at: form.registered_at + 'T00:00:00+00:00' })
+          .in('enrollment_id', enrIds)
+          .is('removed_at', null)
+      }
+    }
+
     setSaving(false)
-    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
     showToast('Saved')
     onSaved({ ...student, ...payload })
   }
