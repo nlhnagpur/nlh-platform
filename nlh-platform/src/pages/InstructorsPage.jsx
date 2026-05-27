@@ -62,10 +62,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [saving, setSaving]     = useState(false)
 
   // ── Payroll state ──
-  const [payrollMonth,    setPayrollMonth]    = useState(new Date().toISOString().slice(0, 7))
-  const [payrollSessions, setPayrollSessions] = useState([])
-  const [payrollAppts,    setPayrollAppts]    = useState([])
-  const [payrollLoading,  setPayrollLoading]  = useState(false)
+  const [payrollMonth,       setPayrollMonth]       = useState(new Date().toISOString().slice(0, 7))
+  const [payrollSessions,    setPayrollSessions]    = useState([])
+  const [payrollAppts,       setPayrollAppts]       = useState([])
+  const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
+  const [payrollLoading,     setPayrollLoading]     = useState(false)
 
   // ── Profile form ──
   const [form, setForm] = useState({
@@ -168,8 +169,28 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           .eq('instructor_id', instructor.id)
           .eq('status', 'active'),
       ])
+
+      // ── Per-student completions: count enrollments completed this month per batch ──
+      var batchIds = [...new Set((sessRes.data || []).map(function (s) { return s.batch_id }))]
+      var completionMap = {}
+      if (batchIds.length > 0) {
+        var { data: bsRows } = await sb.from('batch_students')
+          .select('batch_id, enrollments(id, completed_at)')
+          .in('batch_id', batchIds)
+        ;(bsRows || []).forEach(function (bs) {
+          var ca = bs.enrollments?.completed_at
+          if (ca) {
+            var caDate = ca.slice(0, 10)
+            if (caDate >= startDate && caDate <= endDate) {
+              completionMap[bs.batch_id] = (completionMap[bs.batch_id] || 0) + 1
+            }
+          }
+        })
+      }
+
       setPayrollSessions(sessRes.data || [])
       setPayrollAppts(apptRes.data || [])
+      setPayrollCompletions(completionMap)
       setPayrollLoading(false)
     }
     loadPayroll()
@@ -1172,19 +1193,26 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var perStudentRows = []
               var monthlyRows    = []
 
-              Object.values(batchMap).forEach(function (entry) {
-                var skuId = entry.batch?.sku_id
-                var appt  = skuId ? payrollAppts.find(function (a) { return a.sku_id === skuId }) : payrollAppts[0]
-                var mode  = appt?.remuneration_mode || 'per_session'
-                var rate  = appt?.remuneration_rate || 0
-                var course = entry.batch?.skus?.courses?.group_name || entry.batch?.name || '—'
-                var level  = entry.batch?.skus?.level_name || ''
+              Object.entries(batchMap).forEach(function (entry) {
+                var batchId = entry[0]
+                var data    = entry[1]
+                var skuId   = data.batch?.sku_id
+                var appt    = skuId ? payrollAppts.find(function (a) { return a.sku_id === skuId }) : payrollAppts[0]
+                var mode    = appt?.remuneration_mode || 'per_session'
+                var rate    = appt?.remuneration_rate || 0
+                var course  = data.batch?.skus?.courses?.group_name || data.batch?.name || '—'
+                var level   = data.batch?.skus?.level_name || ''
+                var completions = mode === 'per_student' ? (payrollCompletions[batchId] || 0) : 0
                 var row = {
-                  batchName: entry.batch?.name || '—',
+                  batchId,
+                  batchName: data.batch?.name || '—',
                   course, level,
-                  sessionCount: entry.sessions.length,
+                  sessionCount: data.sessions.length,
                   mode, rate,
-                  amount: mode === 'per_session' ? entry.sessions.length * rate : 0,
+                  completions,
+                  amount: mode === 'per_session' ? data.sessions.length * rate
+                        : mode === 'per_student' ? completions * rate
+                        : 0,
                 }
                 if (mode === 'per_session') perSessionRows.push(row)
                 else if (mode === 'per_student') perStudentRows.push(row)
@@ -1196,8 +1224,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               })
 
               var sessionTotal  = perSessionRows.reduce(function (s, r) { return s + r.amount }, 0)
+              var studentTotal  = perStudentRows.reduce(function (s, r) { return s + r.amount }, 0)
               var monthlyTotal  = monthlyRows.reduce(function (s, a) { return s + (a.remuneration_rate || 0) }, 0)
-              var grandTotal    = sessionTotal + monthlyTotal
+              var grandTotal    = sessionTotal + studentTotal + monthlyTotal
 
               if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0) {
                 return (
@@ -1271,7 +1300,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     </div>
                   )}
 
-                  {/* Per-student reference */}
+                  {/* Per-student (completion-based) */}
                   {perStudentRows.length > 0 && (
                     <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
                       <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -1286,18 +1315,29 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                             <div style={{ flex: 1 }}>
                               <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
                               <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                {row.course}{row.level ? ' · ' + row.level : ''} · ₹{row.rate.toLocaleString('en-IN')}/student on completion
+                                {row.course}{row.level ? ' · ' + row.level : ''}
+                                {' · '}
+                                <span style={{ color: row.completions > 0 ? 'var(--green)' : 'var(--text3)' }}>
+                                  {row.completions} student{row.completions !== 1 ? 's' : ''} completed
+                                </span>
+                                {' × ₹'}{row.rate.toLocaleString('en-IN')}
                               </div>
                             </div>
-                            <div style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>
-                              {row.sessionCount} sessions
+                            <div style={{ font: '700 14px var(--font)', color: row.amount > 0 ? 'var(--text)' : 'var(--text3)' }}>
+                              {row.amount > 0 ? '₹' + row.amount.toLocaleString('en-IN') : '—'}
                             </div>
                           </div>
                         )
                       })}
-                      <div style={{ padding: '6px 14px', background: 'var(--sun-bg)', font: '500 10px var(--font)', color: '#92400e' }}>
-                        ⚠ Payment calculated on course completion — not yet auto-computed
-                      </div>
+                      {studentTotal > 0 && (
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between', padding: '8px 14px',
+                          borderTop: '1px solid var(--border)', background: 'var(--green-bg)',
+                        }}>
+                          <span style={{ font: '600 12px var(--font)', color: 'var(--green)' }}>Completion Sub-total</span>
+                          <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>₹{studentTotal.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
