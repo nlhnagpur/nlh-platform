@@ -565,7 +565,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                         {/* Complete / WhatsApp / Certificate buttons */}
                         {admin && !isCompleted && (
                           <button className="btn-s"
-                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: 'var(--green)', borderColor: 'var(--green)' }}
+                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
                             onClick={function () { markCourseComplete(en) }}>
                             âœ“ Complete
                           </button>
@@ -1969,5 +1969,6 @@ export default function StudentsPage() {
     </div>
   )
 }
+
 
 
