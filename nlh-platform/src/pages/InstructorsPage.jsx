@@ -67,6 +67,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollAppts,       setPayrollAppts]       = useState([])
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
+  const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
+  const [overrideEdit,       setOverrideEdit]       = useState(false) // editing override inline
+  const [overrideForm,       setOverrideForm]       = useState({ amount: '', notes: '' })
+  const [savingOverride,     setSavingOverride]     = useState(false)
   const [payrollLoading,     setPayrollLoading]     = useState(false)
 
   // ── Profile form ──
@@ -204,14 +208,57 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         })
       }
 
+      // ── Fetch any saved override for this instructor + month ──
+      var { data: ovRow } = await sb.from('payroll_overrides')
+        .select('id, final_amount, notes')
+        .eq('instructor_id', instructor.id)
+        .eq('month', payrollMonth)
+        .maybeSingle()
+
       setPayrollSessions(sessRes.data || [])
       setPayrollAppts(apptRes.data || [])
       setPayrollCompletions(completionMap)
       setPayrollTotalSess(totalSessMap)
+      setPayrollOverride(ovRow || null)
+      setOverrideEdit(false)
       setPayrollLoading(false)
     }
     loadPayroll()
   }, [tab, payrollMonth])
+
+  // ── Payroll override save/clear ──
+  async function saveOverride(grandTotal) {
+    var amt = parseInt(overrideForm.amount, 10)
+    if (isNaN(amt) || amt < 0) { showToast('Enter a valid amount', 'warn'); return }
+    setSavingOverride(true)
+    if (payrollOverride) {
+      // Update existing
+      var { error } = await sb.from('payroll_overrides')
+        .update({ final_amount: amt, notes: overrideForm.notes.trim() || null, updated_at: new Date().toISOString() })
+        .eq('id', payrollOverride.id)
+      if (error) { showToast('Save failed: ' + error.message, 'err'); setSavingOverride(false); return }
+      setPayrollOverride({ ...payrollOverride, final_amount: amt, notes: overrideForm.notes.trim() || null })
+    } else {
+      // Insert new
+      var { data: newRow, error: insErr } = await sb.from('payroll_overrides')
+        .insert({ instructor_id: instructor.id, month: payrollMonth, final_amount: amt, notes: overrideForm.notes.trim() || null })
+        .select('id, final_amount, notes').single()
+      if (insErr) { showToast('Save failed: ' + insErr.message, 'err'); setSavingOverride(false); return }
+      setPayrollOverride(newRow)
+    }
+    setOverrideEdit(false)
+    setSavingOverride(false)
+    showToast('Agreed amount saved ✓')
+  }
+
+  async function clearOverride() {
+    if (!payrollOverride) return
+    var { error } = await sb.from('payroll_overrides').delete().eq('id', payrollOverride.id)
+    if (error) { showToast('Clear failed: ' + error.message, 'err'); return }
+    setPayrollOverride(null)
+    setOverrideEdit(false)
+    showToast('Override cleared — showing calculated amount')
+  }
 
   // ── Save profile ──
   async function saveProfile() {
@@ -1400,15 +1447,116 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     </div>
                   )}
 
-                  {/* Grand total */}
-                  <div style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '12px 16px', borderRadius: 8,
-                    background: 'var(--purple)', color: '#fff',
-                    marginTop: 4,
-                  }}>
-                    <span style={{ font: '700 14px var(--font)' }}>Total Payable — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</span>
-                    <span style={{ font: '700 20px var(--font)' }}>₹{grandTotal.toLocaleString('en-IN')}</span>
+                  {/* ── Grand total + override ── */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginTop: 4 }}>
+
+                    {/* Calculated total row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: 'var(--bg2)' }}>
+                      <span style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>
+                        Calculated Total
+                      </span>
+                      <span style={{
+                        font: '600 14px var(--font)',
+                        color: payrollOverride ? 'var(--text3)' : 'var(--text)',
+                        textDecoration: payrollOverride ? 'line-through' : 'none',
+                      }}>₹{grandTotal.toLocaleString('en-IN')}</span>
+                    </div>
+
+                    {/* Override edit form */}
+                    {overrideEdit ? (
+                      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', background: '#fffbf0' }}>
+                        <div style={{ font: '600 11px var(--font)', color: '#92400e', marginBottom: 8 }}>
+                          ✏️ Set agreed / revised amount
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>₹</span>
+                            <input
+                              type="number" min="0"
+                              value={overrideForm.amount}
+                              onChange={function (e) { setOverrideForm(function (f) { return { ...f, amount: e.target.value } }) }}
+                              placeholder={grandTotal}
+                              style={{ width: 120, fontSize: 14, fontWeight: 700, padding: '5px 8px' }}
+                              autoFocus
+                            />
+                          </div>
+                          <input
+                            type="text"
+                            value={overrideForm.notes}
+                            onChange={function (e) { setOverrideForm(function (f) { return { ...f, notes: e.target.value } }) }}
+                            placeholder="Reason / note (optional)"
+                            style={{ flex: 1, minWidth: 160, fontSize: 12, padding: '5px 8px' }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                          <button className="btn" style={{ fontSize: 11 }}
+                            onClick={function () { setOverrideEdit(false) }} disabled={savingOverride}>
+                            Cancel
+                          </button>
+                          <button className="btn-p" style={{ fontSize: 11 }}
+                            onClick={function () { saveOverride(grandTotal) }} disabled={savingOverride}>
+                            {savingOverride ? 'Saving…' : 'Save Agreed Amount'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : payrollOverride ? (
+                      /* Override active — show agreed amount */
+                      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: '#f0fdf4' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ font: '600 11px var(--font)', color: 'var(--green)', marginBottom: 2 }}>
+                              ✓ Mutually Agreed Amount
+                            </div>
+                            {payrollOverride.notes && (
+                              <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>
+                                {payrollOverride.notes}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ font: '700 18px var(--font)', color: 'var(--green)' }}>
+                              ₹{payrollOverride.final_amount.toLocaleString('en-IN')}
+                            </span>
+                            <button className="btn" style={{ fontSize: 10, padding: '2px 7px' }}
+                              onClick={function () {
+                                setOverrideForm({ amount: payrollOverride.final_amount, notes: payrollOverride.notes || '' })
+                                setOverrideEdit(true)
+                              }}>✏️</button>
+                            <button className="btn" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red)' }}
+                              onClick={clearOverride}>✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* No override — show edit prompt */
+                      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                          Agreed on a different amount?
+                        </span>
+                        <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
+                          onClick={function () {
+                            setOverrideForm({ amount: grandTotal, notes: '' })
+                            setOverrideEdit(true)
+                          }}>
+                          ✏️ Override
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Final payable banner */}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '12px 16px',
+                      background: payrollOverride ? 'var(--green)' : 'var(--purple)',
+                      color: '#fff',
+                    }}>
+                      <span style={{ font: '700 14px var(--font)' }}>
+                        {payrollOverride ? '✓ Final Payable' : 'Total Payable'} — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                      </span>
+                      <span style={{ font: '700 20px var(--font)' }}>
+                        ₹{(payrollOverride ? payrollOverride.final_amount : grandTotal).toLocaleString('en-IN')}
+                      </span>
+                    </div>
                   </div>
                 </>
               )
