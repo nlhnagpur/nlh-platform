@@ -1453,7 +1453,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     {/* Calculated total row */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: 'var(--bg2)' }}>
                       <span style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>
-                        Calculated Total
+                        Amount Calculated
                       </span>
                       <span style={{
                         font: '600 14px var(--font)',
@@ -1466,7 +1466,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     {overrideEdit ? (
                       <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', background: '#fffbf0' }}>
                         <div style={{ font: '600 11px var(--font)', color: '#92400e', marginBottom: 8 }}>
-                          ✏️ Set agreed / revised amount
+                          ✏️ Set amount paid
                         </div>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1495,7 +1495,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           </button>
                           <button className="btn-p" style={{ fontSize: 11 }}
                             onClick={function () { saveOverride(grandTotal) }} disabled={savingOverride}>
-                            {savingOverride ? 'Saving…' : 'Save Agreed Amount'}
+                            {savingOverride ? 'Saving…' : 'Save Amount Paid'}
                           </button>
                         </div>
                       </div>
@@ -1505,7 +1505,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ font: '600 11px var(--font)', color: 'var(--green)', marginBottom: 2 }}>
-                              ✓ Mutually Agreed Amount
+                              ✓ Amount Paid
                             </div>
                             {payrollOverride.notes && (
                               <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>
@@ -1531,7 +1531,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       /* No override — show edit prompt */
                       <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
-                          Agreed on a different amount?
+                          Enter amount actually paid?
                         </span>
                         <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
                           onClick={function () {
@@ -1551,7 +1551,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       color: '#fff',
                     }}>
                       <span style={{ font: '700 14px var(--font)' }}>
-                        {payrollOverride ? '✓ Final Payable' : 'Total Payable'} — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                        {payrollOverride ? 'Amount Paid' : 'Amount Calculated'} — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
                       </span>
                       <span style={{ font: '700 20px var(--font)' }}>
                         ₹{(payrollOverride ? payrollOverride.final_amount : grandTotal).toLocaleString('en-IN')}
