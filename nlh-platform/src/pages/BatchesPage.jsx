@@ -1395,7 +1395,7 @@ export default function BatchesPage() {
           is_active, start_date, sessions_done, notes, created_at,
           instructors(id, full_name),
           batch_students(id, enrollment_id, assigned_at, removed_at,
-            enrollments(id, student_id, sku_id, completed_at, status, students(id, full_name),
+            enrollments(id, student_id, sku_id, completed_at, status, students(id, full_name, phone, parent_name),
               skus(level_name, total_sessions, courses(group_name))))
         `)
         .eq('instructors.franchisee_id', nlh.id)
@@ -1479,7 +1479,9 @@ export default function BatchesPage() {
     setRosterStats(function (prev) { return { ...prev, [batchId]: map } })
   }
 
-  async function markComplete(enrollmentId, batchId) {
+  var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
+
+  async function markComplete(enrollmentId, batchId, studentName, parentName, phone, courseName) {
     var completed_at = new Date().toISOString()
     var { error } = await sb.from('enrollments')
       .update({ completed_at, status: 'completed' })
@@ -1498,6 +1500,17 @@ export default function BatchesPage() {
         }
       })
     })
+    // Send WhatsApp review request to parent
+    if (phone) {
+      var clean = phone.replace(/\D/g, '')
+      if (clean.length === 10) clean = '91' + clean
+      var msg = 'Dear ' + (parentName || 'Parent') + ',\n\n'
+        + (studentName || 'Your child') + ' has successfully completed the *' + (courseName || 'course') + '* programme at *New Learning Horizons*! 🎉\n\n'
+        + 'We would love to hear your feedback. A quick Google Review would mean a lot to us:\n'
+        + GOOGLE_REVIEW_URL + '\n\n'
+        + 'Thank you for being part of the NLH family! 🌟'
+      window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank')
+    }
   }
 
   // ── filter ────────────────────────────────────────────────────────────────
@@ -1783,7 +1796,15 @@ export default function BatchesPage() {
                                   color: 'var(--green)', borderColor: 'var(--green)',
                                   whiteSpace: 'nowrap',
                                 }}
-                                  onClick={function () { markComplete(enrollId, batch.id) }}>
+                                  onClick={function () {
+                                    markComplete(
+                                      enrollId, batch.id,
+                                      bs.enrollments?.students?.full_name,
+                                      bs.enrollments?.students?.parent_name,
+                                      bs.enrollments?.students?.phone,
+                                      course + (level ? ' ' + level : '')
+                                    )
+                                  }}>
                                   ✓ Complete
                                 </button>
                               )}
