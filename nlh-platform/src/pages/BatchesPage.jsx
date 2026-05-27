@@ -18,12 +18,20 @@ function timeRange(t) {
 // ── BulkAttendanceModal ───────────────────────────────────────────────────────
 
 function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
-  var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
   var today = new Date().toISOString().split('T')[0]
 
-  function initAtt() {
+  // Returns only students who had joined by `date` and not yet removed before `date`
+  function studentsForDate(date) {
+    return (batch.batch_students || []).filter(function (bs) {
+      var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
+      var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
+      return (!joined || joined <= date) && (!removed || removed > date)
+    })
+  }
+
+  function initAtt(date) {
     var map = {}
-    activeStudents.forEach(function (bs) { map[bs.enrollment_id] = true })
+    studentsForDate(date).forEach(function (bs) { map[bs.enrollment_id] = true })
     return map
   }
 
@@ -53,7 +61,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
     }
     var newIdx = sessions.length
     setSessions(function (prev) {
-      return [...prev, { date: addDateVal, attendance: initAtt(), is_holiday: false, subMode: 'regular', subCiId: '', subManualName: '' }]
+      return [...prev, { date: addDateVal, attendance: initAtt(addDateVal), is_holiday: false, subMode: 'regular', subCiId: '', subManualName: '' }]
     })
     setActiveIdx(newIdx)
     setAddDateVal('')
@@ -88,8 +96,9 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   }
 
   function toggleAll(present) {
+    if (!activeSession) return
     var map = {}
-    activeStudents.forEach(function (bs) { map[bs.enrollment_id] = present })
+    studentsForDate(activeSession.date).forEach(function (bs) { map[bs.enrollment_id] = present })
     setSessions(function (prev) {
       return prev.map(function (s, i) {
         if (i !== activeIdx) return s
@@ -143,8 +152,10 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
       if (sessErr) { skipped++; continue }
 
       // Only insert attendance rows for non-holiday sessions
+      // Only include students who had joined by this session's date
       if (!sess.is_holiday) {
-        var attRows = activeStudents.map(function (bs) {
+        var sessStudents = studentsForDate(sess.date)
+        var attRows = sessStudents.map(function (bs) {
           return {
             session_id:    sessRow.id,
             enrollment_id: bs.enrollment_id,
@@ -178,9 +189,10 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
     onSaved()
   }
 
-  var activeSession = sessions.length > 0 && activeIdx >= 0 ? sessions[activeIdx] : null
-  var presentCount = activeSession && !activeSession.is_holiday
-    ? activeStudents.filter(function (bs) { return activeSession.attendance[bs.enrollment_id] !== false }).length
+  var activeSession    = sessions.length > 0 && activeIdx >= 0 ? sessions[activeIdx] : null
+  var activeSessStuds  = activeSession ? studentsForDate(activeSession.date) : []
+  var presentCount     = activeSession && !activeSession.is_holiday
+    ? activeSessStuds.filter(function (bs) { return activeSession.attendance[bs.enrollment_id] !== false }).length
     : 0
 
   return (
@@ -190,7 +202,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Mark Attendance</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {batch.instructors?.full_name || '—'} · {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''}
+              {batch.instructors?.full_name || '—'} · {(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length} student{(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length !== 1 ? 's' : ''}
             </div>
           </div>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -216,8 +228,9 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
             )}
 
             {sessions.map(function (s, i) {
-              var cnt      = activeStudents.filter(function (bs) { return s.attendance[bs.enrollment_id] !== false }).length
-              var isActive = i === activeIdx
+              var sessStuds = studentsForDate(s.date)
+              var cnt       = sessStuds.filter(function (bs) { return s.attendance[bs.enrollment_id] !== false }).length
+              var isActive  = i === activeIdx
               var borderColor = isActive
                 ? (s.is_holiday ? '#d97706' : 'var(--purple)')
                 : 'var(--border)'
@@ -292,7 +305,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                     </div>
                     {!activeSession.is_holiday && (
                       <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                        <span style={{ color: 'var(--green)', fontWeight: 700 }}>{presentCount}</span>/{activeStudents.length} present
+                        <span style={{ color: 'var(--green)', fontWeight: 700 }}>{presentCount}</span>/{activeSessStuds.length} present
                       </div>
                     )}
                   </div>
@@ -416,11 +429,11 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                       Undo — Mark as Regular Session
                     </button>
                   </div>
-                ) : activeStudents.length === 0 ? (
-                  <p className="hint">No students in this batch yet.</p>
+                ) : activeSessStuds.length === 0 ? (
+                  <p className="hint">No students had joined by this date.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {activeStudents.map(function (bs) {
+                    {activeSessStuds.map(function (bs) {
                       var present = activeSession.attendance[bs.enrollment_id] !== false
                       var name    = bs.enrollments?.students?.full_name || '—'
                       return (
@@ -483,7 +496,14 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
 // ── SessionHistoryModal ────────────────────────────────────────────────────────
 
 function SessionHistoryModal({ batch, onClose }) {
-  var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+  // Returns students who were active on a given date (joined ≤ date, not yet removed)
+  function studentsForDate(date) {
+    return (batch.batch_students || []).filter(function (bs) {
+      var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
+      var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
+      return (!joined || joined <= date) && (!removed || removed > date)
+    })
+  }
 
   const [sessions,       setSessions]       = useState([])
   const [loading,        setLoading]        = useState(true)
@@ -511,7 +531,7 @@ function SessionHistoryModal({ batch, onClose }) {
     if ((sess.session_attendance || []).length > 0) {
       sess.session_attendance.forEach(function (a) { map[a.enrollment_id] = !!a.attended })
     } else {
-      activeStudents.forEach(function (bs) { map[bs.enrollment_id] = true })
+      studentsForDate(sess.session_date).forEach(function (bs) { map[bs.enrollment_id] = true })
     }
     setEditAtt(map)
     setEditSessId(sess.id)
@@ -527,8 +547,9 @@ function SessionHistoryModal({ batch, onClose }) {
   async function saveEdit(sess) {
     setSavingEdit(true)
     // Delete existing attendance for this session then re-insert
+    // Only include students who were in the batch on this session's date
     await sb.from('session_attendance').delete().eq('session_id', sess.id)
-    var rows = activeStudents.map(function (bs) {
+    var rows = studentsForDate(sess.session_date).map(function (bs) {
       return {
         session_id:    sess.id,
         enrollment_id: bs.enrollment_id,
@@ -768,16 +789,18 @@ function SessionHistoryModal({ batch, onClose }) {
                     )}
 
                     {/* ── Edit mode ── */}
-                    {isEditing && (
+                    {isEditing && (function () {
+                      var editStudents = studentsForDate(sess.session_date)
+                      return (
                       <div style={{ padding: '10px 14px 14px', background: 'var(--purple-bg)', borderTop: '1px solid var(--purple)' }}>
                         <div style={{ font: '600 11px var(--font)', color: 'var(--purple)', marginBottom: 8 }}>
                           Mark attendance — tap to toggle
                         </div>
-                        {activeStudents.length === 0 ? (
-                          <p className="hint">No students in batch.</p>
+                        {editStudents.length === 0 ? (
+                          <p className="hint">No students had joined by this date.</p>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
-                            {activeStudents.map(function (bs) {
+                            {editStudents.map(function (bs) {
                               var pres = editAtt[bs.enrollment_id] !== false
                               var name = bs.enrollments?.students?.full_name || '—'
                               return (
@@ -816,7 +839,7 @@ function SessionHistoryModal({ batch, onClose }) {
                           </button>
                         </div>
                       </div>
-                    )}
+                    )})()}
                   </div>
                 )
               })}
