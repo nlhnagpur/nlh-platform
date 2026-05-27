@@ -1845,9 +1845,9 @@ export default function StudentsPage() {
                           </div>
                           <div>
                             <div className="placer-name">{s.full_name}</div>
-                            {s.created_at && (
+                            {(s.registered_at || s.created_at) && (
                               <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
-                                Joined {new Date(s.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                Joined {new Date(s.registered_at || s.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                               </div>
                             )}
                           </div>
