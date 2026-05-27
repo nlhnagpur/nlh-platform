@@ -74,6 +74,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const [newBatchCI,      setNewBatchCI]      = useState('')
   const [newBatchForm,    setNewBatchForm]    = useState({ name: '', days: [], time: '', is_individual: false })
   const [panelSaving,     setPanelSaving]     = useState(false)
+  const [assignJoinDate,  setAssignJoinDate]  = useState(new Date().toISOString().slice(0, 10))
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -211,7 +212,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
     }
     const { data, error } = await sb.from('batch_students')
-      .insert({ batch_id: batchId, enrollment_id: enrollmentId })
+      .insert({ batch_id: batchId, enrollment_id: enrollmentId, assigned_at: assignJoinDate + 'T00:00:00+00:00' })
       .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
       .single()
     setPanelSaving(false)
@@ -254,7 +255,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
     }
     const { data: bs, error: bsErr } = await sb.from('batch_students')
-      .insert({ batch_id: batch.id, enrollment_id: enrollment.id })
+      .insert({ batch_id: batch.id, enrollment_id: enrollment.id, assigned_at: assignJoinDate + 'T00:00:00+00:00' })
       .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
       .single()
     setPanelSaving(false)
@@ -571,6 +572,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             <div className="hint">Loading batches…</div>
                           ) : (
                             <>
+                              {/* Joining date */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                                <span style={{ font: '600 11px var(--font)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>Joining date:</span>
+                                <input type="date" value={assignJoinDate}
+                                  onChange={function (e) { setAssignJoinDate(e.target.value) }}
+                                  style={{ fontSize: 12, padding: '4px 8px' }} />
+                              </div>
                               {/* Existing batches */}
                               {panelData.batches.length > 0 && (
                                 <div style={{ marginBottom: 16 }}>

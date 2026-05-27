@@ -1162,6 +1162,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   const [eligible,      setEligible]      = useState([])
   const [showAdd,       setShowAdd]       = useState(false)
   const [selectedEnr,   setSelectedEnr]   = useState('')
+  const [addJoinDate,   setAddJoinDate]   = useState(new Date().toISOString().slice(0, 10))
   const [saving,        setSaving]        = useState(false)
   const [editingJoin,   setEditingJoin]   = useState(null)  // bsId being edited
   const [editJoinVal,   setEditJoinVal]   = useState('')
@@ -1194,7 +1195,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
     if (!selectedEnr) return
     setSaving(true)
     const { data, error } = await sb.from('batch_students')
-      .insert({ batch_id: batch.id, enrollment_id: selectedEnr })
+      .insert({ batch_id: batch.id, enrollment_id: selectedEnr, assigned_at: addJoinDate + 'T00:00:00+00:00' })
       .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))')
       .single()
     setSaving(false)
@@ -1296,11 +1297,11 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
 
           {/* Add student */}
           {showAdd ? (
-            <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ marginTop: 12 }}>
               {eligible.length === 0
                 ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>No eligible enrolled students found.</span>
                 : <>
-                    <select style={{ flex: 1, fontSize: 13 }} value={selectedEnr}
+                    <select style={{ width: '100%', fontSize: 13, marginBottom: 6 }} value={selectedEnr}
                       onChange={function (e) { setSelectedEnr(e.target.value) }}>
                       <option value="">— Select student —</option>
                       {eligible.map(function (e) {
@@ -1314,15 +1315,28 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
                         )
                       })}
                     </select>
-                    <button className="btn-p" style={{ fontSize: 12 }}
-                      onClick={assign} disabled={!selectedEnr || saving}>
-                      {saving ? '…' : 'Add'}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>Joining date:</span>
+                      <input type="date" value={addJoinDate}
+                        onChange={function (e) { setAddJoinDate(e.target.value) }}
+                        style={{ fontSize: 12, padding: '3px 6px', flex: 1 }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn-p" style={{ fontSize: 12 }}
+                        onClick={assign} disabled={!selectedEnr || !addJoinDate || saving}>
+                        {saving ? '…' : 'Add'}
+                      </button>
+                      <button className="btn" style={{ fontSize: 12 }} onClick={function () { setShowAdd(false) }}>
+                        Cancel
+                      </button>
+                    </div>
                   </>
               }
-              <button className="btn" style={{ fontSize: 12 }} onClick={function () { setShowAdd(false) }}>
-                Cancel
-              </button>
+              {eligible.length === 0 && (
+                <button className="btn" style={{ fontSize: 12, marginTop: 6 }} onClick={function () { setShowAdd(false) }}>
+                  Cancel
+                </button>
+              )}
             </div>
           ) : (
             <button className="btn-s" style={{ marginTop: 12 }} onClick={function () { setShowAdd(true) }}>
