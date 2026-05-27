@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
+﻿import React, { useState, useEffect, useCallback } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 
-// ── helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const DAYS       = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
@@ -12,10 +12,10 @@ function timeRange(t) {
   if (!t) return ''
   const [h, m] = t.split(':').map(Number)
   const end = ((h + 1) % 24).toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0')
-  return t.slice(0, 5) + ' – ' + end
+  return t.slice(0, 5) + ' â€“ ' + end
 }
 
-// ── BulkAttendanceModal ───────────────────────────────────────────────────────
+// â”€â”€ BulkAttendanceModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   var today = new Date().toISOString().split('T')[0]
@@ -182,7 +182,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
       saved++
     }
 
-    // ── Sync sessions_done to actual non-holiday count in DB ──────────────────
+    // â”€â”€ Sync sessions_done to actual non-holiday count in DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // (avoids stale-prop drift if a previous save wrote rows but failed to
     //  update sessions_done, which was the root cause of the "0 sessions" bug)
     var { count: realCount } = await sb.from('batch_sessions')
@@ -198,7 +198,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
     if (sessionCount > 0) parts.push(sessionCount + ' session' + (sessionCount !== 1 ? 's' : '') + ' saved')
     if (holidayCount > 0) parts.push(holidayCount + ' holiday' + (holidayCount !== 1 ? 's' : '') + ' marked')
     if (skipped > 0) parts.push(skipped + ' skipped (already recorded)')
-    showToast(parts.join(', ') + ' ✓', skipped > 0 ? 'warn' : undefined)
+    showToast(parts.join(', ') + ' âœ“', skipped > 0 ? 'warn' : undefined)
     onSaved()
   }
 
@@ -210,20 +210,20 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 660, width: '96vw' }}>
+      <div className="modal" style={{ maxWidth: 1000, width: "96vw" }}>
         <div className="ch">
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Mark Attendance</div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} â€” Mark Attendance</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {batch.instructors?.full_name || '—'} · {(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length} student{(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length !== 1 ? 's' : ''}
+              {batch.instructors?.full_name || 'â€”'} Â· {(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length} student{(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length !== 1 ? 's' : ''}
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
 
         <div style={{ display: 'flex', minHeight: 320 }}>
 
-          {/* ── Left: date list ── */}
+          {/* â”€â”€ Left: date list â”€â”€ */}
           <div style={{
             width: 186, borderRight: '1px solid var(--border)',
             padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0,
@@ -235,8 +235,8 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
             {sessions.length === 0 && (
               <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', padding: '4px 0' }}>
                 {todayWarning
-                  ? <span style={{ color: '#d97706' }}>Today already recorded.<br />Pick a past date ↓</span>
-                  : 'Add a date below ↓'}
+                  ? <span style={{ color: '#d97706' }}>Today already recorded.<br />Pick a past date â†“</span>
+                  : 'Add a date below â†“'}
               </div>
             )}
 
@@ -263,7 +263,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                 >
                   <div>
                     <div style={{ font: '600 11px var(--font)', color: isActive ? (s.is_holiday ? '#d97706' : 'var(--purple)') : 'var(--text)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {s.is_holiday && <span>🏖</span>}
+                      {s.is_holiday && <span>ðŸ–</span>}
                       {new Date(s.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </div>
                     <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>
@@ -273,7 +273,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                   <button type="button"
                     onClick={function (e) { e.stopPropagation(); removeDate(i) }}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
-                  >×</button>
+                  >Ã—</button>
                 </div>
               )
             })}
@@ -293,11 +293,11 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
             </div>
           </div>
 
-          {/* ── Right: student roster ── */}
+          {/* â”€â”€ Right: student roster â”€â”€ */}
           <div style={{ flex: 1, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {!activeSession ? (
               <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>📅</div>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>ðŸ“…</div>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>
                   {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} in this batch
                 </div>
@@ -309,11 +309,11 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
               </div>
             ) : (
               <>
-                {/* ── Session header ── */}
+                {/* â”€â”€ Session header â”€â”€ */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                   <div>
                     <div style={{ font: '700 13px var(--font)', color: activeSession.is_holiday ? '#d97706' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {activeSession.is_holiday && <span>🏖</span>}
+                      {activeSession.is_holiday && <span>ðŸ–</span>}
                       {new Date(activeSession.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                     </div>
                     {!activeSession.is_holiday && (
@@ -335,7 +335,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                         font: '600 11px var(--font)', cursor: 'pointer',
                       }}
                     >
-                      🏖 {activeSession.is_holiday ? 'Holiday (tap to undo)' : 'Mark Holiday'}
+                      ðŸ– {activeSession.is_holiday ? 'Holiday (tap to undo)' : 'Mark Holiday'}
                     </button>
                     {!activeSession.is_holiday && (
                       <>
@@ -346,7 +346,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                   </div>
                 </div>
 
-                {/* ── Substitute teacher ── */}
+                {/* â”€â”€ Substitute teacher â”€â”€ */}
                 {!activeSession.is_holiday && (
                   <div style={{
                     padding: '8px 12px', borderRadius: 8,
@@ -379,7 +379,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                           color: activeSession.subMode === 'ci' ? 'var(--purple)' : 'var(--text3)',
                           font: '600 11px var(--font)', cursor: 'pointer',
                         }}>
-                        🔄 Sub from list
+                        ðŸ”„ Sub from list
                       </button>
 
                       {/* Manual substitute */}
@@ -392,7 +392,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                           color: activeSession.subMode === 'manual' ? 'var(--purple)' : 'var(--text3)',
                           font: '600 11px var(--font)', cursor: 'pointer',
                         }}>
-                        ✏️ Enter manually
+                        âœï¸ Enter manually
                       </button>
                     </div>
 
@@ -403,7 +403,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                         onChange={function (e) { setSubField('subCiId', e.target.value) }}
                         style={{ marginTop: 8, fontSize: 12, width: '100%', padding: '5px 8px' }}
                       >
-                        <option value="">— Select substitute CI —</option>
+                        <option value="">â€” Select substitute CI â€”</option>
                         {(instructors || [])
                           .filter(function (ci) { return ci.id !== batch.instructor_id })
                           .map(function (ci) {
@@ -425,21 +425,21 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                   </div>
                 )}
 
-                {/* ── Holiday card ── */}
+                {/* â”€â”€ Holiday card â”€â”€ */}
                 {activeSession.is_holiday ? (
                   <div style={{
                     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     gap: 8, padding: '24px 16px', background: '#fff9f0', borderRadius: 10,
                     border: '1.5px dashed #d97706',
                   }}>
-                    <div style={{ fontSize: 36 }}>🏖</div>
-                    <div style={{ font: '700 14px var(--font)', color: '#d97706' }}>Holiday — No Class</div>
+                    <div style={{ fontSize: 36 }}>ðŸ–</div>
+                    <div style={{ font: '700 14px var(--font)', color: '#d97706' }}>Holiday â€” No Class</div>
                     <div style={{ font: '500 12px var(--font)', color: 'var(--text3)', textAlign: 'center' }}>
                       This day will be recorded as a holiday.<br />Attendance is not required.
                     </div>
                     <button type="button" onClick={toggleHoliday}
                       style={{ marginTop: 4, padding: '5px 14px', borderRadius: 6, border: '1.5px solid #d97706', background: 'none', color: '#d97706', font: '600 12px var(--font)', cursor: 'pointer' }}>
-                      Undo — Mark as Regular Session
+                      Undo â€” Mark as Regular Session
                     </button>
                   </div>
                 ) : activeSessStuds.length === 0 ? (
@@ -448,7 +448,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {activeSessStuds.map(function (bs) {
                       var present = activeSession.attendance[bs.enrollment_id] !== false
-                      var name    = bs.enrollments?.students?.full_name || '—'
+                      var name    = bs.enrollments?.students?.full_name || 'â€”'
                       return (
                         <div key={bs.id}
                           onClick={function () { toggle(bs.enrollment_id) }}
@@ -466,7 +466,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                             color: present ? '#fff' : 'var(--text3)',
                             fontWeight: 700, fontSize: 13,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>{present ? '✓' : '✗'}</div>
+                          }}>{present ? 'âœ“' : 'âœ—'}</div>
                           <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>{name}</div>
                           <div style={{ font: '600 11px var(--mono)', color: present ? 'var(--green)' : 'var(--text3)' }}>
                             {present ? 'Present' : 'Absent'}
@@ -481,13 +481,13 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
                     <button className="btn" style={{ fontSize: 11 }}
                       onClick={function () { setActiveIdx(function (p) { return Math.max(0, p - 1) }) }}
-                      disabled={activeIdx === 0}>← Prev</button>
+                      disabled={activeIdx === 0}>â† Prev</button>
                     <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', alignSelf: 'center' }}>
                       {activeIdx + 1} / {sessions.length}
                     </span>
                     <button className="btn" style={{ fontSize: 11 }}
                       onClick={function () { setActiveIdx(function (p) { return Math.min(sessions.length - 1, p + 1) }) }}
-                      disabled={activeIdx === sessions.length - 1}>Next →</button>
+                      disabled={activeIdx === sessions.length - 1}>Next â†’</button>
                   </div>
                 )}
               </>
@@ -498,7 +498,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={saveAll} disabled={saving || sessions.length === 0}>
-            {saving ? 'Saving…' : 'Save ' + sessions.length + ' Session' + (sessions.length !== 1 ? 's' : '')}
+            {saving ? 'Savingâ€¦' : 'Save ' + sessions.length + ' Session' + (sessions.length !== 1 ? 's' : '')}
           </button>
         </div>
       </div>
@@ -506,10 +506,10 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   )
 }
 
-// ── SessionHistoryModal ────────────────────────────────────────────────────────
+// â”€â”€ SessionHistoryModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SessionHistoryModal({ batch, onClose }) {
-  // Returns students who were active on a given date (joined ≤ date, not yet removed)
+  // Returns students who were active on a given date (joined â‰¤ date, not yet removed)
   function studentsForDate(date) {
     return (batch.batch_students || []).filter(function (bs) {
       var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
@@ -574,7 +574,7 @@ function SessionHistoryModal({ batch, onClose }) {
       var { error } = await sb.from('session_attendance').insert(rows)
       if (error) { showToast('Save failed: ' + error.message, 'err'); setSavingEdit(false); return }
     }
-    showToast('Attendance updated ✓')
+    showToast('Attendance updated âœ“')
     setEditSessId(null)
     setEditAtt({})
     setSavingEdit(false)
@@ -582,9 +582,9 @@ function SessionHistoryModal({ batch, onClose }) {
   }
 
   async function deleteSession(sess) {
-    // First click → ask for confirmation inline (window.confirm is blocked in iframes)
+    // First click â†’ ask for confirmation inline (window.confirm is blocked in iframes)
     if (confirmDelId !== sess.id) { setConfirmDelId(sess.id); return }
-    // Second click (confirmed) → proceed
+    // Second click (confirmed) â†’ proceed
     setConfirmDelId(null)
     setDeleting(true)
     // Delete attendance first (cascade should handle it, but explicit is safer)
@@ -597,37 +597,37 @@ function SessionHistoryModal({ batch, onClose }) {
       .eq('batch_id', batch.id)
       .eq('is_holiday', false)
     await sb.from('batches').update({ sessions_done: count || 0 }).eq('id', batch.id)
-    showToast('Session deleted ✓')
+    showToast('Session deleted âœ“')
     setDeleting(false)
     loadSessions()
   }
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 500 }}>
+      <div className="modal">
         <div className="ch">
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Session History</div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} â€” Session History</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {loading ? '…' : (function () {
+              {loading ? 'â€¦' : (function () {
                 var hols = sessions.filter(function (s) { return s.is_holiday }).length
                 var sess = sessions.length - hols
                 var parts = []
                 if (sess > 0) parts.push(sess + ' session' + (sess !== 1 ? 's' : ''))
                 if (hols > 0) parts.push(hols + ' holiday' + (hols !== 1 ? 's' : ''))
-                return parts.length ? parts.join(' · ') : 'No sessions yet'
+                return parts.length ? parts.join(' Â· ') : 'No sessions yet'
               })()}
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
 
         <div style={{ maxHeight: '60vh', overflowY: 'auto', padding: '8px 20px 16px' }}>
           {loading ? (
-            <div className="hint" style={{ padding: '20px 0', textAlign: 'center' }}>Loading…</div>
+            <div className="hint" style={{ padding: '20px 0', textAlign: 'center' }}>Loadingâ€¦</div>
           ) : sessions.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text3)', fontSize: 13 }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>ðŸ“‹</div>
               No sessions recorded yet.
             </div>
           ) : (
@@ -646,7 +646,7 @@ function SessionHistoryModal({ batch, onClose }) {
                     borderRadius: 8, overflow: 'hidden',
                     background: isHol ? '#fffbf0' : isEditing ? 'var(--purple-bg)' : 'var(--bg)',
                   }}>
-                    {/* ── Row header ── */}
+                    {/* â”€â”€ Row header â”€â”€ */}
                     <div
                       onClick={function () { if (!isHol && !isEditing) setOpenSess(isOpen ? null : sess.id) }}
                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: isHol || isEditing ? 'default' : 'pointer' }}
@@ -656,21 +656,21 @@ function SessionHistoryModal({ batch, onClose }) {
                       </div>
                       <div style={{ flex: 1 }}>
                         <div style={{ font: '600 13px var(--font)', color: isHol ? '#d97706' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                          {isHol && <span>🏖</span>}
+                          {isHol && <span>ðŸ–</span>}
                           {new Date(sess.session_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </div>
                         <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 1 }}>
                           {isHol
-                            ? <span style={{ color: '#d97706', fontWeight: 600 }}>Holiday — No Class</span>
+                            ? <span style={{ color: '#d97706', fontWeight: 600 }}>Holiday â€” No Class</span>
                             : (function () {
                                 var manualName = sess.notes && sess.notes.startsWith('Substitute: ')
                                   ? sess.notes.slice('Substitute: '.length) : null
-                                var displayName = manualName || sess.instructors?.full_name || '—'
+                                var displayName = manualName || sess.instructors?.full_name || 'â€”'
                                 return <>
                                   {displayName}
                                   {sess.is_substitute && (
                                     <span style={{ color: '#7c3aed', marginLeft: 6, fontWeight: 600 }}>
-                                      · {manualName ? 'Sub (guest)' : 'Substitute'}
+                                      Â· {manualName ? 'Sub (guest)' : 'Substitute'}
                                     </span>
                                   )}
                                 </>
@@ -690,7 +690,7 @@ function SessionHistoryModal({ batch, onClose }) {
                                 background: '#dc2626', color: '#fff',
                                 font: '600 10px var(--font)', cursor: 'pointer',
                               }}
-                            >{deleting ? '…' : 'Confirm?'}</button>
+                            >{deleting ? 'â€¦' : 'Confirm?'}</button>
                             <button
                               type="button"
                               onClick={function (e) { e.stopPropagation(); setConfirmDelId(null) }}
@@ -699,7 +699,7 @@ function SessionHistoryModal({ batch, onClose }) {
                                 background: 'var(--bg2)', color: 'var(--text3)',
                                 font: '500 10px var(--font)', cursor: 'pointer',
                               }}
-                            >✕</button>
+                            >âœ•</button>
                           </div>
                         ) : (
                           <button
@@ -710,7 +710,7 @@ function SessionHistoryModal({ batch, onClose }) {
                               background: 'transparent', color: '#d97706',
                               font: '500 10px var(--font)', cursor: 'pointer',
                             }}
-                          >🗑</button>
+                          >ðŸ—‘</button>
                         )
                       )}
                       {!isHol && !isEditing && (
@@ -718,8 +718,8 @@ function SessionHistoryModal({ batch, onClose }) {
                           {noData
                             ? <span style={{ fontSize: 10, color: '#d97706', fontWeight: 600 }}>No data</span>
                             : <>
-                                <span style={{ font: '700 11px var(--mono)', color: 'var(--green)' }}>{present.length}✓</span>
-                                {absent.length > 0 && <span style={{ font: '700 11px var(--mono)', color: 'var(--red)' }}>{absent.length}✗</span>}
+                                <span style={{ font: '700 11px var(--mono)', color: 'var(--green)' }}>{present.length}âœ“</span>
+                                {absent.length > 0 && <span style={{ font: '700 11px var(--mono)', color: 'var(--red)' }}>{absent.length}âœ—</span>}
                               </>
                           }
                           <button
@@ -730,7 +730,7 @@ function SessionHistoryModal({ batch, onClose }) {
                               background: 'var(--bg2)', color: 'var(--text3)',
                               font: '500 10px var(--font)', cursor: 'pointer',
                             }}
-                          >✏️ Edit</button>
+                          >âœï¸ Edit</button>
                           {confirmDelId === sess.id ? (
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button
@@ -742,7 +742,7 @@ function SessionHistoryModal({ batch, onClose }) {
                                   background: '#dc2626', color: '#fff',
                                   font: '600 10px var(--font)', cursor: 'pointer',
                                 }}
-                              >{deleting ? '…' : 'Confirm?'}</button>
+                              >{deleting ? 'â€¦' : 'Confirm?'}</button>
                               <button
                                 type="button"
                                 onClick={function (e) { e.stopPropagation(); setConfirmDelId(null) }}
@@ -751,7 +751,7 @@ function SessionHistoryModal({ batch, onClose }) {
                                   background: 'var(--bg2)', color: 'var(--text3)',
                                   font: '500 10px var(--font)', cursor: 'pointer',
                                 }}
-                              >✕</button>
+                              >âœ•</button>
                             </div>
                           ) : (
                             <button
@@ -762,14 +762,14 @@ function SessionHistoryModal({ batch, onClose }) {
                                 background: 'var(--bg2)', color: 'var(--red, #dc2626)',
                                 font: '500 10px var(--font)', cursor: 'pointer',
                               }}
-                            >🗑</button>
+                            >ðŸ—‘</button>
                           )}
-                          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? '▲' : '▼'}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{isOpen ? 'â–²' : 'â–¼'}</span>
                         </div>
                       )}
                     </div>
 
-                    {/* ── View mode (expanded) ── */}
+                    {/* â”€â”€ View mode (expanded) â”€â”€ */}
                     {isOpen && !isHol && !isEditing && (
                       <div style={{ padding: '8px 14px 12px', background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
                         {noData ? (
@@ -784,7 +784,7 @@ function SessionHistoryModal({ batch, onClose }) {
                               <div style={{ minWidth: 110 }}>
                                 <div style={{ font: '600 10px var(--mono)', color: 'var(--green)', marginBottom: 5, textTransform: 'uppercase' }}>Present ({present.length})</div>
                                 {present.map(function (a) {
-                                  return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text)', marginBottom: 2 }}>✓ {a.students?.full_name || '—'}</div>
+                                  return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text)', marginBottom: 2 }}>âœ“ {a.students?.full_name || 'â€”'}</div>
                                 })}
                               </div>
                             )}
@@ -792,7 +792,7 @@ function SessionHistoryModal({ batch, onClose }) {
                               <div style={{ minWidth: 110 }}>
                                 <div style={{ font: '600 10px var(--mono)', color: 'var(--red)', marginBottom: 5, textTransform: 'uppercase' }}>Absent ({absent.length})</div>
                                 {absent.map(function (a) {
-                                  return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginBottom: 2 }}>✗ {a.students?.full_name || '—'}</div>
+                                  return <div key={a.id} style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginBottom: 2 }}>âœ— {a.students?.full_name || 'â€”'}</div>
                                 })}
                               </div>
                             )}
@@ -801,13 +801,13 @@ function SessionHistoryModal({ batch, onClose }) {
                       </div>
                     )}
 
-                    {/* ── Edit mode ── */}
+                    {/* â”€â”€ Edit mode â”€â”€ */}
                     {isEditing && (function () {
                       var editStudents = studentsForDate(sess.session_date)
                       return (
                       <div style={{ padding: '10px 14px 14px', background: 'var(--purple-bg)', borderTop: '1px solid var(--purple)' }}>
                         <div style={{ font: '600 11px var(--font)', color: 'var(--purple)', marginBottom: 8 }}>
-                          Mark attendance — tap to toggle
+                          Mark attendance â€” tap to toggle
                         </div>
                         {editStudents.length === 0 ? (
                           <p className="hint">No students had joined by this date.</p>
@@ -815,7 +815,7 @@ function SessionHistoryModal({ batch, onClose }) {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
                             {editStudents.map(function (bs) {
                               var pres = editAtt[bs.enrollment_id] !== false
-                              var name = bs.enrollments?.students?.full_name || '—'
+                              var name = bs.enrollments?.students?.full_name || 'â€”'
                               return (
                                 <div key={bs.id}
                                   onClick={function () { toggleEdit(bs.enrollment_id) }}
@@ -833,7 +833,7 @@ function SessionHistoryModal({ batch, onClose }) {
                                     color: pres ? '#fff' : 'var(--text3)',
                                     fontWeight: 700, fontSize: 12,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}>{pres ? '✓' : '✗'}</div>
+                                  }}>{pres ? 'âœ“' : 'âœ—'}</div>
                                   <span style={{ flex: 1, font: '500 12px var(--font)', color: 'var(--text)' }}>{name}</span>
                                   <span style={{ font: '600 10px var(--mono)', color: pres ? 'var(--green)' : 'var(--text3)' }}>
                                     {pres ? 'Present' : 'Absent'}
@@ -848,7 +848,7 @@ function SessionHistoryModal({ batch, onClose }) {
                             onClick={cancelEdit} disabled={savingEdit}>Cancel</button>
                           <button type="button" className="btn-p" style={{ fontSize: 11 }}
                             onClick={function () { saveEdit(sess) }} disabled={savingEdit}>
-                            {savingEdit ? 'Saving…' : 'Save Attendance'}
+                            {savingEdit ? 'Savingâ€¦' : 'Save Attendance'}
                           </button>
                         </div>
                       </div>
@@ -867,7 +867,7 @@ function SessionHistoryModal({ batch, onClose }) {
   )
 }
 
-// ── ChangeInstructorModal ─────────────────────────────────────────────────────
+// â”€â”€ ChangeInstructorModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ChangeInstructorModal({ batch, onClose, onSaved }) {
   const [eligibleCIs,  setEligibleCIs]  = useState([])
@@ -899,25 +899,25 @@ function ChangeInstructorModal({ batch, onClose, onSaved }) {
     var { error } = await sb.from('batches').update({ instructor_id: instructorId }).eq('id', batch.id)
     setSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    showToast('Instructor updated ✓')
+    showToast('Instructor updated âœ“')
     onSaved()
   }
 
-  var currentName = batch.instructors?.full_name || '—'
+  var currentName = batch.instructors?.full_name || 'â€”'
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 400 }}>
+      <div className="modal">
         <div className="ch">
-          <span style={{ fontWeight: 700 }}>Change Instructor — {batch.name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <span style={{ fontWeight: 700 }}>Change Instructor â€” {batch.name}</span>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
             Current instructor: <strong>{currentName}</strong>
           </div>
           {loading ? (
-            <div className="hint">Loading eligible CIs…</div>
+            <div className="hint">Loading eligible CIsâ€¦</div>
           ) : eligibleCIs.length === 0 ? (
             <div className="hint" style={{ color: 'var(--red)' }}>
               No other active CIs are appointed for this level yet.
@@ -927,7 +927,7 @@ function ChangeInstructorModal({ batch, onClose, onSaved }) {
               New Instructor *
               <select value={instructorId} onChange={function (e) { setInstructorId(e.target.value) }}
                 style={{ marginTop: 4, fontSize: 13 }}>
-                <option value="">— Select CI —</option>
+                <option value="">â€” Select CI â€”</option>
                 {eligibleCIs
                   .filter(function (ci) { return ci.id !== batch.instructor_id })
                   .map(function (ci) { return <option key={ci.id} value={ci.id}>{ci.full_name}</option> })}
@@ -935,13 +935,13 @@ function ChangeInstructorModal({ batch, onClose, onSaved }) {
             </label>
           )}
           <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', background: 'var(--sun-bg)', borderRadius: 6, padding: '8px 12px' }}>
-            ⚠️ This permanently reassigns the batch. Past session records keep their original instructor.
+            âš ï¸ This permanently reassigns the batch. Past session records keep their original instructor.
           </div>
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving || !instructorId || loading}>
-            {saving ? 'Saving…' : 'Reassign Batch'}
+            {saving ? 'Savingâ€¦' : 'Reassign Batch'}
           </button>
         </div>
       </div>
@@ -953,7 +953,7 @@ function avatar(name) {
   return (name || '?').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
 }
 
-// ── EditBatchModal ────────────────────────────────────────────────────────────
+// â”€â”€ EditBatchModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function EditBatchModal({ batch, onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -986,16 +986,16 @@ function EditBatchModal({ batch, onClose, onSaved }) {
     }).eq('id', batch.id)
     setSaving(false)
     if (error) { showToast('Save failed: ' + error.message, 'err'); return }
-    showToast('Batch updated ✓')
+    showToast('Batch updated âœ“')
     onSaved()
   }
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal">
         <div className="ch">
-          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <span style={{ fontWeight: 700 }}>Edit Batch â€” {batch.name}</span>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
@@ -1036,12 +1036,12 @@ function EditBatchModal({ batch, onClose, onSaved }) {
             <label className="col-span-2">Notes
               <input value={form.notes}
                 onChange={function (e) { setForm(function (f) { return { ...f, notes: e.target.value } }) }}
-                placeholder="Optional remarks…" />
+                placeholder="Optional remarksâ€¦" />
             </label>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+            <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Savingâ€¦' : 'Save Changes'}</button>
           </div>
         </div>
       </div>
@@ -1049,7 +1049,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
   )
 }
 
-// ── AddBatchModal ─────────────────────────────────────────────────────────────
+// â”€â”€ AddBatchModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AddBatchModal({ instructorId, onClose, onSaved }) {
   const [form, setForm] = useState({ ...BLANK_BATCH })
@@ -1091,10 +1091,10 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal">
         <div className="ch">
           <span style={{ fontWeight: 700 }}>New Batch</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
@@ -1137,14 +1137,14 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
             </label>
 
             <label className="col-span-2">Notes
-              <input value={form.notes} onChange={fd('notes')} placeholder="Optional remarks…" />
+              <input value={form.notes} onChange={fd('notes')} placeholder="Optional remarksâ€¦" />
             </label>
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onClose}>Cancel</button>
             <button className="btn-p" onClick={save} disabled={saving}>
-              {saving ? 'Creating…' : 'Create Batch'}
+              {saving ? 'Creatingâ€¦' : 'Create Batch'}
             </button>
           </div>
         </div>
@@ -1153,7 +1153,7 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
   )
 }
 
-// ── RosterModal ───────────────────────────────────────────────────────────────
+// â”€â”€ RosterModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   const [students, setStudents] = useState(
@@ -1227,20 +1227,20 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
       })
     })
     setEditingJoin(null)
-    showToast('Joining date updated ✓')
+    showToast('Joining date updated âœ“')
   }
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 460 }}>
+      <div className="modal">
         <div className="ch">
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name}</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {batch.instructor_name} · {students.length} student{students.length !== 1 ? 's' : ''}
+              {batch.instructor_name} Â· {students.length} student{students.length !== 1 ? 's' : ''}
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '0 20px 20px' }}>
           {students.length === 0 && (
@@ -1254,10 +1254,10 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || '—'}</div>
+                    <div style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || 'â€”'}</div>
                     <div style={{ fontSize: 10, color: 'var(--text3)' }}>
                       {bs.enrollments?.skus?.courses?.group_name
-                        ? bs.enrollments.skus.courses.group_name + ' · ' + (bs.enrollments.skus.level_name || '')
+                        ? bs.enrollments.skus.courses.group_name + ' Â· ' + (bs.enrollments.skus.level_name || '')
                         : ''}
                     </div>
                   </div>
@@ -1308,14 +1308,14 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
                         var regDate = enr?.students?.registered_at
                         setAddJoinDate(regDate || new Date().toISOString().slice(0, 10))
                       }}>
-                      <option value="">— Select student —</option>
+                      <option value="">â€” Select student â€”</option>
                       {eligible.map(function (e) {
                         const course = e.skus?.courses?.group_name || ''
                         const level  = e.skus?.level_name || ''
                         const label  = e.students?.full_name || e.id
                         return (
                           <option key={e.id} value={e.id}>
-                            {label}{course ? ' — ' + course + (level ? ' ' + level : '') : ''}
+                            {label}{course ? ' â€” ' + course + (level ? ' ' + level : '') : ''}
                           </option>
                         )
                       })}
@@ -1329,7 +1329,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="btn-p" style={{ fontSize: 12 }}
                         onClick={assign} disabled={!selectedEnr || !addJoinDate || saving}>
-                        {saving ? '…' : 'Add'}
+                        {saving ? 'â€¦' : 'Add'}
                       </button>
                       <button className="btn" style={{ fontSize: 12 }} onClick={function () { setShowAdd(false) }}>
                         Cancel
@@ -1354,7 +1354,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   )
 }
 
-// ── BatchesPage ───────────────────────────────────────────────────────────────
+// â”€â”€ BatchesPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function BatchesPage() {
   const [batches,       setBatches]       = useState([])
@@ -1370,7 +1370,7 @@ export default function BatchesPage() {
 
   // Inline roster toggle + per-batch attendance stats
   const [openRosters,  setOpenRosters]  = useState({})
-  const [rosterStats,  setRosterStats]  = useState({}) // batchId → { enrollmentId: attendedCount }
+  const [rosterStats,  setRosterStats]  = useState({}) // batchId â†’ { enrollmentId: attendedCount }
 
   // Modals
   const [showAddBatch,       setShowAddBatch]       = useState(null) // { instructorId, skuId, skuLabel }
@@ -1380,7 +1380,7 @@ export default function BatchesPage() {
   const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
   const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
 
-  // ── load ──────────────────────────────────────────────────────────────────
+  // â”€â”€ load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const load = useCallback(async function () {
     setLoading(true)
@@ -1419,7 +1419,7 @@ export default function BatchesPage() {
 
   useEffect(function () { load() }, [load])
 
-  // ── session counter ───────────────────────────────────────────────────────
+  // â”€â”€ session counter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function adjustSessions(batch, delta) {
     const sessions_done = Math.max(0, (batch.sessions_done || 0) + delta)
@@ -1487,7 +1487,7 @@ export default function BatchesPage() {
       .update({ completed_at, status: 'completed' })
       .eq('id', enrollmentId)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    showToast('Marked as completed ✓')
+    showToast('Marked as completed âœ“')
     setBatches(function (prev) {
       return prev.map(function (b) {
         if (b.id !== batchId) return b
@@ -1505,15 +1505,15 @@ export default function BatchesPage() {
       var clean = phone.replace(/\D/g, '')
       if (clean.length === 10) clean = '91' + clean
       var msg = 'Dear ' + (parentName || 'Parent') + ',\n\n'
-        + (studentName || 'Your child') + ' has successfully completed the *' + (courseName || 'course') + '* programme at *New Learning Horizons*! 🎉\n\n'
+        + (studentName || 'Your child') + ' has successfully completed the *' + (courseName || 'course') + '* programme at *New Learning Horizons*! ðŸŽ‰\n\n'
         + 'We would love to hear your feedback. A quick Google Review would mean a lot to us:\n'
         + GOOGLE_REVIEW_URL + '\n\n'
-        + 'Thank you for being part of the NLH family! 🌟'
+        + 'Thank you for being part of the NLH family! ðŸŒŸ'
       window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank')
     }
   }
 
-  // ── filter ────────────────────────────────────────────────────────────────
+  // â”€â”€ filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   // Derive course names per batch from enrolled students' SKUs
   function batchCourses(batch) {
@@ -1542,11 +1542,11 @@ export default function BatchesPage() {
     return (a.name || '').localeCompare(b.name || '')
   })
 
-  // ── render ────────────────────────────────────────────────────────────────
+  // â”€â”€ render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <div className="page">
-      {/* ── Page header ── */}
+      {/* â”€â”€ Page header â”€â”€ */}
       <div className="ph">
         <div>
           <div className="ph-title">Batches</div>
@@ -1561,7 +1561,7 @@ export default function BatchesPage() {
         </button>
       </div>
 
-      {/* ── Filters ── */}
+      {/* â”€â”€ Filters â”€â”€ */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <select value={filterStatus} onChange={function (e) { setFilterStatus(e.target.value) }}
           style={{ fontSize: 13, minWidth: 110 }}>
@@ -1588,14 +1588,14 @@ export default function BatchesPage() {
         </span>
       </div>
 
-      {/* ── Content ── */}
+      {/* â”€â”€ Content â”€â”€ */}
       {loading ? (
-        <div className="hint" style={{ padding: 32, textAlign: 'center' }}>Loading batches…</div>
+        <div className="hint" style={{ padding: 32, textAlign: 'center' }}>Loading batchesâ€¦</div>
       ) : filtered.length === 0 ? (
         <div style={{
           textAlign: 'center', padding: '48px 24px', color: 'var(--text3)', fontSize: 13,
         }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>📦</div>
+          <div style={{ fontSize: 32, marginBottom: 10 }}>ðŸ“¦</div>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>No batches found</div>
           <div>Create a batch by clicking "+ New Batch" above.</div>
         </div>
@@ -1605,8 +1605,8 @@ export default function BatchesPage() {
             const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
             const sessLabel      = String(batch.sessions_done || 0)
             const courses        = batchCourses(batch)
-            const coursesLabel   = courses.length > 0 ? courses.join(', ') : '—'
-            const ciName         = batch.instructors?.full_name || '—'
+            const coursesLabel   = courses.length > 0 ? courses.join(', ') : 'â€”'
+            const ciName         = batch.instructors?.full_name || 'â€”'
 
             const rosterOpen = !!openRosters[batch.id]
 
@@ -1616,7 +1616,7 @@ export default function BatchesPage() {
                 background: batch.is_active ? 'var(--bg)' : 'var(--bg3)',
                 opacity: batch.is_active ? 1 : 0.72,
               }}>
-                {/* ── Batch header row ── */}
+                {/* â”€â”€ Batch header row â”€â”€ */}
                 <div style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
 
@@ -1643,12 +1643,12 @@ export default function BatchesPage() {
                         </span>
                       </div>
 
-                      {/* CI · Courses */}
+                      {/* CI Â· Courses */}
                       <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>
                         <span style={{ fontWeight: 600 }}>{ciName}</span>
                         {courses.length > 0 && (
                           <>
-                            <span style={{ color: 'var(--text3)', margin: '0 4px' }}>·</span>
+                            <span style={{ color: 'var(--text3)', margin: '0 4px' }}>Â·</span>
                             <span>{coursesLabel}</span>
                           </>
                         )}
@@ -1657,9 +1657,9 @@ export default function BatchesPage() {
                       {/* Schedule */}
                       <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                         {batch.schedule_days || ''}
-                        {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
-                        {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
-                        {batch.notes         ? ' · ' + batch.notes : ''}
+                        {batch.schedule_time ? ' Â· ' + timeRange(batch.schedule_time) : ''}
+                        {batch.start_date    ? ' Â· Started ' + fmtDate(batch.start_date) : ''}
+                        {batch.notes         ? ' Â· ' + batch.notes : ''}
                       </div>
                     </div>
 
@@ -1668,7 +1668,7 @@ export default function BatchesPage() {
 
                       {/* Sessions counter */}
                       <div
-                        title="Sessions conducted — click History to view dates"
+                        title="Sessions conducted â€” click History to view dates"
                         style={{
                           font: '600 11px var(--mono)', padding: '3px 10px',
                           borderRadius: 6, border: '1px solid var(--border)',
@@ -1682,7 +1682,7 @@ export default function BatchesPage() {
                       {batch.is_active && (
                         <button className="btn-p" style={{ fontSize: 11, padding: '4px 12px' }}
                           onClick={function () { setAttendanceModal(batch) }}>
-                          📋 Attendance
+                          ðŸ“‹ Attendance
                         </button>
                       )}
 
@@ -1690,10 +1690,10 @@ export default function BatchesPage() {
                       <button className="btn" style={{ fontSize: 11, padding: '4px 10px' }}
                         title="View session history"
                         onClick={function () { setHistoryModal(batch) }}>
-                        🗂 History
+                        ðŸ—‚ History
                       </button>
 
-                      {/* Students toggle — shows count, expands inline */}
+                      {/* Students toggle â€” shows count, expands inline */}
                       <button
                         className={'btn' + (rosterOpen ? ' btn-active' : '')}
                         style={{ fontSize: 11, padding: '3px 10px', background: rosterOpen ? 'var(--purple-bg)' : '', borderColor: rosterOpen ? 'var(--purple)' : '', color: rosterOpen ? 'var(--purple)' : '' }}
@@ -1702,7 +1702,7 @@ export default function BatchesPage() {
                           setOpenRosters(function (r) { return { ...r, [batch.id]: nowOpen } })
                           if (nowOpen) loadRosterStats(batch.id)
                         }}>
-                        👥 {activeStudents.length} {rosterOpen ? '▲' : '▼'}
+                        ðŸ‘¥ {activeStudents.length} {rosterOpen ? 'â–²' : 'â–¼'}
                       </button>
 
                       {/* Change instructor */}
@@ -1710,7 +1710,7 @@ export default function BatchesPage() {
                         <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
                           title="Change instructor"
                           onClick={function () { setChangeInstrModal(batch) }}>
-                          👤 CI
+                          ðŸ‘¤ CI
                         </button>
                       )}
 
@@ -1718,7 +1718,7 @@ export default function BatchesPage() {
                       <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
                         title="Edit batch schedule"
                         onClick={function () { setEditBatchModal(batch) }}>
-                        ✏ Edit
+                        âœ Edit
                       </button>
 
                       {/* Toggle active */}
@@ -1730,7 +1730,7 @@ export default function BatchesPage() {
                   </div>
                 </div>
 
-                {/* ── Inline student roster ── */}
+                {/* â”€â”€ Inline student roster â”€â”€ */}
                 {rosterOpen && (
                   <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '10px 16px 14px' }}>
                     {activeStudents.length === 0 ? (
@@ -1740,7 +1740,7 @@ export default function BatchesPage() {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
                         {activeStudents.map(function (bs) {
-                          const name        = bs.enrollments?.students?.full_name || '—'
+                          const name        = bs.enrollments?.students?.full_name || 'â€”'
                           const course      = bs.enrollments?.skus?.courses?.group_name || ''
                           const level       = bs.enrollments?.skus?.level_name || ''
                           const initials    = name.split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
@@ -1762,12 +1762,12 @@ export default function BatchesPage() {
                                 color: isCompleted ? '#fff' : 'var(--purple)',
                                 fontWeight: 700, fontSize: 11,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              }}>{isCompleted ? '✓' : initials}</div>
+                              }}>{isCompleted ? 'âœ“' : initials}</div>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>{name}</div>
                                 {(course || level) && (
                                   <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 1 }}>
-                                    {course}{level ? ' · ' + level : ''}
+                                    {course}{level ? ' Â· ' + level : ''}
                                   </div>
                                 )}
                               </div>
@@ -1789,7 +1789,7 @@ export default function BatchesPage() {
                                   flexShrink: 0, font: '600 10px var(--font)', color: 'var(--green)',
                                   padding: '2px 8px', border: '1px solid var(--green)',
                                   borderRadius: 20, background: 'var(--green-bg)', whiteSpace: 'nowrap',
-                                }}>✓ Completed</span>
+                                }}>âœ“ Completed</span>
                               ) : (
                                 <button className="btn" style={{
                                   fontSize: 10, padding: '2px 8px', flexShrink: 0,
@@ -1805,7 +1805,7 @@ export default function BatchesPage() {
                                       course + (level ? ' ' + level : '')
                                     )
                                   }}>
-                                  ✓ Complete
+                                  âœ“ Complete
                                 </button>
                               )}
                               <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
@@ -1826,7 +1826,7 @@ export default function BatchesPage() {
                         gap: 10, flexWrap: 'wrap',
                       }}>
                         <div>
-                          <div style={{ font: '700 12px var(--font)', color: 'var(--green)' }}>🎓 All students have completed the course!</div>
+                          <div style={{ font: '700 12px var(--font)', color: 'var(--green)' }}>ðŸŽ“ All students have completed the course!</div>
                           <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
                             Consider deactivating this batch since no more sessions are needed.
                           </div>
@@ -1854,7 +1854,7 @@ export default function BatchesPage() {
         </div>
       )}
 
-      {/* ── New Batch picker modal ── */}
+      {/* â”€â”€ New Batch picker modal â”€â”€ */}
       {showAddBatch && showAddBatch.mode === 'pick' && (
         <NewBatchPicker
           instructors={instructors}
@@ -1873,7 +1873,7 @@ export default function BatchesPage() {
         />
       )}
 
-      {/* ── Add Student modal (roster for adding only) ── */}
+      {/* â”€â”€ Add Student modal (roster for adding only) â”€â”€ */}
       {addStudentModal && nlhCentreId && (
         <RosterModal
           batch={addStudentModal}
@@ -1883,7 +1883,7 @@ export default function BatchesPage() {
         />
       )}
 
-      {/* ── Bulk attendance modal ── */}
+      {/* â”€â”€ Bulk attendance modal â”€â”€ */}
       {attendanceModal && (
         <BulkAttendanceModal
           batch={attendanceModal}
@@ -1893,7 +1893,7 @@ export default function BatchesPage() {
         />
       )}
 
-      {/* ── Session history modal ── */}
+      {/* â”€â”€ Session history modal â”€â”€ */}
       {historyModal && (
         <SessionHistoryModal
           batch={historyModal}
@@ -1901,7 +1901,7 @@ export default function BatchesPage() {
         />
       )}
 
-      {/* ── Change instructor modal ── */}
+      {/* â”€â”€ Change instructor modal â”€â”€ */}
       {changeInstrModal && (
         <ChangeInstructorModal
           batch={changeInstrModal}
@@ -1910,7 +1910,7 @@ export default function BatchesPage() {
         />
       )}
 
-      {/* ── Edit batch modal ── */}
+      {/* â”€â”€ Edit batch modal â”€â”€ */}
       {editBatchModal && (
         <EditBatchModal
           batch={editBatchModal}
@@ -1922,7 +1922,7 @@ export default function BatchesPage() {
   )
 }
 
-// ── NewBatchPicker ─────────────────────────────────────────────────────────────
+// â”€â”€ NewBatchPicker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Step-1 modal: pick instructor + level before opening the batch form
 
 function NewBatchPicker({ instructors, onPicked, onClose }) {
@@ -1935,16 +1935,16 @@ function NewBatchPicker({ instructors, onPicked, onClose }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 380 }}>
+      <div className="modal">
         <div className="ch">
-          <span style={{ fontWeight: 700 }}>New Batch — Select Instructor</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <span style={{ fontWeight: 700 }}>New Batch â€” Select Instructor</span>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
             <label className="col-span-2">Course Instructor *
               <select value={ciId} onChange={function (e) { setCiId(e.target.value) }}>
-                <option value="">— Select CI —</option>
+                <option value="">â€” Select CI â€”</option>
                 {instructors.map(function (i) {
                   return <option key={i.id} value={i.id}>{i.full_name}</option>
                 })}
@@ -1952,12 +1952,12 @@ function NewBatchPicker({ instructors, onPicked, onClose }) {
             </label>
           </div>
           <p className="hint" style={{ marginTop: 10 }}>
-            Students from any course can be added to the batch — one CI can teach different courses to different students in the same time slot.
+            Students from any course can be added to the batch â€” one CI can teach different courses to different students in the same time slot.
           </p>
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onClose}>Cancel</button>
             <button className="btn-p" onClick={proceed} disabled={!ciId}>
-              Next →
+              Next â†’
             </button>
           </div>
         </div>
@@ -1965,3 +1965,5 @@ function NewBatchPicker({ instructors, onPicked, onClose }) {
     </div>
   )
 }
+
+

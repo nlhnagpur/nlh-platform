@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 
-// ── helpers ────────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -12,12 +12,12 @@ function timeRange(t) {
   if (!t) return ''
   const [h, m] = t.split(':').map(Number)
   const end = ((h + 1) % 24).toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0')
-  return t.slice(0, 5) + ' – ' + end
+  return t.slice(0, 5) + ' â€“ ' + end
 }
 
 function StatusBadge({ status }) {
   const map = { active: 'ba', inactive: 'bd', resigned: 'bd', terminated: 'br' }
-  return <span className={`badge ${map[status] || 'br'}`}>{status || '—'}</span>
+  return <span className={`badge ${map[status] || 'br'}`}>{status || 'â€”'}</span>
 }
 
 function CautionBadge({ status }) {
@@ -41,7 +41,7 @@ const REMUN_SUFFIX = {
   monthly:     '/ month',
 }
 
-// ── InstructorDetailModal ──────────────────────────────────────────────────────
+// â”€â”€ InstructorDetailModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Group flat SKU list into [{courseName, skus:[]}] for optgroup dropdowns
 function groupSkus(allSkus) {
@@ -61,19 +61,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false, batches: false, payroll: false })
   const [saving, setSaving]     = useState(false)
 
-  // ── Payroll state ──
+  // â”€â”€ Payroll state â”€â”€
   const [payrollMonth,       setPayrollMonth]       = useState(new Date().toISOString().slice(0, 7))
   const [payrollSessions,    setPayrollSessions]    = useState([])
   const [payrollAppts,       setPayrollAppts]       = useState([])
-  const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
-  const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
+  const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId â†’ count completed this month
+  const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId â†’ total non-holiday sessions (incl. subs)
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
   const [overrideEdit,       setOverrideEdit]       = useState(false) // editing override inline
   const [overrideForm,       setOverrideForm]       = useState({ amount: '', notes: '' })
   const [savingOverride,     setSavingOverride]     = useState(false)
   const [payrollLoading,     setPayrollLoading]     = useState(false)
 
-  // ── Profile form ──
+  // â”€â”€ Profile form â”€â”€
   const [form, setForm] = useState({
     full_name:  instructor.full_name  || '',
     phone:      instructor.phone      || '',
@@ -89,7 +89,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     notes:      instructor.notes      || '',
   })
 
-  // ── Caution form ──
+  // â”€â”€ Caution form â”€â”€
   const [caution, setCaution] = useState({
     caution_amount:            instructor.caution_amount            ?? 0,
     caution_paid_at:           instructor.caution_paid_at           || '',
@@ -100,7 +100,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     caution_notes:             instructor.caution_notes             || '',
   })
 
-  // ── Courses state ──
+  // â”€â”€ Courses state â”€â”€
   const [appointments,  setAppointments]  = useState([])
   const [showAddCourse, setShowAddCourse] = useState(false)
   const [newAppt, setNewAppt] = useState({
@@ -112,7 +112,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [editApptId,   setEditApptId]   = useState(null)
   const [editApptForm, setEditApptForm] = useState({})
 
-  // ── Batches state ──
+  // â”€â”€ Batches state â”€â”€
   const [batchList,     setBatchList]     = useState([])   // flat list of batches
   const [openRoster,    setOpenRoster]    = useState({})   // { batch_id: bool }
   const [showAddBatch,  setShowAddBatch]  = useState(false)
@@ -152,7 +152,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     }
   }
 
-  // ── Payroll loader (re-runs on month change) ──
+  // â”€â”€ Payroll loader (re-runs on month change) â”€â”€
   useEffect(function () {
     if (tab !== 'payroll') return
     async function loadPayroll() {
@@ -175,7 +175,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           .eq('status', 'active'),
       ])
 
-      // ── Per-student completions: count enrollments completed this month per batch ──
+      // â”€â”€ Per-student completions: count enrollments completed this month per batch â”€â”€
       var batchIds = [...new Set((sessRes.data || []).map(function (s) { return s.batch_id }))]
       var completionMap = {}
       var totalSessMap  = {}
@@ -208,7 +208,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         })
       }
 
-      // ── Fetch any saved override for this instructor + month ──
+      // â”€â”€ Fetch any saved override for this instructor + month â”€â”€
       var { data: ovRow } = await sb.from('payroll_overrides')
         .select('id, final_amount, notes')
         .eq('instructor_id', instructor.id)
@@ -226,7 +226,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     loadPayroll()
   }, [tab, payrollMonth])
 
-  // ── Payroll override save/clear ──
+  // â”€â”€ Payroll override save/clear â”€â”€
   async function saveOverride(grandTotal) {
     var amt = parseInt(overrideForm.amount, 10)
     if (isNaN(amt) || amt < 0) { showToast('Enter a valid amount', 'warn'); return }
@@ -248,7 +248,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     }
     setOverrideEdit(false)
     setSavingOverride(false)
-    showToast('Agreed amount saved ✓')
+    showToast('Agreed amount saved âœ“')
   }
 
   async function clearOverride() {
@@ -257,10 +257,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     if (error) { showToast('Clear failed: ' + error.message, 'err'); return }
     setPayrollOverride(null)
     setOverrideEdit(false)
-    showToast('Override cleared — showing calculated amount')
+    showToast('Override cleared â€” showing calculated amount')
   }
 
-  // ── Save profile ──
+  // â”€â”€ Save profile â”€â”€
   async function saveProfile() {
     if (!form.full_name.trim()) { showToast('Name is required', 'warn'); return }
     setSaving(true)
@@ -286,7 +286,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     onSaved({ ...instructor, ...payload })
   }
 
-  // ── Save caution ──
+  // â”€â”€ Save caution â”€â”€
   async function saveCaution() {
     setSaving(true)
     const payload = {
@@ -307,7 +307,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     onSaved({ ...instructor, ...payload })
   }
 
-  // ── Add course appointment (multi-level) ──
+  // â”€â”€ Add course appointment (multi-level) â”€â”€
   async function addAppointment() {
     if (!newAppt.course_name)              { showToast('Select a course', 'warn');              return }
     if (!newAppt.selectedSkuIds.length)    { showToast('Select at least one level', 'warn');    return }
@@ -342,7 +342,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     showToast((data || []).length + ' level' + ((data || []).length !== 1 ? 's' : '') + ' appointed')
   }
 
-  // ── Toggle appointment active/inactive ──
+  // â”€â”€ Toggle appointment active/inactive â”€â”€
   async function toggleApptStatus(appt) {
     const newStatus  = appt.status === 'active' ? 'inactive' : 'active'
     const removed_at = newStatus === 'inactive' ? new Date().toISOString().split('T')[0] : null
@@ -353,7 +353,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     showToast(newStatus === 'active' ? 'Reactivated' : 'Deactivated')
   }
 
-  // ── Edit existing appointment ──
+  // â”€â”€ Edit existing appointment â”€â”€
   function startEditAppt(appt) {
     setEditApptId(appt.id)
     setEditApptForm({
@@ -385,7 +385,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     showToast('Appointment updated')
   }
 
-  // ── Batch functions ──────────────────────────────────────────────────────────
+  // â”€â”€ Batch functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function updateBatch(id, patch) {
     setBatchList(function (prev) { return prev.map(function (b) { return b.id === id ? { ...b, ...patch } : b }) })
@@ -519,12 +519,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             </div>
             <StatusBadge status={instructor.status} />
           </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
 
         {/* tabs */}
         <div className="tabs">
-          {[['profile','👤 Profile'],['caution','🔒 Caution'],['courses','📚 Courses'],['batches','📦 Batches'],['payroll','💰 Payroll']].map(function ([id, label]) {
+          {[['profile','ðŸ‘¤ Profile'],['caution','ðŸ”’ Caution'],['courses','ðŸ“š Courses'],['batches','ðŸ“¦ Batches'],['payroll','ðŸ’° Payroll']].map(function ([id, label]) {
             return (
               <button key={id}
                 className={'tab ' + (tab === id ? 'active' : '')}
@@ -535,7 +535,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           })}
         </div>
 
-        {/* ══ Profile tab ══════════════════════════════════════════════════════ */}
+        {/* â•â• Profile tab â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {tab === 'profile' && (
           <div>
             <div className="form-grid">
@@ -552,7 +552,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 <input value={form.city} onChange={fld('city')} placeholder="Nagpur" />
               </label>
               <label>Area / Locality
-                <input value={form.area} onChange={fld('area')} placeholder="Sadar, Dharampeth…" />
+                <input value={form.area} onChange={fld('area')} placeholder="Sadar, Dharampethâ€¦" />
               </label>
               <label>State
                 <input value={form.state} onChange={fld('state')} placeholder="Maharashtra" />
@@ -579,19 +579,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               </label>
               <label className="col-span-2">Notes / Remarks
                 <textarea value={form.notes} onChange={fld('notes')} rows={2}
-                  placeholder="Any internal notes…" style={{ resize: 'vertical' }} />
+                  placeholder="Any internal notesâ€¦" style={{ resize: 'vertical' }} />
               </label>
             </div>
             <div className="modal-actions">
               <button className="btn" onClick={onClose}>Cancel</button>
               <button className="btn-p" onClick={saveProfile} disabled={saving}>
-                {saving ? 'Saving…' : 'Save Profile'}
+                {saving ? 'Savingâ€¦' : 'Save Profile'}
               </button>
             </div>
           </div>
         )}
 
-        {/* ══ Caution tab ══════════════════════════════════════════════════════ */}
+        {/* â•â• Caution tab â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {tab === 'caution' && (
           <div>
             {/* summary bar */}
@@ -603,19 +603,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>Caution held</div>
                 <div style={{ fontWeight: 700, fontSize: 18 }}>
-                  ₹{Number(caution.caution_amount || 0).toLocaleString('en-IN')}
+                  â‚¹{Number(caution.caution_amount || 0).toLocaleString('en-IN')}
                 </div>
               </div>
               <CautionBadge status={caution.caution_status} />
             </div>
 
             <div className="form-grid">
-              <label>Amount (₹) *
+              <label>Amount (â‚¹) *
                 <input type="number" value={caution.caution_amount} onChange={cfd('caution_amount')} placeholder="0" />
               </label>
               <label>Collection Mode
                 <select value={caution.caution_mode} onChange={cfd('caution_mode')}>
-                  <option value="">— Select —</option>
+                  <option value="">â€” Select â€”</option>
                   <option value="upfront">Paid upfront on joining</option>
                   <option value="deducted">Deducted from first payment</option>
                   <option value="waived">Waived</option>
@@ -637,7 +637,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   <label>Settlement Date
                     <input type="date" value={caution.caution_settled_at} onChange={cfd('caution_settled_at')} />
                   </label>
-                  <label>Settlement Amount (₹)
+                  <label>Settlement Amount (â‚¹)
                     <input type="number" value={caution.caution_settlement_amount}
                       onChange={cfd('caution_settlement_amount')}
                       placeholder="Amount returned / forfeited" />
@@ -646,26 +646,26 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               )}
               <label className="col-span-2">Notes
                 <textarea value={caution.caution_notes} onChange={cfd('caution_notes')} rows={2}
-                  placeholder="Notes on the deposit…" style={{ resize: 'vertical' }} />
+                  placeholder="Notes on the depositâ€¦" style={{ resize: 'vertical' }} />
               </label>
             </div>
             <div className="modal-actions">
               <button className="btn" onClick={onClose}>Cancel</button>
               <button className="btn-p" onClick={saveCaution} disabled={saving}>
-                {saving ? 'Saving…' : 'Save Caution'}
+                {saving ? 'Savingâ€¦' : 'Save Caution'}
               </button>
             </div>
           </div>
         )}
 
-        {/* ══ Courses tab ══════════════════════════════════════════════════════ */}
+        {/* â•â• Courses tab â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {tab === 'courses' && (
           <div>
             <div style={{ padding: '0 20px 12px' }}>
 
-              {/* ── Progression view ─────────────────────────────────────────── */}
+              {/* â”€â”€ Progression view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               {(function () {
-                // Build: courseName → [{sku, appt|null}] preserving sort_order
+                // Build: courseName â†’ [{sku, appt|null}] preserving sort_order
                 const courseMap = {}
                 allSkus.forEach(function (s) {
                   const g = s.courses?.group_name || 'Other'
@@ -699,7 +699,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                         <div style={{ fontWeight: 700, fontSize: 13 }}>{course.name}</div>
                         <div style={{ font: '400 11px var(--mono)', color: 'var(--text3)' }}>
-                          {activeCount} active · {course.levels.length} levels
+                          {activeCount} active Â· {course.levels.length} levels
                         </div>
                       </div>
 
@@ -711,7 +711,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           const notApptd   = !a
 
                           const chipTitle = isActive
-                            ? ('Appointed: ' + fmtDate(a.appointed_at) + ' · ' + REMUN_LABELS[a.remuneration_mode] + ' · ₹' + Number(a.remuneration_rate).toLocaleString('en-IN'))
+                            ? ('Appointed: ' + fmtDate(a.appointed_at) + ' Â· ' + REMUN_LABELS[a.remuneration_mode] + ' Â· â‚¹' + Number(a.remuneration_rate).toLocaleString('en-IN'))
                             : isInactive
                             ? ('Removed: ' + fmtDate(a.removed_at || ''))
                             : 'Click + to appoint this level'
@@ -737,8 +737,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                 opacity:       isInactive ? 0.55 : 1,
                               }}
                             >
-                              {isActive   && <span style={{ fontSize: 8, color: 'var(--green)' }}>●</span>}
-                              {isInactive && <span style={{ fontSize: 9 }}>✕</span>}
+                              {isActive   && <span style={{ fontSize: 8, color: 'var(--green)' }}>â—</span>}
+                              {isInactive && <span style={{ fontSize: 9 }}>âœ•</span>}
                               {notApptd   && <span style={{ fontSize: 10, color: 'var(--purple)', lineHeight: 1 }}>+</span>}
                               <span>{sku.level_name}</span>
                               {sku.total_sessions
@@ -762,19 +762,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                               opacity: a.status !== 'active' ? 0.6 : 1,
                             }}>
                               {isEditing ? (
-                                /* ── Inline edit form ── */
+                                /* â”€â”€ Inline edit form â”€â”€ */
                                 <div>
                                   <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8 }}>{sku.level_name}</div>
                                   <div className="form-grid">
                                     <label>Mode
                                       <select value={editApptForm.remuneration_mode}
                                         onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_mode: e.target.value } }) }}>
-                                        <option value="per_session">Per Session (₹ / hr)</option>
-                                        <option value="per_student">Per Student (₹ on completion)</option>
-                                        <option value="monthly">Monthly Fixed (₹ / month)</option>
+                                        <option value="per_session">Per Session (â‚¹ / hr)</option>
+                                        <option value="per_student">Per Student (â‚¹ on completion)</option>
+                                        <option value="monthly">Monthly Fixed (â‚¹ / month)</option>
                                       </select>
                                     </label>
-                                    <label>Rate (₹)
+                                    <label>Rate (â‚¹)
                                       <input type="number" value={editApptForm.remuneration_rate}
                                         onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_rate: e.target.value } }) }} />
                                     </label>
@@ -785,7 +785,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                     </label>
                                     {editApptForm.trained_by_nlh && (
                                       <>
-                                        <label>Training Fee (₹)
+                                        <label>Training Fee (â‚¹)
                                           <input type="number" value={editApptForm.training_fee}
                                             onChange={function (e) { setEditApptForm(function (f) { return { ...f, training_fee: e.target.value } }) }}
                                             placeholder="0 if waived" />
@@ -799,39 +799,39 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                     <label className="col-span-2">Notes
                                       <input value={editApptForm.notes}
                                         onChange={function (e) { setEditApptForm(function (f) { return { ...f, notes: e.target.value } }) }}
-                                        placeholder="Remarks…" />
+                                        placeholder="Remarksâ€¦" />
                                     </label>
                                   </div>
                                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                                     <button className="btn" style={{ fontSize: 11 }} onClick={function () { setEditApptId(null) }}>Cancel</button>
                                     <button className="btn-p" style={{ fontSize: 11 }} onClick={saveEditAppt} disabled={saving}>
-                                      {saving ? 'Saving…' : 'Save Changes'}
+                                      {saving ? 'Savingâ€¦' : 'Save Changes'}
                                     </button>
                                   </div>
                                 </div>
                               ) : (
-                                /* ── Read-only row ── */
+                                /* â”€â”€ Read-only row â”€â”€ */
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <div style={{ fontSize: 11, lineHeight: 1.5 }}>
                                     <span style={{ fontWeight: 600 }}>{sku.level_name}</span>
                                     <span style={{ color: 'var(--text3)', marginLeft: 8 }}>
                                       {REMUN_LABELS[a.remuneration_mode]}
-                                      {' · '}₹{Number(a.remuneration_rate).toLocaleString('en-IN')} {REMUN_SUFFIX[a.remuneration_mode]}
+                                      {' Â· '}â‚¹{Number(a.remuneration_rate).toLocaleString('en-IN')} {REMUN_SUFFIX[a.remuneration_mode]}
                                     </span>
                                     {a.trained_by_nlh && (
                                       <span style={{ color: 'var(--green)', marginLeft: 8, fontSize: 10 }}>
-                                        ✅ NLH Trained
+                                        âœ… NLH Trained
                                         {a.training_date ? ' ' + fmtDate(a.training_date) : ''}
-                                        {a.training_fee  ? ' · ₹' + Number(a.training_fee).toLocaleString('en-IN') : ''}
+                                        {a.training_fee  ? ' Â· â‚¹' + Number(a.training_fee).toLocaleString('en-IN') : ''}
                                       </span>
                                     )}
                                     <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
                                       Since {fmtDate(a.appointed_at)}
-                                      {a.removed_at ? ' · Removed ' + fmtDate(a.removed_at) : ''}
+                                      {a.removed_at ? ' Â· Removed ' + fmtDate(a.removed_at) : ''}
                                     </span>
                                     {a.notes && (
                                       <span style={{ color: 'var(--text3)', marginLeft: 8, fontSize: 10 }}>
-                                        · {a.notes}
+                                        Â· {a.notes}
                                       </span>
                                     )}
                                   </div>
@@ -872,7 +872,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         onChange={function (e) {
                           setNewAppt(function (a) { return { ...a, course_name: e.target.value, selectedSkuIds: [] } })
                         }}>
-                        <option value="">— Select course —</option>
+                        <option value="">â€” Select course â€”</option>
                         {availableCourseNames.map(function (cn) {
                           return <option key={cn} value={cn}>{cn}</option>
                         })}
@@ -883,7 +883,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     {newAppt.course_name && (
                       <div className="col-span-2">
                         <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>
-                          Levels * — select one or more
+                          Levels * â€” select one or more
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {levelsForCourse(newAppt.course_name).map(function (s) {
@@ -905,7 +905,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                   color: checked ? 'var(--purple)' : 'var(--text2)',
                                   fontWeight: checked ? 700 : 400,
                                 }}>
-                                {checked ? '✓ ' : ''}{s.level_name}
+                                {checked ? 'âœ“ ' : ''}{s.level_name}
                                 {s.total_sessions ? <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>{s.total_sessions}s</span> : null}
                               </button>
                             )
@@ -916,12 +916,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
                     <label>Remuneration Mode *
                       <select value={newAppt.remuneration_mode} onChange={nfd('remuneration_mode')}>
-                        <option value="per_student">Per Student (₹ on completion)</option>
-                        <option value="per_session">Per Session (₹ / hour)</option>
-                        <option value="monthly">Monthly Fixed (₹ / month)</option>
+                        <option value="per_student">Per Student (â‚¹ on completion)</option>
+                        <option value="per_session">Per Session (â‚¹ / hour)</option>
+                        <option value="monthly">Monthly Fixed (â‚¹ / month)</option>
                       </select>
                     </label>
-                    <label>Rate (₹) *
+                    <label>Rate (â‚¹) *
                       <input type="number" value={newAppt.remuneration_rate}
                         onChange={nfd('remuneration_rate')}
                         placeholder={
@@ -939,7 +939,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     </label>
                     {newAppt.trained_by_nlh && (
                       <>
-                        <label>Training Fee Paid (₹)
+                        <label>Training Fee Paid (â‚¹)
                           <input type="number" value={newAppt.training_fee} onChange={nfd('training_fee')}
                             placeholder="0 if waived" />
                         </label>
@@ -950,13 +950,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     )}
                     <label className="col-span-2">Notes
                       <input value={newAppt.notes} onChange={nfd('notes')}
-                        placeholder="Remarks on this appointment…" />
+                        placeholder="Remarks on this appointmentâ€¦" />
                     </label>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
                     <button className="btn" onClick={function () { setShowAddCourse(false) }}>Cancel</button>
                     <button className="btn-p" onClick={addAppointment} disabled={saving || !newAppt.selectedSkuIds.length}>
-                      {saving ? 'Saving…' : 'Appoint' + (newAppt.selectedSkuIds.length > 1 ? ' ' + newAppt.selectedSkuIds.length + ' Levels' : ' to Level')}
+                      {saving ? 'Savingâ€¦' : 'Appoint' + (newAppt.selectedSkuIds.length > 1 ? ' ' + newAppt.selectedSkuIds.length + ' Levels' : ' to Level')}
                     </button>
                     {newAppt.selectedSkuIds.length > 0 && (
                       <span style={{ fontSize: 11, color: 'var(--text3)' }}>
@@ -979,7 +979,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           </div>
         )}
 
-        {/* ══ Batches tab ══════════════════════════════════════════════════════ */}
+        {/* â•â• Batches tab â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {tab === 'batches' && (
           <div style={{ padding: '0 20px 16px' }}>
 
@@ -1000,7 +1000,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               <p className="hint">No batches yet. Students from any of this CI's appointed courses can be added to a batch.</p>
             )}
 
-            {/* ── Batch cards (flat list) ── */}
+            {/* â”€â”€ Batch cards (flat list) â”€â”€ */}
             {[...batchList].sort(function (a, b) {
               if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
               const ta = a.schedule_time || 'ZZ'
@@ -1042,8 +1042,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
                           {batch.schedule_days || ''}
-                          {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
-                          {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
+                          {batch.schedule_time ? ' Â· ' + timeRange(batch.schedule_time) : ''}
+                          {batch.start_date    ? ' Â· Started ' + fmtDate(batch.start_date) : ''}
                         </div>
                       </div>
 
@@ -1057,7 +1057,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                               background: 'var(--bg2)', cursor: batch.sessions_done ? 'pointer' : 'not-allowed',
                               fontSize: 14, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
                               opacity: batch.sessions_done ? 1 : 0.35 }}>
-                            −
+                            âˆ’
                           </button>
                           <span style={{ font: '600 11px var(--mono)', minWidth: 70, textAlign: 'center', color: 'var(--purple)' }}>
                             {sessLabel}
@@ -1066,12 +1066,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         {batch.is_active && (
                           <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }}
                             onClick={function () { setAttendanceBatch({ ...batch, instructors: { full_name: instructor.full_name } }) }}>
-                            📋 Attendance
+                            ðŸ“‹ Attendance
                           </button>
                         )}
                         <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
                           onClick={function () { setEditBatchModal(batch) }}>
-                          ✏ Edit
+                          âœ Edit
                         </button>
                         <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
                           onClick={function () { toggleBatchActive(batch) }}>
@@ -1079,7 +1079,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         </button>
                         <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
                           onClick={function () { setOpenRoster(function (r) { return { ...r, [batch.id]: !r[batch.id] } }) }}>
-                          {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} {rosterOpen ? '▲' : '▼'}
+                          {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} {rosterOpen ? 'â–²' : 'â–¼'}
                         </button>
                       </div>
                     </div>
@@ -1100,8 +1100,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                             padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12,
                           }}>
                             <div>
-                              <span style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || '—'}</span>
-                              {course && <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 6 }}>{course}{level ? ' · ' + level : ''}</span>}
+                              <span style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || 'â€”'}</span>
+                              {course && <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 6 }}>{course}{level ? ' Â· ' + level : ''}</span>}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span style={{ fontSize: 11, color: 'var(--text3)' }}>Since {fmtDate(bs.assigned_at)}</span>
@@ -1121,13 +1121,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                             ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>No eligible enrolled students found.</span>
                             : <select style={{ flex: 1, fontSize: 12 }} defaultValue=""
                                 onChange={function (e) { if (e.target.value) assignStudent(batch.id, e.target.value) }}>
-                                <option value="">— Select student to add —</option>
+                                <option value="">â€” Select student to add â€”</option>
                                 {eligibleEnr.map(function (e) {
                                   const course = e.skus?.courses?.group_name || ''
                                   const level  = e.skus?.level_name || ''
                                   return (
                                     <option key={e.id} value={e.id}>
-                                      {e.students?.full_name || '—'}{course ? ' — ' + course + (level ? ' ' + level : '') : ''}
+                                      {e.students?.full_name || 'â€”'}{course ? ' â€” ' + course + (level ? ' ' + level : '') : ''}
                                     </option>
                                   )
                                 })}
@@ -1150,7 +1150,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               )
             })}
 
-            {/* ── New batch form ── */}
+            {/* â”€â”€ New batch form â”€â”€ */}
             {showAddBatch && (
               <div style={{ border: '1.5px dashed var(--purple)', borderRadius: 8, padding: 14, marginTop: 8 }}>
                 <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: 12 }}>New Batch</div>
@@ -1199,7 +1199,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <button className="btn" onClick={function () { setShowAddBatch(false) }}>Cancel</button>
                   <button className="btn-p" onClick={saveBatch} disabled={batchSaving}>
-                    {batchSaving ? 'Creating…' : 'Create Batch'}
+                    {batchSaving ? 'Creatingâ€¦' : 'Create Batch'}
                   </button>
                 </div>
               </div>
@@ -1207,7 +1207,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           </div>
         )}
 
-      {/* ── Edit Batch Modal ── */}
+      {/* â”€â”€ Edit Batch Modal â”€â”€ */}
       {editBatchModal && (
         <EditBatchModal
           batch={editBatchModal}
@@ -1216,7 +1216,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         />
       )}
 
-      {/* ── Attendance Modal ── */}
+      {/* â”€â”€ Attendance Modal â”€â”€ */}
       {attendanceBatch && (
         <AttendanceModal
           batch={attendanceBatch}
@@ -1225,7 +1225,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         />
       )}
 
-        {/* ══ Payroll tab ══════════════════════════════════════════════════════ */}
+        {/* â•â• Payroll tab â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {tab === 'payroll' && (
           <div style={{ padding: '0 20px 20px' }}>
             {/* Month picker */}
@@ -1237,12 +1237,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   style={{ fontSize: 13, padding: '4px 8px' }} />
               </label>
               <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
-                {payrollLoading ? 'Loading…' : payrollSessions.length + ' session' + (payrollSessions.length !== 1 ? 's' : '') + ' conducted'}
+                {payrollLoading ? 'Loadingâ€¦' : payrollSessions.length + ' session' + (payrollSessions.length !== 1 ? 's' : '') + ' conducted'}
               </div>
             </div>
 
             {payrollLoading ? (
-              <div className="hint" style={{ textAlign: 'center', padding: '24px 0' }}>Calculating…</div>
+              <div className="hint" style={{ textAlign: 'center', padding: '24px 0' }}>Calculatingâ€¦</div>
             ) : (function () {
               // Group sessions by batch
               var batchMap = {}
@@ -1264,7 +1264,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var appt    = skuId ? payrollAppts.find(function (a) { return a.sku_id === skuId }) : payrollAppts[0]
                 var mode    = appt?.remuneration_mode || 'per_session'
                 var rate    = appt?.remuneration_rate || 0
-                var course  = data.batch?.skus?.courses?.group_name || data.batch?.name || '—'
+                var course  = data.batch?.skus?.courses?.group_name || data.batch?.name || 'â€”'
                 var level   = data.batch?.skus?.level_name || ''
                 var completions  = mode === 'per_student' ? (payrollCompletions[batchId] || 0) : 0
                 var ciSessions   = data.sessions.length
@@ -1274,7 +1274,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var proration    = totalSessions > 0 ? ciSessions / totalSessions : 1
                 var row = {
                   batchId,
-                  batchName: data.batch?.name || '—',
+                  batchName: data.batch?.name || 'â€”',
                   course, level,
                   sessionCount: ciSessions,
                   totalSessions, subSessions,
@@ -1302,7 +1302,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0) {
                 return (
                   <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text3)', fontSize: 13 }}>
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>💰</div>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>ðŸ’°</div>
                     No sessions recorded for this month.
                   </div>
                 )
@@ -1325,11 +1325,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                             <div style={{ flex: 1 }}>
                               <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
                               <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                {row.course}{row.level ? ' · ' + row.level : ''} · {row.sessionCount} session{row.sessionCount !== 1 ? 's' : ''} × ₹{row.rate.toLocaleString('en-IN')}
+                                {row.course}{row.level ? ' Â· ' + row.level : ''} Â· {row.sessionCount} session{row.sessionCount !== 1 ? 's' : ''} Ã— â‚¹{row.rate.toLocaleString('en-IN')}
                               </div>
                             </div>
                             <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>
-                              ₹{row.amount.toLocaleString('en-IN')}
+                              â‚¹{row.amount.toLocaleString('en-IN')}
                             </div>
                           </div>
                         )
@@ -1339,7 +1339,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         borderTop: '1px solid var(--border)', background: 'var(--purple-bg)',
                       }}>
                         <span style={{ font: '600 12px var(--font)', color: 'var(--purple)' }}>Session Sub-total</span>
-                        <span style={{ font: '700 14px var(--font)', color: 'var(--purple)' }}>₹{sessionTotal.toLocaleString('en-IN')}</span>
+                        <span style={{ font: '700 14px var(--font)', color: 'var(--purple)' }}>â‚¹{sessionTotal.toLocaleString('en-IN')}</span>
                       </div>
                     </div>
                   )}
@@ -1358,12 +1358,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>
-                                {a.skus?.courses?.group_name || '—'}{a.skus?.level_name ? ' · ' + a.skus.level_name : ''}
+                                {a.skus?.courses?.group_name || 'â€”'}{a.skus?.level_name ? ' Â· ' + a.skus.level_name : ''}
                               </div>
                               <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>Monthly rate</div>
                             </div>
                             <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>
-                              ₹{(a.remuneration_rate || 0).toLocaleString('en-IN')}
+                              â‚¹{(a.remuneration_rate || 0).toLocaleString('en-IN')}
                             </div>
                           </div>
                         )
@@ -1389,7 +1389,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                               <div style={{ flex: 1 }}>
                                 <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
                                 <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                  {row.course}{row.level ? ' · ' + row.level : ''}
+                                  {row.course}{row.level ? ' Â· ' + row.level : ''}
                                 </div>
                                 {/* Sessions breakdown */}
                                 <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
@@ -1417,19 +1417,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                 </div>
                                 {/* Calculation breakdown */}
                                 <div style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
-                                  {row.completions} × ₹{row.rate.toLocaleString('en-IN')}
+                                  {row.completions} Ã— â‚¹{row.rate.toLocaleString('en-IN')}
                                   {hasSubs
-                                    ? <> × <span style={{ color: '#92400e', fontWeight: 700 }}>{pct}%</span> (CI taught {pct}% of sessions)</>
+                                    ? <> Ã— <span style={{ color: '#92400e', fontWeight: 700 }}>{pct}%</span> (CI taught {pct}% of sessions)</>
                                     : null
                                   }
                                   {' = '}
                                   <strong style={{ color: row.amount > 0 ? 'var(--text)' : 'var(--text3)' }}>
-                                    ₹{row.amount.toLocaleString('en-IN')}
+                                    â‚¹{row.amount.toLocaleString('en-IN')}
                                   </strong>
                                 </div>
                               </div>
                               <div style={{ font: '700 16px var(--font)', color: row.amount > 0 ? 'var(--text)' : 'var(--text3)', marginLeft: 12, marginTop: 2 }}>
-                                {row.amount > 0 ? '₹' + row.amount.toLocaleString('en-IN') : '—'}
+                                {row.amount > 0 ? 'â‚¹' + row.amount.toLocaleString('en-IN') : 'â€”'}
                               </div>
                             </div>
                           </div>
@@ -1441,13 +1441,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           borderTop: '1px solid var(--border)', background: 'var(--green-bg)',
                         }}>
                           <span style={{ font: '600 12px var(--font)', color: 'var(--green)' }}>Completion Sub-total</span>
-                          <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>₹{studentTotal.toLocaleString('en-IN')}</span>
+                          <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>â‚¹{studentTotal.toLocaleString('en-IN')}</span>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* ── Grand total + override ── */}
+                  {/* â”€â”€ Grand total + override â”€â”€ */}
                   <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginTop: 4 }}>
 
                     {/* Calculated total row */}
@@ -1459,18 +1459,18 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         font: '600 14px var(--font)',
                         color: payrollOverride ? 'var(--text3)' : 'var(--text)',
                         textDecoration: payrollOverride ? 'line-through' : 'none',
-                      }}>₹{grandTotal.toLocaleString('en-IN')}</span>
+                      }}>â‚¹{grandTotal.toLocaleString('en-IN')}</span>
                     </div>
 
                     {/* Override edit form */}
                     {overrideEdit ? (
                       <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', background: '#fffbf0' }}>
                         <div style={{ font: '600 11px var(--font)', color: '#92400e', marginBottom: 8 }}>
-                          ✏️ Set amount paid
+                          âœï¸ Set amount paid
                         </div>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>₹</span>
+                            <span style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>â‚¹</span>
                             <input
                               type="number" min="0"
                               value={overrideForm.amount}
@@ -1495,17 +1495,17 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           </button>
                           <button className="btn-p" style={{ fontSize: 11 }}
                             onClick={function () { saveOverride(grandTotal) }} disabled={savingOverride}>
-                            {savingOverride ? 'Saving…' : 'Save Amount Paid'}
+                            {savingOverride ? 'Savingâ€¦' : 'Save Amount Paid'}
                           </button>
                         </div>
                       </div>
                     ) : payrollOverride ? (
-                      /* Override active — show agreed amount */
+                      /* Override active â€” show agreed amount */
                       <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: '#f0fdf4' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ font: '600 11px var(--font)', color: 'var(--green)', marginBottom: 2 }}>
-                              ✓ Amount Paid
+                              âœ“ Amount Paid
                             </div>
                             {payrollOverride.notes && (
                               <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>
@@ -1515,20 +1515,20 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <span style={{ font: '700 18px var(--font)', color: 'var(--green)' }}>
-                              ₹{payrollOverride.final_amount.toLocaleString('en-IN')}
+                              â‚¹{payrollOverride.final_amount.toLocaleString('en-IN')}
                             </span>
                             <button className="btn" style={{ fontSize: 10, padding: '2px 7px' }}
                               onClick={function () {
                                 setOverrideForm({ amount: payrollOverride.final_amount, notes: payrollOverride.notes || '' })
                                 setOverrideEdit(true)
-                              }}>✏️</button>
+                              }}>âœï¸</button>
                             <button className="btn" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red)' }}
-                              onClick={clearOverride}>✕</button>
+                              onClick={clearOverride}>âœ•</button>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      /* No override — show edit prompt */
+                      /* No override â€” show edit prompt */
                       <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
                           Enter amount actually paid?
@@ -1538,7 +1538,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                             setOverrideForm({ amount: grandTotal, notes: '' })
                             setOverrideEdit(true)
                           }}>
-                          ✏️ Override
+                          âœï¸ Override
                         </button>
                       </div>
                     )}
@@ -1551,10 +1551,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       color: '#fff',
                     }}>
                       <span style={{ font: '700 14px var(--font)' }}>
-                        {payrollOverride ? 'Amount Paid' : 'Amount Calculated'} — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                        {payrollOverride ? 'Amount Paid' : 'Amount Calculated'} â€” {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
                       </span>
                       <span style={{ font: '700 20px var(--font)' }}>
-                        ₹{(payrollOverride ? payrollOverride.final_amount : grandTotal).toLocaleString('en-IN')}
+                        â‚¹{(payrollOverride ? payrollOverride.final_amount : grandTotal).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>
@@ -1569,7 +1569,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   )
 }
 
-// ── EditBatchModal ─────────────────────────────────────────────────────────────
+// â”€â”€ EditBatchModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function EditBatchModal({ batch, onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -1602,16 +1602,16 @@ function EditBatchModal({ batch, onClose, onSaved }) {
     }).eq('id', batch.id)
     setSaving(false)
     if (error) { showToast('Save failed: ' + error.message, 'err'); return }
-    showToast('Batch updated ✓')
+    showToast('Batch updated âœ“')
     onSaved()
   }
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal">
         <div className="ch">
-          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <span style={{ fontWeight: 700 }}>Edit Batch â€” {batch.name}</span>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
@@ -1652,12 +1652,12 @@ function EditBatchModal({ batch, onClose, onSaved }) {
             <label className="col-span-2">Notes
               <input value={form.notes}
                 onChange={function (e) { setForm(function (f) { return { ...f, notes: e.target.value } }) }}
-                placeholder="Optional remarks…" />
+                placeholder="Optional remarksâ€¦" />
             </label>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+            <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Savingâ€¦' : 'Save Changes'}</button>
           </div>
         </div>
       </div>
@@ -1665,7 +1665,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
   )
 }
 
-// ── AttendanceModal (Instructors context) ──────────────────────────────────────
+// â”€â”€ AttendanceModal (Instructors context) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AttendanceModal({ batch, onClose, onSaved }) {
   const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
@@ -1722,7 +1722,7 @@ function AttendanceModal({ batch, onClose, onSaved }) {
     await sb.from('batches').update({ sessions_done: (batch.sessions_done || 0) + 1 }).eq('id', batch.id)
     setSaving(false)
     var presentCount = activeStudents.filter(function (bs) { return attendance[bs.enrollment_id] !== false }).length
-    showToast('Session #' + sNum + ' marked — ' + presentCount + '/' + activeStudents.length + ' present ✓')
+    showToast('Session #' + sNum + ' marked â€” ' + presentCount + '/' + activeStudents.length + ' present âœ“')
     onSaved()
   }
 
@@ -1730,15 +1730,15 @@ function AttendanceModal({ batch, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 460 }}>
+      <div className="modal">
         <div className="ch">
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Attendance</div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} â€” Attendance</div>
             <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              Session #{sessionNum || '…'} · {batch.instructors?.full_name}
+              Session #{sessionNum || 'â€¦'} Â· {batch.instructors?.full_name}
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
@@ -1767,7 +1767,7 @@ function AttendanceModal({ batch, onClose, onSaved }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {activeStudents.map(function (bs) {
                   var present = attendance[bs.enrollment_id] !== false
-                  var name = bs.enrollments?.students?.full_name || '—'
+                  var name = bs.enrollments?.students?.full_name || 'â€”'
                   return (
                     <div key={bs.id} onClick={function () { toggle(bs.enrollment_id) }}
                       style={{
@@ -1783,7 +1783,7 @@ function AttendanceModal({ batch, onClose, onSaved }) {
                         color: present ? '#fff' : 'var(--text3)',
                         fontWeight: 700, fontSize: 13,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>{present ? '✓' : '✗'}</div>
+                      }}>{present ? 'âœ“' : 'âœ—'}</div>
                       <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>{name}</div>
                       <div style={{ font: '600 11px var(--mono)', color: present ? 'var(--green)' : 'var(--text3)' }}>
                         {present ? 'Present' : 'Absent'}
@@ -1798,7 +1798,7 @@ function AttendanceModal({ batch, onClose, onSaved }) {
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Mark Attendance'}
+            {saving ? 'Savingâ€¦' : 'Mark Attendance'}
           </button>
         </div>
       </div>
@@ -1806,7 +1806,7 @@ function AttendanceModal({ batch, onClose, onSaved }) {
   )
 }
 
-// ── AddInstructorModal ─────────────────────────────────────────────────────────
+// â”€â”€ AddInstructorModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const BLANK_COURSE_BLOCK = {
   group_name: '',
@@ -1897,7 +1897,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
   async function save() {
     if (!form.full_name.trim()) { showToast('Name is required', 'warn'); return }
 
-    // Flatten course blocks → individual appointment rows
+    // Flatten course blocks â†’ individual appointment rows
     const validRows = []
     for (let bi = 0; bi < courseBlocks.length; bi++) {
       const block = courseBlocks[bi]
@@ -1906,7 +1906,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
       for (let li = 0; li < checkedSkus.length; li++) {
         const s = checkedSkus[li]
         if (!block.levelRates[s.id]) {
-          showToast('Enter rate for ' + block.group_name + ' — ' + s.level_name, 'warn')
+          showToast('Enter rate for ' + block.group_name + ' â€” ' + s.level_name, 'warn')
           return
         }
         validRows.push({
@@ -1922,7 +1922,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
 
     setSaving(true)
 
-    // 1 — Insert instructor
+    // 1 â€” Insert instructor
     const { data: ins, error: insErr } = await sb.from('instructors').insert({
       franchisee_id:   nlhCentreId,
       full_name:       form.full_name.trim(),
@@ -1943,7 +1943,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
 
     if (insErr) { showToast('Failed: ' + insErr.message, 'err'); setSaving(false); return }
 
-    // 2 — Insert course appointments
+    // 2 â€” Insert course appointments
     if (validRows.length > 0) {
       const apptDate = form.joined_at || new Date().toISOString().split('T')[0]
       const { error: apptErr } = await sb.from('instructor_courses').insert(
@@ -1975,14 +1975,14 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 600 }}>
+      <div className="modal">
         <div className="ch">
-          <span>➕ Add Course Instructor (CI)</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <span>âž• Add Course Instructor (CI)</span>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
 
         <div>
-          {/* ── Personal info ── */}
+          {/* â”€â”€ Personal info â”€â”€ */}
           <div className="form-grid">
             <label className="col-span-2">Full Name *
               <input value={form.full_name} onChange={fld('full_name')}
@@ -1998,7 +1998,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
               <input value={form.city} onChange={fld('city')} placeholder="Nagpur" />
             </label>
             <label>Area / Locality
-              <input value={form.area} onChange={fld('area')} placeholder="Sadar, Dharampeth…" />
+              <input value={form.area} onChange={fld('area')} placeholder="Sadar, Dharampethâ€¦" />
             </label>
             <label>State
               <input value={form.state} onChange={fld('state')} placeholder="Maharashtra" />
@@ -2011,10 +2011,10 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
             </label>
           </div>
 
-          {/* ── Course Appointments ── */}
+          {/* â”€â”€ Course Appointments â”€â”€ */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '4px 20px 0', paddingTop: 12 }}>
             <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 10 }}>
-              📚 Course Appointments
+              ðŸ“š Course Appointments
               <span style={{ font: '400 11px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
                 (select courses and tick the levels to appoint)
               </span>
@@ -2024,8 +2024,8 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
               const takenNames = usedCourseNames(idx)
               const levels     = block.group_name ? getLevels(block.group_name) : []
               const ratePlaceholder =
-                block.remuneration_mode === 'per_session' ? '₹ per session' :
-                block.remuneration_mode === 'monthly'     ? '₹ per month'   : '₹ per student'
+                block.remuneration_mode === 'per_session' ? 'â‚¹ per session' :
+                block.remuneration_mode === 'monthly'     ? 'â‚¹ per month'   : 'â‚¹ per student'
 
               return (
                 <div key={idx} style={{
@@ -2040,7 +2040,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                     {courseBlocks.length > 1 && (
                       <button onClick={function () { removeCourseBlock(idx) }}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>
-                        ✕
+                        âœ•
                       </button>
                     )}
                   </div>
@@ -2050,7 +2050,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                     <label>Course *
                       <select value={block.group_name}
                         onChange={function (e) { updateBlock(idx, 'group_name', e.target.value) }}>
-                        <option value="">— Select course —</option>
+                        <option value="">â€” Select course â€”</option>
                         {allCourseNames
                           .filter(function (n) { return !takenNames.includes(n) })
                           .map(function (n) { return <option key={n} value={n}>{n}</option> })
@@ -2060,14 +2060,14 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                     <label>Remuneration Mode
                       <select value={block.remuneration_mode}
                         onChange={function (e) { updateBlock(idx, 'remuneration_mode', e.target.value) }}>
-                        <option value="per_session">Per Session (₹ / hour)</option>
-                        <option value="per_student">Per Student (₹ on completion)</option>
-                        <option value="monthly">Monthly Fixed (₹ / month)</option>
+                        <option value="per_session">Per Session (â‚¹ / hour)</option>
+                        <option value="per_student">Per Student (â‚¹ on completion)</option>
+                        <option value="monthly">Monthly Fixed (â‚¹ / month)</option>
                       </select>
                     </label>
                   </div>
 
-                  {/* Level checkboxes — only shown once a course is selected */}
+                  {/* Level checkboxes â€” only shown once a course is selected */}
                   {block.group_name && (
                     <>
                       <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6, fontWeight: 600 }}>
@@ -2114,7 +2114,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                       </label>
                       {block.trained_by_nlh && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          <label style={{ fontSize: 12 }}>Training Fee (₹)
+                          <label style={{ fontSize: 12 }}>Training Fee (â‚¹)
                             <input type="number" value={block.training_fee}
                               onChange={function (e) { updateBlock(idx, 'training_fee', e.target.value) }}
                               placeholder="0 if waived" />
@@ -2143,19 +2143,19 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
             )}
           </div>
 
-          {/* ── Caution Deposit ── */}
+          {/* â”€â”€ Caution Deposit â”€â”€ */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '12px 20px 0', paddingTop: 12 }}>
             <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
-              🔒 Caution Deposit
+              ðŸ”’ Caution Deposit
             </div>
             <div className="form-grid">
-              <label>Amount (₹)
+              <label>Amount (â‚¹)
                 <input type="number" value={form.caution_amount} onChange={fld('caution_amount')}
                   placeholder="0" />
               </label>
               <label>Collection Mode
                 <select value={form.caution_mode} onChange={fld('caution_mode')}>
-                  <option value="">— Select —</option>
+                  <option value="">â€” Select â€”</option>
                   <option value="upfront">Paid upfront on joining</option>
                   <option value="deducted">Deducted from first payment</option>
                   <option value="waived">Waived</option>
@@ -2169,11 +2169,11 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
             </div>
           </div>
 
-          {/* ── Notes ── */}
+          {/* â”€â”€ Notes â”€â”€ */}
           <div style={{ padding: '8px 20px 0' }}>
             <label>Notes
               <textarea value={form.notes} onChange={fld('notes')} rows={2}
-                placeholder="Any internal notes…" style={{ resize: 'vertical', width: '100%' }} />
+                placeholder="Any internal notesâ€¦" style={{ resize: 'vertical', width: '100%' }} />
             </label>
           </div>
         </div>
@@ -2181,7 +2181,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving}>
-            {saving ? 'Adding…' : 'Add Instructor'}
+            {saving ? 'Addingâ€¦' : 'Add Instructor'}
           </button>
         </div>
       </div>
@@ -2189,7 +2189,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
   )
 }
 
-// ── InstructorsPage ────────────────────────────────────────────────────────────
+// â”€â”€ InstructorsPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function InstructorsPage() {
   const { currentRole } = useAuth()
@@ -2294,13 +2294,13 @@ export default function InstructorsPage() {
         return [r.full_name, r.phone, r.email, r.status, courses]
       })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
-      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+      const blob = new Blob(['ï»¿' + csv], { type: 'text/csv;charset=utf-8;' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href = url; a.download = 'nlh-instructors-' + date + '.csv'
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      showToast(rows.length + ' instructors exported ✓')
+      showToast(rows.length + ' instructors exported âœ“')
     } catch (err) {
       showToast('Export failed: ' + err.message, 'err')
     }
@@ -2311,12 +2311,12 @@ export default function InstructorsPage() {
     <div className="pg">
       {/* topbar */}
       <header className="tb">
-        <div className="crumb">Operations <span className="sep">›</span> <b>Instructors</b></div>
+        <div className="crumb">Operations <span className="sep">â€º</span> <b>Instructors</b></div>
         <div className="tb-r">
-          <input className="search tb-search" placeholder="Search by name, phone, city…"
+          <input className="search tb-search" placeholder="Search by name, phone, cityâ€¦"
             value={search} onChange={function (e) { setSearch(e.target.value) }} />
           <button className="btn btn-s" onClick={exportCSV} disabled={exporting} title="Export CSV">
-            {exporting ? '…' : '↓'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
+            {exporting ? 'â€¦' : 'â†“'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
           </button>
           {admin && (
             <button className="btn btn-p" onClick={function () { setShowAdd(true) }}>+ Add CI</button>
@@ -2339,22 +2339,22 @@ export default function InstructorsPage() {
         {/* mini stats */}
         <div className="mini-stats">
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>👩‍🏫</div>
+            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>ðŸ‘©â€ðŸ«</div>
             <div className="mini-num">{activeCount}</div>
             <div className="mini-lbl">Active CIs</div>
           </div>
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>📚</div>
+            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>ðŸ“š</div>
             <div className="mini-num">{coursesCovered}</div>
             <div className="mini-lbl">Courses covered</div>
           </div>
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>🔒</div>
-            <div className="mini-num">₹{totalCaution.toLocaleString('en-IN')}</div>
+            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>ðŸ”’</div>
+            <div className="mini-num">â‚¹{totalCaution.toLocaleString('en-IN')}</div>
             <div className="mini-lbl">Caution held</div>
           </div>
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--bg4)' }}>💤</div>
+            <div className="mini-ic" style={{ background: 'var(--bg4)' }}>ðŸ’¤</div>
             <div className="mini-num">{inactiveCount}</div>
             <div className="mini-lbl">Inactive / Left</div>
           </div>
@@ -2379,7 +2379,7 @@ export default function InstructorsPage() {
 
         {/* table */}
         {loading ? (
-          <div className="loading">Loading instructors…</div>
+          <div className="loading">Loading instructorsâ€¦</div>
         ) : (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
             <table className="big-tbl">
@@ -2417,7 +2417,7 @@ export default function InstructorsPage() {
                         </div>
                       </td>
                       <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text2)' }}>
-                        <div>{ins.phone || '—'}</div>
+                        <div>{ins.phone || 'â€”'}</div>
                         <div style={{ color: 'var(--text3)' }}>{ins.city || ''}</div>
                       </td>
                       <td>
@@ -2427,7 +2427,7 @@ export default function InstructorsPage() {
                             return (
                               <span key={c.id} className="badge bp"
                                 style={{ marginRight: 4, marginBottom: 2, fontSize: 10 }}>
-                                {c.skus?.courses?.group_name || '—'} — {c.skus?.level_name || '?'}
+                                {c.skus?.courses?.group_name || 'â€”'} â€” {c.skus?.level_name || '?'}
                               </span>
                             )
                           })
@@ -2437,11 +2437,11 @@ export default function InstructorsPage() {
                         {ins.caution_amount > 0
                           ? <>
                               <div style={{ fontWeight: 600 }}>
-                                ₹{Number(ins.caution_amount).toLocaleString('en-IN')}
+                                â‚¹{Number(ins.caution_amount).toLocaleString('en-IN')}
                               </div>
                               <CautionBadge status={ins.caution_status} />
                             </>
-                          : <span style={{ color: 'var(--text3)' }}>—</span>
+                          : <span style={{ color: 'var(--text3)' }}>â€”</span>
                         }
                       </td>
                       <td className="hide-mobile"><StatusBadge status={ins.status} /></td>
@@ -2493,3 +2493,4 @@ export default function InstructorsPage() {
     </div>
   )
 }
+

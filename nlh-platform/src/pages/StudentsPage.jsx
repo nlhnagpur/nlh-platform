@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
@@ -8,9 +8,9 @@ import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled } from '../services/whatsapp'
 import StudentCertModal from '../components/StudentCertModal'
 
-// ── helpers ────────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// Shared: derive payment_status from fee amounts — single source of truth
+// Shared: derive payment_status from fee amounts â€” single source of truth
 function deriveStatus(total, paid) {
   const t = Number(total) || 0
   const p = Number(paid)  || 0
@@ -23,7 +23,7 @@ function deriveStatus(total, paid) {
 function StatusBadge({ status }) {
   const s = (status || '').toLowerCase()
   const map = { active: 'ba', inactive: 'bd', pending: 'bp' }
-  return <span className={`badge ${map[s] || 'br'}`}>{status || '—'}</span>
+  return <span className={`badge ${map[s] || 'br'}`}>{status || 'â€”'}</span>
 }
 
 function genTempPass() {
@@ -32,7 +32,7 @@ function genTempPass() {
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-// ── StudentDetailModal ─────────────────────────────────────────────────────────
+// â”€â”€ StudentDetailModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function StudentDetailModal({ student, onClose, onSaved }) {
   const { currentRole } = useAuth()
@@ -63,7 +63,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const [centreCache, setCentreCache] = useState(null)
   const [saving,      setSaving]      = useState(false)
 
-  // ── Courses / Batch state ──
+  // â”€â”€ Courses / Batch state â”€â”€
   const [localEnrollments, setLocalEnrollments] = useState(student.enrollments || [])
   const [nlhCentreId,     setNlhCentreId]     = useState(null)
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
@@ -76,14 +76,14 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   const [panelSaving,     setPanelSaving]     = useState(false)
   const [assignJoinDate,  setAssignJoinDate]  = useState(new Date().toISOString().slice(0, 10))
 
-  // ── Add-enrollment state ──
+  // â”€â”€ Add-enrollment state â”€â”€
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
   const [allCentreSkus,     setAllCentreSkus]     = useState([])   // ALL SKUs the centre offers (enrolled + available)
   const [availableSkus,     setAvailableSkus]     = useState([])   // SKUs the centre offers, minus already enrolled
   const [selectedNewSkus,   setSelectedNewSkus]   = useState([])
   const [addingEnrollment,  setAddingEnrollment]  = useState(false)
 
-  // ── Delete state ──
+  // â”€â”€ Delete state â”€â”€
   const [deleting, setDeleting] = useState(false)
 
   const balance = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
@@ -92,7 +92,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
   }
 
-  // deriveStatus is defined at module level — shared with AddStudentModal
+  // deriveStatus is defined at module level â€” shared with AddStudentModal
   const derivedStatus = deriveStatus(form.fee_total, form.fee_paid)
 
   async function save() {
@@ -137,7 +137,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     onSaved({ ...student, ...payload })
   }
 
-  // ── Load courses tab ──
+  // â”€â”€ Load courses tab â”€â”€
   async function loadCoursesTab() {
     if (coursesLoaded) return
     setCoursesLoaded(true)
@@ -181,7 +181,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setAvailableSkus(candidates.filter(function (s) { return !enrolledSkuIds.includes(s.id) }))
   }
 
-  // ── Open batch assignment panel for one enrollment ──
+  // â”€â”€ Open batch assignment panel for one enrollment â”€â”€
   async function openBatchPanel(enrollment) {
     if (batchPanelEnrId === enrollment.id) { setBatchPanelEnrId(null); return }
     setBatchPanelEnrId(enrollment.id)
@@ -216,7 +216,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setPanelData({ batches: batches || [], eligibleCIs, loading: false })
   }
 
-  // ── Assign student to an existing batch ──
+  // â”€â”€ Assign student to an existing batch â”€â”€
   async function assignToBatch(batchId, enrollmentId) {
     setPanelSaving(true)
     // Remove from any existing batch first
@@ -232,10 +232,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     setBatchAssignments(function (prev) { return { ...prev, [enrollmentId]: data } })
     setBatchPanelEnrId(null)
-    showToast('Assigned to batch ✓')
+    showToast('Assigned to batch âœ“')
   }
 
-  // ── Remove student from current batch ──
+  // â”€â”€ Remove student from current batch â”€â”€
   async function removeFromBatch(enrollmentId) {
     const bs = batchAssignments[enrollmentId]
     if (!bs) return
@@ -246,7 +246,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     showToast('Removed from batch')
   }
 
-  // ── Create a new batch and assign student ──
+  // â”€â”€ Create a new batch and assign student â”€â”€
   async function createAndAssign(enrollment) {
     if (!newBatchCI)             { showToast('Select a Course Instructor', 'warn'); return }
     if (!newBatchForm.name.trim()){ showToast('Batch name is required', 'warn');    return }
@@ -275,10 +275,10 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     if (bsErr) { showToast('Batch created but assign failed: ' + bsErr.message, 'err'); return }
     setBatchAssignments(function (prev) { return { ...prev, [enrollment.id]: bs } })
     setBatchPanelEnrId(null)
-    showToast('Batch created and student assigned ✓')
+    showToast('Batch created and student assigned âœ“')
   }
 
-  // ── Mark course complete + open WhatsApp review ──
+  // â”€â”€ Mark course complete + open WhatsApp review â”€â”€
   var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
 
   async function markCourseComplete(en) {
@@ -292,7 +292,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
         return e.id === en.id ? { ...e, completed_at, status: 'completed' } : e
       })
     })
-    showToast('Marked as completed ✓')
+    showToast('Marked as completed âœ“')
   }
 
   function sendReviewWhatsApp(en) {
@@ -302,14 +302,14 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     if (!clean) { showToast('No phone number on file', 'warn'); return }
     var course = (en.skus?.courses?.group_name || '') + (en.skus?.level_name ? ' ' + en.skus.level_name : '')
     var msg = 'Dear ' + (student.parent_name || 'Parent') + ',\n\n'
-      + student.full_name + ' has successfully completed the *' + course + '* programme at *New Learning Horizons*! 🎉\n\n'
+      + student.full_name + ' has successfully completed the *' + course + '* programme at *New Learning Horizons*! ðŸŽ‰\n\n'
       + 'We would love to hear your feedback. A quick Google Review would mean a lot to us:\n'
       + GOOGLE_REVIEW_URL + '\n\n'
-      + 'Thank you for being part of the NLH family! 🌟'
+      + 'Thank you for being part of the NLH family! ðŸŒŸ'
     window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank')
   }
 
-  // ── Remove an enrollment ──
+  // â”€â”€ Remove an enrollment â”€â”€
   async function removeEnrollment(enrollment) {
     // Soft-delete any active batch_student row first
     const { data: bsRows } = await sb.from('batch_students')
@@ -337,7 +337,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     if (updated) onSaved(updated)
   }
 
-  // ── Add new enrollments ──
+  // â”€â”€ Add new enrollments â”€â”€
   async function addEnrollments() {
     if (!selectedNewSkus.length) { showToast('Select at least one course', 'warn'); return }
     setAddingEnrollment(true)
@@ -356,14 +356,14 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setAvailableSkus(function (prev) { return prev.filter(function (s) { return !addedSkuIds.includes(s.id) }) })
     setSelectedNewSkus([])
     setShowAddEnrollment(false)
-    showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added ✓')
+    showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added âœ“')
     const { data: updated } = await sb.from('students')
       .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
 
-  // ── Delete student (admin only) ──
+  // â”€â”€ Delete student (admin only) â”€â”€
   async function deleteStudent() {
     if (!window.confirm('Permanently delete ' + student.full_name + ' and ALL their records (enrollments, batch assignments)?\n\nThis CANNOT be undone.')) return
     setDeleting(true)
@@ -382,11 +382,11 @@ function StudentDetailModal({ student, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 680 }}>
+      <div className="modal" style={{ width: 860 }}>
         {/* Header */}
         <div className="ch">
           <span>{student.full_name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
 
         {/* Tabs */}
@@ -407,13 +407,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                   marginBottom: -1, transition: 'color 0.15s',
                 }}
               >
-                {t === 'profile' ? '👤 Profile' : '📚 Courses & Batches'}
+                {t === 'profile' ? 'ðŸ‘¤ Profile' : 'ðŸ“š Courses & Batches'}
               </button>
             )
           })}
         </div>
 
-        {/* ── PROFILE TAB ── */}
+        {/* â”€â”€ PROFILE TAB â”€â”€ */}
         {tab === 'profile' && (
           <div>
             <div className="form-grid">
@@ -477,22 +477,22 @@ function StudentDetailModal({ student, onClose, onSaved }) {
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <strong>Fee Tracking</strong>
               <div className="form-grid" style={{ marginTop: 8 }}>
-                <label>Fee Total (₹)
+                <label>Fee Total (â‚¹)
                   <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!admin} />
                 </label>
-                <label>Fee Paid (₹)
+                <label>Fee Paid (â‚¹)
                   <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!admin} />
                 </label>
                 <label>Balance
                   <input
-                    value={'₹' + fmtAmt(balance)}
+                    value={'â‚¹' + fmtAmt(balance)}
                     disabled
                     style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
                   />
                 </label>
                 <label>Payment Mode
                   <select value={form.payment_mode} onChange={field('payment_mode')} disabled={!admin}>
-                    <option value="">—</option>
+                    <option value="">â€”</option>
                     <option value="cash">Cash</option>
                     <option value="upi">UPI</option>
                     <option value="bank_transfer">Bank Transfer / NEFT</option>
@@ -506,7 +506,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
           </div>
         )}
 
-        {/* ── COURSES & BATCHES TAB ── */}
+        {/* â”€â”€ COURSES & BATCHES TAB â”€â”€ */}
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
             {localEnrollments.length === 0 && !showAddEnrollment ? (
@@ -516,8 +516,8 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                 {localEnrollments.map(function (en) {
                   const bs          = batchAssignments[en.id]
                   const isOpen      = batchPanelEnrId === en.id
-                  const courseName  = en.skus?.courses?.group_name || '—'
-                  const levelName   = en.skus?.level_name || '—'
+                  const courseName  = en.skus?.courses?.group_name || 'â€”'
+                  const levelName   = en.skus?.level_name || 'â€”'
 
                   const isCompleted  = !!en.completed_at
 
@@ -537,19 +537,19 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             </span>
                             {isCompleted && (
                               <span style={{ font: '600 10px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 7px' }}>
-                                ✓ Completed
+                                âœ“ Completed
                               </span>
                             )}
                           </div>
                           {bs ? (
                             <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginTop: 3 }}>
-                              <span style={{ color: 'var(--green)' }}>●</span>
+                              <span style={{ color: 'var(--green)' }}>â—</span>
                               {' '}{bs.batches?.name || 'Batch'}
                               {bs.batches?.instructors?.full_name ? (
-                                <span style={{ color: 'var(--text3)' }}> · {bs.batches.instructors.full_name}</span>
+                                <span style={{ color: 'var(--text3)' }}> Â· {bs.batches.instructors.full_name}</span>
                               ) : null}
                               {bs.batches?.schedule_days ? (
-                                <span style={{ color: 'var(--text3)' }}> · {bs.batches.schedule_days}</span>
+                                <span style={{ color: 'var(--text3)' }}> Â· {bs.batches.schedule_days}</span>
                               ) : null}
                               {bs.batches?.schedule_time ? (
                                 <span style={{ color: 'var(--text3)' }}> {bs.batches.schedule_time}</span>
@@ -567,7 +567,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: 'var(--green)', borderColor: 'var(--green)' }}
                             onClick={function () { markCourseComplete(en) }}>
-                            ✓ Complete
+                            âœ“ Complete
                           </button>
                         )}
                         {isCompleted && (
@@ -575,7 +575,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, background: '#25D366', borderColor: '#25D366', color: '#fff' }}
                             onClick={function () { sendReviewWhatsApp(en) }}
                             title="Send Google Review request on WhatsApp">
-                            💬 Review
+                            ðŸ’¬ Review
                           </button>
                         )}
                         <button
@@ -593,7 +593,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             setCertModal({ enrollments: localEnrollments, centre })
                           }}
                         >
-                          {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
+                          {en.cert_emailed_at ? 'ðŸŽ“ Re-issue' : 'ðŸŽ“ Cert'}
                         </button>
 
                         {/* Assign batch toggle */}
@@ -603,7 +603,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}
                             onClick={function () { openBatchPanel(en) }}
                           >
-                            {isOpen ? 'Close' : bs ? '✏️ Batch' : '+ Batch'}
+                            {isOpen ? 'Close' : bs ? 'âœï¸ Batch' : '+ Batch'}
                           </button>
                         )}
 
@@ -614,7 +614,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)' }}
                             onClick={function () { removeFromBatch(en.id) }}
                             title="Remove from batch"
-                          >✕ Batch</button>
+                          >âœ• Batch</button>
                         )}
 
                         {/* Remove enrollment entirely */}
@@ -628,7 +628,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                               }
                             }}
                             title="Remove course enrollment"
-                          >🗑</button>
+                          >ðŸ—‘</button>
                         )}
                       </div>
 
@@ -636,7 +636,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                       {isOpen && (
                         <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)', padding: 16 }}>
                           {panelData.loading ? (
-                            <div className="hint">Loading batches…</div>
+                            <div className="hint">Loading batchesâ€¦</div>
                           ) : (
                             <>
                               {/* Joining date */}
@@ -665,13 +665,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                           <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>
                                               {b.name}
-                                              {isCurrent && <span style={{ color: 'var(--purple)', marginLeft: 6, fontSize: 11 }}>● current</span>}
+                                              {isCurrent && <span style={{ color: 'var(--purple)', marginLeft: 6, fontSize: 11 }}>â— current</span>}
                                             </div>
                                             <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
                                               {b.instructors?.full_name || 'No instructor'}
-                                              {b.schedule_days ? ' · ' + b.schedule_days : ''}
+                                              {b.schedule_days ? ' Â· ' + b.schedule_days : ''}
                                               {b.schedule_time ? ' ' + b.schedule_time : ''}
-                                              {b.is_individual ? ' · Individual' : ' · Group'}
+                                              {b.is_individual ? ' Â· Individual' : ' Â· Group'}
                                             </div>
                                           </div>
                                           {!isCurrent && (
@@ -697,7 +697,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                 style={{ fontSize: 12, marginBottom: showNewBatch ? 12 : 0 }}
                                 onClick={function () { setShowNewBatch(function (v) { return !v }) }}
                               >
-                                {showNewBatch ? '▲ Hide' : '+ Create New Batch'}
+                                {showNewBatch ? 'â–² Hide' : '+ Create New Batch'}
                               </button>
 
                               {showNewBatch && (
@@ -715,7 +715,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                         onChange={function (e) { setNewBatchCI(e.target.value) }}
                                         style={{ marginTop: 4, fontSize: 13 }}
                                       >
-                                        <option value="">— Select CI —</option>
+                                        <option value="">â€” Select CI â€”</option>
                                         {panelData.eligibleCIs.map(function (ci) {
                                           return <option key={ci.id} value={ci.id}>{ci.full_name}</option>
                                         })}
@@ -794,7 +794,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                     disabled={panelSaving || !newBatchCI || !newBatchForm.name.trim()}
                                     onClick={function () { createAndAssign(en) }}
                                   >
-                                    {panelSaving ? 'Creating…' : 'Create & Assign'}
+                                    {panelSaving ? 'Creatingâ€¦' : 'Create & Assign'}
                                   </button>
                                 </div>
                               )}
@@ -806,7 +806,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                   )
                 })}
 
-                {/* ── Add Course panel ── */}
+                {/* â”€â”€ Add Course panel â”€â”€ */}
                 {admin && (
                   <div style={{ marginTop: 4 }}>
                     {!showAddEnrollment ? (
@@ -852,7 +852,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                       {groupName}
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                      {/* Already enrolled levels — greyed out */}
+                                      {/* Already enrolled levels â€” greyed out */}
                                       {enrolledInGroup.map(function (sku) {
                                         return (
                                           <div key={sku.id} style={{
@@ -861,13 +861,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                             background: 'var(--bg2)', border: '1px solid var(--border)',
                                             opacity: 0.7,
                                           }}>
-                                            <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 13 }}>✓</span>
+                                            <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 13 }}>âœ“</span>
                                             <span style={{ font: '500 12px var(--font)', color: 'var(--text2)', flex: 1 }}>{sku.level_name}</span>
                                             <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px' }}>Enrolled</span>
                                           </div>
                                         )
                                       })}
-                                      {/* Available levels — selectable, first one highlighted as Next Level */}
+                                      {/* Available levels â€” selectable, first one highlighted as Next Level */}
                                       {availableInGroup.map(function (sku) {
                                         const checked = selectedNewSkus.some(function (s) { return s.id === sku.id })
                                         const isNext = sku.id === nextLevelId && enrolledInGroup.length > 0
@@ -891,8 +891,8 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                                               style={{ accentColor: 'var(--purple)' }}
                                             />
                                             <span style={{ font: '500 12px var(--font)', color: 'var(--text)', flex: 1 }}>{sku.level_name}</span>
-                                            {isNext && <span style={{ font: '700 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', border: '1px solid var(--purple)', borderRadius: 4, padding: '1px 6px', whiteSpace: 'nowrap' }}>→ Next Level</span>}
-                                            {sku.student_fee ? <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>₹{fmtAmt(sku.student_fee)}</span> : null}
+                                            {isNext && <span style={{ font: '700 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', border: '1px solid var(--purple)', borderRadius: 4, padding: '1px 6px', whiteSpace: 'nowrap' }}>â†’ Next Level</span>}
+                                            {sku.student_fee ? <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>â‚¹{fmtAmt(sku.student_fee)}</span> : null}
                                           </label>
                                         )
                                       })}
@@ -913,7 +913,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                             disabled={!selectedNewSkus.length || addingEnrollment}
                             onClick={addEnrollments}
                           >
-                            {addingEnrollment ? 'Adding…' : 'Enroll in ' + selectedNewSkus.length + ' Course' + (selectedNewSkus.length !== 1 ? 's' : '')}
+                            {addingEnrollment ? 'Addingâ€¦' : 'Enroll in ' + selectedNewSkus.length + ' Course' + (selectedNewSkus.length !== 1 ? 's' : '')}
                           </button>
                         </div>
                       </div>
@@ -944,13 +944,13 @@ function StudentDetailModal({ student, onClose, onSaved }) {
               onClick={deleteStudent}
               disabled={deleting}
             >
-              {deleting ? 'Deleting…' : '🗑 Delete Student'}
+              {deleting ? 'Deletingâ€¦' : 'ðŸ—‘ Delete Student'}
             </button>
           )}
           <button className="btn" onClick={onClose}>Close</button>
           {admin && tab === 'profile' && (
             <button className="btn-p" onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Savingâ€¦' : 'Save'}
             </button>
           )}
         </div>
@@ -959,17 +959,17 @@ function StudentDetailModal({ student, onClose, onSaved }) {
   )
 }
 
-// ── AddStudentModal ────────────────────────────────────────────────────────────
+// â”€â”€ AddStudentModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Tiers that can operate as student-enrolment centres
 const CENTRE_TIERS = ['UF', 'CF', 'SMF', 'NLH']
 
 // Derive the SKU filter for a given franchisee record.
 // Returns:
-//   null            — no centre selected; show nothing
-//   'all'           — unrestricted centre (NLH HO, CF/SMF with no explicit list)
-//   { skuIds }      — filter to specific SKU IDs
-//   { courseIds }   — filter to specific course IDs
+//   null            â€” no centre selected; show nothing
+//   'all'           â€” unrestricted centre (NLH HO, CF/SMF with no explicit list)
+//   { skuIds }      â€” filter to specific SKU IDs
+//   { courseIds }   â€” filter to specific course IDs
 function deriveFilter(fr) {
   if (!fr) return null
   const skus    = fr.registered_skus    || []
@@ -1003,7 +1003,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const [feeTotal, setFeeTotal] = useState(0)
   const [saving, setSaving] = useState(false)
 
-  // ── Batch assignment state ──
+  // â”€â”€ Batch assignment state â”€â”€
   // { [sku_id]: { batches: [], eligibleCIs: [], loading: bool } }
   const [batchData, setBatchData] = useState({})
   // { [sku_id]: '' | batch_id | '__new__' }
@@ -1038,7 +1038,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         const descendants = (descRes.data || []).filter(f => CENTRE_TIERS.includes(f.tier))
         setCentreList([...self, ...descendants])
       } else {
-        // UF: fixed to their own centre — load their SKU filter immediately
+        // UF: fixed to their own centre â€” load their SKU filter immediately
         const { data } = await sb.from('franchisees')
           .select('id,business_name,tier,registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
         if (data) setCentreList([data])
@@ -1052,7 +1052,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       .then(({ data }) => { setAllSkus(data || []) })
   }, [])
 
-  // Phone lookup — debounced 500ms, searches ALL centres
+  // Phone lookup â€” debounced 500ms, searches ALL centres
   useEffect(function () {
     setPhoneConfirmed(false)
     if (!form.phone || form.phone.replace(/\D/g, '').length < 10) { setPhoneMatches([]); return }
@@ -1130,10 +1130,10 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       const next = exists ? prev.filter(function (s) { return s.id !== sku.id }) : [...prev, sku]
       setFeeTotal(next.reduce(function (sum, s) { return sum + (s.student_fee || 0) }, 0))
       if (!exists) {
-        // selecting — load batch data for this SKU
+        // selecting â€” load batch data for this SKU
         loadBatchData(sku.id)
       } else {
-        // deselecting — clear its batch selection
+        // deselecting â€” clear its batch selection
         setBatchSel(function (p) { const n = { ...p }; delete n[sku.id]; return n })
         setNewBatchForms(function (p) { const n = { ...p }; delete n[sku.id]; return n })
       }
@@ -1273,19 +1273,19 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 580 }}>
+      <div className="modal">
         <div className="ch">
-          <span>➕ Add Student</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <span>âž• Add Student</span>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
 
         <div>
-          {/* ── Phone — primary student ID (always visible) ── */}
+          {/* â”€â”€ Phone â€” primary student ID (always visible) â”€â”€ */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ font: '600 12px var(--font)', color: 'var(--text)', display: 'block', marginBottom: 4 }}>
               Mobile Number *
               <span style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
-                (primary student ID — enter first)
+                (primary student ID â€” enter first)
               </span>
             </label>
             <input
@@ -1297,12 +1297,12 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             />
             {form.phone.replace(/\D/g, '').length >= 10 && phoneMatches.length === 0 && (
               <div style={{ font: '500 11px var(--font)', color: 'var(--green, #16a34a)', marginTop: 4 }}>
-                ✓ No existing student found — fill in details below
+                âœ“ No existing student found â€” fill in details below
               </div>
             )}
           </div>
 
-          {/* ── Phase 2a: Match picker ── */}
+          {/* â”€â”€ Phase 2a: Match picker â”€â”€ */}
           {phoneMatches.length > 0 && !phoneConfirmed && (
             <div>
               <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
@@ -1341,7 +1341,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                           </div>
                         )}
                         <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
-                          📍 {st.franchisees?.business_name || '—'}{st.franchisees?.city ? `, ${st.franchisees.city}` : ''}
+                          ðŸ“ {st.franchisees?.business_name || 'â€”'}{st.franchisees?.city ? `, ${st.franchisees.city}` : ''}
                         </div>
                         {courses.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
@@ -1358,7 +1358,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                         )}
                       </div>
                       <div style={{ font: '700 11px var(--font)', color: 'var(--purple)', flexShrink: 0 }}>
-                        Open →
+                        Open â†’
                       </div>
                     </button>
                   )
@@ -1373,15 +1373,15 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                   font: '600 12px var(--font)', color: 'var(--text2)', cursor: 'pointer',
                 }}
               >
-                ➕ Enrol as new student with this number anyway
+                âž• Enrol as new student with this number anyway
               </button>
             </div>
           )}
 
-          {/* ── Phase 2b: full form (no matches, or user confirmed new) ── */}
+          {/* â”€â”€ Phase 2b: full form (no matches, or user confirmed new) â”€â”€ */}
           {(phoneMatches.length === 0 || phoneConfirmed) && (<>
 
-          {/* ── Section 1: Student basics ── */}
+          {/* â”€â”€ Section 1: Student basics â”€â”€ */}
           <div className="form-grid">
             <label>Student Name *
               <input value={form.full_name} onChange={field('full_name')} placeholder="Full name" />
@@ -1400,7 +1400,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             </label>
           </div>
 
-          {/* ── Section 2: Centre ── */}
+          {/* â”€â”€ Section 2: Centre â”€â”€ */}
           <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
             <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:8 }}>
               Enrolment Centre *
@@ -1409,7 +1409,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
               const nlhCentre = centreList.find(c => c.tier === 'NLH')
               const others    = centreList.filter(c => c.tier !== 'NLH')
               const tierOrder = { SMF: 1, CF: 2, UF: 3 }
-              // Group by city, sort cities A→Z, sort within each city by tier hierarchy
+              // Group by city, sort cities Aâ†’Z, sort within each city by tier hierarchy
               const cityMap = {}
               others.forEach(function (c) {
                 const city = c.city || '(No City)'
@@ -1427,16 +1427,16 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                     onChange={e => handleCentreChange(e.target.value)}
                     style={{ fontSize:13 }}
                   >
-                    <option value="">— Select centre —</option>
+                    <option value="">â€” Select centre â€”</option>
                     {nlhCentre && (
-                      <option value={nlhCentre.id}>🏛️ NLH Own Centre</option>
+                      <option value={nlhCentre.id}>ðŸ›ï¸ NLH Own Centre</option>
                     )}
                     {sortedCities.map(function (city) {
                       return (
                         <optgroup key={city} label={city}>
                           {cityMap[city].map(c => (
                             <option key={c.id} value={c.id}>
-                              [{c.tier}] {c.business_name}{c.area ? ` — ${c.area}` : ''}
+                              [{c.tier}] {c.business_name}{c.area ? ` â€” ${c.area}` : ''}
                             </option>
                           ))}
                         </optgroup>
@@ -1453,13 +1453,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             )}
           </div>
 
-          {/* ── Section 3: Course enrolment ── */}
+          {/* â”€â”€ Section 3: Course enrolment â”€â”€ */}
           <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
             <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:4 }}>
               Courses &amp; Levels
               {feeTotal > 0 && (
                 <span style={{ float:'right', color:'var(--purple)', fontSize:13 }}>
-                  Total: ₹{fmtAmt(feeTotal)}
+                  Total: â‚¹{fmtAmt(feeTotal)}
                 </span>
               )}
             </div>
@@ -1482,7 +1482,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                           <label key={sku.id} className="checkbox-item">
                             <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
                             {sku.level_name}
-                            {sku.student_fee ? <span className="hint"> ₹{fmtAmt(sku.student_fee)}</span> : null}
+                            {sku.student_fee ? <span className="hint"> â‚¹{fmtAmt(sku.student_fee)}</span> : null}
                           </label>
                         )
                       })}
@@ -1493,13 +1493,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             )}
           </div>
 
-          {/* ── Section 4: Batch Assignment ── */}
+          {/* â”€â”€ Section 4: Batch Assignment â”€â”€ */}
           {selectedSkus.length > 0 && (
             <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
               <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:8 }}>
-                📋 Batch Assignment
+                ðŸ“‹ Batch Assignment
                 <span style={{ font:'500 10px var(--font)', color:'var(--text3)', marginLeft:8 }}>
-                  Assign each course to a batch (optional — can be done later)
+                  Assign each course to a batch (optional â€” can be done later)
                 </span>
               </div>
 
@@ -1525,13 +1525,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                       font:'600 12px var(--font)', color:'var(--text)',
                       display:'flex', alignItems:'center', gap:8,
                     }}>
-                      <span>{sku.courses?.group_name || '—'}</span>
+                      <span>{sku.courses?.group_name || 'â€”'}</span>
                       <span style={{ font:'500 10px var(--mono)', color:'var(--text3)' }}>{sku.level_name}</span>
                     </div>
 
                     <div style={{ padding:'10px 12px' }}>
                       {bd.loading ? (
-                        <span className="hint">Loading batches…</span>
+                        <span className="hint">Loading batchesâ€¦</span>
                       ) : (
                         <>
                           {/* Batch selector dropdown */}
@@ -1540,13 +1540,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                             onChange={function (e) { setBatchSel(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
                             style={{ fontSize:12, width:'100%', marginBottom: sel === '__new__' ? 10 : 0 }}
                           >
-                            <option value="">— No batch yet (assign later) —</option>
+                            <option value="">â€” No batch yet (assign later) â€”</option>
                             {bd.batches.map(function (b) {
                               return (
                                 <option key={b.id} value={b.id}>
                                   {b.name}
-                                  {b.instructors?.full_name ? ' · ' + b.instructors.full_name : ''}
-                                  {b.schedule_days ? ' · ' + b.schedule_days : ''}
+                                  {b.instructors?.full_name ? ' Â· ' + b.instructors.full_name : ''}
+                                  {b.schedule_days ? ' Â· ' + b.schedule_days : ''}
                                   {b.schedule_time ? ' ' + b.schedule_time : ''}
                                 </option>
                               )
@@ -1559,7 +1559,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                             <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:10 }}>
                               {bd.eligibleCIs.length === 0 ? (
                                 <p className="hint" style={{ color:'var(--red)' }}>
-                                  ⚠ No active Course Instructors appointed for this level yet.
+                                  âš  No active Course Instructors appointed for this level yet.
                                 </p>
                               ) : (
                                 <label style={{ font:'500 11px var(--font)' }}>
@@ -1569,7 +1569,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                                     onChange={function (e) { updateNbf({ ci: e.target.value }) }}
                                     style={{ marginTop:4, fontSize:12 }}
                                   >
-                                    <option value="">— Select CI —</option>
+                                    <option value="">â€” Select CI â€”</option>
                                     {bd.eligibleCIs.map(function (ci) {
                                       return <option key={ci.id} value={ci.id}>{ci.full_name}</option>
                                     })}
@@ -1640,7 +1640,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             </div>
           )}
 
-          {/* ── Section 5: Address & extras (collapsible) ── */}
+          {/* â”€â”€ Section 5: Address & extras (collapsible) â”€â”€ */}
           <div style={{ borderTop:'1px solid var(--border)', paddingTop:10, marginTop:12 }}>
             <button
               type="button"
@@ -1648,7 +1648,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
               style={{ background:'none', border:'none', cursor:'pointer', padding:0,
                 font:'500 12px var(--font)', color:'var(--text3)', display:'flex', alignItems:'center', gap:6 }}
             >
-              <span style={{ fontSize:10 }}>{showAddress ? '▾' : '▸'}</span>
+              <span style={{ fontSize:10 }}>{showAddress ? 'â–¾' : 'â–¸'}</span>
               {showAddress ? 'Hide' : 'Add'} address &amp; channel
               <span style={{ font:'500 10px var(--mono)', color:'var(--text3)', marginLeft:4 }}>(optional)</span>
             </button>
@@ -1662,7 +1662,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                   <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
                 </label>
                 <label>Area / Locality
-                  <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampeth…" />
+                  <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampethâ€¦" />
                 </label>
                 <label>State
                   <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
@@ -1697,7 +1697,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           <button className="btn" onClick={onClose}>Cancel</button>
           {(phoneMatches.length === 0 || phoneConfirmed) && (
             <button className="btn-p" onClick={save} disabled={saving}>
-              {saving ? 'Adding…' : 'Add Student'}
+              {saving ? 'Addingâ€¦' : 'Add Student'}
             </button>
           )}
         </div>
@@ -1706,7 +1706,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   )
 }
 
-// ── StudentsPage ───────────────────────────────────────────────────────────────
+// â”€â”€ StudentsPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function StudentsPage() {
   const { currentRole, currentFranchiseeId } = useAuth()
@@ -1728,7 +1728,7 @@ export default function StudentsPage() {
         .order('created_at', { ascending: false })
 
       if (admin) {
-        // Admin sees all students — no filter
+        // Admin sees all students â€” no filter
       } else if (currentRole === 'smf' || currentRole === 'cf') {
         // SMF / CF sees students from self + all sub-franchisees
         if (!currentFranchiseeId) { setLoading(false); return }
@@ -1755,7 +1755,7 @@ export default function StudentsPage() {
 
   function handleSaved(updated) {
     if (updated === null) {
-      // Student was deleted — remove from list and close modal
+      // Student was deleted â€” remove from list and close modal
       setStudents(function (ss) { return ss.filter(function (s) { return s.id !== selected?.id }) })
       setSelected(null)
       return
@@ -1802,13 +1802,13 @@ export default function StudentsPage() {
         return [r.full_name, r.parent_name, r.phone, r.email, r.city, r.state, r.fee_total || 0, r.fee_paid || 0, r.payment_status, courses]
       })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
-      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+      const blob = new Blob(['ï»¿' + csv], { type: 'text/csv;charset=utf-8;' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href = url; a.download = 'nlh-students-' + date + '.csv'
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      showToast(rows.length + ' students exported ✓')
+      showToast(rows.length + ' students exported âœ“')
     } catch (err) {
       showToast('Export failed: ' + err.message, 'err')
     }
@@ -1819,16 +1819,16 @@ export default function StudentsPage() {
     <div className="pg">
       {/* Topbar */}
       <header className="tb">
-        <div className="crumb">Operations <span className="sep">›</span> <b>Students</b></div>
+        <div className="crumb">Operations <span className="sep">â€º</span> <b>Students</b></div>
         <div className="tb-r">
           <input
             className="search tb-search"
-            placeholder="Search students by name or parent…"
+            placeholder="Search students by name or parentâ€¦"
             value={search}
             onChange={function (e) { setSearch(e.target.value) }}
           />
           <button className="btn btn-s" onClick={exportCSV} disabled={exporting} title="Export CSV">
-            {exporting ? '…' : '↓'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
+            {exporting ? 'â€¦' : 'â†“'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
           </button>
           <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Enrol Student</button>
         </div>
@@ -1854,23 +1854,23 @@ export default function StudentsPage() {
           return (
             <div className="mini-stats">
               <div className="mini">
-                <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🎓</div>
+                <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>ðŸŽ“</div>
                 <div className="mini-num">{students.length}</div>
                 <div className="mini-lbl">Total enrolled</div>
               </div>
               <div className="mini">
-                <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>💰</div>
-                <div className="mini-num" style={{ fontSize: totalCharged >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalCharged)}</div>
+                <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>ðŸ’°</div>
+                <div className="mini-num" style={{ fontSize: totalCharged >= 100000 ? 18 : undefined }}>â‚¹{fmtAmt(totalCharged)}</div>
                 <div className="mini-lbl">Fees charged</div>
               </div>
               <div className="mini">
-                <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
-                <div className="mini-num" style={{ fontSize: totalReceived >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalReceived)}</div>
+                <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>âœ…</div>
+                <div className="mini-num" style={{ fontSize: totalReceived >= 100000 ? 18 : undefined }}>â‚¹{fmtAmt(totalReceived)}</div>
                 <div className="mini-lbl">Fees received</div>
               </div>
               <div className="mini">
-                <div className="mini-ic" style={{ background: totalBalance > 0 ? 'var(--red-bg)' : 'var(--green-bg)' }}>⏳</div>
-                <div className="mini-num" style={{ color: totalBalance > 0 ? 'var(--red, #dc2626)' : undefined, fontSize: totalBalance >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalBalance)}</div>
+                <div className="mini-ic" style={{ background: totalBalance > 0 ? 'var(--red-bg)' : 'var(--green-bg)' }}>â³</div>
+                <div className="mini-num" style={{ color: totalBalance > 0 ? 'var(--red, #dc2626)' : undefined, fontSize: totalBalance >= 100000 ? 18 : undefined }}>â‚¹{fmtAmt(totalBalance)}</div>
                 <div className="mini-lbl">Balance due</div>
               </div>
             </div>
@@ -1879,7 +1879,7 @@ export default function StudentsPage() {
 
         {/* Students table */}
         {loading ? (
-          <div className="loading">Loading students…</div>
+          <div className="loading">Loading studentsâ€¦</div>
         ) : (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
             <table className="big-tbl">
@@ -1920,7 +1920,7 @@ export default function StudentsPage() {
                         </div>
                       </td>
                       <td className="hide-mobile" style={{ color: 'var(--text2)' }}>
-                        <div>{s.parent_name || '—'}</div>
+                        <div>{s.parent_name || 'â€”'}</div>
                         {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
                       </td>
                       <td>
@@ -1933,10 +1933,10 @@ export default function StudentsPage() {
                           })
                         }
                       </td>
-                      <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(s.fee_total)}</div></td>
-                      <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</div></td>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt">â‚¹{fmtAmt(s.fee_total)}</div></td>
+                      <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>â‚¹{fmtAmt(s.fee_paid)}</div></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
-                        <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</div>
+                        <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>â‚¹{fmtAmt(balance)}</div>
                       </td>
                       <td><StatusBadge status={s.payment_status} /></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
@@ -1969,4 +1969,5 @@ export default function StudentsPage() {
     </div>
   )
 }
+
 

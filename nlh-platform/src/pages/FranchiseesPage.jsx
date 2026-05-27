@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast, statusBadge } from '../utils'
@@ -8,7 +8,7 @@ import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail 
 import { sendWAPaymentReceived } from '../services/whatsapp'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 
-// ── Location data ──────────────────────────────────────────────────────────────
+// â”€â”€ Location data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const COUNTRIES = [
   'India','Australia','Bahrain','Bangladesh','Canada','France','Germany',
@@ -83,7 +83,7 @@ function LocationFields({ form, onChange, disabled }) {
       <label>{isIndia ? 'State' : 'State / Province'}
         {isIndia ? (
           <select value={form.state || ''} onChange={handleStateChange} disabled={disabled}>
-            <option value="">— Select State —</option>
+            <option value="">â€” Select State â€”</option>
             {INDIA_STATES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         ) : (
@@ -93,7 +93,7 @@ function LocationFields({ form, onChange, disabled }) {
       <label>City
         {isIndia ? (
           <select value={form.city || ''} onChange={handleCityChange} disabled={disabled || !form.state}>
-            <option value="">— Select City —</option>
+            <option value="">â€” Select City â€”</option>
             {cityList.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         ) : (
@@ -104,7 +104,7 @@ function LocationFields({ form, onChange, disabled }) {
   )
 }
 
-// ── RecordFranchiseePaymentModal ───────────────────────────────────────────────
+// â”€â”€ RecordFranchiseePaymentModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSaved, onClose }) {
   const [amount,  setAmount]  = useState(balance > 0 ? String(balance) : '')
@@ -134,7 +134,7 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     const { error: feeErr } = await sb.from('franchisees').update({ fee_paid: newFeePaid }).eq('id', franchisee.id)
     if (feeErr) { showToast('Failed to update fee record: ' + feeErr.message, 'err'); setSaving(false); return }
     setSaving(false)
-    showToast('Payment of ₹' + fmtAmt(amt) + ' recorded')
+    showToast('Payment of â‚¹' + fmtAmt(amt) + ' recorded')
     try {
       if (franchisee.phone) {
         await sendWAPaymentReceived(franchisee.phone, {
@@ -151,20 +151,20 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
 
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 420 }}>
+      <div className="modal">
         <div className="ch">
-          <span>📥 Record Payment — {franchisee.business_name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <span>ðŸ“¥ Record Payment â€” {franchisee.business_name}</span>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div style={{ padding: '0 20px 4px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: '#f8f7ff', border: '1px solid #ddd9f9', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
             <span style={{ color: 'var(--text2)' }}>Outstanding balance: </span>
             <strong style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)', fontSize: 15 }}>
-              ₹{fmtAmt(balance)}
+              â‚¹{fmtAmt(balance)}
             </strong>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <label>Amount Received (₹)
+            <label>Amount Received (â‚¹)
               <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" autoFocus />
             </label>
             <label>Payment Date
@@ -191,7 +191,7 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : '✓ Record Payment'}
+            {saving ? 'Savingâ€¦' : 'âœ“ Record Payment'}
           </button>
         </div>
       </div>
@@ -199,7 +199,7 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
   )
 }
 
-// ── helpers ────────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TierBadge({ tier }) {
   if (!tier) return null
@@ -210,14 +210,14 @@ function TierBadge({ tier }) {
 function StatusBadge({ status }) {
   const s = (status || '').toLowerCase()
   const map = { active: 'ba', inactive: 'bd', pending: 'bp', approved: 'ba', rejected: 'bd' }
-  return <span className={`badge ${map[s] || 'br'}`}>{status || '—'}</span>
+  return <span className={`badge ${map[s] || 'br'}`}>{status || 'â€”'}</span>
 }
 
 function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
 
-// Sort franchisees: state A→Z → tier SMF→CF→UF → city A→Z → name A→Z
+// Sort franchisees: state Aâ†’Z â†’ tier SMFâ†’CFâ†’UF â†’ city Aâ†’Z â†’ name Aâ†’Z
 // SMF is state-level (one per state), CF/UF are city-level beneath it.
 const TIER_ORDER = { NLH: 0, SMF: 1, CF: 2, UF: 3 }
 function sortFranchisees(list) {
@@ -248,7 +248,7 @@ function renewalStatus(fr) {
   }
 }
 
-// ── FranchiseeDetailModal ──────────────────────────────────────────────────────
+// â”€â”€ FranchiseeDetailModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   const { currentRole, currentUser } = useAuth()
@@ -374,7 +374,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         .filter(function (n, i, a) { return a.indexOf(n) === i }) // dedupe
       await sendFranchiseeWelcomeLetter(franchisee, courseNames)
 
-      showToast('Access sent to ' + franchisee.email + ' — welcome letter + reset link dispatched.')
+      showToast('Access sent to ' + franchisee.email + ' â€” welcome letter + reset link dispatched.')
     } catch (err) {
       showToast('Failed to send: ' + err.message, 'err')
     } finally {
@@ -391,22 +391,22 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
       .eq('id', franchisee.id)
     if (error) { showToast('Renewal record failed: ' + error.message, 'err'); return }
     setForm(f => ({ ...f, valid_till: newTillStr }))
-    showToast('Franchise renewed — valid till ' + newTillStr.split('-').reverse().join('.'))
+    showToast('Franchise renewed â€” valid till ' + newTillStr.split('-').reverse().join('.'))
   }
 
   return (
     <>
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 680 }}>
+      <div className="modal">
         <div className="ch">
           <span>{franchisee.business_name} <TierBadge tier={franchisee.tier} /></span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
 
         <div className="tabs">
           {['info', 'courses', 'orders', 'students', 'cert'].map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
-              {t === 'cert' ? '📜 Certificate' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'cert' ? 'ðŸ“œ Certificate' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -419,7 +419,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 <input value={form.owner_name} onChange={field('owner_name')} disabled={!admin} placeholder="Owner's full name" />
               </label>
               <label>Business / Centre Name
-                <input value={form.name} onChange={field('name')} disabled={!admin} placeholder="Optional — e.g. Bright Minds Academy" />
+                <input value={form.name} onChange={field('name')} disabled={!admin} placeholder="Optional â€” e.g. Bright Minds Academy" />
               </label>
               <label>Email
                 <input value={form.email} disabled />
@@ -432,7 +432,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                     disabled={resending}
                     style={{ fontSize: 12, whiteSpace: 'nowrap' }}
                   >
-                    {resending ? 'Sending…' : '📧 Resend Login Access'}
+                    {resending ? 'Sendingâ€¦' : 'ðŸ“§ Resend Login Access'}
                   </button>
                   <span style={{ fontSize: 11, color: 'var(--text3)' }}>
                     Sends a password reset link to the franchisee's email
@@ -448,7 +448,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 disabled={!admin}
               />
               <label>Area / Locality
-                <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampeth…" />
+                <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampethâ€¦" />
               </label>
               <label>PIN Code
                 <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
@@ -467,21 +467,21 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 <strong>Fee Tracking</strong>
                 {admin && balance > 0 && (
                   <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
-                    📥 Record Payment
+                    ðŸ“¥ Record Payment
                   </button>
                 )}
               </div>
-              <label>Enrollment Fee (₹)
+              <label>Enrollment Fee (â‚¹)
                 <input type="number" value={form.enrollment_fee} onChange={field('enrollment_fee')} disabled={!admin} />
               </label>
-              <label>Fee Paid (₹)
+              <label>Fee Paid (â‚¹)
                 <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!admin} />
               </label>
               <label>Balance
-                <input value={'₹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />
+                <input value={'â‚¹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />
               </label>
 
-              {/* ── Payment History ── */}
+              {/* â”€â”€ Payment History â”€â”€ */}
               {payments.length > 0 && (
                 <div className="col-span-2" style={{ marginTop: 4 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
@@ -497,13 +497,13 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                           fontSize: 12,
                         }}>
                           <span style={{ fontWeight: 700, color: 'var(--green)', minWidth: 72 }}>
-                            +₹{fmtAmt(p.amount)}
+                            +â‚¹{fmtAmt(p.amount)}
                           </span>
                           <span style={{ color: 'var(--text2)', minWidth: 80 }}>
                             {new Date(p.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                           </span>
                           <span style={{ background: '#ede9fc', color: 'var(--purple)', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600 }}>
-                            {p.payment_mode || '—'}
+                            {p.payment_mode || 'â€”'}
                           </span>
                           {p.reference_no && (
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>
@@ -522,7 +522,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                 </div>
               )}
 
-              {/* ── Validity & Renewal ── */}
+              {/* â”€â”€ Validity & Renewal â”€â”€ */}
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
                 <strong>Validity &amp; Renewal</strong>
               </div>
@@ -534,13 +534,13 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   disabled={!admin}
                 />
               </label>
-              <label>Custom Renewal Fee (₹)
+              <label>Custom Renewal Fee (â‚¹)
                 <input
                   type="number"
                   value={form.renewal_fee}
                   onChange={field('renewal_fee')}
                   disabled={!admin}
-                  placeholder={'Default: ₹' + (rs.fee != null ? fmtAmt(rs.fee) : '25% of fee paid')}
+                  placeholder={'Default: â‚¹' + (rs.fee != null ? fmtAmt(rs.fee) : '25% of fee paid')}
                 />
               </label>
               <div className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
@@ -553,17 +553,17 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   border: '1px solid ' + (rs.isExpired ? 'var(--red)' : rs.isExpiring ? '#fbbf24' : 'var(--green)'),
                 }}>
                   {rs.isExpired
-                    ? `⚠ Expired ${Math.abs(rs.daysLeft)} days ago`
+                    ? `âš  Expired ${Math.abs(rs.daysLeft)} days ago`
                     : rs.isExpiring
-                      ? `⏳ Expiring in ${rs.daysLeft} days`
-                      : `✓ Valid · ${rs.daysLeft} days left`}
+                      ? `â³ Expiring in ${rs.daysLeft} days`
+                      : `âœ“ Valid Â· ${rs.daysLeft} days left`}
                 </span>
                 <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)' }}>
                   Till: {rs.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}
                 </span>
                 {rs.fee != null && (
                   <span style={{ font: '500 11px var(--font)', color: 'var(--text2)' }}>
-                    Renewal fee due: <strong style={{ color: 'var(--purple)' }}>₹{fmtAmt(rs.fee)}</strong>
+                    Renewal fee due: <strong style={{ color: 'var(--purple)' }}>â‚¹{fmtAmt(rs.fee)}</strong>
                     {franchisee.renewal_fee == null ? ' (25% of fee paid)' : ' (custom)'}
                   </span>
                 )}
@@ -573,7 +573,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                     onClick={recordRenewal}
                     style={{ marginLeft: 'auto' }}
                   >
-                    🔄 Record Renewal
+                    ðŸ”„ Record Renewal
                   </button>
                 )}
               </div>
@@ -653,7 +653,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   <tr key={o.id}>
                     <td>{fmtDate(o.created_at)}</td>
                     <td><StatusBadge status={o.status} /></td>
-                    <td>₹{fmtAmt(o.amount_paid)}</td>
+                    <td>â‚¹{fmtAmt(o.amount_paid)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -673,10 +673,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                   <tr key={s.id}>
                     <td>{s.full_name}</td>
                     <td><StatusBadge status={s.payment_status} /></td>
-                    <td>₹{fmtAmt(s.fee_total)}</td>
-                    <td>₹{fmtAmt(s.fee_paid)}</td>
+                    <td>â‚¹{fmtAmt(s.fee_total)}</td>
+                    <td>â‚¹{fmtAmt(s.fee_paid)}</td>
                     <td style={{ color: (s.fee_total - s.fee_paid) > 0 ? 'var(--red)' : 'var(--green)' }}>
-                      ₹{fmtAmt((s.fee_total || 0) - (s.fee_paid || 0))}
+                      â‚¹{fmtAmt((s.fee_total || 0) - (s.fee_paid || 0))}
                     </td>
                   </tr>
                 ))}
@@ -742,9 +742,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
                       onError={e => { e.target.style.display = 'none' }}
                     />
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap: 2 }}>
-                      <span style={{ fontSize: 9, color: '#534AB7' }}>📸 /newlearninghorizon</span>
-                      <span style={{ fontSize: 9, color: '#534AB7' }}>📘 /nlhnag</span>
-                      <span style={{ fontSize: 9, color: '#534AB7' }}>🌐 nlhnagpur.info</span>
+                      <span style={{ fontSize: 9, color: '#534AB7' }}>ðŸ“¸ /newlearninghorizon</span>
+                      <span style={{ fontSize: 9, color: '#534AB7' }}>ðŸ“˜ /nlhnag</span>
+                      <span style={{ fontSize: 9, color: '#534AB7' }}>ðŸŒ nlhnagpur.info</span>
                     </div>
                   </div>
 
@@ -789,19 +789,19 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
                 {certEmailedAt
                   ? <p className="hint" style={{ color: 'var(--green)' }}>
-                      ✓ Certificate emailed to <strong>{fr.email}</strong> on {new Date(certEmailedAt).toLocaleDateString('en-IN')}
+                      âœ“ Certificate emailed to <strong>{fr.email}</strong> on {new Date(certEmailedAt).toLocaleDateString('en-IN')}
                     </p>
                   : fr.email
                     ? <p className="hint">Ready to send to: <strong>{fr.email}</strong></p>
-                    : <p className="hint" style={{ color: 'var(--red)' }}>⚠ No email on file — cannot send.</p>
+                    : <p className="hint" style={{ color: 'var(--red)' }}>âš  No email on file â€” cannot send.</p>
                 }
 
                 <div style={{ display:'flex', gap:8, marginTop:8 }}>
                   <button className="btn-s" onClick={() => printFranchiseeCert(fr, courseNames)}>
-                    🖨️ Print / PDF
+                    ðŸ–¨ï¸ Print / PDF
                   </button>
                   <button className="btn-p" onClick={emailCert} disabled={certEmailing || !fr.email}>
-                    {certEmailing ? 'Sending…' : certEmailedAt ? '📧 Re-send Certificate' : '📧 Email Certificate'}
+                    {certEmailing ? 'Sendingâ€¦' : certEmailedAt ? 'ðŸ“§ Re-send Certificate' : 'ðŸ“§ Email Certificate'}
                   </button>
                 </div>
               </div>
@@ -813,7 +813,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
           <div className="modal-actions">
             <button className="btn" onClick={onClose}>Cancel</button>
             <button className="btn-p" onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Savingâ€¦' : 'Save'}
             </button>
           </div>
         )}
@@ -841,7 +841,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
   )
 }
 
-// ── AddFranchiseeModal ─────────────────────────────────────────────────────────
+// â”€â”€ AddFranchiseeModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AddFranchiseeModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -868,7 +868,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       return
     }
 
-    // UF: prefer CF → fall back to SMF → fall back to NLH HO
+    // UF: prefer CF â†’ fall back to SMF â†’ fall back to NLH HO
     Promise.all([
       sb.from('franchisees').select('id,business_name,city,state,country,tier').eq('tier', 'CF').eq('status', 'active').order('business_name'),
       sb.from('franchisees').select('id,business_name,city,state,country,tier').eq('tier', 'SMF').eq('status', 'active').order('business_name'),
@@ -893,7 +893,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       showToast(`Please select a parent franchisee for this ${form.tier}`, 'warn'); return
     }
 
-    // Territory check — country-aware
+    // Territory check â€” country-aware
     if (form.tier === 'SMF' || form.tier === 'CF') {
       const country = (form.country || 'India').trim()
       const isIndia = country.toLowerCase() === 'india'
@@ -1008,10 +1008,10 @@ function AddFranchiseeModal({ onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 560 }}>
+      <div className="modal">
         <div className="ch">
           <span>Add Franchisee</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={onClose}>âœ•</button>
         </div>
         <div >
           <div className="form-grid">
@@ -1019,7 +1019,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
               <input value={form.owner_name} onChange={field('owner_name')} placeholder="Owner's full name" />
             </label>
             <label>Business / Centre Name
-              <input value={form.name} onChange={field('name')} placeholder="Optional — e.g. Bright Minds Academy" />
+              <input value={form.name} onChange={field('name')} placeholder="Optional â€” e.g. Bright Minds Academy" />
             </label>
             <label>Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="login@email.com" />
@@ -1029,18 +1029,18 @@ function AddFranchiseeModal({ onClose, onSaved }) {
             </label>
             <label>Tier *
               <select value={form.tier} onChange={field('tier')}>
-                <option value="SMF">SMF — State Master Franchisee</option>
-                <option value="CF">CF — City Franchisee</option>
-                <option value="UF">UF — Unit Franchisee</option>
+                <option value="SMF">SMF â€” State Master Franchisee</option>
+                <option value="CF">CF â€” City Franchisee</option>
+                <option value="UF">UF â€” Unit Franchisee</option>
               </select>
             </label>
             {form.tier !== 'SMF' && (
               <label>Parent {form.tier === 'CF' ? 'SMF' : 'Franchisee'} *
                 <select value={form.parent_id} onChange={field('parent_id')}>
-                  <option value="">— Select —</option>
+                  <option value="">â€” Select â€”</option>
                   {parentOptions.map(p => (
                     <option key={p.id} value={p.id}>
-                      [{p.tier}] {p.business_name} ({p.city || p.state || p.country}{p.country && p.country !== 'India' ? ' · ' + p.country : ''})
+                      [{p.tier}] {p.business_name} ({p.city || p.state || p.country}{p.country && p.country !== 'India' ? ' Â· ' + p.country : ''})
                     </option>
                   ))}
                 </select>
@@ -1052,7 +1052,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
                 disabled={false}
               />
             <label>Area / Locality
-              <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampeth…" />
+              <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampethâ€¦" />
             </label>
             <label>PIN Code
               <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
@@ -1068,7 +1068,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving}>
-            {saving ? 'Creating…' : 'Create Franchisee'}
+            {saving ? 'Creatingâ€¦' : 'Create Franchisee'}
           </button>
         </div>
       </div>
@@ -1076,7 +1076,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   )
 }
 
-// ── FranchiseesPage ────────────────────────────────────────────────────────────
+// â”€â”€ FranchiseesPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function FranchiseesPage() {
   const { currentRole, currentFranchiseeId } = useAuth()
@@ -1165,7 +1165,7 @@ export default function FranchiseesPage() {
   }
 
   function exportCSV() {
-    // Use the already-loaded, role-filtered franchisees state — no extra DB query needed
+    // Use the already-loaded, role-filtered franchisees state â€” no extra DB query needed
     if (!franchisees.length) { showToast('No franchisees to export.', 'warn'); return }
     setExporting(true)
     try {
@@ -1180,13 +1180,13 @@ export default function FranchiseesPage() {
         return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pincode, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
       })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
-      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+      const blob = new Blob(['ï»¿' + csv], { type: 'text/csv;charset=utf-8;' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href = url; a.download = 'nlh-franchisees-' + date + '.csv'
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      showToast(rows.length + ' franchisees exported ✓')
+      showToast(rows.length + ' franchisees exported âœ“')
     } catch (err) {
       showToast('Export failed: ' + err.message, 'err')
     }
@@ -1197,16 +1197,16 @@ export default function FranchiseesPage() {
     <div className="pg">
       {/* Topbar */}
       <header className="tb">
-        <div className="crumb">Operations <span className="sep">›</span> <b>Franchisees</b></div>
+        <div className="crumb">Operations <span className="sep">â€º</span> <b>Franchisees</b></div>
         <div className="tb-r">
           <input
             className="search tb-search"
-            placeholder="Search by name, owner, or city…"
+            placeholder="Search by name, owner, or cityâ€¦"
             value={search}
             onChange={function (e) { setSearch(e.target.value) }}
           />
           <button className="btn btn-s" onClick={exportCSV} disabled={exporting} title="Export CSV">
-            {exporting ? '…' : '↓'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
+            {exporting ? 'â€¦' : 'â†“'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
           </button>
           {admin && (
             <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>
@@ -1225,7 +1225,7 @@ export default function FranchiseesPage() {
                 const partnerCount = admin
                   ? franchisees.filter(function (f) { return f.tier !== 'NLH' }).length
                   : franchisees.filter(function (f) { return f.id !== currentFranchiseeId }).length
-                return <><b>{partnerCount} partner{partnerCount !== 1 ? 's' : ''}</b> in your network. Organised by tier: SMF · CF · UF.</>
+                return <><b>{partnerCount} partner{partnerCount !== 1 ? 's' : ''}</b> in your network. Organised by tier: SMF Â· CF Â· UF.</>
               })()}
             </div>
           </div>
@@ -1234,29 +1234,29 @@ export default function FranchiseesPage() {
         {/* Mini stats */}
         <div className="mini-stats">
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🏢</div>
+            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>ðŸ¢</div>
             <div className="mini-num">{franchisees.length}</div>
             <div className="mini-lbl">Total partners</div>
           </div>
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>🌟</div>
+            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>ðŸŒŸ</div>
             <div className="mini-num">{counts.smf}</div>
-            <div className="mini-lbl">SMF · State Master</div>
+            <div className="mini-lbl">SMF Â· State Master</div>
           </div>
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>🏙️</div>
+            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>ðŸ™ï¸</div>
             <div className="mini-num">{counts.cf}</div>
-            <div className="mini-lbl">CF · City</div>
+            <div className="mini-lbl">CF Â· City</div>
           </div>
           <div className="mini">
-            <div className="mini-ic" style={{ background: 'var(--blue-bg)' }}>📍</div>
+            <div className="mini-ic" style={{ background: 'var(--blue-bg)' }}>ðŸ“</div>
             <div className="mini-num">{counts.uf}</div>
-            <div className="mini-lbl">UF · Urban</div>
+            <div className="mini-lbl">UF Â· Urban</div>
           </div>
           {admin && totalOutstanding > 0 && (
             <div className="mini" style={{ borderLeft: '3px solid var(--red)', background: '#fff8f8' }}>
-              <div className="mini-ic" style={{ background: '#fee2e2' }}>💰</div>
-              <div className="mini-num" style={{ color: 'var(--red)', fontSize: 15 }}>₹{fmtAmt(totalOutstanding)}</div>
+              <div className="mini-ic" style={{ background: '#fee2e2' }}>ðŸ’°</div>
+              <div className="mini-num" style={{ color: 'var(--red)', fontSize: 15 }}>â‚¹{fmtAmt(totalOutstanding)}</div>
               <div className="mini-lbl">Total fee outstanding</div>
             </div>
           )}
@@ -1266,7 +1266,7 @@ export default function FranchiseesPage() {
         <div className="fr-toolbar">
           <input
             className="fr-search"
-            placeholder="Search by business name, city…"
+            placeholder="Search by business name, cityâ€¦"
             value={search}
             onChange={function (e) { setSearch(e.target.value) }}
           />
@@ -1292,7 +1292,7 @@ export default function FranchiseesPage() {
 
         {/* City-grouped list */}
         {loading ? (
-          <div className="loading"><span className="spinner" />Loading…</div>
+          <div className="loading"><span className="spinner" />Loadingâ€¦</div>
         ) : tierFiltered.length === 0 ? (
           <div className="empty">No franchisees found.</div>
         ) : (function () {
@@ -1302,7 +1302,7 @@ export default function FranchiseesPage() {
             : tierFiltered.find(function (f) { return f.id === currentFranchiseeId })
           const others = tierFiltered.filter(function (f) { return f.id !== (ownCentre && ownCentre.id) })
 
-          // Group by city (fallback to state → country)
+          // Group by city (fallback to state â†’ country)
           const cityMap = {}
           others.forEach(function (f) {
             const key = f.city || f.state || f.country || 'Unknown'
@@ -1322,9 +1322,9 @@ export default function FranchiseesPage() {
 
           return (
             <div>
-              {/* Own Centre — pinned at top for all tiers */}
+              {/* Own Centre â€” pinned at top for all tiers */}
               {ownCentre && (function () {
-                const tierBadgeLabel = { NLH: 'NLH HQ', SMF: 'My Centre · SMF', CF: 'My Centre · CF', UF: 'My Centre · UF' }[ownCentre.tier] || 'My Centre'
+                const tierBadgeLabel = { NLH: 'NLH HQ', SMF: 'My Centre Â· SMF', CF: 'My Centre Â· CF', UF: 'My Centre Â· UF' }[ownCentre.tier] || 'My Centre'
                 const tierBadgeColor = { NLH: 'var(--purple)', SMF: '#b45309', CF: '#16A34A', UF: '#2563EB' }[ownCentre.tier] || 'var(--purple)'
                 return (
                   <div className="nlh-own-card" onClick={function () { setSelected(ownCentre) }}>
@@ -1339,7 +1339,7 @@ export default function FranchiseesPage() {
                       </div>
                     </div>
                     <span className="nlh-own-badge" style={{ background: tierBadgeColor + '1a', color: tierBadgeColor, border: '1px solid ' + tierBadgeColor + '40' }}>{tierBadgeLabel}</span>
-                    <span className="nlh-own-arrow">›</span>
+                    <span className="nlh-own-arrow">â€º</span>
                   </div>
                 )
               })()}
@@ -1358,10 +1358,10 @@ export default function FranchiseesPage() {
                       const rs2 = renewalStatus(f)
                       const valCol = rs2.isExpired ? 'var(--red)' : rs2.isExpiring ? '#b45309' : 'var(--green)'
                       const valLbl = rs2.isExpired
-                        ? '⚠ Expired'
+                        ? 'âš  Expired'
                         : rs2.isExpiring
-                          ? `⏳ ${rs2.daysLeft}d`
-                          : '✓ Active'
+                          ? `â³ ${rs2.daysLeft}d`
+                          : 'âœ“ Active'
 
                       const frBalance = (Number(f.enrollment_fee) || 0) - (Number(f.fee_paid) || 0)
 
@@ -1380,7 +1380,7 @@ export default function FranchiseesPage() {
                             )}
                             {(f.area || f.state) && (
                               <div className="fr-row-loc">
-                                {[f.area, f.tier === 'SMF' ? f.state : null].filter(Boolean).join(' · ')}
+                                {[f.area, f.tier === 'SMF' ? f.state : null].filter(Boolean).join(' Â· ')}
                               </div>
                             )}
                           </div>
@@ -1397,7 +1397,7 @@ export default function FranchiseesPage() {
                                 border: '1px solid #fecaca', borderRadius: 4,
                                 padding: '1px 6px', letterSpacing: '.01em',
                               }}>
-                                ₹{fmtAmt(frBalance)} due
+                                â‚¹{fmtAmt(frBalance)} due
                               </span>
                             )}
                           </div>
@@ -1406,7 +1406,7 @@ export default function FranchiseesPage() {
                             {valLbl}
                           </span>
 
-                          <span className="fr-row-arrow">›</span>
+                          <span className="fr-row-arrow">â€º</span>
                         </div>
                       )
                     })}
@@ -1436,4 +1436,6 @@ export default function FranchiseesPage() {
     </div>
   )
 }
+
+
 

@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
+﻿import React, { useState, useEffect, useCallback } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function fmtMonth(m, y) {
@@ -18,10 +18,10 @@ function currentFY() {
 }
 
 function rupee(n) {
-  if (!n && n !== 0) return '—'
+  if (!n && n !== 0) return 'â€”'
   const abs = Math.abs(Number(n))
   const fmt = abs.toLocaleString('en-IN')
-  return (Number(n) < 0 ? '(' : '') + '₹' + fmt + (Number(n) < 0 ? ')' : '')
+  return (Number(n) < 0 ? '(' : '') + 'â‚¹' + fmt + (Number(n) < 0 ? ')' : '')
 }
 
 const EXPENSE_CATS = [
@@ -39,7 +39,7 @@ const EXPENSE_CATS = [
 
 const PMODES = ['cash','bank_transfer','upi','cheque','card']
 
-// ─── small shared components ─────────────────────────────────────────────────
+// â”€â”€â”€ small shared components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Chip({ label, color }) {
   const colors = {
     green:  { bg: 'var(--green-bg)',  color: 'var(--green)' },
@@ -81,7 +81,7 @@ function SplitStatusChip({ status }) {
   return <Chip label={s.l} color={s.c} />
 }
 
-// ─── TAB: OVERVIEW / P&L ─────────────────────────────────────────────────────
+// â”€â”€â”€ TAB: OVERVIEW / P&L â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function OverviewTab() {
   const [loading, setLoading] = useState(true)
   const [month, setMonth]     = useState(new Date().getMonth() + 1)
@@ -151,7 +151,7 @@ function OverviewTab() {
       </div>
 
       {loading ? (
-        <div style={{ color:'var(--text3)', padding:40, textAlign:'center' }}>Loading P&L…</div>
+        <div style={{ color:'var(--text3)', padding:40, textAlign:'center' }}>Loading P&Lâ€¦</div>
       ) : (
         <>
           {/* Key metrics */}
@@ -167,7 +167,7 @@ function OverviewTab() {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
             {/* Income */}
             <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:12, padding:20 }}>
-              <div style={{ fontWeight:700, marginBottom:12, fontSize:14 }}>📈 Income — {fmtMonth(month,year)}</div>
+              <div style={{ fontWeight:700, marginBottom:12, fontSize:14 }}>ðŸ“ˆ Income â€” {fmtMonth(month,year)}</div>
               <PLRow label="Kit Sales Revenue"       amount={data.kitRevenue} />
               <PLRow label="Franchise Enrollment Fees" amount={data.enrollRevenue} />
               <div style={{ borderTop:'1px solid var(--border)', marginTop:10, paddingTop:10 }}>
@@ -177,7 +177,7 @@ function OverviewTab() {
 
             {/* Expenses */}
             <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:12, padding:20 }}>
-              <div style={{ fontWeight:700, marginBottom:12, fontSize:14 }}>📉 Expenses — {fmtMonth(month,year)}</div>
+              <div style={{ fontWeight:700, marginBottom:12, fontSize:14 }}>ðŸ“‰ Expenses â€” {fmtMonth(month,year)}</div>
               {data.expenseCount === 0 ? (
                 <div style={{ color:'var(--text3)', fontSize:13 }}>No expenses recorded</div>
               ) : (
@@ -229,7 +229,7 @@ function PLRow({ label, amount, bold }) {
   )
 }
 
-// ─── TAB: CHART OF ACCOUNTS ──────────────────────────────────────────────────
+// â”€â”€â”€ TAB: CHART OF ACCOUNTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AccountsTab() {
   const [accounts, setAccounts] = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -275,7 +275,7 @@ function AccountsTab() {
       </div>
 
       {loading ? (
-        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loading…</div>
+        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loadingâ€¦</div>
       ) : (
         <div className="tbl-scroll">
           <table className="big-tbl" style={{ minWidth:600 }}>
@@ -294,7 +294,7 @@ function AccountsTab() {
                       {a.is_system && <span style={{ fontSize:10, color:'var(--text3)', marginLeft:6 }}>system</span>}
                     </td>
                     <td><Chip label={a.type} color={TYPE_COLORS[a.type] || 'gray'} /></td>
-                    <td style={{ color:'var(--text3)', fontSize:12 }}>{a.subtype || '—'}</td>
+                    <td style={{ color:'var(--text3)', fontSize:12 }}>{a.subtype || 'â€”'}</td>
                     <td><Chip label={a.is_active ? 'Active' : 'Inactive'} color={a.is_active ? 'green' : 'gray'} /></td>
                   </tr>
                 )
@@ -336,7 +336,7 @@ function AddAccountModal({ onClose, onSaved, accounts }) {
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Add Account</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
+          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>Ã—</button>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:10 }}>
@@ -364,9 +364,9 @@ function AddAccountModal({ onClose, onSaved, accounts }) {
           <div>
             <label className="lbl">Parent Account (optional)</label>
             <select className="inp" value={form.parent_id} onChange={function(e) { set('parent_id', e.target.value) }}>
-              <option value="">— None —</option>
+              <option value="">â€” None â€”</option>
               {accounts.filter(function(a) { return a.type === form.type }).map(function(a) {
-                return <option key={a.id} value={a.id}>{a.code} – {a.name}</option>
+                return <option key={a.id} value={a.id}>{a.code} â€“ {a.name}</option>
               })}
             </select>
           </div>
@@ -377,14 +377,14 @@ function AddAccountModal({ onClose, onSaved, accounts }) {
         </div>
         <div className="ch" style={{ marginTop:16, justifyContent:'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Add Account'}</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Savingâ€¦' : 'Add Account'}</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ─── TAB: EXPENSES ───────────────────────────────────────────────────────────
+// â”€â”€â”€ TAB: EXPENSES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ExpensesTab() {
   const { currentUser } = useAuth()
   const [expenses,  setExpenses]  = useState([])
@@ -446,12 +446,12 @@ function ExpensesTab() {
             onChange={function(e) { setFilterMon(e.target.value) }} />
           {filtered.length > 0 && (
             <span style={{ fontSize:13, color:'var(--text3)', marginLeft:4 }}>
-              {filtered.length} entries · <b style={{ fontFamily:'var(--mono)' }}>{rupee(totalFiltered)}</b>
+              {filtered.length} entries Â· <b style={{ fontFamily:'var(--mono)' }}>{rupee(totalFiltered)}</b>
             </span>
           )}
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <button className="btn btn-s" onClick={exportCSV}>↓<span className="btn-label"> Export</span></button>
+          <button className="btn btn-s" onClick={exportCSV}>â†“<span className="btn-label"> Export</span></button>
           <button className="btn btn-primary btn-s" onClick={function() { setShowAdd(true) }}>
             + <span className="btn-label">Add Expense</span>
           </button>
@@ -460,7 +460,7 @@ function ExpensesTab() {
 
 
       {loading ? (
-        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loading…</div>
+        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loadingâ€¦</div>
       ) : filtered.length === 0 ? (
         <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>
           No expenses recorded. Click "+ Add Expense" to start.
@@ -479,13 +479,13 @@ function ExpensesTab() {
                     <td style={{ fontFamily:'var(--mono)', fontSize:12 }}>{e.date}</td>
                     <td><Chip label={catLabel} color="amber" /></td>
                     <td>{e.description}</td>
-                    <td style={{ color:'var(--text3)' }}>{e.vendor_name || '—'}</td>
-                    <td style={{ fontFamily:'var(--mono)', textAlign:'right' }}>₹{fmtAmt(e.amount)}</td>
+                    <td style={{ color:'var(--text3)' }}>{e.vendor_name || 'â€”'}</td>
+                    <td style={{ fontFamily:'var(--mono)', textAlign:'right' }}>â‚¹{fmtAmt(e.amount)}</td>
                     <td style={{ fontFamily:'var(--mono)', textAlign:'right', color:'var(--text3)' }}>
-                      {e.gst_amount ? '₹' + fmtAmt(e.gst_amount) : '—'}
+                      {e.gst_amount ? 'â‚¹' + fmtAmt(e.gst_amount) : 'â€”'}
                     </td>
-                    <td style={{ fontFamily:'var(--mono)', textAlign:'right', fontWeight:600 }}>₹{fmtAmt(e.total_amount)}</td>
-                    <td style={{ color:'var(--text3)', fontSize:12 }}>{e.payment_mode || '—'}</td>
+                    <td style={{ fontFamily:'var(--mono)', textAlign:'right', fontWeight:600 }}>â‚¹{fmtAmt(e.total_amount)}</td>
+                    <td style={{ color:'var(--text3)', fontSize:12 }}>{e.payment_mode || 'â€”'}</td>
                   </tr>
                 )
               })}
@@ -494,13 +494,13 @@ function ExpensesTab() {
               <tr style={{ fontWeight:700, background:'var(--bg3)' }}>
                 <td colSpan={4}>Total</td>
                 <td style={{ fontFamily:'var(--mono)', textAlign:'right' }}>
-                  ₹{fmtAmt(filtered.reduce(function(s,e) { return s + e.amount }, 0))}
+                  â‚¹{fmtAmt(filtered.reduce(function(s,e) { return s + e.amount }, 0))}
                 </td>
                 <td style={{ fontFamily:'var(--mono)', textAlign:'right' }}>
-                  ₹{fmtAmt(filtered.reduce(function(s,e) { return s + (e.gst_amount||0) }, 0))}
+                  â‚¹{fmtAmt(filtered.reduce(function(s,e) { return s + (e.gst_amount||0) }, 0))}
                 </td>
                 <td style={{ fontFamily:'var(--mono)', textAlign:'right' }}>
-                  ₹{fmtAmt(totalFiltered)}
+                  â‚¹{fmtAmt(totalFiltered)}
                 </td>
                 <td></td>
               </tr>
@@ -592,10 +592,10 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" style={{ maxWidth:540 }} onClick={function(e) { e.stopPropagation() }}>
+      <div className="modal" onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Add Expense</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
+          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>Ã—</button>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
@@ -624,7 +624,7 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
             <div>
               <label className="lbl">Vendor (from list)</label>
               <select className="inp" value={form.vendor_id} onChange={function(e) { set('vendor_id', e.target.value) }}>
-                <option value="">— Select —</option>
+                <option value="">â€” Select â€”</option>
                 {vendors.map(function(v) { return <option key={v.id} value={v.id}>{v.name}</option> })}
               </select>
             </div>
@@ -632,7 +632,7 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
               <label className="lbl">Amount (pre-GST) *</label>
-              <input type="number" className="inp" placeholder="₹" value={form.amount}
+              <input type="number" className="inp" placeholder="â‚¹" value={form.amount}
                 onChange={function(e) { set('amount', e.target.value) }} />
             </div>
             <div>
@@ -642,7 +642,7 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
             </div>
           </div>
           <div style={{ background:'var(--bg3)', borderRadius:8, padding:'8px 12px', fontSize:14 }}>
-            Total: <strong style={{ fontFamily:'var(--mono)' }}>₹{fmtAmt(total)}</strong>
+            Total: <strong style={{ fontFamily:'var(--mono)' }}>â‚¹{fmtAmt(total)}</strong>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
@@ -661,15 +661,15 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
             <div>
               <label className="lbl">Paid from Bank Account</label>
               <select className="inp" value={form.bank_account_id} onChange={function(e) { set('bank_account_id', e.target.value) }}>
-                <option value="">— Select —</option>
+                <option value="">â€” Select â€”</option>
                 {bankAccts.map(function(b) { return <option key={b.id} value={b.id}>{b.name}</option> })}
               </select>
             </div>
             <div>
               <label className="lbl">Expense Account (Ledger)</label>
               <select className="inp" value={form.expense_account_id} onChange={function(e) { set('expense_account_id', e.target.value) }}>
-                <option value="">— Select —</option>
-                {accounts.map(function(a) { return <option key={a.id} value={a.id}>{a.code} – {a.name}</option> })}
+                <option value="">â€” Select â€”</option>
+                {accounts.map(function(a) { return <option key={a.id} value={a.id}>{a.code} â€“ {a.name}</option> })}
               </select>
             </div>
           </div>
@@ -680,7 +680,7 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
             {form.is_recurring && (
               <select className="inp" style={{ width:'auto' }} value={form.recurrence}
                 onChange={function(e) { set('recurrence', e.target.value) }}>
-                <option value="">Frequency…</option>
+                <option value="">Frequencyâ€¦</option>
                 <option value="monthly">Monthly</option>
                 <option value="quarterly">Quarterly</option>
                 <option value="annual">Annual</option>
@@ -691,7 +691,7 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
         <div className="ch" style={{ marginTop:16, justifyContent:'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Record Expense'}
+            {saving ? 'Savingâ€¦' : 'Record Expense'}
           </button>
         </div>
       </div>
@@ -699,7 +699,7 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
   )
 }
 
-// ─── TAB: JOURNAL LEDGER ─────────────────────────────────────────────────────
+// â”€â”€â”€ TAB: JOURNAL LEDGER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function JournalTab() {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -743,7 +743,7 @@ function JournalTab() {
       </div>
 
       {loading ? (
-        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loading journal…</div>
+        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loading journalâ€¦</div>
       ) : filtered.length === 0 ? (
         <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>No journal entries yet.</div>
       ) : (
@@ -769,8 +769,8 @@ function JournalTab() {
                   <span style={{ flex:1, fontSize:13, color:'var(--text2)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                     {entry.description}
                   </span>
-                  <span style={{ fontFamily:'var(--mono)', fontWeight:600, fontSize:13 }}>₹{fmtAmt(totalDr)}</span>
-                  <span style={{ color:'var(--text3)', fontSize:12 }}>{isOpen ? '▲' : '▼'}</span>
+                  <span style={{ fontFamily:'var(--mono)', fontWeight:600, fontSize:13 }}>â‚¹{fmtAmt(totalDr)}</span>
+                  <span style={{ color:'var(--text3)', fontSize:12 }}>{isOpen ? 'â–²' : 'â–¼'}</span>
                 </div>
                 {isOpen && (
                   <div style={{ borderTop:'1px solid var(--border)', padding:'12px 16px', background:'var(--bg3)' }}>
@@ -791,13 +791,13 @@ function JournalTab() {
                                   {l.accounts?.code}
                                 </code>
                                 {' '}{l.accounts?.name}
-                                {l.description && <span style={{ color:'var(--text3)', fontSize:11 }}> — {l.description}</span>}
+                                {l.description && <span style={{ color:'var(--text3)', fontSize:11 }}> â€” {l.description}</span>}
                               </td>
                               <td style={{ textAlign:'right', fontFamily:'var(--mono)', color: l.debit ? 'var(--green)' : 'var(--text3)' }}>
-                                {l.debit ? '₹' + fmtAmt(l.debit) : '—'}
+                                {l.debit ? 'â‚¹' + fmtAmt(l.debit) : 'â€”'}
                               </td>
                               <td style={{ textAlign:'right', fontFamily:'var(--mono)', color: l.credit ? 'var(--red)' : 'var(--text3)' }}>
-                                {l.credit ? '₹' + fmtAmt(l.credit) : '—'}
+                                {l.credit ? 'â‚¹' + fmtAmt(l.credit) : 'â€”'}
                               </td>
                             </tr>
                           )
@@ -815,7 +815,7 @@ function JournalTab() {
   )
 }
 
-// ─── TAB: REVENUE SPLITS ─────────────────────────────────────────────────────
+// â”€â”€â”€ TAB: REVENUE SPLITS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SplitsTab() {
   const [splits,   setSplits]   = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -837,7 +837,7 @@ function SplitsTab() {
 
   const filtered = filterStatus === 'all' ? splits : splits.filter(function(s) { return s.status === filterStatus })
 
-  // Only sum pending/part_paid rows — exclude paid and waived
+  // Only sum pending/part_paid rows â€” exclude paid and waived
   const totalOwed = filtered
     .filter(function(r) { return r.status !== 'paid' && r.status !== 'waived' })
     .reduce(function(s, r) { return s + Math.max(0, (r.amount_owed || 0) - (r.amount_paid || 0)) }, 0)
@@ -860,7 +860,7 @@ function SplitsTab() {
   return (
     <div>
       <div style={{ marginBottom:16, padding:'12px 16px', background:'var(--amber-bg)', border:'1px solid var(--amber)', borderRadius:10, fontSize:13 }}>
-        <strong>Revenue Split Rules:</strong> When a student pays fees at a UF — CF gets 25%, SMF gets 25%, NLH keeps 25%, UF keeps 50% (UF share stays with them).
+        <strong>Revenue Split Rules:</strong> When a student pays fees at a UF â€” CF gets 25%, SMF gets 25%, NLH keeps 25%, UF keeps 50% (UF share stays with them).
         Record splits here when franchisees pay their share to HO.
       </div>
 
@@ -879,7 +879,7 @@ function SplitsTab() {
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           {totalOwed > 0 && (
             <span style={{ fontSize:13, color:'var(--amber)', fontWeight:600 }}>
-              Outstanding: ₹{fmtAmt(totalOwed)}
+              Outstanding: â‚¹{fmtAmt(totalOwed)}
             </span>
           )}
           <button className="btn btn-primary btn-s" onClick={function() { setShowAdd(true) }}>
@@ -889,7 +889,7 @@ function SplitsTab() {
       </div>
 
       {loading ? (
-        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loading…</div>
+        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loadingâ€¦</div>
       ) : filtered.length === 0 ? (
         <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>No records.</div>
       ) : (
@@ -905,18 +905,18 @@ function SplitsTab() {
                   <tr key={s.id}>
                     <td style={{ fontFamily:'var(--mono)', fontSize:12 }}>{fmtMonth(s.period_month, s.period_year)}</td>
                     <td>
-                      <div style={{ fontWeight:500 }}>{s.franchisees?.business_name || '—'}</div>
+                      <div style={{ fontWeight:500 }}>{s.franchisees?.business_name || 'â€”'}</div>
                       <div style={{ fontSize:11, color:'var(--text3)' }}>{s.franchisees?.owner_name}</div>
                     </td>
                     <td><Chip label={s.franchisee_tier} color={s.franchisee_tier === 'CF' ? 'green' : 'purple'} /></td>
-                    <td style={{ fontFamily:'var(--mono)', textAlign:'right' }}>₹{fmtAmt(s.total_fee_collected)}</td>
+                    <td style={{ fontFamily:'var(--mono)', textAlign:'right' }}>â‚¹{fmtAmt(s.total_fee_collected)}</td>
                     <td style={{ textAlign:'center' }}>{s.split_percentage}%</td>
-                    <td style={{ fontFamily:'var(--mono)', textAlign:'right', fontWeight:600 }}>₹{fmtAmt(s.amount_owed)}</td>
+                    <td style={{ fontFamily:'var(--mono)', textAlign:'right', fontWeight:600 }}>â‚¹{fmtAmt(s.amount_owed)}</td>
                     <td style={{ fontFamily:'var(--mono)', textAlign:'right', color:'var(--green)' }}>
-                      {s.amount_paid ? '₹' + fmtAmt(s.amount_paid) : '—'}
+                      {s.amount_paid ? 'â‚¹' + fmtAmt(s.amount_paid) : 'â€”'}
                     </td>
                     <td style={{ color:'var(--text3)', fontSize:12 }}>
-                      {s.payment_mode ? s.payment_mode.replace('_',' ') : '—'}
+                      {s.payment_mode ? s.payment_mode.replace('_',' ') : 'â€”'}
                       {s.payment_ref && <div style={{ fontSize:10, color:'var(--text3)', fontFamily:'var(--mono)' }}>{s.payment_ref}</div>}
                     </td>
                     <td><SplitStatusChip status={s.status} /></td>
@@ -986,7 +986,7 @@ function AddSplitModal({ onClose, onSaved }) {
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Add Revenue Split</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
+          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>Ã—</button>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
@@ -1010,15 +1010,15 @@ function AddSplitModal({ onClose, onSaved }) {
               set('franchisee_id', e.target.value)
               if (f) set('franchisee_tier', f.tier)
             }}>
-              <option value="">— Select CF or SMF —</option>
+              <option value="">â€” Select CF or SMF â€”</option>
               {franchisees.map(function(f) {
-                return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name} — {f.owner_name}</option>
+                return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name} â€” {f.owner_name}</option>
               })}
             </select>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
-              <label className="lbl">Total Fee Collected (₹)</label>
+              <label className="lbl">Total Fee Collected (â‚¹)</label>
               <input type="number" className="inp" placeholder="Student fee paid" value={form.total_fee_collected}
                 onChange={function(e) { set('total_fee_collected', e.target.value) }} />
             </div>
@@ -1029,7 +1029,7 @@ function AddSplitModal({ onClose, onSaved }) {
             </div>
           </div>
           <div style={{ background:'var(--bg3)', borderRadius:8, padding:'10px 14px', fontSize:14 }}>
-            Amount owed: <strong style={{ fontFamily:'var(--mono)' }}>₹{fmtAmt(amount_owed)}</strong>
+            Amount owed: <strong style={{ fontFamily:'var(--mono)' }}>â‚¹{fmtAmt(amount_owed)}</strong>
           </div>
           <div>
             <label className="lbl">Notes</label>
@@ -1038,7 +1038,7 @@ function AddSplitModal({ onClose, onSaved }) {
         </div>
         <div className="ch" style={{ marginTop:16, justifyContent:'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Add Record'}</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Savingâ€¦' : 'Add Record'}</button>
         </div>
       </div>
     </div>
@@ -1051,13 +1051,13 @@ function MarkPaidModal({ split, onClose, onPaid }) {
   const outstanding = split.amount_owed - split.amount_paid
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" style={{ maxWidth:400 }} onClick={function(e) { e.stopPropagation() }}>
+      <div className="modal" onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Mark as Paid</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
+          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>Ã—</button>
         </div>
         <p style={{ fontSize:14, color:'var(--text2)', margin:'8px 0 16px' }}>
-          Recording <strong style={{ fontFamily:'var(--mono)' }}>₹{fmtAmt(outstanding)}</strong> received
+          Recording <strong style={{ fontFamily:'var(--mono)' }}>â‚¹{fmtAmt(outstanding)}</strong> received
           from <strong>{split.franchisees?.business_name}</strong>
           <span style={{ color:'var(--text3)', fontSize:12 }}> ({split.franchisee_tier})</span>.
         </p>
@@ -1081,7 +1081,7 @@ function MarkPaidModal({ split, onClose, onPaid }) {
         <div className="ch" style={{ marginTop:16, justifyContent:'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={function() { onPaid(split, ref, mode) }}>
-            ✓ Confirm Payment
+            âœ“ Confirm Payment
           </button>
         </div>
       </div>
@@ -1089,7 +1089,7 @@ function MarkPaidModal({ split, onClose, onPaid }) {
   )
 }
 
-// ─── TAB: VENDORS ────────────────────────────────────────────────────────────
+// â”€â”€â”€ TAB: VENDORS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function VendorsTab() {
   const [vendors,  setVendors]  = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -1115,7 +1115,7 @@ function VendorsTab() {
       </div>
 
       {loading ? (
-        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loading…</div>
+        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loadingâ€¦</div>
       ) : vendors.length === 0 ? (
         <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>No vendors yet.</div>
       ) : (
@@ -1129,14 +1129,14 @@ function VendorsTab() {
                 return (
                   <tr key={v.id} style={{ cursor:'pointer' }} onClick={function() { setSelected(v) }}>
                     <td style={{ fontWeight:500 }}>{v.name}</td>
-                    <td style={{ color:'var(--text3)' }}>{v.contact_person || '—'}</td>
+                    <td style={{ color:'var(--text3)' }}>{v.contact_person || 'â€”'}</td>
                     <td>
-                      <div style={{ fontSize:12 }}>{v.phone || '—'}</div>
+                      <div style={{ fontSize:12 }}>{v.phone || 'â€”'}</div>
                       <div style={{ fontSize:11, color:'var(--text3)' }}>{v.email || ''}</div>
                     </td>
-                    <td style={{ color:'var(--text3)' }}>{v.city || '—'}</td>
-                    <td><code style={{ fontFamily:'var(--mono)', fontSize:11 }}>{v.gstin || '—'}</code></td>
-                    <td style={{ color:'var(--text3)' }}>{v.payment_terms ? v.payment_terms + 'd' : '—'}</td>
+                    <td style={{ color:'var(--text3)' }}>{v.city || 'â€”'}</td>
+                    <td><code style={{ fontFamily:'var(--mono)', fontSize:11 }}>{v.gstin || 'â€”'}</code></td>
+                    <td style={{ color:'var(--text3)' }}>{v.payment_terms ? v.payment_terms + 'd' : 'â€”'}</td>
                     <td><Chip label={v.is_active ? 'Active' : 'Inactive'} color={v.is_active ? 'green' : 'gray'} /></td>
                   </tr>
                 )
@@ -1179,10 +1179,10 @@ function AddVendorModal({ onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" style={{ maxWidth:500 }} onClick={function(e) { e.stopPropagation() }}>
+      <div className="modal" onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Add Vendor</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
+          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>Ã—</button>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
@@ -1236,7 +1236,7 @@ function AddVendorModal({ onClose, onSaved }) {
         </div>
         <div className="ch" style={{ marginTop:16, justifyContent:'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Add Vendor'}</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Savingâ€¦' : 'Add Vendor'}</button>
         </div>
       </div>
     </div>
@@ -1255,10 +1255,10 @@ function VendorDetailModal({ vendor, onClose, onUpdated }) {
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" style={{ maxWidth:420 }} onClick={function(e) { e.stopPropagation() }}>
+      <div className="modal" onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>{vendor.name}</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
+          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>Ã—</button>
         </div>
         <table style={{ width:'100%', fontSize:13, borderCollapse:'collapse' }}>
           <tbody>
@@ -1276,7 +1276,7 @@ function VendorDetailModal({ vendor, onClose, onUpdated }) {
               return (
                 <tr key={k} style={{ borderBottom:'1px solid var(--border)' }}>
                   <td style={{ padding:'8px 0', color:'var(--text3)', width:130 }}>{k}</td>
-                  <td style={{ padding:'8px 0', fontWeight:500 }}>{v || '—'}</td>
+                  <td style={{ padding:'8px 0', fontWeight:500 }}>{v || 'â€”'}</td>
                 </tr>
               )
             })}
@@ -1294,7 +1294,7 @@ function VendorDetailModal({ vendor, onClose, onUpdated }) {
   )
 }
 
-// ─── TAB: BANK ACCOUNTS ──────────────────────────────────────────────────────
+// â”€â”€â”€ TAB: BANK ACCOUNTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function BankAccountsTab() {
   const [banks,   setBanks]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -1324,7 +1324,7 @@ function BankAccountsTab() {
       </div>
 
       {loading ? (
-        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loading…</div>
+        <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>Loadingâ€¦</div>
       ) : banks.length === 0 ? (
         <div style={{ color:'var(--text3)', textAlign:'center', padding:40 }}>
           No bank accounts yet. Add your NLH HO bank accounts to enable journal auto-posting.
@@ -1347,7 +1347,7 @@ function BankAccountsTab() {
                 {b.ifsc && <div style={{ fontSize:11, color:'var(--text3)', marginTop:4 }}>IFSC: {b.ifsc}</div>}
                 {b.opening_balance > 0 && (
                   <div style={{ marginTop:10, fontSize:13 }}>
-                    Opening: <span style={{ fontFamily:'var(--mono)', fontWeight:600 }}>₹{fmtAmt(b.opening_balance)}</span>
+                    Opening: <span style={{ fontFamily:'var(--mono)', fontWeight:600 }}>â‚¹{fmtAmt(b.opening_balance)}</span>
                     {b.opening_date && <span style={{ color:'var(--text3)', fontSize:11 }}> as of {b.opening_date}</span>}
                   </div>
                 )}
@@ -1389,15 +1389,15 @@ function AddBankModal({ accounts, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" style={{ maxWidth:480 }} onClick={function(e) { e.stopPropagation() }}>
+      <div className="modal" onClick={function(e) { e.stopPropagation() }}>
         <div className="ch">
           <h3>Add Bank Account</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
+          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>Ã—</button>
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div>
             <label className="lbl">Display Name *</label>
-            <input className="inp" placeholder="e.g. HDFC Current – NLH Nagpur" value={form.name} onChange={function(e) { set('name', e.target.value) }} />
+            <input className="inp" placeholder="e.g. HDFC Current â€“ NLH Nagpur" value={form.name} onChange={function(e) { set('name', e.target.value) }} />
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
@@ -1421,7 +1421,7 @@ function AddBankModal({ accounts, onClose, onSaved }) {
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
-              <label className="lbl">Opening Balance (₹)</label>
+              <label className="lbl">Opening Balance (â‚¹)</label>
               <input type="number" className="inp" value={form.opening_balance} onChange={function(e) { set('opening_balance', e.target.value) }} />
             </div>
             <div>
@@ -1432,29 +1432,29 @@ function AddBankModal({ accounts, onClose, onSaved }) {
           <div>
             <label className="lbl">Link to Ledger Account</label>
             <select className="inp" value={form.account_id} onChange={function(e) { set('account_id', e.target.value) }}>
-              <option value="">— Select bank account in ledger —</option>
-              {accounts.map(function(a) { return <option key={a.id} value={a.id}>{a.code} – {a.name}</option> })}
+              <option value="">â€” Select bank account in ledger â€”</option>
+              {accounts.map(function(a) { return <option key={a.id} value={a.id}>{a.code} â€“ {a.name}</option> })}
             </select>
           </div>
         </div>
         <div className="ch" style={{ marginTop:16, justifyContent:'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Add Account'}</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Savingâ€¦' : 'Add Account'}</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ─── MAIN PAGE ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ MAIN PAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TABS = [
-  { id: 'overview',  l: 'P&L Overview',       icon: '📊' },
-  { id: 'expenses',  l: 'Expenses',            icon: '📉' },
-  { id: 'splits',    l: 'Revenue Splits',      icon: '🔀' },
-  { id: 'journal',   l: 'Journal Ledger',      icon: '📒' },
-  { id: 'accounts',  l: 'Chart of Accounts',   icon: '🗂' },
-  { id: 'vendors',   l: 'Vendors',             icon: '🏭' },
-  { id: 'banks',     l: 'Bank Accounts',       icon: '🏦' },
+  { id: 'overview',  l: 'P&L Overview',       icon: 'ðŸ“Š' },
+  { id: 'expenses',  l: 'Expenses',            icon: 'ðŸ“‰' },
+  { id: 'splits',    l: 'Revenue Splits',      icon: 'ðŸ”€' },
+  { id: 'journal',   l: 'Journal Ledger',      icon: 'ðŸ“’' },
+  { id: 'accounts',  l: 'Chart of Accounts',   icon: 'ðŸ—‚' },
+  { id: 'vendors',   l: 'Vendors',             icon: 'ðŸ­' },
+  { id: 'banks',     l: 'Bank Accounts',       icon: 'ðŸ¦' },
 ]
 
 export default function AccountingPage() {
@@ -1464,8 +1464,8 @@ export default function AccountingPage() {
   if (!['owner', 'super_admin', 'admin', 'manager'].includes(currentRole)) {
     return (
       <div style={{ padding:40, textAlign:'center', color:'var(--text3)' }}>
-        <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
-        <div style={{ fontSize:16, fontWeight:600 }}>HO Accounting — Restricted</div>
+        <div style={{ fontSize:48, marginBottom:12 }}>ðŸ”’</div>
+        <div style={{ fontSize:16, fontWeight:600 }}>HO Accounting â€” Restricted</div>
         <div style={{ marginTop:8 }}>This section is only accessible to HO admin team.</div>
       </div>
     )
@@ -1476,7 +1476,7 @@ export default function AccountingPage() {
       {/* Header */}
       <div style={{ marginBottom:20 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-          <span style={{ fontSize:22 }}>📚</span>
+          <span style={{ fontSize:22 }}>ðŸ“š</span>
           <h2 style={{ margin:0, fontSize:20, fontWeight:700 }}>HO Accounting</h2>
           <span style={{
             fontSize:10, fontWeight:700, letterSpacing:1, padding:'2px 8px',
@@ -1484,7 +1484,7 @@ export default function AccountingPage() {
           }}>HEAD OFFICE ONLY</span>
         </div>
         <div style={{ color:'var(--text3)', fontSize:13 }}>
-          Double-entry bookkeeping · Income, expenses, P&L, revenue splits, vendor ledger
+          Double-entry bookkeeping Â· Income, expenses, P&L, revenue splits, vendor ledger
         </div>
       </div>
 
@@ -1529,3 +1529,5 @@ export default function AccountingPage() {
     </div>
   )
 }
+
+
