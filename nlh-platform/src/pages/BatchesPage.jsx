@@ -20,12 +20,15 @@ function timeRange(t) {
 function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   var today = new Date().toISOString().split('T')[0]
 
+  // Fresh batch_students fetched on mount (so joining-date edits are reflected immediately)
+  const [batchStudents, setBatchStudents] = useState(batch.batch_students || [])
+
   // All students currently in the batch (not removed)
-  var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+  var activeStudents = batchStudents.filter(function (bs) { return !bs.removed_at })
 
   // Returns only students who had joined by `date` and not yet removed before `date`
   function studentsForDate(date) {
-    return (batch.batch_students || []).filter(function (bs) {
+    return batchStudents.filter(function (bs) {
       var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
       var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
       return (!joined || joined <= date) && (!removed || removed > date)
@@ -46,6 +49,13 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   const [todayWarning,  setTodayWarning]  = useState(false)
 
   useEffect(function () {
+    // Fetch fresh batch_students in case joining dates were edited after the page loaded
+    sb.from('batch_students')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, completed_at, status, students(id, full_name), skus(level_name, total_sessions, courses(group_name)))')
+      .eq('batch_id', batch.id)
+      .then(function (res) {
+        if (res.data) setBatchStudents(res.data)
+      })
     sb.from('batch_sessions').select('session_date').eq('batch_id', batch.id)
       .then(function (res) {
         var dates = (res.data || []).map(function (r) { return r.session_date })
