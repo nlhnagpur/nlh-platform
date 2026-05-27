@@ -5,7 +5,7 @@ import { showToast } from '../utils'
 import { ROLE_LABELS, ROLE_COLORS, isAdminRole } from '../constants/roles'
 import { sendWelcomeEmail, sendInviteEmail } from '../services/email'
 
-// â”€â”€ role hierarchy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── role hierarchy ────────────────────────────────────────────────────────────
 const ROLE_RANK = { owner: 6, super_admin: 5, admin: 4, manager: 3, staff: 2, smf: 1, cf: 1, uf: 1, student: 0 }
 const ADMIN_ROLES     = ['owner', 'super_admin', 'admin', 'manager', 'staff']
 const FRANCHISE_ROLES = ['smf', 'cf', 'uf']
@@ -44,7 +44,7 @@ function userInitials(u) {
 }
 
 function fmtRelative(ts) {
-  if (!ts) return 'â€”'
+  if (!ts) return '—'
   const diff = Date.now() - new Date(ts).getTime()
   const m = Math.floor(diff / 60000)
   if (m < 2) return 'just now'
@@ -66,7 +66,7 @@ function avColor(email) {
   return AV_PALETTE[h % AV_PALETTE.length]
 }
 
-// â”€â”€ AddUserModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── AddUserModal ──────────────────────────────────────────────────────────────
 function AddUserModal({ myRole, onClose, onSaved }) {
   const [email,    setEmail]    = useState('')
   const [name,     setName]     = useState('')
@@ -81,7 +81,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
     if (password.length < 8) { showToast('Password must be at least 8 characters.'); return }
     setSaving(true)
 
-    // Preserve admin session â€” signUp will create a new auth session
+    // Preserve admin session — signUp will create a new auth session
     const { data: { session: adminSession } } = await sb.auth.getSession()
 
     const { error: signUpErr } = await sb.auth.signUp({
@@ -120,7 +120,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
       if (emailResult?.success !== false) {
         showToast('User created! Credentials emailed to ' + email.trim() + '.')
       } else {
-        showToast('User created! (Email delivery failed â€” share credentials manually.)', 'warn')
+        showToast('User created! (Email delivery failed — share credentials manually.)', 'warn')
       }
       onSaved()
     }
@@ -132,7 +132,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
         <div className="modal-h">
           <div className="modal-title">Add user</div>
-          <button className="modal-x" onClick={onClose}>âœ•</button>
+          <button className="modal-x" onClick={onClose}>✕</button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '18px 20px 20px' }}>
           <div>
@@ -163,7 +163,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
             <button type="button" className="btn btn-s" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-p" disabled={saving}>{saving ? 'Creatingâ€¦' : 'Create user'}</button>
+            <button type="submit" className="btn btn-p" disabled={saving}>{saving ? 'Creating…' : 'Create user'}</button>
           </div>
         </form>
       </div>
@@ -171,7 +171,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
   )
 }
 
-// â”€â”€ EditRoleModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── EditRoleModal ─────────────────────────────────────────────────────────────
 function EditRoleModal({ user, myRole, onClose, onSaved }) {
   const [role,   setRole]   = useState(user.role || 'staff')
   const [saving, setSaving] = useState(false)
@@ -193,7 +193,7 @@ function EditRoleModal({ user, myRole, onClose, onSaved }) {
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
         <div className="modal-h">
           <div className="modal-title">Change role</div>
-          <button className="modal-x" onClick={onClose}>âœ•</button>
+          <button className="modal-x" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--bg)', borderRadius: 10 }}>
@@ -216,7 +216,7 @@ function EditRoleModal({ user, myRole, onClose, onSaved }) {
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <button className="btn btn-s" onClick={onClose}>Cancel</button>
-            <button className="btn btn-p" onClick={handleSave} disabled={saving}>{saving ? 'Savingâ€¦' : 'Save role'}</button>
+            <button className="btn btn-p" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save role'}</button>
           </div>
         </div>
       </div>
@@ -224,7 +224,7 @@ function EditRoleModal({ user, myRole, onClose, onSaved }) {
   )
 }
 
-// â”€â”€ ConfirmModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── ConfirmModal ──────────────────────────────────────────────────────────────
 function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onClose }) {
   const [busy, setBusy] = useState(false)
   async function go() { setBusy(true); await onConfirm(); setBusy(false) }
@@ -233,7 +233,7 @@ function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onClose
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
         <div className="modal-h">
           <div className="modal-title">{title}</div>
-          <button className="modal-x" onClick={onClose}>âœ•</button>
+          <button className="modal-x" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '14px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ font: '500 13px var(--font)', color: 'var(--text2)', lineHeight: 1.6 }}>{message}</div>
@@ -241,7 +241,7 @@ function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onClose
             <button className="btn btn-s" onClick={onClose}>Cancel</button>
             <button className="btn" style={{ background: danger ? 'var(--red)' : 'var(--purple)', color: '#fff' }}
               onClick={go} disabled={busy}>
-              {busy ? 'Please waitâ€¦' : confirmLabel}
+              {busy ? 'Please wait…' : confirmLabel}
             </button>
           </div>
         </div>
@@ -250,7 +250,7 @@ function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onClose
   )
 }
 
-// â”€â”€ UsersPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── UsersPage ─────────────────────────────────────────────────────────────────
 export default function UsersPage() {
   const { currentUser, currentRole } = useAuth()
   const [users,   setUsers]   = useState([])
@@ -296,7 +296,7 @@ export default function UsersPage() {
     ])
 
     if (resetError) {
-      showToast('Warning: password reset link failed â€” ' + resetError.message, 'warn')
+      showToast('Warning: password reset link failed — ' + resetError.message, 'warn')
     } else if (emailResult.success) {
       showToast('Invite sent to ' + user.email + '!')
     } else {
@@ -348,9 +348,9 @@ export default function UsersPage() {
   return (
     <div className="pg">
       <header className="tb">
-        <div className="crumb">Settings <span className="sep">â€º</span> <b>Manage Logins</b></div>
+        <div className="crumb">Settings <span className="sep">›</span> <b>Manage Logins</b></div>
         <div className="tb-r">
-          <input className="search tb-search" placeholder="Search email / name / roleâ€¦"
+          <input className="search tb-search" placeholder="Search email / name / role…"
             value={search} onChange={function (e) { setSearch(e.target.value) }} />
           <button className="btn btn-p" onClick={function () { setModal('add') }}>+ Add user</button>
         </div>
@@ -361,17 +361,17 @@ export default function UsersPage() {
           <div className="ph-l">
             <div className="ph-eyebrow"><span className="dot"></span>Settings</div>
             <h1 className="ph-title">Manage Logins</h1>
-            <div className="ph-sub">Control who can access the platform â€” change roles, block accounts, or add new admin &amp; staff members.</div>
+            <div className="ph-sub">Control who can access the platform — change roles, block accounts, or add new admin &amp; staff members.</div>
           </div>
         </div>
 
         {/* Mini stats */}
         <div className="mini-stats">
           {[
-            { ic: 'ðŸ‘¥', num: total,    lbl: 'Total users' },
-            { ic: 'ðŸ”‘', num: adminCnt, lbl: 'Admin team' },
-            { ic: 'ðŸ¢', num: frCnt,    lbl: 'Franchisees' },
-            { ic: 'ðŸš«', num: blocked,  lbl: 'Blocked' },
+            { ic: '👥', num: total,    lbl: 'Total users' },
+            { ic: '🔑', num: adminCnt, lbl: 'Admin team' },
+            { ic: '🏢', num: frCnt,    lbl: 'Franchisees' },
+            { ic: '🚫', num: blocked,  lbl: 'Blocked' },
           ].map(function (s) {
             return (
               <div className="mini" key={s.lbl}>
@@ -400,7 +400,7 @@ export default function UsersPage() {
 
         {/* Users table */}
         {loading ? (
-          <div className="loading"><span className="spinner" />Loading usersâ€¦</div>
+          <div className="loading"><span className="spinner" />Loading users…</div>
         ) : filtered.length === 0 ? (
           <div className="empty">No users found.</div>
         ) : (
@@ -452,12 +452,12 @@ export default function UsersPage() {
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                           {actable && myAssignable.length > 0 && (
                             <button className="row-action" onClick={function () { setModal({ type: 'role', user: u }) }}>
-                              âœï¸ Role
+                              ✏️ Role
                             </button>
                           )}
                           {actable && (
                             <button className="row-action" onClick={function () { setModal({ type: 'invite', user: u }) }}>
-                              ðŸ“§ Invite
+                              📧 Invite
                             </button>
                           )}
                           {actable && (
@@ -465,13 +465,13 @@ export default function UsersPage() {
                               className={'row-action' + (isBlocked ? ' green' : '')}
                               onClick={function () { setModal({ type: 'block', user: u }) }}
                             >
-                              {isBlocked ? 'âœ… Unblock' : 'ðŸš« Block'}
+                              {isBlocked ? '✅ Unblock' : '🚫 Block'}
                             </button>
                           )}
                           {actable && (
                             <button className="row-action" style={{ color: 'var(--red)' }}
                               onClick={function () { setModal({ type: 'delete', user: u }) }}>
-                              ðŸ—‘ Remove
+                              🗑 Remove
                             </button>
                           )}
                           {!actable && !isSelf && (
@@ -524,7 +524,7 @@ export default function UsersPage() {
       {modal?.type === 'delete' && (
         <ConfirmModal
           title="Remove user"
-          message={'Remove ' + modal.user.email + ' from the platform? Their Supabase Auth account is preserved â€” you can re-add them later.'}
+          message={'Remove ' + modal.user.email + ' from the platform? Their Supabase Auth account is preserved — you can re-add them later.'}
           confirmLabel="Remove"
           danger={true}
           onConfirm={function () { return deleteUser(modal.user) }}
@@ -533,4 +533,3 @@ export default function UsersPage() {
     </div>
   )
 }
-
