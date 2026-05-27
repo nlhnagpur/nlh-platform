@@ -278,6 +278,37 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     showToast('Batch created and student assigned ✓')
   }
 
+  // ── Mark course complete + open WhatsApp review ──
+  var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
+
+  async function markCourseComplete(en) {
+    var completed_at = new Date().toISOString()
+    var { error } = await sb.from('enrollments')
+      .update({ completed_at, status: 'completed' })
+      .eq('id', en.id)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    setLocalEnrollments(function (prev) {
+      return prev.map(function (e) {
+        return e.id === en.id ? { ...e, completed_at, status: 'completed' } : e
+      })
+    })
+    showToast('Marked as completed ✓')
+  }
+
+  function sendReviewWhatsApp(en) {
+    var phone = student.phone || ''
+    var clean = phone.replace(/\D/g, '')
+    if (clean.length === 10) clean = '91' + clean
+    if (!clean) { showToast('No phone number on file', 'warn'); return }
+    var course = (en.skus?.courses?.group_name || '') + (en.skus?.level_name ? ' ' + en.skus.level_name : '')
+    var msg = 'Dear ' + (student.parent_name || 'Parent') + ',\n\n'
+      + student.full_name + ' has successfully completed the *' + course + '* programme at *New Learning Horizons*! 🎉\n\n'
+      + 'We would love to hear your feedback. A quick Google Review would mean a lot to us:\n'
+      + GOOGLE_REVIEW_URL + '\n\n'
+      + 'Thank you for being part of the NLH family! 🌟'
+    window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank')
+  }
+
   // ── Remove an enrollment ──
   async function removeEnrollment(enrollment) {
     // Soft-delete any active batch_student row first
@@ -301,7 +332,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -316,7 +347,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
       franchisee_id: student.franchisee_id,
     } })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     setAddingEnrollment(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
@@ -327,7 +358,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setShowAddEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added ✓')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -488,19 +519,27 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                   const courseName  = en.skus?.courses?.group_name || '—'
                   const levelName   = en.skus?.level_name || '—'
 
+                  const isCompleted  = !!en.completed_at
+
                   return (
                     <div key={en.id} style={{
-                      border: '1px solid var(--border)', borderRadius: 10,
-                      overflow: 'hidden', background: 'var(--card)',
+                      border: '1px solid ' + (isCompleted ? 'var(--green)' : 'var(--border)'),
+                      borderRadius: 10, overflow: 'hidden',
+                      background: isCompleted ? 'var(--green-bg)' : 'var(--card)',
                     }}>
                       {/* Enrollment header row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>
+                          <div style={{ font: '600 13px var(--font)', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                             {courseName}
-                            <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)', marginLeft: 8 }}>
+                            <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)' }}>
                               {levelName}
                             </span>
+                            {isCompleted && (
+                              <span style={{ font: '600 10px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 7px' }}>
+                                ✓ Completed
+                              </span>
+                            )}
                           </div>
                           {bs ? (
                             <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginTop: 3 }}>
@@ -523,7 +562,22 @@ function StudentDetailModal({ student, onClose, onSaved }) {
                           )}
                         </div>
 
-                        {/* Certificate button */}
+                        {/* Complete / WhatsApp / Certificate buttons */}
+                        {admin && !isCompleted && (
+                          <button className="btn-s"
+                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: 'var(--green)', borderColor: 'var(--green)' }}
+                            onClick={function () { markCourseComplete(en) }}>
+                            ✓ Complete
+                          </button>
+                        )}
+                        {isCompleted && (
+                          <button className="btn-s"
+                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, background: '#25D366', borderColor: '#25D366', color: '#fff' }}
+                            onClick={function () { sendReviewWhatsApp(en) }}
+                            title="Send Google Review request on WhatsApp">
+                            💬 Review
+                          </button>
+                        )}
                         <button
                           className="btn-s"
                           style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
@@ -1204,7 +1258,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -1670,7 +1724,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, enrollments(id, sku_id, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .order('created_at', { ascending: false })
 
       if (admin) {
