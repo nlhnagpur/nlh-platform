@@ -1181,7 +1181,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
       if (ciSkuIds.length === 0) { setEligible([]); return }
 
       const { data } = await sb.from('enrollments')
-        .select('id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name))')
+        .select('id, student_id, sku_id, students(id, full_name, registered_at), skus(level_name, courses(group_name))')
         .eq('franchisee_id', nlhCentreId)
         .eq('status', 'active')
         .in('sku_id', ciSkuIds)
@@ -1302,7 +1302,12 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
                 ? <span style={{ fontSize: 12, color: 'var(--text3)' }}>No eligible enrolled students found.</span>
                 : <>
                     <select style={{ width: '100%', fontSize: 13, marginBottom: 6 }} value={selectedEnr}
-                      onChange={function (e) { setSelectedEnr(e.target.value) }}>
+                      onChange={function (e) {
+                        setSelectedEnr(e.target.value)
+                        var enr = eligible.find(function (x) { return x.id === e.target.value })
+                        var regDate = enr?.students?.registered_at
+                        setAddJoinDate(regDate || new Date().toISOString().slice(0, 10))
+                      }}>
                       <option value="">— Select student —</option>
                       {eligible.map(function (e) {
                         const course = e.skus?.courses?.group_name || ''

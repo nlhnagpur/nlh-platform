@@ -176,6 +176,7 @@ function StudentDetailModal({ student, onClose, onSaved }) {
     setShowNewBatch(false)
     setNewBatchCI('')
     setNewBatchForm({ name: '', days: [], time: '', is_individual: false })
+    setAssignJoinDate(student.registered_at || new Date().toISOString().slice(0, 10))
     setPanelData({ batches: [], eligibleCIs: [], loading: true })
 
     // Get CIs certified for this student's course level
