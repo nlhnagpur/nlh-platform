@@ -1159,10 +1159,12 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   const [students, setStudents] = useState(
     (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
   )
-  const [eligible,    setEligible]    = useState([])
-  const [showAdd,     setShowAdd]     = useState(false)
-  const [selectedEnr, setSelectedEnr] = useState('')
-  const [saving,      setSaving]      = useState(false)
+  const [eligible,      setEligible]      = useState([])
+  const [showAdd,       setShowAdd]       = useState(false)
+  const [selectedEnr,   setSelectedEnr]   = useState('')
+  const [saving,        setSaving]        = useState(false)
+  const [editingJoin,   setEditingJoin]   = useState(null)  // bsId being edited
+  const [editJoinVal,   setEditJoinVal]   = useState('')
 
   useEffect(function () {
     async function loadEligible() {
@@ -1212,6 +1214,21 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
     onChange()
   }
 
+  async function saveJoinDate(bsId) {
+    if (!editJoinVal) return
+    const { error } = await sb.from('batch_students')
+      .update({ assigned_at: editJoinVal + 'T00:00:00+00:00' })
+      .eq('id', bsId)
+    if (error) { showToast('Update failed: ' + error.message, 'err'); return }
+    setStudents(function (s) {
+      return s.map(function (bs) {
+        return bs.id === bsId ? { ...bs, assigned_at: editJoinVal + 'T00:00:00+00:00' } : bs
+      })
+    })
+    setEditingJoin(null)
+    showToast('Joining date updated ✓')
+  }
+
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 460 }}>
@@ -1229,23 +1246,50 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
             <p className="hint" style={{ marginBottom: 8 }}>No students assigned yet.</p>
           )}
           {students.map(function (bs) {
+            var isEditingThis = editingJoin === bs.id
             return (
               <div key={bs.id} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13,
               }}>
-                <div>
-                  <div style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || '—'}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>
-                    {bs.enrollments?.skus?.courses?.group_name
-                      ? bs.enrollments.skus.courses.group_name + ' · ' + (bs.enrollments.skus.level_name || '')
-                      : 'Since ' + fmtDate(bs.assigned_at)}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{bs.enrollments?.students?.full_name || '—'}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text3)' }}>
+                      {bs.enrollments?.skus?.courses?.group_name
+                        ? bs.enrollments.skus.courses.group_name + ' · ' + (bs.enrollments.skus.level_name || '')
+                        : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button className="btn" style={{ fontSize: 11, padding: '2px 8px' }}
+                      onClick={function () { remove(bs.id) }}>
+                      Remove
+                    </button>
                   </div>
                 </div>
-                <button className="btn" style={{ fontSize: 11, padding: '2px 8px' }}
-                  onClick={function () { remove(bs.id) }}>
-                  Remove
-                </button>
+                {/* Joining date row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text3)' }}>Joined:</span>
+                  {isEditingThis ? (
+                    <>
+                      <input type="date" value={editJoinVal}
+                        onChange={function (e) { setEditJoinVal(e.target.value) }}
+                        style={{ fontSize: 11, padding: '2px 5px' }} />
+                      <button className="btn-p" style={{ fontSize: 10, padding: '2px 7px' }}
+                        onClick={function () { saveJoinDate(bs.id) }}>Save</button>
+                      <button className="btn" style={{ fontSize: 10, padding: '2px 7px' }}
+                        onClick={function () { setEditingJoin(null) }}>Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 11, color: 'var(--text)' }}>{fmtDate(bs.assigned_at)}</span>
+                      <button className="btn" style={{ fontSize: 10, padding: '1px 6px' }}
+                        onClick={function () { setEditingJoin(bs.id); setEditJoinVal(bs.assigned_at ? bs.assigned_at.slice(0, 10) : '') }}>
+                        Edit
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             )
           })}
