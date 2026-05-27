@@ -1269,8 +1269,9 @@ export default function BatchesPage() {
   const [filterCourse,  setFilterCourse]  = useState('')
   const [filterStatus,  setFilterStatus]  = useState('active')
 
-  // Inline roster toggle
-  const [openRosters, setOpenRosters] = useState({})
+  // Inline roster toggle + per-batch attendance stats
+  const [openRosters,  setOpenRosters]  = useState({})
+  const [rosterStats,  setRosterStats]  = useState({}) // batchId → { enrollmentId: attendedCount }
 
   // Modals
   const [showAddBatch,       setShowAddBatch]       = useState(null) // { instructorId, skuId, skuLabel }
@@ -1295,8 +1296,8 @@ export default function BatchesPage() {
           is_active, start_date, sessions_done, notes, created_at,
           instructors(id, full_name),
           batch_students(id, enrollment_id, assigned_at, removed_at,
-            enrollments(id, student_id, sku_id, students(id, full_name),
-              skus(level_name, courses(group_name))))
+            enrollments(id, student_id, sku_id, completed_at, status, students(id, full_name),
+              skus(level_name, total_sessions, courses(group_name))))
         `)
         .eq('instructors.franchisee_id', nlh.id)
         .order('created_at', { ascending: false }),
@@ -1356,6 +1357,48 @@ export default function BatchesPage() {
       })
     })
     showToast('Student removed')
+  }
+
+  async function loadRosterStats(batchId) {
+    var { data: sessions } = await sb.from('batch_sessions')
+      .select('id')
+      .eq('batch_id', batchId)
+      .eq('is_holiday', false)
+    if (!sessions || sessions.length === 0) {
+      setRosterStats(function (prev) { return { ...prev, [batchId]: {} } })
+      return
+    }
+    var sessionIds = sessions.map(function (s) { return s.id })
+    var { data: att } = await sb.from('session_attendance')
+      .select('enrollment_id')
+      .in('session_id', sessionIds)
+      .eq('attended', true)
+    var map = {}
+    ;(att || []).forEach(function (a) {
+      map[a.enrollment_id] = (map[a.enrollment_id] || 0) + 1
+    })
+    setRosterStats(function (prev) { return { ...prev, [batchId]: map } })
+  }
+
+  async function markComplete(enrollmentId, batchId) {
+    var completed_at = new Date().toISOString()
+    var { error } = await sb.from('enrollments')
+      .update({ completed_at, status: 'completed' })
+      .eq('id', enrollmentId)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    showToast('Marked as completed ✓')
+    setBatches(function (prev) {
+      return prev.map(function (b) {
+        if (b.id !== batchId) return b
+        return {
+          ...b,
+          batch_students: b.batch_students.map(function (bs) {
+            if (bs.enrollments?.id !== enrollmentId) return bs
+            return { ...bs, enrollments: { ...bs.enrollments, completed_at, status: 'completed' } }
+          }),
+        }
+      })
+    })
   }
 
   // ── filter ────────────────────────────────────────────────────────────────
@@ -1542,7 +1585,11 @@ export default function BatchesPage() {
                       <button
                         className={'btn' + (rosterOpen ? ' btn-active' : '')}
                         style={{ fontSize: 11, padding: '3px 10px', background: rosterOpen ? 'var(--purple-bg)' : '', borderColor: rosterOpen ? 'var(--purple)' : '', color: rosterOpen ? 'var(--purple)' : '' }}
-                        onClick={function () { setOpenRosters(function (r) { return { ...r, [batch.id]: !r[batch.id] } }) }}>
+                        onClick={function () {
+                          var nowOpen = !openRosters[batch.id]
+                          setOpenRosters(function (r) { return { ...r, [batch.id]: nowOpen } })
+                          if (nowOpen) loadRosterStats(batch.id)
+                        }}>
                         👥 {activeStudents.length} {rosterOpen ? '▲' : '▼'}
                       </button>
 
@@ -1581,22 +1628,29 @@ export default function BatchesPage() {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
                         {activeStudents.map(function (bs) {
-                          const name   = bs.enrollments?.students?.full_name || '—'
-                          const course = bs.enrollments?.skus?.courses?.group_name || ''
-                          const level  = bs.enrollments?.skus?.level_name || ''
-                          const initials = name.split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
+                          const name        = bs.enrollments?.students?.full_name || '—'
+                          const course      = bs.enrollments?.skus?.courses?.group_name || ''
+                          const level       = bs.enrollments?.skus?.level_name || ''
+                          const initials    = name.split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
+                          const enrollId    = bs.enrollments?.id
+                          const isCompleted = !!bs.enrollments?.completed_at
+                          const attended    = (rosterStats[batch.id] || {})[bs.enrollment_id] || 0
+                          const totalSess   = bs.enrollments?.skus?.total_sessions || 0
+                          const statsLoaded = rosterStats[batch.id] !== undefined
                           return (
                             <div key={bs.id} style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
-                              padding: '7px 10px', borderRadius: 8,
-                              background: 'var(--bg)', border: '1px solid var(--border)',
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '8px 10px', borderRadius: 8,
+                              background: isCompleted ? 'var(--green-bg)' : 'var(--bg)',
+                              border: '1px solid ' + (isCompleted ? 'var(--green)' : 'var(--border)'),
                             }}>
                               <div style={{
                                 width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                                background: 'var(--purple-bg)', color: 'var(--purple)',
+                                background: isCompleted ? 'var(--green)' : 'var(--purple-bg)',
+                                color: isCompleted ? '#fff' : 'var(--purple)',
                                 fontWeight: 700, fontSize: 11,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              }}>{initials}</div>
+                              }}>{isCompleted ? '✓' : initials}</div>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>{name}</div>
                                 {(course || level) && (
@@ -1605,6 +1659,35 @@ export default function BatchesPage() {
                                   </div>
                                 )}
                               </div>
+                              {/* Sessions attended badge */}
+                              {statsLoaded && (
+                                <div style={{
+                                  flexShrink: 0, textAlign: 'right',
+                                  font: '600 11px var(--mono)',
+                                  color: isCompleted ? 'var(--green)' : attended > 0 ? 'var(--text)' : 'var(--text3)',
+                                }}>
+                                  {attended}
+                                  {totalSess > 0 && <span style={{ color: 'var(--text3)', fontWeight: 400 }}>/{totalSess}</span>}
+                                  <div style={{ font: '500 9px var(--font)', color: 'var(--text3)', fontWeight: 400 }}>sessions</div>
+                                </div>
+                              )}
+                              {/* Complete button / badge */}
+                              {isCompleted ? (
+                                <span style={{
+                                  flexShrink: 0, font: '600 10px var(--font)', color: 'var(--green)',
+                                  padding: '2px 8px', border: '1px solid var(--green)',
+                                  borderRadius: 20, background: 'var(--green-bg)', whiteSpace: 'nowrap',
+                                }}>✓ Completed</span>
+                              ) : (
+                                <button className="btn" style={{
+                                  fontSize: 10, padding: '2px 8px', flexShrink: 0,
+                                  color: 'var(--green)', borderColor: 'var(--green)',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                  onClick={function () { markComplete(enrollId, batch.id) }}>
+                                  ✓ Complete
+                                </button>
+                              )}
                               <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
                                 onClick={function () { removeFromBatch(bs.id, batch.id) }}>
                                 Remove
