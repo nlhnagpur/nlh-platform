@@ -1491,6 +1491,63 @@ export default function OrdersPage() {
     setActionLoading(null)
   }
 
+  async function handlePayOnline(order) {
+    const balance = Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
+    if (!balance) { showToast('No balance due', 'warn'); return }
+    setActionLoading(order.id + '_pay')
+    try {
+      // 1. Create Razorpay order on server
+      const res  = await fetch('/api/create-razorpay-order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ orderId: order.id, amount: balance }),
+      })
+      const data = await res.json()
+      if (!data.success) { showToast('Payment init failed: ' + data.error, 'err'); setActionLoading(null); return }
+
+      // 2. Open Razorpay checkout
+      var options = {
+        key:         data.keyId,
+        amount:      balance * 100,
+        currency:    'INR',
+        name:        'New Learning Horizons',
+        description: 'Invoice ' + (order.invoice_no || order.order_ref),
+        order_id:    data.rzpOrderId,
+        prefill: {
+          name:  order.placer?.business_name || '',
+          email: order.placer?.email || '',
+        },
+        theme: { color: '#534AB7' },
+        handler: async function (response) {
+          // Payment successful — mark as payment_submitted (webhook will close it)
+          var now = new Date().toISOString()
+          await sb.from('orders').update({
+            payment_mode:         'razorpay',
+            payment_ref:          response.razorpay_payment_id,
+            amount_paid:          balance,
+            payment_submitted_at: now,
+          }).eq('id', order.id)
+          setOrders(function (prev) {
+            return prev.map(function (o) {
+              return o.id === order.id
+                ? { ...o, status: 'payment_submitted', payment_mode: 'razorpay', payment_ref: response.razorpay_payment_id, amount_paid: balance, payment_submitted_at: now }
+                : o
+            })
+          })
+          showToast('Payment successful! ₹' + balance + ' paid via Razorpay ✓')
+        },
+      }
+      var rzp = new window.Razorpay(options)
+      rzp.on('payment.failed', function (response) {
+        showToast('Payment failed: ' + (response.error?.description || 'Unknown error'), 'err')
+      })
+      rzp.open()
+    } catch (e) {
+      showToast('Payment error: ' + e.message, 'err')
+    }
+    setActionLoading(null)
+  }
+
   async function handleSendReminder(order) {
     setActionLoading(order.id + '_reminder')
     try {
@@ -1555,7 +1612,13 @@ export default function OrdersPage() {
           </button>
         )}
         {order.status === 'invoiced' && !isAdmin && (
-          <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
+          <>
+            <button className="row-action green" disabled={busy}
+              onClick={function () { handlePayOnline(order) }}>
+              {isActing(order.id, 'pay') ? '…' : '💳 Pay Online'}
+            </button>
+            <button className="row-action" onClick={function () { setPaySubmitOrder(order) }}>Manual Pmt</button>
+          </>
         )}
         {order.status === 'invoiced' && isAdmin && (
           <>
