@@ -20,6 +20,9 @@ function timeRange(t) {
 function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   var today = new Date().toISOString().split('T')[0]
 
+  // All students currently in the batch (not removed)
+  var activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+
   // Returns only students who had joined by `date` and not yet removed before `date`
   function studentsForDate(date) {
     return (batch.batch_students || []).filter(function (bs) {

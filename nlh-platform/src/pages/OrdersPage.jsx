@@ -196,7 +196,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
                   <option value="neft">NEFT / RTGS</option>
                   <option value="cash">Cash</option>
                   <option value="cheque">Cheque</option>
-                  <option value="Other">Other</option>
+                  <option value="other">Other</option>
                 </select>
               </label>
               <label>Amount Paid (₹)
@@ -1464,7 +1464,12 @@ export default function OrdersPage() {
     } else {
       showToast('Payment verified. Order closed.')
       try {
-        await sendPaymentVerified({ order })
+        const placerEmail = order.placer?.email || ''
+        const placerName  = order.placer?.business_name || ''
+        const amtPaid     = order.amount_paid || order.grand_total || 0
+        if (placerEmail) {
+          await sendPaymentVerified(order, placerEmail, placerName, amtPaid)
+        }
       } catch (_) { /* non-fatal */ }
       await loadOrders()
     }
@@ -1489,7 +1494,11 @@ export default function OrdersPage() {
   async function handleSendReminder(order) {
     setActionLoading(order.id + '_reminder')
     try {
-      await sendPaymentReminder({ order })
+      const placerEmail = order.placer?.email || ''
+      const placerName  = order.placer?.business_name || ''
+      const balance     = Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
+      if (!placerEmail) { showToast('No email address on file for this franchisee.', 'warn'); setActionLoading(null); return }
+      await sendPaymentReminder(order, placerEmail, placerName, balance)
       // Stamp the order so we can show when/how many times reminder was sent
       var now = new Date().toISOString()
       var newCount = (order.reminder_count || 0) + 1
