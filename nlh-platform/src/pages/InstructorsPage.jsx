@@ -66,6 +66,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollSessions,    setPayrollSessions]    = useState([])
   const [payrollAppts,       setPayrollAppts]       = useState([])
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
+  const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollLoading,     setPayrollLoading]     = useState(false)
 
   // ── Profile form ──
@@ -173,7 +174,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       // ── Per-student completions: count enrollments completed this month per batch ──
       var batchIds = [...new Set((sessRes.data || []).map(function (s) { return s.batch_id }))]
       var completionMap = {}
+      var totalSessMap  = {}
+
       if (batchIds.length > 0) {
+        // Completions in month
         var { data: bsRows } = await sb.from('batch_students')
           .select('batch_id, enrollments(id, completed_at)')
           .in('batch_id', batchIds)
@@ -186,11 +190,24 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             }
           }
         })
+
+        // Total non-holiday sessions per batch in the month (includes substitutes)
+        // Used to prorate per-student pay: CI taught ciSessions/totalSessions of the batch
+        var { data: allSessRows } = await sb.from('batch_sessions')
+          .select('batch_id')
+          .in('batch_id', batchIds)
+          .eq('is_holiday', false)
+          .gte('session_date', startDate)
+          .lte('session_date', endDate)
+        ;(allSessRows || []).forEach(function (s) {
+          totalSessMap[s.batch_id] = (totalSessMap[s.batch_id] || 0) + 1
+        })
       }
 
       setPayrollSessions(sessRes.data || [])
       setPayrollAppts(apptRes.data || [])
       setPayrollCompletions(completionMap)
+      setPayrollTotalSess(totalSessMap)
       setPayrollLoading(false)
     }
     loadPayroll()
@@ -1202,16 +1219,23 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var rate    = appt?.remuneration_rate || 0
                 var course  = data.batch?.skus?.courses?.group_name || data.batch?.name || '—'
                 var level   = data.batch?.skus?.level_name || ''
-                var completions = mode === 'per_student' ? (payrollCompletions[batchId] || 0) : 0
+                var completions  = mode === 'per_student' ? (payrollCompletions[batchId] || 0) : 0
+                var ciSessions   = data.sessions.length
+                var totalSessions = payrollTotalSess[batchId] || ciSessions
+                var subSessions  = Math.max(0, totalSessions - ciSessions)
+                // Prorate per-student pay by fraction of sessions the CI actually taught
+                var proration    = totalSessions > 0 ? ciSessions / totalSessions : 1
                 var row = {
                   batchId,
                   batchName: data.batch?.name || '—',
                   course, level,
-                  sessionCount: data.sessions.length,
+                  sessionCount: ciSessions,
+                  totalSessions, subSessions,
+                  proration,
                   mode, rate,
                   completions,
-                  amount: mode === 'per_session' ? data.sessions.length * rate
-                        : mode === 'per_student' ? completions * rate
+                  amount: mode === 'per_session' ? ciSessions * rate
+                        : mode === 'per_student' ? Math.round(completions * rate * proration)
                         : 0,
                 }
                 if (mode === 'per_session') perSessionRows.push(row)
@@ -1307,24 +1331,59 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         Per Student (on completion)
                       </div>
                       {perStudentRows.map(function (row, i) {
+                        var hasSubs = row.subSessions > 0
+                        var pct     = Math.round(row.proration * 100)
                         return (
                           <div key={i} style={{
-                            display: 'flex', alignItems: 'center', padding: '10px 14px',
+                            padding: '10px 14px',
                             borderTop: i > 0 ? '1px solid var(--border)' : 'none',
                           }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
-                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                {row.course}{row.level ? ' · ' + row.level : ''}
-                                {' · '}
-                                <span style={{ color: row.completions > 0 ? 'var(--green)' : 'var(--text3)' }}>
-                                  {row.completions} student{row.completions !== 1 ? 's' : ''} completed
-                                </span>
-                                {' × ₹'}{row.rate.toLocaleString('en-IN')}
+                            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
+                                <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                                  {row.course}{row.level ? ' · ' + row.level : ''}
+                                </div>
+                                {/* Sessions breakdown */}
+                                <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
+                                  <span style={{
+                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
+                                    background: 'var(--purple-bg)', color: 'var(--purple)',
+                                  }}>
+                                    {row.sessionCount} sessions by CI
+                                  </span>
+                                  {hasSubs && (
+                                    <span style={{
+                                      font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
+                                      background: '#fff3cd', color: '#92400e',
+                                    }}>
+                                      {row.subSessions} by substitute
+                                    </span>
+                                  )}
+                                  <span style={{
+                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
+                                    background: row.completions > 0 ? 'var(--green-bg)' : 'var(--bg3)',
+                                    color: row.completions > 0 ? 'var(--green)' : 'var(--text3)',
+                                  }}>
+                                    {row.completions} student{row.completions !== 1 ? 's' : ''} completed
+                                  </span>
+                                </div>
+                                {/* Calculation breakdown */}
+                                <div style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
+                                  {row.completions} × ₹{row.rate.toLocaleString('en-IN')}
+                                  {hasSubs
+                                    ? <> × <span style={{ color: '#92400e', fontWeight: 700 }}>{pct}%</span> (CI taught {pct}% of sessions)</>
+                                    : null
+                                  }
+                                  {' = '}
+                                  <strong style={{ color: row.amount > 0 ? 'var(--text)' : 'var(--text3)' }}>
+                                    ₹{row.amount.toLocaleString('en-IN')}
+                                  </strong>
+                                </div>
                               </div>
-                            </div>
-                            <div style={{ font: '700 14px var(--font)', color: row.amount > 0 ? 'var(--text)' : 'var(--text3)' }}>
-                              {row.amount > 0 ? '₹' + row.amount.toLocaleString('en-IN') : '—'}
+                              <div style={{ font: '700 16px var(--font)', color: row.amount > 0 ? 'var(--text)' : 'var(--text3)', marginLeft: 12, marginTop: 2 }}>
+                                {row.amount > 0 ? '₹' + row.amount.toLocaleString('en-IN') : '—'}
+                              </div>
                             </div>
                           </div>
                         )

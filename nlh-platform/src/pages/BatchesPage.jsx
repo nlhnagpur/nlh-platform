@@ -1697,6 +1697,31 @@ export default function BatchesPage() {
                         })}
                       </div>
                     )}
+                    {/* All-completed banner */}
+                    {activeStudents.length > 0 && activeStudents.every(function (bs) { return !!bs.enrollments?.completed_at }) && (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 12px', borderRadius: 8, marginBottom: 10,
+                        background: 'var(--green-bg)', border: '1px solid var(--green)',
+                        gap: 10, flexWrap: 'wrap',
+                      }}>
+                        <div>
+                          <div style={{ font: '700 12px var(--font)', color: 'var(--green)' }}>🎓 All students have completed the course!</div>
+                          <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                            Consider deactivating this batch since no more sessions are needed.
+                          </div>
+                        </div>
+                        {batch.is_active && (
+                          <button
+                            className="btn"
+                            style={{ fontSize: 11, borderColor: 'var(--green)', color: 'var(--green)', flexShrink: 0 }}
+                            onClick={function () { toggleActive(batch) }}>
+                            Deactivate Batch
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     <button className="btn-s" style={{ fontSize: 11 }}
                       onClick={function () { setAddStudentModal({ ...batch, instructor_name: ciName }) }}>
                       + Add Student
