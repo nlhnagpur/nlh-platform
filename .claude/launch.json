@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "NLH Platform (dev)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "nlh-platform", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "NLH Platform (preview)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "nlh-platform", "run", "preview"],
+      "port": 4173
+    }
+  ]
+}

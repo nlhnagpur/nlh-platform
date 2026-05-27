@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NLH Franchise Certificate Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --purple:  #534AB7;
+  --purple2: #3D35A0;
+  --red:     #C1272D;
+  --text:    #1A1916;
+  --text2:   #5C5A54;
+  --border:  #E2E0D8;
+  --font:    'DM Sans', system-ui, sans-serif;
+  --script:  Georgia, 'Times New Roman', serif;
+  --mono:    'DM Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
+
+/* ═══════════════════════════════════════
+   App shell
+═══════════════════════════════════════ */
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+/* ═══════════════════════════════════════
+   Form panel
+═══════════════════════════════════════ */
+.form-panel {
+  width: 310px;
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.fhdr {
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.fhdr img { height: 46px; width: 46px; object-fit: contain; border-radius: 6px; }
+.fhdr-text h1 { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.25; }
+.fhdr-text p  { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text2); margin-top: 2px; }
+
+.fbody { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+
+.fg { display: flex; flex-direction: column; gap: 4px; }
+.fg label { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; font-weight: 500; color: var(--text2); }
+.fg input, .fg textarea, .fg select {
+  border: 1px solid #D0CEC6; border-radius: 7px; padding: 8px 10px;
+  font-size: 13px; font-family: var(--font); color: var(--text); background: #fff;
+  outline: none; width: 100%;
+  transition: border-color .12s, box-shadow .12s;
+}
+.fg input:focus, .fg textarea:focus, .fg select:focus {
+  border-color: var(--purple); box-shadow: 0 0 0 3px rgba(83,74,183,.1);
+}
+.fg textarea { resize: vertical; min-height: 58px; line-height: 1.5; }
+
+/* Type buttons */
+.type-row { display: flex; gap: 5px; }
+.tbtn {
+  flex: 1; padding: 7px 4px; border: 1.5px solid var(--border); border-radius: 7px;
+  background: #fff; cursor: pointer; font-family: var(--font); font-size: 11px;
+  font-weight: 600; color: var(--text2); text-align: center; line-height: 1.3;
+  transition: all .1s;
+}
+.tbtn .badge { display: block; font-size: 13px; font-weight: 800; margin-bottom: 1px; }
+.tbtn.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+.tbtn:hover:not(.active) { border-color: var(--purple); color: var(--purple); }
+
+/* Courses grid */
+.courses-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.cck {
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px;
+  border-radius: 5px; cursor: pointer; font-size: 11.5px; color: var(--text);
+  user-select: none; transition: background .1s;
+}
+.cck:hover { background: #F0EEE9; }
+.cck input[type=checkbox] { accent-color: var(--purple); width: 13px; height: 13px; flex-shrink: 0; cursor: pointer; }
+
+/* Footer actions */
+.ffoot {
+  padding: 12px 18px 16px; border-top: 1px solid var(--border); flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.btn-print {
+  width: 100%; padding: 10px; background: var(--purple); color: #fff; border: none;
+  border-radius: 8px; font-family: var(--font); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .1s; display: flex; align-items: center;
+  justify-content: center; gap: 7px;
+}
+.btn-print:hover { background: var(--purple2); }
+.print-note { font-size: 10px; color: var(--text2); text-align: center; line-height: 1.4; }
+
+/* ═══════════════════════════════════════
+   Preview panel
+═══════════════════════════════════════ */
+.preview-panel {
+  flex: 1; overflow: auto; display: flex;
+  align-items: center; justify-content: center;
+  padding: 32px; background: #CFCCC4;
+}
+.cert-holder { position: relative; }
+#certScaleOuter { position: absolute; top: 0; left: 0; transform-origin: top left; }
+
+/* ═══════════════════════════════════════
+   Certificate (A4 landscape: 1122×794px)
+═══════════════════════════════════════ */
+#certificate {
+  width: 1122px; height: 794px;
+  background: #fff url('assets/cert-background.png') center/cover no-repeat;
+  display: flex; position: relative;
+  box-shadow: 0 6px 40px rgba(0,0,0,.3), inset 0 0 0 2px #D8D5CC;
+  overflow: hidden;
+  font-family: var(--font);
+}
+
+/* Left content area */
+.cert-left {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; padding: 32px 40px 24px;
+  position: relative;
+}
+
+/* Remove whitening overlay — let background illustration show clearly */
+.cert-left::before { display: none; }
+
+.cbody {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column;
+  align-items: center; width: 100%; height: 100%;
+}
+
+.c-title {
+  font-size: 36px; font-weight: 900; letter-spacing: .06em;
+  text-transform: uppercase; color: #1A1916; text-align: center;
+  margin-bottom: 3px;
+}
+.c-sub {
+  font-size: 18px; font-style: italic; color: #1A1916;
+  text-align: center; margin-bottom: 24px;
+}
+
+.c-name {
+  font-family: var(--script); font-style: italic; font-weight: bold;
+  color: var(--red); line-height: 1.05; text-align: center;
+  margin-bottom: 3px;
+}
+.c-state-label {
+  font-family: var(--script); font-style: italic; font-size: 32px; font-weight: bold;
+  color: var(--red); text-align: center; margin-bottom: 8px;
+}
+
+.c-reg  { font-size: 17px; color: #1A1916; text-align: center; margin-bottom: 1px; }
+.c-type { font-size: 18px; font-weight: 700; color: var(--red); text-align: center; margin-bottom: 10px; }
+.c-org  { font-size: 26px; font-weight: 700; color: #1A1916; text-align: center; margin-bottom: 5px; }
+.c-addr {
+  font-size: 16px; color: #1A1916; text-align: center;
+  line-height: 1.55; margin-bottom: 13px; max-width: 640px;
+}
+.c-courses {
+  font-size: 22px; font-weight: 700; color: #1A1916;
+  text-align: center; line-height: 1.45;
+  max-width: 640px; margin-bottom: auto;
+}
+
+/* Footer: date + signature */
+.c-footer {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  width: 100%; margin-top: 10px;
+}
+
+.c-date-block {}
+.c-date-val {
+  display: block; font-size: 18px; font-weight: 700; color: #1A1916;
+  border-bottom: 2px solid #1A1916; padding-bottom: 3px; margin-bottom: 4px;
+  min-width: 130px;
+}
+.c-date-lbl { font-size: 14px; color: #1A1916; }
+
+.c-sig-block { display: flex; flex-direction: column; align-items: center; }
+.c-sig-block img { height: 80px; margin-bottom: 2px; filter: contrast(3) brightness(0.45) saturate(1.4); }
+.c-sig-line { width: 200px; border-top: 2px solid #1A1916; margin-bottom: 4px; }
+.c-sig-name { font-size: 15px; font-weight: 700; color: var(--red); font-family: var(--font); }
+.c-sig-role { font-size: 14px; color: #1A1916; }
+
+/* ═══════════════════════════════════════
+   Right sidebar
+═══════════════════════════════════════ */
+.cert-right {
+  width: 218px; flex-shrink: 0; background: #fff;
+  border-left: 1px solid #CDCBC3;
+  display: flex; flex-direction: column;
+  align-items: center; padding: 12px 10px 10px;
+  gap: 7px;
+}
+
+.cr-nlh-logo { width: 154px; height: auto; display: block; }
+.cr-mascot { width: 120px; height: auto; display: block; margin: 4px auto; align-self: center; }
+
+.cr-contact { display: flex; flex-direction: column; gap: 4px; align-self: stretch; }
+.cr-crow {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 13px; color: #222; font-family: var(--font);
+}
+.cr-crow .ci {
+  width: 15px; height: 15px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-style: normal;
+}
+.cr-cicon-fb {
+  width: 13px; height: 13px; background: #1877F2; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 9px; font-weight: 800; font-style: normal;
+  flex-shrink: 0;
+}
+.cr-cicon-ig {
+  width: 13px; height: 13px; border-radius: 3px;
+  background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 8px; font-style: normal; flex-shrink: 0;
+}
+
+.cr-divider { width: 100%; height: 1px; background: #E0DDD6; }
+
+.cr-logos { display: flex; flex-direction: column; gap: 2px; width: 100%; flex: 1; justify-content: flex-end; }
+
+/* Course logo images */
+.cr-logo-img { width: 100%; display: block; height: auto; border-radius: 5px; }
+
+/* ACEM Abacus — real image */
+.cr-acem-img { width: 100%; display: block; border-radius: 5px; }
+
+/* ═══════════════════════════════════════
+   Print
+═══════════════════════════════════════ */
+@media print {
+  @page { size: A4 landscape; margin: 14mm; }
+  body * { visibility: hidden; }
+  #certificate, #certificate * { visibility: visible; }
+  #certificate {
+    position: fixed !important; top: 0 !important; left: 0 !important;
+    width: 100% !important; height: 100% !important;
+    box-shadow: none !important; transform: none !important;
+  }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ FORM PANEL ══════════════════════════════════ -->
+  <aside class="form-panel">
+    <div class="fhdr">
+      <img src="assets/nlh-logo.png" alt="NLH">
+      <div class="fhdr-text">
+        <h1>Certificate Generator</h1>
+        <p>Franchise certificate</p>
+      </div>
+    </div>
+
+    <div class="fbody">
+
+      <!-- Franchisee type -->
+      <div class="fg">
+        <label>Franchisee type</label>
+        <div class="type-row">
+          <button class="tbtn active" onclick="setType('CF',this)">
+            <span class="badge">CF</span>City
+          </button>
+          <button class="tbtn" onclick="setType('SMF',this)">
+            <span class="badge">SMF</span>State Master
+          </button>
+          <button class="tbtn" onclick="setType('UF',this)">
+            <span class="badge">UF</span>Unit
+          </button>
+        </div>
+      </div>
+
+      <!-- Name -->
+      <div class="fg">
+        <label>Franchisee name</label>
+        <input type="text" id="fName" placeholder="e.g. Sachin Chawra" oninput="updateCert()">
+      </div>
+
+      <!-- City (CF only) -->
+      <div class="fg" id="grpCity">
+        <label>City</label>
+        <input type="text" id="fCity" placeholder="e.g. Bharuch" oninput="updateCert()">
+      </div>
+
+      <!-- State (SMF only) -->
+      <div class="fg" id="grpState" style="display:none">
+        <label>State</label>
+        <input type="text" id="fState" placeholder="e.g. Gujarat" oninput="updateCert()">
+      </div>
+
+      <!-- Address -->
+      <div class="fg">
+        <label>Address</label>
+        <textarea id="fAddr" placeholder="e.g. 9, Rachna Nagar -5, Bholav, Bharuch" oninput="updateCert()"></textarea>
+      </div>
+
+      <!-- Courses -->
+      <div class="fg">
+        <label>Courses offered</label>
+        <div class="courses-grid" id="coursesGrid"></div>
+      </div>
+
+      <!-- Valid Till -->
+      <div class="fg">
+        <label>Valid till</label>
+        <input type="date" id="fDate" oninput="updateCert()">
+      </div>
+
+    </div>
+
+    <div class="ffoot">
+      <button class="btn-print" onclick="window.print()">
+        🖨&nbsp; Print / Save as PDF
+      </button>
+      <p class="print-note">Enable "Print backgrounds" in browser print settings for best results.</p>
+    </div>
+  </aside>
+
+  <!-- ══ PREVIEW PANEL ═══════════════════════════════ -->
+  <main class="preview-panel" id="previewPanel">
+    <div class="cert-holder" id="certHolder">
+      <div id="certScaleOuter">
+
+        <!-- ═══════════════ CERTIFICATE ══════════════ -->
+        <div id="certificate">
+
+          <!-- Left content area -->
+          <div class="cert-left">
+            <div class="cbody">
+
+              <div class="c-title">Franchise Certificate</div>
+              <div class="c-sub">This is to Certify that</div>
+
+              <div class="c-name" id="cName">Franchisee Name</div>
+              <div class="c-state-label" id="cStateLabel" style="display:none"></div>
+
+              <div class="c-reg" id="cReg">Is a Registered</div>
+              <div class="c-type" id="cType">City Master Franchisee of</div>
+
+              <div class="c-org">New Learning Horizons at</div>
+              <div class="c-addr" id="cAddr">—</div>
+              <div class="c-courses" id="cCourses">for —</div>
+
+              <div class="c-footer">
+                <div class="c-date-block">
+                  <span class="c-date-val" id="cDate">DD.MM.YYYY</span>
+                  <span class="c-date-lbl">Valid Till</span>
+                </div>
+                <div class="c-sig-block">
+                  <img src="assets/drp-signature.png" alt="Signature">
+                  <div class="c-sig-line"></div>
+                  <div class="c-sig-name">Dhiral Panchmatia</div>
+                  <div class="c-sig-role">Founder</div>
+                </div>
+              </div>
+
+            </div><!-- .cbody -->
+          </div><!-- .cert-left -->
+
+          <!-- Right sidebar -->
+          <div class="cert-right">
+
+            <img src="assets/nlh-logo.png" alt="New Learning Horizons" class="cr-nlh-logo">
+
+            <div class="cr-contact">
+              <div class="cr-crow">
+                <span class="ci">✉</span> nlhnagpur@yahoo.in
+              </div>
+              <div class="cr-crow">
+                <span class="ci">🌐</span> www.nlhnagpur.info
+              </div>
+              <div class="cr-crow">
+                <span class="cr-cicon-ig">✦</span> /newlearninghorizons
+              </div>
+              <div class="cr-crow">
+                <span class="cr-cicon-fb">f</span> /nlhnag
+              </div>
+            </div>
+
+            <img src="assets/nlh-mascot.png" alt="NLH Mascot" class="cr-mascot">
+            <div class="cr-divider"></div>
+
+            <div class="cr-logos">
+
+              <!-- ACEM Abacus -->
+              <img src="assets/logo-acem-abacus.png" alt="ACEM Abacus" class="cr-acem-img">
+
+              <!-- Write Well -->
+              <img src="assets/logo-write-well.png" alt="Write Well" class="cr-logo-img" style="border-radius:5px;">
+
+              <!-- Easy Math -->
+              <img src="assets/logo-easy-math.png" alt="Easy Math" class="cr-logo-img" style="border-radius:5px;">
+
+
+
+            </div><!-- .cr-logos -->
+          </div><!-- .cert-right -->
+
+        </div><!-- #certificate -->
+      </div><!-- #certScaleOuter -->
+    </div><!-- .cert-holder -->
+  </main>
+
+</div><!-- .app -->
+
+<script>
+const COURSES = [
+  'Abacus','Handwriting Improvement','Vedic Math','Coding',
+  'Phonics',"Rubik's Cube",'Robotics','Reading',
+  'Public Speaking','Storytelling','Creative Writing',
+  'Art & Craft','Personality Development'
+];
+
+let currentType = 'CF';
+
+/* Build course checkboxes */
+(function buildCourses() {
+  const grid = document.getElementById('coursesGrid');
+  grid.innerHTML = COURSES.map(c =>
+    `<label class="cck"><input type="checkbox" value="${c}" onchange="updateCert()"> ${c}</label>`
+  ).join('');
+})();
+
+function setType(type, btn) {
+  currentType = type;
+  document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('grpCity').style.display  = type === 'CF'  ? 'flex' : 'none';
+  document.getElementById('grpState').style.display = type === 'SMF' ? 'flex' : 'none';
+  updateCert();
+}
+
+function getCheckedCourses() {
+  return [...document.querySelectorAll('#coursesGrid input:checked')].map(i => i.value);
+}
+
+function fmtDate(v) {
+  if (!v) return 'DD.MM.YYYY';
+  const [y, m, d] = v.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+function buildCourseText(list) {
+  if (!list.length) return 'for —';
+  if (list.length === 1) return 'for ' + list[0];
+  return 'for ' + list.slice(0, -1).join(', ') + ' & ' + list[list.length - 1];
+}
+
+function updateCert() {
+  const name   = document.getElementById('fName').value.trim() || 'Franchisee Name';
+  const city   = document.getElementById('fCity').value.trim();
+  const state  = document.getElementById('fState').value.trim();
+  const addr   = document.getElementById('fAddr').value.trim() || '—';
+  const date   = document.getElementById('fDate').value;
+  const courses = getCheckedCourses();
+
+  /* Name — dynamic font-size */
+  const cName = document.getElementById('cName');
+  cName.textContent = name;
+  const len = name.length;
+  cName.style.fontSize = len > 32 ? '30px' : len > 24 ? '38px' : len > 18 ? '46px' : '56px';
+
+  /* State label (SMF only) */
+  const cSL = document.getElementById('cStateLabel');
+  cSL.style.display = currentType === 'SMF' ? 'block' : 'none';
+  if (currentType === 'SMF') cSL.textContent = state || 'State';
+
+  /* Type text */
+  const cType = document.getElementById('cType');
+  if (currentType === 'CF') {
+    cType.textContent = (city ? city + ' ' : '') + 'City Master Franchisee of';
+  } else if (currentType === 'SMF') {
+    cType.textContent = 'State Master Franchisee of';
+  } else {
+    cType.textContent = 'Unit Franchisee of';
+  }
+
+  document.getElementById('cAddr').textContent    = addr;
+  document.getElementById('cCourses').textContent = buildCourseText(courses);
+  document.getElementById('cDate').textContent    = fmtDate(date);
+}
+
+/* Scale certificate to fit preview panel */
+function scaleCert() {
+  const panel = document.getElementById('previewPanel');
+  const W = 1122, H = 794;
+  const pw = panel.clientWidth  - 64;
+  const ph = panel.clientHeight - 64;
+  const s  = Math.min(pw / W, ph / H, 1);
+  const outer  = document.getElementById('certScaleOuter');
+  const holder = document.getElementById('certHolder');
+  outer.style.transform = `scale(${s})`;
+  holder.style.width    = (W * s) + 'px';
+  holder.style.height   = (H * s) + 'px';
+}
+
+updateCert();
+scaleCert();
+window.addEventListener('resize', scaleCert);
+</script>
+</body>
+</html>
+
