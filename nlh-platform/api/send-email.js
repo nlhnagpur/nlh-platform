@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { to, toName, subject, htmlContent } = req.body;
+  const { to, toName, subject, htmlContent, bcc } = req.body;
 
   if (!to || !subject || !htmlContent) {
     return res.status(400).json({ error: 'Missing required fields: to, subject, htmlContent' });
@@ -25,6 +25,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         sender: { name: 'New Learning Horizons', email: 'admin@nlhnagpur.info' },
         to: [{ email: to, name: toName || to }],
+        ...(bcc && bcc.length > 0 ? { bcc: bcc.map(function(e) { return { email: e } }) } : {}),
         subject,
         htmlContent
       })

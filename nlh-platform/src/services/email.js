@@ -1,11 +1,11 @@
 import { fmtAmt } from '../utils'
 
-export async function sendBrevoEmail(to, toName, subject, htmlContent) {
+export async function sendBrevoEmail(to, toName, subject, htmlContent, bcc) {
   try {
     const response = await fetch('/api/send-email', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ to, toName, subject, htmlContent }),
+      body: JSON.stringify({ to, toName, subject, htmlContent, bcc }),
     })
     const data = await response.json()
     if (response.ok) return { success: true, id: data.id }
@@ -155,7 +155,8 @@ export async function sendPaymentReminder(order, franchiseeEmail, franchiseeName
     '</table>' +
     '<p>Please make the payment at your earliest convenience and submit the transaction reference via the NLH Platform.</p>' +
     '<div style="background:#F0EEE9;padding:12px;border-radius:8px;font-size:13px">' + BANK_DETAILS + '</div>'
-  return sendBrevoEmail(franchiseeEmail, franchiseeName, subject, nlhEmailTemplate('Payment Reminder', body, 'This is an automated reminder from NLH Platform.'))
+  // BCC admin so they have a copy in their inbox as confirmation the mail was sent
+  return sendBrevoEmail(franchiseeEmail, franchiseeName, subject, nlhEmailTemplate('Payment Reminder', body, 'This is an automated reminder from NLH Platform.'), ['admin@nlhnagpur.info'])
 }
 
 export async function sendPaymentVerified(order, franchiseeEmail, franchiseeName, amount) {
