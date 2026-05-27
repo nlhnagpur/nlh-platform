@@ -45,7 +45,7 @@ const FILTER_LABELS = {
 // PaySubmitModal — franchisee submits payment proof
 // ---------------------------------------------------------------------------
 function PaySubmitModal({ order, onClose, onSaved }) {
-  const [mode, setMode] = useState('UPI')
+  const [mode, setMode] = useState('upi')
   const [utr, setUtr] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -81,10 +81,10 @@ function PaySubmitModal({ order, onClose, onSaved }) {
           <div className="fr">
             <label>Payment Mode</label>
             <select value={mode} onChange={function (e) { setMode(e.target.value) }}>
-              <option value="UPI">UPI</option>
-              <option value="NEFT">NEFT / RTGS</option>
-              <option value="Cash">Cash</option>
-              <option value="Cheque">Cheque</option>
+              <option value="upi">UPI</option>
+              <option value="neft">NEFT / RTGS</option>
+              <option value="cash">Cash</option>
+              <option value="cheque">Cheque</option>
             </select>
           </div>
           <div className="fr">
@@ -115,7 +115,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
   const total = order.grand_total || 0
   const remaining = Math.max(0, total - (order.amount_paid || 0))
   const [amountPaid, setAmountPaid] = useState(remaining > 0 ? String(remaining) : '')
-  const [mode, setMode]             = useState(order.payment_mode || 'UPI')
+  const [mode, setMode]             = useState(order.payment_mode || 'upi')
   const [ref,  setRef]              = useState(order.payment_ref  || '')
   const [saving, setSaving]         = useState(false)
 
@@ -192,10 +192,10 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
             <div className="form-grid">
               <label>Payment Mode
                 <select value={mode} onChange={function (e) { setMode(e.target.value) }}>
-                  <option value="UPI">UPI</option>
-                  <option value="NEFT">NEFT / RTGS</option>
-                  <option value="Cash">Cash</option>
-                  <option value="Cheque">Cheque</option>
+                  <option value="upi">UPI</option>
+                  <option value="neft">NEFT / RTGS</option>
+                  <option value="cash">Cash</option>
+                  <option value="cheque">Cheque</option>
                   <option value="Other">Other</option>
                 </select>
               </label>
