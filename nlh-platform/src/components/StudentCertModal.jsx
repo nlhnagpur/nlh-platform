@@ -173,7 +173,9 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         `Dear ${student.parent_name || 'Parent'},\n\n` +
         `We are delighted to inform you that *${student.full_name}* has successfully completed ` +
         `*${courses}* at New Learning Horizons! 🌟\n\n` +
-        `The Certificate of Accomplishment is attached in the next message.`
+        `Thank you for choosing NLH and for your continued trust in us. ` +
+        `We look forward to welcoming ${student.full_name} to the next level and exploring our other exciting programmes together.\n\n` +
+        `With warm regards,\nNew Learning Horizons 🌟`
 
       const textRes = await fetch('/api/send-whatsapp', {
         method: 'POST',
