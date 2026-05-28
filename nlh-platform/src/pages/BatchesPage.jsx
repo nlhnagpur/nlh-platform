@@ -527,6 +527,7 @@ function SessionHistoryModal({ batch, onClose }) {
   const [openSess,       setOpenSess]       = useState(null)
   const [editSessId,     setEditSessId]     = useState(null)
   const [editAtt,        setEditAtt]        = useState({})
+  const [editLoading,    setEditLoading]    = useState(false)
   const [savingEdit,     setSavingEdit]     = useState(false)
   const [confirmDelId,   setConfirmDelId]   = useState(null)  // session id pending delete confirm
   const [deleting,       setDeleting]       = useState(false)
@@ -549,20 +550,44 @@ function SessionHistoryModal({ batch, onClose }) {
       .then(function (res) { if (res.data) setBatchStudents(res.data) })
   }, [])
 
-  function startEdit(sess) {
-    // Seed edit map from existing attendance; if none, default all present
+  async function startEdit(sess) {
+    // Open the panel immediately in loading state so the user gets feedback
+    setEditLoading(true)
+    setEditSessId(sess.id)
+    setOpenSess(sess.id)
+
+    // Always do a fresh fetch when entering edit mode so recently-added students
+    // (e.g. Parth added from StudentModal after page load) are always included
+    var { data: freshBS } = await sb.from('batch_students')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, students(id, full_name))')
+      .eq('batch_id', batch.id)
+    var currentBS = freshBS || batchStudents
+    if (freshBS) setBatchStudents(freshBS)
+
+    // studentsForDate using fresh data directly (state update hasn't applied yet)
+    function freshStudentsForDate(date) {
+      return currentBS.filter(function (bs) {
+        var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
+        var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
+        return (!joined || joined <= date) && (!removed || removed > date)
+      })
+    }
+
+    // Seed edit map from existing attendance; default any new students to Present
     var map = {}
     if ((sess.session_attendance || []).length > 0) {
       sess.session_attendance.forEach(function (a) { map[a.enrollment_id] = !!a.attended })
-    } else {
-      studentsForDate(sess.session_date).forEach(function (bs) { map[bs.enrollment_id] = true })
     }
+    // Include students active on this date that weren't in the recorded attendance yet
+    freshStudentsForDate(sess.session_date).forEach(function (bs) {
+      if (!(bs.enrollment_id in map)) map[bs.enrollment_id] = true
+    })
+
     setEditAtt(map)
-    setEditSessId(sess.id)
-    setOpenSess(sess.id)
+    setEditLoading(false)
   }
 
-  function cancelEdit() { setEditSessId(null); setEditAtt({}) }
+  function cancelEdit() { setEditSessId(null); setEditAtt({}); setEditLoading(false) }
 
   function toggleEdit(enrollmentId) {
     setEditAtt(function (prev) { return { ...prev, [enrollmentId]: !prev[enrollmentId] } })
@@ -736,12 +761,13 @@ function SessionHistoryModal({ batch, onClose }) {
                           <button
                             type="button"
                             onClick={function (e) { e.stopPropagation(); startEdit(sess) }}
+                            disabled={editLoading && editSessId === sess.id}
                             style={{
                               padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)',
                               background: 'var(--bg2)', color: 'var(--text3)',
                               font: '500 10px var(--font)', cursor: 'pointer',
                             }}
-                          >✏️ Edit</button>
+                          >{editLoading && editSessId === sess.id ? '…' : '✏️ Edit'}</button>
                           {confirmDelId === sess.id ? (
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button
@@ -820,7 +846,11 @@ function SessionHistoryModal({ batch, onClose }) {
                         <div style={{ font: '600 11px var(--font)', color: 'var(--purple)', marginBottom: 8 }}>
                           Mark attendance — tap to toggle
                         </div>
-                        {editStudents.length === 0 ? (
+                        {editLoading ? (
+                          <div style={{ padding: '12px 0', color: 'var(--text3)', font: '500 12px var(--font)' }}>
+                            Loading student list…
+                          </div>
+                        ) : editStudents.length === 0 ? (
                           <p className="hint">No students had joined by this date.</p>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
@@ -856,9 +886,9 @@ function SessionHistoryModal({ batch, onClose }) {
                         )}
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button type="button" className="btn" style={{ fontSize: 11 }}
-                            onClick={cancelEdit} disabled={savingEdit}>Cancel</button>
+                            onClick={cancelEdit} disabled={savingEdit || editLoading}>Cancel</button>
                           <button type="button" className="btn-p" style={{ fontSize: 11 }}
-                            onClick={function () { saveEdit(sess) }} disabled={savingEdit}>
+                            onClick={function () { saveEdit(sess) }} disabled={savingEdit || editLoading}>
                             {savingEdit ? 'Saving…' : 'Save Attendance'}
                           </button>
                         </div>
