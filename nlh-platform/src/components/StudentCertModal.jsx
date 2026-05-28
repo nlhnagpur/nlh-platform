@@ -159,37 +159,48 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
     }
     setWaSending(true)
     try {
-      // ── 1. Capture the hidden full-size cert as PNG ──────────────────────
-      const dataUrl = await toPng(certCaptureRef.current, {
-        width: 2000, height: 1414, pixelRatio: 1, cacheBust: true,
-      })
+      const waTo = toWAPhone(phone)
 
-      // ── 2. Build caption ─────────────────────────────────────────────────
       const courses = selected.map(function (e) {
         const c = e.skus?.courses?.group_name || 'Course'
         const l = e.skus?.level_name || ''
         return l ? `${c} — ${l}` : c
       }).join(', ')
-      const caption =
+
+      // ── 1. Send congratulatory text first (opens the session window) ──────
+      const textBody =
         `🎓 *Congratulations ${student.full_name}!*\n\n` +
         `Dear ${student.parent_name || 'Parent'},\n\n` +
-        `We are delighted to share the Certificate of Accomplishment for successfully completing ` +
-        `*${courses}* at New Learning Horizons.\n\n` +
-        `With warm regards,\nNew Learning Horizons 🌟`
+        `We are delighted to inform you that *${student.full_name}* has successfully completed ` +
+        `*${courses}* at New Learning Horizons! 🌟\n\n` +
+        `The Certificate of Accomplishment is attached in the next message.`
 
-      // ── 3. Send via Meta Cloud API ────────────────────────────────────────
-      const res = await fetch('/api/send-whatsapp-image', {
+      const textRes = await fetch('/api/send-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: waTo, text: textBody }),
+      })
+      const textData = await textRes.json()
+      if (!textData.success) throw new Error(textData.error || 'Text message failed')
+
+      // ── 2. Capture the hidden full-size cert as PNG ───────────────────────
+      const dataUrl = await toPng(certCaptureRef.current, {
+        width: 2000, height: 1414, pixelRatio: 1, cacheBust: true,
+      })
+
+      // ── 3. Send certificate image ─────────────────────────────────────────
+      const imgRes = await fetch('/api/send-whatsapp-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to:          toWAPhone(phone),
+          to:          waTo,
           imageBase64: dataUrl,
-          caption,
+          caption:     `📜 Certificate of Accomplishment — ${courses}`,
           filename:    `NLH-Certificate-${student.full_name.replace(/\s+/g, '-')}.png`,
         }),
       })
-      const data = await res.json()
-      if (!data.success) throw new Error(data.error || 'Send failed')
+      const imgData = await imgRes.json()
+      if (!imgData.success) throw new Error(imgData.error || 'Image send failed')
 
       // ── 4. Mark as sent ───────────────────────────────────────────────────
       await sb.from('enrollments')
