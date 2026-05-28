@@ -1,5 +1,6 @@
 // Sends a certificate PNG via WhatsApp using Meta Cloud API.
-// Flow: receive base64 PNG → upload to Meta media API → send as image message.
+// Flow: upload PNG to Meta media API → send as template 'cert_issued' with image header.
+// Template vars: {{1}} student name, {{2}} parent name, {{3}} courses
 
 export const config = {
   api: { bodyParser: { sizeLimit: '10mb' } },
@@ -12,16 +13,16 @@ export default async function handler(req, res) {
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
   if (!token || !phoneId) return res.status(500).json({ error: 'WhatsApp not configured' })
 
-  const { to, imageBase64, caption, filename } = req.body
-  if (!to)            return res.status(400).json({ error: 'Missing recipient number (to)' })
-  if (!imageBase64)   return res.status(400).json({ error: 'Missing imageBase64' })
+  const { to, imageBase64, filename, studentName, parentName, courses } = req.body
+  if (!to)          return res.status(400).json({ error: 'Missing recipient number (to)' })
+  if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' })
 
   const digits = String(to).replace(/\D/g, '')
   const e164   = digits.startsWith('91') ? digits : '91' + digits
 
-  console.log('[WA img] phoneId:', phoneId, 'to:', e164)
+  console.log('[WA cert] phoneId:', phoneId, 'to:', e164)
   try {
-    // ── Step 1: Upload image to Meta media endpoint ──────────────────────────
+    // ── Step 1: Upload certificate PNG to Meta media endpoint ────────────────
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
     const buffer     = Buffer.from(base64Data, 'base64')
 
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
       body: form,
     })
     const uploadData = await uploadRes.json()
-    console.log('[WA img] upload status:', uploadRes.status, 'body:', JSON.stringify(uploadData))
+    console.log('[WA cert] upload status:', uploadRes.status, 'mediaId:', uploadData.id)
 
     if (!uploadRes.ok) {
       return res.status(uploadRes.status).json({
@@ -46,8 +47,8 @@ export default async function handler(req, res) {
       })
     }
 
-    // ── Step 2: Send image message ───────────────────────────────────────────
-    const msgRes  = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
+    // ── Step 2: Send as cert_issued template (image header + body) ───────────
+    const msgRes = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
       method: 'POST',
       headers: {
         Authorization:  `Bearer ${token}`,
@@ -56,15 +57,29 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         to: e164,
-        type: 'image',
-        image: {
-          id:      uploadData.id,
-          caption: caption || '',
+        type: 'template',
+        template: {
+          name:     'cert_issued',
+          language: { code: 'en' },
+          components: [
+            {
+              type:       'header',
+              parameters: [{ type: 'image', image: { id: uploadData.id } }],
+            },
+            {
+              type:       'body',
+              parameters: [
+                { type: 'text', text: studentName || '' },
+                { type: 'text', text: parentName  || 'Parent' },
+                { type: 'text', text: courses      || '' },
+              ],
+            },
+          ],
         },
       }),
     })
     const msgData = await msgRes.json()
-    console.log('[WA img] message status:', msgRes.status, 'to:', e164, 'body:', JSON.stringify(msgData))
+    console.log('[WA cert] message status:', msgRes.status, 'body:', JSON.stringify(msgData))
 
     if (msgRes.ok) return res.status(200).json({ success: true, data: msgData })
     return res.status(msgRes.status).json({

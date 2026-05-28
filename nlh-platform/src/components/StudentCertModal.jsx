@@ -167,43 +167,22 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         return l ? `${c} — ${l}` : c
       }).join(', ')
 
-      // ── 1. Send congratulatory text first (opens the session window) ──────
-      const textBody =
-        `🎓 *Congratulations ${student.full_name}!*\n\n` +
-        `Dear ${student.parent_name || 'Parent'},\n\n` +
-        `We are delighted to inform you that *${student.full_name}* has successfully completed ` +
-        `*${courses}* at New Learning Horizons! 🌟\n\n` +
-        `Thank you for choosing NLH and for your continued trust in us. ` +
-        `We look forward to welcoming ${student.full_name} to the next level and exploring our other exciting programmes together.\n\n` +
-        `With warm regards,\nNew Learning Horizons 🌟`
-
-      const textRes = await fetch('/api/send-whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: waTo, text: textBody }),
-      })
-      const textData = await textRes.json()
-      console.log('[WA] text send response (phoneId=' + textData._phoneId + '):', JSON.stringify(textData))
-      if (!textData.success) {
-        const detail = textData.data?.error
-        const code   = detail?.code ? ` (code ${detail.code})` : ''
-        throw new Error((detail?.message || textData.error || 'Text message failed') + code)
-      }
-
-      // ── 2. Capture the hidden full-size cert as PNG ───────────────────────
+      // ── 1. Capture the hidden full-size cert as PNG ──────────────────────
       const dataUrl = await toPng(certCaptureRef.current, {
         width: 2000, height: 1414, pixelRatio: 1, cacheBust: true,
       })
 
-      // ── 3. Send certificate image ─────────────────────────────────────────
+      // ── 2. Send as cert_issued template (image header + congratulatory body)
       const imgRes = await fetch('/api/send-whatsapp-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to:          waTo,
           imageBase64: dataUrl,
-          caption:     `📜 Certificate of Accomplishment — ${courses}`,
           filename:    `NLH-Certificate-${student.full_name.replace(/\s+/g, '-')}.png`,
+          studentName: student.full_name,
+          parentName:  student.parent_name || 'Parent',
+          courses,
         }),
       })
       const imgData = await imgRes.json()
