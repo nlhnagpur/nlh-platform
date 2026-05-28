@@ -1,10 +1,20 @@
 import { fmtAmt } from '../utils'
+import { sb } from '../supabase'
+
+async function authHeaders(extra) {
+  const { data: { session } } = await sb.auth.getSession()
+  return {
+    'content-type': 'application/json',
+    ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    ...extra,
+  }
+}
 
 export async function sendBrevoEmail(to, toName, subject, htmlContent, bcc) {
   try {
     const response = await fetch('/api/send-email', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: await authHeaders(),
       body: JSON.stringify({ to, toName, subject, htmlContent, bcc }),
     })
     const data = await response.json()

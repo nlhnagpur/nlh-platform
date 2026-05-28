@@ -2,12 +2,16 @@
 // Flow: upload PNG to Meta media API → send as template 'cert_issued' with image header.
 // Template vars: {{student_name}}, {{parent_name}}, {{course_name}} (named-variable format)
 
+import { requireAdmin } from './_auth.js'
+
 export const config = {
   api: { bodyParser: { sizeLimit: '10mb' } },
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  if (await requireAdmin(req, res)) return
 
   const token   = process.env.WHATSAPP_TOKEN
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID

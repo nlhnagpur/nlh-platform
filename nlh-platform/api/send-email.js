@@ -1,7 +1,11 @@
+import { requireAdmin } from './_auth.js'
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  if (await requireAdmin(req, res)) return
 
   const { to, toName, subject, htmlContent, bcc } = req.body;
 

@@ -173,9 +173,13 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
       })
 
       // ── 2. Send as cert_issued template (image header + congratulatory body)
+      const { data: { session: waSession } } = await sb.auth.getSession()
       const imgRes = await fetch('/api/send-whatsapp-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(waSession ? { Authorization: `Bearer ${waSession.access_token}` } : {}),
+        },
         body: JSON.stringify({
           to:          waTo,
           imageBase64: dataUrl,

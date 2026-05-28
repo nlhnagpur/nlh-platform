@@ -1,6 +1,16 @@
 // ── WhatsApp messaging service (via /api/send-whatsapp) ───────────────────────
 // All messages go through the NLH landline +91 712 351 4575 (Meta Cloud API)
 
+import { sb } from '../supabase'
+
+async function waAuthHeaders() {
+  const { data: { session } } = await sb.auth.getSession()
+  return {
+    'Content-Type': 'application/json',
+    ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+  }
+}
+
 /**
  * Normalise any phone string to WhatsApp-ready format (digits only, with country code).
  * Handles Indian 10-digit, 0-prefix, +91, and already-normalised numbers.
@@ -20,7 +30,7 @@ async function sendWA(to, payload) {
   if (!to) return { success: false, error: 'No phone number' }
   const res = await fetch('/api/send-whatsapp', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await waAuthHeaders(),
     body: JSON.stringify({ to, ...payload }),
   })
   return res.json()

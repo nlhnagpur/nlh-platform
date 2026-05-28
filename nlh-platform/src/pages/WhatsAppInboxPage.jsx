@@ -82,9 +82,13 @@ export default function WhatsAppInboxPage() {
     if (!reply.trim() || !selected) return
     setSending(true)
     try {
+      const { data: { session: waSession } } = await sb.auth.getSession()
       const res = await fetch('/api/send-whatsapp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(waSession ? { Authorization: `Bearer ${waSession.access_token}` } : {}),
+        },
         body: JSON.stringify({ to: selected, text: reply.trim() }),
       })
       const data = await res.json()
