@@ -509,9 +509,13 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
 // ── SessionHistoryModal ────────────────────────────────────────────────────────
 
 function SessionHistoryModal({ batch, onClose }) {
+  // Fetch ALL batch_students (including removed) so studentsForDate works correctly
+  // for historical sessions where a student may have joined then later left
+  const [batchStudents, setBatchStudents] = useState(batch.batch_students || [])
+
   // Returns students who were active on a given date (joined ≤ date, not yet removed)
   function studentsForDate(date) {
-    return (batch.batch_students || []).filter(function (bs) {
+    return batchStudents.filter(function (bs) {
       var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
       var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
       return (!joined || joined <= date) && (!removed || removed > date)
@@ -536,7 +540,14 @@ function SessionHistoryModal({ batch, onClose }) {
       .then(function (res) { setSessions(res.data || []); setLoading(false) })
   }
 
-  useEffect(function () { loadSessions() }, [])
+  useEffect(function () {
+    loadSessions()
+    // Fresh fetch — include all records (even removed) for accurate date-range filtering
+    sb.from('batch_students')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id)')
+      .eq('batch_id', batch.id)
+      .then(function (res) { if (res.data) setBatchStudents(res.data) })
+  }, [])
 
   function startEdit(sess) {
     // Seed edit map from existing attendance; if none, default all present
