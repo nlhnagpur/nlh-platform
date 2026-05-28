@@ -183,7 +183,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         body: JSON.stringify({ to: waTo, text: textBody }),
       })
       const textData = await textRes.json()
-      console.log('[WA] text send response:', JSON.stringify(textData))
+      console.log('[WA] text send response (phoneId=' + textData._phoneId + '):', JSON.stringify(textData))
       if (!textData.success) {
         const detail = textData.data?.error
         const code   = detail?.code ? ` (code ${detail.code})` : ''

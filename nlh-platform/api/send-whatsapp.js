@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     )
     const data = await r.json()
     console.log('[WA text] status:', r.status, 'to:', e164, 'body:', JSON.stringify(data))
-    if (r.ok) return res.status(200).json({ success: true, data })
+    if (r.ok) return res.status(200).json({ success: true, data, _phoneId: phoneId })
     return res.status(r.status).json({ success: false, error: data.error?.message || 'Send failed', data })
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message })
