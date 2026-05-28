@@ -1239,15 +1239,18 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       if (form.phone) {
         const loginEmail = `student.${st.id}@nlhnagpur.info`
         try {
-          const { data: admSess } = await sb.auth.getSession()
-          await sb.auth.signUp({
-            email: loginEmail,
-            password: tempPass,
-            options: { data: { full_name: form.full_name.trim() } },
-          })
-          await sb.auth.setSession({
-            access_token: admSess.session.access_token,
-            refresh_token: admSess.session.refresh_token,
+          const { data: { session: admSess } } = await sb.auth.getSession()
+          await fetch('/api/create-user', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(admSess ? { Authorization: `Bearer ${admSess.access_token}` } : {}),
+            },
+            body: JSON.stringify({
+              email:    loginEmail,
+              password: tempPass,
+              fullName: form.full_name.trim(),
+            }),
           })
           await sb.from('users').upsert({
             email: loginEmail,

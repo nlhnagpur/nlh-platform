@@ -88,20 +88,24 @@ export default function AccessRequestsPage() {
 
     const tempPass = 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 
-    // Warning: sb.auth.signUp displaces the current admin session.
-    // In production, use Supabase Admin API (service role key) from a backend.
-    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
-      email: req.email,
-      password: tempPass,
+    const { data: { session } } = await sb.auth.getSession()
+    const createRes = await fetch('/api/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ email: req.email, password: tempPass, fullName: req.name }),
     })
+    const createData = await createRes.json()
 
-    if (signUpErr) {
-      showToast('Auth signup failed: ' + signUpErr.message)
+    if (!createData.success) {
+      showToast('Auth signup failed: ' + (createData.error || 'Unknown error'))
       setActionLoading(null)
       return
     }
 
-    const userId = signUpData?.user?.id
+    const userId = createData.userId
 
     // Insert into users table
     const { error: userErr } = await sb.from('users').insert({

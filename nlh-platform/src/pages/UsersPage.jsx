@@ -81,25 +81,24 @@ function AddUserModal({ myRole, onClose, onSaved }) {
     if (password.length < 8) { showToast('Password must be at least 8 characters.'); return }
     setSaving(true)
 
-    // Preserve admin session — signUp will create a new auth session
+    // Create auth account server-side — no session displacement
     const { data: { session: adminSession } } = await sb.auth.getSession()
-
-    const { error: signUpErr } = await sb.auth.signUp({
-      email: email.trim().toLowerCase(),
-      password: password.trim(),
-      options: { data: { full_name: name.trim() } },
+    const createRes = await fetch('/api/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(adminSession ? { Authorization: `Bearer ${adminSession.access_token}` } : {}),
+      },
+      body: JSON.stringify({
+        email:    email.trim().toLowerCase(),
+        password: password.trim(),
+        fullName: name.trim(),
+      }),
     })
+    const createData = await createRes.json()
 
-    // Always restore admin session first
-    if (adminSession) {
-      await sb.auth.setSession({
-        access_token: adminSession.access_token,
-        refresh_token: adminSession.refresh_token,
-      })
-    }
-
-    if (signUpErr) {
-      showToast('Failed to create account: ' + signUpErr.message)
+    if (!createData.success) {
+      showToast('Failed to create account: ' + (createData.error || 'Unknown error'))
       setSaving(false)
       return
     }

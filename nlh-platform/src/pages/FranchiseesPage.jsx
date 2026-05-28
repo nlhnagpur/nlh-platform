@@ -1050,20 +1050,23 @@ function AddFranchiseeModal({ onClose, onSaved }) {
 
       if (frErr) { showToast('Failed to create franchisee: ' + frErr.message, 'err'); setSaving(false); return }
 
-      // Admin session restore hack
-      const { data: admSess } = await sb.auth.getSession()
-      const { error: signupErr } = await sb.auth.signUp({
-        email: form.email.trim().toLowerCase(),
-        password: tempPass,
-        options: { data: { full_name: form.owner_name.trim() } },
+      // Create auth account server-side — no session displacement
+      const { data: { session: admSess } } = await sb.auth.getSession()
+      const createRes = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(admSess ? { Authorization: `Bearer ${admSess.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          email:    form.email.trim().toLowerCase(),
+          password: tempPass,
+          fullName: form.owner_name.trim(),
+        }),
       })
-      await sb.auth.setSession({
-        access_token: admSess.session.access_token,
-        refresh_token: admSess.session.refresh_token,
-      })
-
-      if (signupErr && !signupErr.message.includes('already registered')) {
-        showToast('Auth account error: ' + signupErr.message, 'warn')
+      const createData = await createRes.json()
+      if (!createData.success && !createData.error?.includes('already registered')) {
+        showToast('Auth account error: ' + (createData.error || 'Unknown'), 'warn')
       }
 
       // Insert user record
