@@ -39,10 +39,10 @@ export default async function handler(req, res) {
     const uploadData = await uploadRes.json()
     console.log('[WA cert] upload status:', uploadRes.status, 'mediaId:', uploadData.id)
 
-    if (!uploadRes.ok) {
-      return res.status(uploadRes.status).json({
+    if (!uploadRes.ok || !uploadData.id) {
+      return res.status(uploadRes.ok ? 500 : uploadRes.status).json({
         success: false,
-        error: uploadData.error?.message || 'Media upload failed',
+        error: uploadData.error?.message || 'Media upload failed (no id returned)',
         detail: uploadData,
       })
     }
@@ -67,12 +67,11 @@ export default async function handler(req, res) {
               parameters: [{ type: 'image', image: { id: uploadData.id } }],
             },
             {
-              type:             'body',
-              parameter_format: 'named',
+              type:       'body',
               parameters: [
-                { type: 'text', parameter_name: 'student_name', text: studentName || '' },
-                { type: 'text', parameter_name: 'parent_name',  text: parentName  || 'Parent' },
-                { type: 'text', parameter_name: 'course_name',  text: courses     || '' },
+                { type: 'text', text: studentName || '' },
+                { type: 'text', text: parentName  || 'Parent' },
+                { type: 'text', text: courses     || '' },
               ],
             },
           ],
