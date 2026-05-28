@@ -544,7 +544,7 @@ function SessionHistoryModal({ batch, onClose }) {
     loadSessions()
     // Fresh fetch — include all records (even removed) for accurate date-range filtering
     sb.from('batch_students')
-      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id)')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, students(id, full_name))')
       .eq('batch_id', batch.id)
       .then(function (res) { if (res.data) setBatchStudents(res.data) })
   }, [])
