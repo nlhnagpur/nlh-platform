@@ -381,7 +381,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
         .filter(Boolean)
         .map(function (c) { return c.group_name || c.name })
         .filter(function (n, i, a) { return a.indexOf(n) === i }) // dedupe
-      await sendFranchiseeWelcomeLetter(franchisee, courseNames)
+      await sendFranchiseeWelcomeLetter(franchisee)
 
       showToast('Access sent to ' + franchisee.email + ' — welcome letter + reset link dispatched.')
     } catch (err) {
@@ -803,7 +803,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
               if (!fr.email) { showToast('No email on file for this franchisee', 'warn'); return }
               setCertEmailing(true)
               try {
-                const res = await sendFranchiseeCertEmail(fr, courseNames)
+                const res = await sendFranchiseeCertEmail(fr)
                 if (!res.success) throw new Error(res.error || 'Send failed')
                 await sb.from('franchisees').update({ cert_emailed_at: new Date().toISOString() }).eq('id', franchisee.id)
                 const now = new Date().toISOString()
@@ -1085,19 +1085,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       const courseNames = (form.tier === 'SMF' || form.tier === 'CF')
         ? allCourses.map(function (c) { return c.group_name || c.name }).filter(function (n, i, a) { return a.indexOf(n) === i })
         : [] // UF starts with no courses; letter will show "To be assigned"
-      await sendFranchiseeWelcomeLetter(
-        {
-          ...fr,
-          owner_name: form.owner_name.trim(),
-          business_name: form.name.trim() || form.owner_name.trim(),
-          tier: form.tier,
-          city: form.city.trim(),
-          area: form.area.trim(),
-          state: form.state.trim(),
-          country: form.country.trim(),
-        },
-        courseNames
-      )
+      await sendFranchiseeWelcomeLetter(fr)
 
       showToast('Franchisee created. Credentials sent via email.')
       onSaved(fr)

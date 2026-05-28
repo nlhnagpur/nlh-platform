@@ -276,7 +276,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     if (!email) { alert('No email found.'); return }
     setSending(true)
     try {
-      await sendInvoiceEmail(order, email, fr.business_name || email, liveGrandTotal)
+      await sendInvoiceEmail(order)
       alert('Invoice emailed to ' + email)
     } catch (err) { alert('Failed: ' + err.message) }
     setSending(false)

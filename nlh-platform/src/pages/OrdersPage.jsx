@@ -1428,11 +1428,7 @@ export default function OrdersPage() {
       showToast('Invoiced as ' + invoiceNo)
       try {
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
-        const placerEmail = order.placer?.email || ''
-        const placerName  = order.placer?.business_name || order.placer?.email || ''
-        if (placerEmail) {
-          await sendInvoiceEmail(invoicedOrder, placerEmail, placerName, grandTotal)
-        }
+        await sendInvoiceEmail(invoicedOrder)
       } catch (emailErr) {
         console.warn('Invoice email failed:', emailErr.message)
       }
@@ -1464,12 +1460,7 @@ export default function OrdersPage() {
     } else {
       showToast('Payment verified. Order closed.')
       try {
-        const placerEmail = order.placer?.email || ''
-        const placerName  = order.placer?.business_name || ''
-        const amtPaid     = order.amount_paid || order.grand_total || 0
-        if (placerEmail) {
-          await sendPaymentVerified(order, placerEmail, placerName, amtPaid)
-        }
+        await sendPaymentVerified(order)
       } catch (_) { /* non-fatal */ }
       await loadOrders()
     }
@@ -1551,11 +1542,7 @@ export default function OrdersPage() {
   async function handleSendReminder(order) {
     setActionLoading(order.id + '_reminder')
     try {
-      const placerEmail = order.placer?.email || ''
-      const placerName  = order.placer?.business_name || ''
-      const balance     = Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
-      if (!placerEmail) { showToast('No email address on file for this franchisee.', 'warn'); setActionLoading(null); return }
-      await sendPaymentReminder(order, placerEmail, placerName, balance)
+      await sendPaymentReminder(order)
       // Stamp the order so we can show when/how many times reminder was sent
       var now = new Date().toISOString()
       var newCount = (order.reminder_count || 0) + 1

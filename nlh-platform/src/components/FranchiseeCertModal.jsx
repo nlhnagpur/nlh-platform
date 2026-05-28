@@ -63,7 +63,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
     }
     setEmailing(true)
     try {
-      const res = await sendFranchiseeCertEmail(franchisee, courseNames)
+      const res = await sendFranchiseeCertEmail(franchisee)
       if (!res.success) throw new Error(res.error || 'Send failed')
       await sb.from('franchisees')
         .update({ cert_emailed_at: new Date().toISOString() })
