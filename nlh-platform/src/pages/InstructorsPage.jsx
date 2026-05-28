@@ -1104,7 +1104,21 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           {batch.is_active ? 'Deactivate' : 'Reactivate'}
                         </button>
                         <button className="btn" style={{ fontSize: 10, padding: '2px 8px' }}
-                          onClick={function () { setOpenRoster(function (r) { return { ...r, [batch.id]: !r[batch.id] } }) }}>
+                          onClick={function () {
+                            var nowOpen = !openRoster[batch.id]
+                            setOpenRoster(function (r) { return { ...r, [batch.id]: nowOpen } })
+                            if (nowOpen) {
+                              // Refresh batch_students so students added externally are visible
+                              sb.from('batch_students')
+                                .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))')
+                                .eq('batch_id', batch.id)
+                                .then(function (res) {
+                                  if (res.data) setBatchList(function (prev) {
+                                    return prev.map(function (b) { return b.id === batch.id ? { ...b, batch_students: res.data } : b })
+                                  })
+                                })
+                            }
+                          }}>
                           {activeStudents.length} student{activeStudents.length !== 1 ? 's' : ''} {rosterOpen ? '▲' : '▼'}
                         </button>
                       </div>

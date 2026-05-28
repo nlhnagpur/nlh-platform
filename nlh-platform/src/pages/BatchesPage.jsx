@@ -1167,6 +1167,15 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   const [editingJoin,   setEditingJoin]   = useState(null)  // bsId being edited
   const [editJoinVal,   setEditJoinVal]   = useState('')
 
+  // Fresh fetch on open so students added outside this page are always visible
+  useEffect(function () {
+    sb.from('batch_students')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))')
+      .eq('batch_id', batch.id)
+      .is('removed_at', null)
+      .then(function (res) { if (res.data) setStudents(res.data) })
+  }, [batch.id])
+
   useEffect(function () {
     async function loadEligible() {
       const alreadyIn = students.map(function (bs) { return bs.enrollment_id })
@@ -1700,7 +1709,19 @@ export default function BatchesPage() {
                         onClick={function () {
                           var nowOpen = !openRosters[batch.id]
                           setOpenRosters(function (r) { return { ...r, [batch.id]: nowOpen } })
-                          if (nowOpen) loadRosterStats(batch.id)
+                          if (nowOpen) {
+                            loadRosterStats(batch.id)
+                            // Always refresh batch_students when opening the roster so students added
+                            // from the Student modal (or elsewhere) appear without a full page reload
+                            sb.from('batch_students')
+                              .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, completed_at, status, students(id, full_name, phone, parent_name), skus(level_name, total_sessions, courses(group_name)))')
+                              .eq('batch_id', batch.id)
+                              .then(function (res) {
+                                if (res.data) setBatches(function (prev) {
+                                  return prev.map(function (b) { return b.id === batch.id ? { ...b, batch_students: res.data } : b })
+                                })
+                              })
+                          }
                         }}>
                         👥 {activeStudents.length} {rosterOpen ? '▲' : '▼'}
                       </button>
