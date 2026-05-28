@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
+import { toPng } from 'html-to-image'
 import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendStudentCertEmail } from '../services/email'
-import { toWAPhone, openWACertificate } from '../services/whatsapp'
+import { toWAPhone } from '../services/whatsapp'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,16 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
   const [waSent,      setWaSent]      = useState(() => allEnrollments.some(e => !!e.cert_wa_sent_at))
   const [waPhone,     setWaPhone]     = useState(student.phone || '')
   const [showWaInput, setShowWaInput] = useState(false)
+
+  // Hidden full-size cert div for PNG capture
+  const certCaptureRef = useRef(null)
+  // Stable cert ID for this session
+  const certIdRef = useRef(null)
+  if (!certIdRef.current && allEnrollments.length > 0) {
+    const prog = (allEnrollments[0]?.skus?.courses?.group_name || 'NLH').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase()
+    const lvl  = (allEnrollments[0]?.skus?.level_name || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase() || 'L1'
+    certIdRef.current = `NLH-${new Date().getFullYear()}-${prog}-${lvl}-${String(Math.floor(Math.random() * 90000) + 10000)}`
+  }
 
   const selected = allEnrollments.filter(e => selectedIds.has(e.id))
 
@@ -142,51 +153,53 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
       showToast('Select at least one course', 'warn')
       return
     }
+    if (!certCaptureRef.current) {
+      showToast('Certificate not ready — try again', 'warn')
+      return
+    }
     setWaSending(true)
     try {
-      const isMaleWA  = (student.gender || '').toLowerCase() === 'male'
-      const titleWA   = isMaleWA ? 'Mast.' : 'Miss.'
-      const relWA     = isMaleWA ? 'S/o.' : 'D/o.'
-      const locationWA = [
-        student.city,
-        student.country && student.country !== 'India' ? student.country : null,
-      ].filter(Boolean).join(', ')
-      const centreBaseWA = centre?.business_name || 'New Learning Horizons'
-      const centerFullWA = centre?.city ? `${centreBaseWA}, ${centre.city}` : centreBaseWA
-      const programs = selected.map(e => e.skus?.courses?.group_name || 'Course').join('|')
-      const levels   = selected.map(e => e.skus?.level_name || '').join('|')
-      const params = new URLSearchParams({
-        name:     student.full_name,
-        title:    titleWA,
-        rel:      relWA,
-        parent:   student.parent_name || '',
-        location: locationWA,
-        program:  programs,
-        level:    levels,
-        center:   centerFullWA,
-        date:     todayYMD(),
+      // ── 1. Capture the hidden full-size cert as PNG ──────────────────────
+      const dataUrl = await toPng(certCaptureRef.current, {
+        width: 2000, height: 1414, pixelRatio: 1, cacheBust: true,
       })
-      const certUrl = `${window.location.origin}/certificate/Issue%20Certificate.html?${params}`
-      const courses  = selected.map(function (e) {
+
+      // ── 2. Build caption ─────────────────────────────────────────────────
+      const courses = selected.map(function (e) {
         const c = e.skus?.courses?.group_name || 'Course'
         const l = e.skus?.level_name || ''
         return l ? `${c} — ${l}` : c
       }).join(', ')
-      const opened = openWACertificate(phone, {
-        studentName: student.full_name,
-        parentName:  student.parent_name,
-        courses,
-        certUrl,
+      const caption =
+        `🎓 *Congratulations ${student.full_name}!*\n\n` +
+        `Dear ${student.parent_name || 'Parent'},\n\n` +
+        `We are delighted to share the Certificate of Accomplishment for successfully completing ` +
+        `*${courses}* at New Learning Horizons.\n\n` +
+        `With warm regards,\nNew Learning Horizons 🌟`
+
+      // ── 3. Send via Meta Cloud API ────────────────────────────────────────
+      const res = await fetch('/api/send-whatsapp-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to:          toWAPhone(phone),
+          imageBase64: dataUrl,
+          caption,
+          filename:    `NLH-Certificate-${student.full_name.replace(/\s+/g, '-')}.png`,
+        }),
       })
-      if (!opened) throw new Error('Could not open WhatsApp — invalid phone number')
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Send failed')
+
+      // ── 4. Mark as sent ───────────────────────────────────────────────────
       await sb.from('enrollments')
         .update({ cert_wa_sent_at: new Date().toISOString() })
         .in('id', selected.map(e => e.id))
       setWaSent(true)
       setShowWaInput(false)
-      showToast('WhatsApp opened — send the message to share the certificate')
+      showToast('Certificate sent via WhatsApp! 🎉')
     } catch (err) {
-      showToast('WhatsApp failed: ' + err.message, 'err')
+      showToast('WhatsApp send failed: ' + err.message, 'err')
     }
     setWaSending(false)
   }
@@ -392,6 +405,78 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
           </div>
         </div>
 
+        {/* ── Hidden full-size cert for PNG capture (off-screen) ── */}
+        <div
+          ref={certCaptureRef}
+          aria-hidden="true"
+          style={{
+            position: 'fixed', top: '-9999px', left: '-9999px',
+            width: 2000, height: 1414,
+            backgroundImage: 'url(/certificate/assets/cert-bg.png)',
+            backgroundSize: '100% 100%',
+            fontFamily: '"DM Sans", Arial, sans-serif',
+            pointerEvents: 'none',
+          }}
+        >
+          {/* Student name */}
+          <div style={{
+            position: 'absolute', top: 700, left: 80, right: 80,
+            transform: 'translateY(-100%)', textAlign: 'center',
+            fontWeight: 700,
+            fontSize: Math.min(110, Math.floor(1840 / Math.max((`${title} ${student.full_name}`).length * 0.62, 1))),
+            color: '#C41818', whiteSpace: 'nowrap', lineHeight: 1, letterSpacing: '-0.02em',
+          }}>
+            {title} {student.full_name}
+          </div>
+          {/* Body text */}
+          <div style={{
+            position: 'absolute', top: 775, left: 80, right: 80,
+            textAlign: 'center', fontSize: 38, color: '#1A1A2E', lineHeight: 1.38,
+          }}>
+            <div>{parentText}</div>
+            <div style={{ fontSize: 34, color: '#2A2A40', marginTop: 10 }}>has successfully completed</div>
+            <div style={{ fontSize: 50, fontWeight: 700, color: '#0A1A33', margin: '8px 0 6px', lineHeight: 1.2 }}>
+              {selected.map(function (e, i) {
+                const course = e.skus?.courses?.group_name || 'Course'
+                const level  = e.skus?.level_name || ''
+                const text   = level ? `${course} — ${level}` : course
+                return (
+                  <React.Fragment key={e.id || i}>
+                    {i > 0 && ', '}
+                    <span style={{ whiteSpace: 'nowrap' }}>{text}</span>
+                  </React.Fragment>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 34, color: '#2A2A40', marginTop: 6 }}>
+              at <span style={{ fontWeight: 600 }}>{centerText}</span>
+            </div>
+          </div>
+          {/* Date */}
+          <div style={{
+            position: 'absolute', top: 1190, left: 610, width: 460,
+            transform: 'translateY(-100%)', textAlign: 'center',
+            fontSize: 30, fontWeight: 600, color: '#1A1A2E', letterSpacing: '0.02em',
+          }}>
+            {todayDMY()}
+          </div>
+          {/* Cert ID */}
+          <div style={{
+            position: 'absolute', top: 1372, left: 0, right: 0,
+            textAlign: 'center', fontFamily: '"DM Mono", monospace',
+            fontSize: 16, letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: 'rgba(30,30,60,0.55)',
+          }}>
+            {certIdRef.current}
+          </div>
+          {/* Mascot */}
+          <img
+            src="/certificate/assets/mascot.png"
+            alt=""
+            style={{ position: 'absolute', top: 330, right: 28, width: 270, height: 'auto' }}
+          />
+        </div>
+
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Close</button>
           <button
@@ -420,7 +505,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
               display: 'flex', alignItems: 'center', gap: 6,
             }}
           >
-            {waSending ? 'Opening…' : waSent ? '💬 Re-send WA' : '💬 WhatsApp'}
+            {waSending ? 'Sending…' : waSent ? '💬 Re-send WA' : '💬 Send on WA'}
           </button>
         </div>
       </div>
