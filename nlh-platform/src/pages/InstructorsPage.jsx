@@ -445,9 +445,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
   async function openAddStudentPanel(batch) {
     setAddStudentFor(batch.id)
-    const alreadyIn = (batch.batch_students || [])
-      .filter(function (bs) { return !bs.removed_at })
-      .map(function (bs) { return bs.enrollment_id })
+    // Fresh fetch — don't rely on stale batchList for "already in" check
+    const { data: freshBS } = await sb.from('batch_students')
+      .select('enrollment_id')
+      .eq('batch_id', batch.id)
+      .is('removed_at', null)
+    const alreadyIn = (freshBS || []).map(function (bs) { return bs.enrollment_id })
 
     // Only show students enrolled in SKUs this CI is actively appointed to teach
     const { data: appts } = await sb.from('instructor_courses')
@@ -1708,11 +1711,13 @@ function EditBatchModal({ batch, onClose, onSaved }) {
 // ── AttendanceModal (Instructors context) ──────────────────────────────────────
 
 function AttendanceModal({ batch, onClose, onSaved }) {
-  const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+  const [batchStudents, setBatchStudents] = useState(batch.batch_students || [])
+  const activeStudents = batchStudents.filter(function (bs) { return !bs.removed_at })
   const [sessionDate, setSessionDate] = useState(new Date().toISOString().split('T')[0])
   const [attendance,  setAttendance]  = useState(function () {
     var map = {}
-    activeStudents.forEach(function (bs) { map[bs.enrollment_id] = true })
+    ;(batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+      .forEach(function (bs) { map[bs.enrollment_id] = true })
     return map
   })
   const [saving,     setSaving]     = useState(false)
@@ -1721,6 +1726,23 @@ function AttendanceModal({ batch, onClose, onSaved }) {
   useEffect(function () {
     sb.from('batch_sessions').select('id', { count: 'exact', head: true }).eq('batch_id', batch.id)
       .then(function (res) { setSessionNum((res.count || 0) + 1) })
+    // Fresh fetch — students assigned after this tab loaded must appear in attendance
+    sb.from('batch_students')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name))')
+      .eq('batch_id', batch.id)
+      .is('removed_at', null)
+      .then(function (res) {
+        if (res.data) {
+          setBatchStudents(res.data)
+          setAttendance(function (prev) {
+            var next = Object.assign({}, prev)
+            res.data.forEach(function (bs) {
+              if (!(bs.enrollment_id in next)) next[bs.enrollment_id] = true
+            })
+            return next
+          })
+        }
+      })
   }, [])
 
   function toggle(enrollmentId) {
