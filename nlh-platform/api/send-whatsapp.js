@@ -16,6 +16,7 @@ export default async function handler(req, res) {
   const normalised = String(to).replace(/\D/g, '')
   const e164 = normalised.startsWith('91') ? normalised : '91' + normalised
 
+  console.log('[WA text] phoneId:', phoneId, 'to:', e164)
   let payload = { messaging_product: 'whatsapp', to: e164 }
 
   if (type === 'template' && template) {

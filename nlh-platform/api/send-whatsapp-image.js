@@ -19,6 +19,7 @@ export default async function handler(req, res) {
   const digits = String(to).replace(/\D/g, '')
   const e164   = digits.startsWith('91') ? digits : '91' + digits
 
+  console.log('[WA img] phoneId:', phoneId, 'to:', e164)
   try {
     // ── Step 1: Upload image to Meta media endpoint ──────────────────────────
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
