@@ -1542,8 +1542,13 @@ export default function OrdersPage() {
   async function handleSendReminder(order) {
     setActionLoading(order.id + '_reminder')
     try {
-      await sendPaymentReminder(order)
-      // Stamp the order so we can show when/how many times reminder was sent
+      const result = await sendPaymentReminder(order)
+      if (!result.success) {
+        showToast('Reminder failed: ' + (result.error || 'No franchisee email on file'), 'warn')
+        setActionLoading(null)
+        return
+      }
+      // Stamp the order only after a confirmed send
       var now = new Date().toISOString()
       var newCount = (order.reminder_count || 0) + 1
       await sb.from('orders').update({
