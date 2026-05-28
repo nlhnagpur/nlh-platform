@@ -35,6 +35,7 @@ export default async function handler(req, res) {
       body: form,
     })
     const uploadData = await uploadRes.json()
+    console.log('[WA img] upload status:', uploadRes.status, 'body:', JSON.stringify(uploadData))
 
     if (!uploadRes.ok) {
       return res.status(uploadRes.status).json({
@@ -62,6 +63,7 @@ export default async function handler(req, res) {
       }),
     })
     const msgData = await msgRes.json()
+    console.log('[WA img] message status:', msgRes.status, 'to:', e164, 'body:', JSON.stringify(msgData))
 
     if (msgRes.ok) return res.status(200).json({ success: true, data: msgData })
     return res.status(msgRes.status).json({

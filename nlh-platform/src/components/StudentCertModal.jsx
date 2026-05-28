@@ -183,7 +183,12 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         body: JSON.stringify({ to: waTo, text: textBody }),
       })
       const textData = await textRes.json()
-      if (!textData.success) throw new Error(textData.error || 'Text message failed')
+      console.log('[WA] text send response:', JSON.stringify(textData))
+      if (!textData.success) {
+        const detail = textData.data?.error
+        const code   = detail?.code ? ` (code ${detail.code})` : ''
+        throw new Error((detail?.message || textData.error || 'Text message failed') + code)
+      }
 
       // ── 2. Capture the hidden full-size cert as PNG ───────────────────────
       const dataUrl = await toPng(certCaptureRef.current, {
@@ -202,7 +207,15 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         }),
       })
       const imgData = await imgRes.json()
-      if (!imgData.success) throw new Error(imgData.error || 'Image send failed')
+      console.log('[WA] image send response:', JSON.stringify(imgData))
+      if (!imgData.success) {
+        const detail = imgData.detail?.error
+        const code   = detail?.code ? ` (code ${detail.code})` : ''
+        throw new Error((detail?.message || imgData.error || 'Image send failed') + code)
+      }
+
+      const msgId = imgData.data?.messages?.[0]?.id || '—'
+      console.log('[WA] image message id:', msgId, '→ sent to', waTo)
 
       // ── 4. Mark as sent ───────────────────────────────────────────────────
       await sb.from('enrollments')
@@ -210,7 +223,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         .in('id', selected.map(e => e.id))
       setWaSent(true)
       setShowWaInput(false)
-      showToast('Certificate sent via WhatsApp! 🎉')
+      showToast(`Certificate sent via WhatsApp to ${waTo} ✓`)
     } catch (err) {
       showToast('WhatsApp send failed: ' + err.message, 'err')
     }
