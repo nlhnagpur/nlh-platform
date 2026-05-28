@@ -1,8 +1,14 @@
 // Sends a certificate PNG via WhatsApp using Meta Cloud API.
-// Flow: upload PNG to Meta media API → send as template 'cert_issued' with image header.
-// Template vars: {{student_name}}, {{parent_name}}, {{course_name}} (named-variable format)
+// Flow:
+//   1. Validate enrollmentIds from DB (server-side, authoritative)
+//   2. Upload PNG to Meta media endpoint
+//   3. Send as cert_issued template — text vars come from DB, not client
 
-import { requireAdmin } from './_auth.js'
+import { createClient }  from '@supabase/supabase-js'
+import { requireAdmin }  from './_auth.js'
+
+const SUPABASE_URL  = 'https://frnnoxudtlvhyyoqdqzx.supabase.co'
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE'
 
 export const config = {
   api: { bodyParser: { sizeLimit: '10mb' } },
@@ -17,16 +23,44 @@ export default async function handler(req, res) {
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
   if (!token || !phoneId) return res.status(500).json({ error: 'WhatsApp not configured' })
 
-  const { to, imageBase64, filename, studentName, parentName, courses } = req.body
-  if (!to)          return res.status(400).json({ error: 'Missing recipient number (to)' })
-  if (!imageBase64) return res.status(400).json({ error: 'Missing imageBase64' })
+  const { to, imageBase64, filename, enrollmentIds } = req.body
+  if (!to)                                 return res.status(400).json({ error: 'Missing recipient number (to)' })
+  if (!imageBase64)                        return res.status(400).json({ error: 'Missing imageBase64' })
+  if (!enrollmentIds?.length)              return res.status(400).json({ error: 'Missing enrollmentIds' })
+
+  // ── Step 1: Fetch authoritative cert data from DB ──────────────────────────
+  // Use the caller's JWT so RLS ensures they can only read their own data
+  const callerToken = (req.headers['authorization'] || '').replace('Bearer ', '')
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
+    global: { headers: { Authorization: `Bearer ${callerToken}` } },
+  })
+
+  const { data: enrollments, error: dbErr } = await sb
+    .from('enrollments')
+    .select('id, skus(level_name, courses(group_name)), students(full_name, parent_name)')
+    .in('id', enrollmentIds)
+
+  if (dbErr || !enrollments?.length) {
+    return res.status(400).json({ error: 'Could not verify enrollments: ' + (dbErr?.message || 'not found') })
+  }
+
+  // Build template vars from DB — these are authoritative regardless of what the client sent
+  const student    = enrollments[0].students
+  const studentName = student?.full_name  || 'Student'
+  const parentName  = student?.parent_name || 'Parent'
+  const courses     = enrollments.map(function (e) {
+    const course = e.skus?.courses?.group_name || 'Course'
+    const level  = e.skus?.level_name || ''
+    return level ? `${course} — ${level}` : course
+  }).join(', ')
+
+  console.log('[WA cert] phoneId:', phoneId, 'to:', to, 'student:', studentName, 'courses:', courses)
 
   const digits = String(to).replace(/\D/g, '')
   const e164   = digits.startsWith('91') ? digits : '91' + digits
 
-  console.log('[WA cert] phoneId:', phoneId, 'to:', e164)
   try {
-    // ── Step 1: Upload certificate PNG to Meta media endpoint ────────────────
+    // ── Step 2: Upload certificate PNG to Meta media endpoint ────────────────
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '')
     const buffer     = Buffer.from(base64Data, 'base64')
 
@@ -51,7 +85,7 @@ export default async function handler(req, res) {
       })
     }
 
-    // ── Step 2: Send as cert_issued template (image header + body) ───────────
+    // ── Step 3: Send as cert_issued template (image header + body) ───────────
     const msgRes = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
       method: 'POST',
       headers: {
@@ -73,9 +107,9 @@ export default async function handler(req, res) {
             {
               type:       'body',
               parameters: [
-                { type: 'text', text: studentName || '' },
-                { type: 'text', text: parentName  || 'Parent' },
-                { type: 'text', text: courses     || '' },
+                { type: 'text', text: studentName },
+                { type: 'text', text: parentName  },
+                { type: 'text', text: courses      },
               ],
             },
           ],

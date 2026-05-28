@@ -161,18 +161,12 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
     try {
       const waTo = toWAPhone(phone)
 
-      const courses = selected.map(function (e) {
-        const c = e.skus?.courses?.group_name || 'Course'
-        const l = e.skus?.level_name || ''
-        return l ? `${c} — ${l}` : c
-      }).join(', ')
-
       // ── 1. Capture the hidden full-size cert as PNG ──────────────────────
       const dataUrl = await toPng(certCaptureRef.current, {
         width: 2000, height: 1414, pixelRatio: 1, cacheBust: true,
       })
 
-      // ── 2. Send as cert_issued template (image header + congratulatory body)
+      // ── 2. Send — server re-fetches student/course data from DB (tamper-proof)
       const { data: { session: waSession } } = await sb.auth.getSession()
       const imgRes = await fetch('/api/send-whatsapp-image', {
         method: 'POST',
@@ -181,12 +175,10 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
           ...(waSession ? { Authorization: `Bearer ${waSession.access_token}` } : {}),
         },
         body: JSON.stringify({
-          to:          waTo,
-          imageBase64: dataUrl,
-          filename:    `NLH-Certificate-${student.full_name.replace(/\s+/g, '-')}.png`,
-          studentName: student.full_name,
-          parentName:  student.parent_name || 'Parent',
-          courses,
+          to:            waTo,
+          imageBase64:   dataUrl,
+          filename:      `NLH-Certificate-${student.full_name.replace(/\s+/g, '-')}.png`,
+          enrollmentIds: selected.map(function (e) { return e.id }),
         }),
       })
       const imgData = await imgRes.json()
