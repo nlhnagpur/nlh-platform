@@ -122,10 +122,20 @@ function render() {
   // Support pipe-separated programs/levels for multi-course certificates
   const progs  = prog.split('|').map(s => s.trim()).filter(Boolean);
   const levels = level.split('|').map(s => s.trim());
-  const programLine = progs.length <= 1
-    ? (level ? `${prog} — ${level}` : prog)
-    : progs.map(function (p, i) { const l = levels[i] || ''; return l ? `${p} — ${l}` : p; }).join(', ');
-  $('c-program').textContent = programLine;
+  const programEl = $('c-program');
+  programEl.innerHTML = '';
+  if (progs.length <= 1) {
+    programEl.textContent = level ? `${prog} — ${level}` : prog;
+  } else {
+    progs.forEach(function (p, i) {
+      if (i > 0) programEl.appendChild(document.createTextNode(', '));
+      const l = levels[i] || '';
+      const span = document.createElement('span');
+      span.style.whiteSpace = 'nowrap';
+      span.textContent = l ? `${p} — ${l}` : p;
+      programEl.appendChild(span);
+    });
+  }
 
   $('c-center').textContent = center;
   $('c-date').textContent   = fmtDate(date);
@@ -197,7 +207,21 @@ function toast(msg, dur) {
 }
 
 /* ── Print ── */
-$('btn-print').addEventListener('click', () => window.print());
+$('btn-print').addEventListener('click', function () {
+  // Remove JS-set inline styles so @media print CSS can take over
+  const nameEl = $('c-name');
+  const savedFontSize   = nameEl.style.fontSize;
+  const savedWhiteSpace = nameEl.style.whiteSpace;
+  nameEl.style.removeProperty('font-size');
+  nameEl.style.removeProperty('white-space');
+  function restoreAfterPrint() {
+    nameEl.style.fontSize   = savedFontSize;
+    nameEl.style.whiteSpace = savedWhiteSpace;
+    window.removeEventListener('afterprint', restoreAfterPrint);
+  }
+  window.addEventListener('afterprint', restoreAfterPrint);
+  window.print();
+});
 
 /* ── Download PNG ── */
 $('btn-download').addEventListener('click', async function () {

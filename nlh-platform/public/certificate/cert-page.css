@@ -359,11 +359,11 @@ textarea { resize: vertical; }
   .preview-scaler { transform: none !important; transform-origin: unset; }
   .cert { width: 297mm; height: 210mm; }
   .cert-bg { object-fit: fill; }
-  .co-name { font-size: 72pt; top: 47%; }
-  .co-body { top: 52%; font-size: 24pt; }
-  .co-body-sm { font-size: 22pt; }
-  .co-program { font-size: 32pt; }
-  .co-date { top: 79%; left: 40%; width: 30%; font-size: 18pt; }
+  .co-name { font-size: 72pt !important; white-space: normal !important; top: 47%; }
+  .co-body { top: 52%; font-size: 24pt !important; }
+  .co-body-sm { font-size: 22pt !important; }
+  .co-program { font-size: 32pt !important; }
+  .co-date { top: 79%; left: 40%; width: 30%; font-size: 18pt !important; }
   .co-certid { top: 96%; font-size: 9pt; letter-spacing: .12em; }
   .cert-mascot { top: 22%; right: 2%; width: 18%; }
 }
