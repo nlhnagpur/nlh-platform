@@ -1,6 +1,6 @@
 // Sends a certificate PNG via WhatsApp using Meta Cloud API.
 // Flow: upload PNG to Meta media API → send as template 'cert_issued' with image header.
-// Template vars: {{1}} student name, {{2}} parent name, {{3}} courses
+// Template vars: {{student_name}}, {{parent_name}}, {{course_name}} (named-variable format)
 
 export const config = {
   api: { bodyParser: { sizeLimit: '10mb' } },
@@ -67,11 +67,12 @@ export default async function handler(req, res) {
               parameters: [{ type: 'image', image: { id: uploadData.id } }],
             },
             {
-              type:       'body',
+              type:             'body',
+              parameter_format: 'named',
               parameters: [
-                { type: 'text', text: studentName || '' },
-                { type: 'text', text: parentName  || 'Parent' },
-                { type: 'text', text: courses      || '' },
+                { type: 'text', parameter_name: 'student_name', text: studentName || '' },
+                { type: 'text', parameter_name: 'parent_name',  text: parentName  || 'Parent' },
+                { type: 'text', parameter_name: 'course_name',  text: courses     || '' },
               ],
             },
           ],
