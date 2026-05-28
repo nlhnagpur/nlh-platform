@@ -351,19 +351,38 @@ textarea { resize: vertical; }
    ══════════════════════════════════════════════════════════ */
 @media print {
   @page { size: A4 landscape; margin: 0; }
-  .shell { display: block; }
+  .shell  { display: block; }
   .sidebar, .page-head, .form-col, .preview-header, .action-bar { display: none !important; }
-  .main { padding: 0; }
-  .preview-col { border: 0; box-shadow: none; border-radius: 0; }
-  .preview-stage { background: white; padding: 0; display: block; }
-  .preview-scaler { transform: none !important; transform-origin: unset; }
-  .cert { width: 297mm; height: 210mm; }
-  .cert-bg { object-fit: fill; }
-  .co-name { font-size: 72pt !important; white-space: normal !important; top: 47%; }
-  .co-body { top: 52%; font-size: 24pt !important; }
-  .co-body-sm { font-size: 22pt !important; }
-  .co-program { font-size: 32pt !important; }
-  .co-date { top: 79%; left: 40%; width: 30%; font-size: 18pt !important; }
-  .co-certid { top: 96%; font-size: 9pt; letter-spacing: .12em; }
-  .cert-mascot { top: 22%; right: 2%; width: 18%; }
+  .main   { padding: 0; }
+  .layout { display: block; }
+  .preview-col { border: none; box-shadow: none; border-radius: 0; }
+
+  /* Stage = exactly A4 landscape; clips phantom layout overflow */
+  .preview-stage {
+    background: white;
+    padding: 0;
+    display: block;
+    width: 297mm;
+    height: 210mm;
+    overflow: hidden;
+  }
+
+  /*
+   * Scale the native 2000×1414 cert to fill A4 landscape uniformly.
+   * At CSS print resolution (96 px/in): 297 mm = 1122.5 px
+   * Scale = 1122.5 / 2000 = 0.5613
+   * A4 landscape and the cert share the same √2:1 aspect ratio so
+   * both axes scale identically — no distortion, no clipping.
+   * This replicates exactly what the Download PNG button does.
+   */
+  .preview-scaler {
+    transform: scale(0.5613) !important;
+    transform-origin: top left !important;
+    width: 2000px !important;
+    height: 1414px !important;
+    min-height: unset !important;
+  }
+
+  /* Keep cert at native pixel size — everything scales with the scaler */
+  .cert { width: 2000px; height: 1414px; }
 }

@@ -208,18 +208,8 @@ function toast(msg, dur) {
 
 /* ── Print ── */
 $('btn-print').addEventListener('click', function () {
-  // Remove JS-set inline styles so @media print CSS can take over
-  const nameEl = $('c-name');
-  const savedFontSize   = nameEl.style.fontSize;
-  const savedWhiteSpace = nameEl.style.whiteSpace;
-  nameEl.style.removeProperty('font-size');
-  nameEl.style.removeProperty('white-space');
-  function restoreAfterPrint() {
-    nameEl.style.fontSize   = savedFontSize;
-    nameEl.style.whiteSpace = savedWhiteSpace;
-    window.removeEventListener('afterprint', restoreAfterPrint);
-  }
-  window.addEventListener('afterprint', restoreAfterPrint);
+  // The @media print CSS scales the entire cert uniformly to A4 via
+  // transform: scale(0.5613) — no need to strip individual inline styles.
   window.print();
 });
 
