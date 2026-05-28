@@ -1,9 +1,9 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react'
 import Sidebar from './Sidebar'
 
-// Lazy-load every page so each is its own JS chunk.
-// The shell + sidebar loads instantly; page code is fetched only when first visited.
-const DashboardPage      = lazy(() => import('../pages/DashboardPage'))
+// Dashboard is eager — it's the first page after login, spinner would be jarring.
+// Everything else is lazy; each page becomes its own JS chunk fetched on first visit.
+import DashboardPage from '../pages/DashboardPage'
 const FranchiseesPage    = lazy(() => import('../pages/FranchiseesPage'))
 const OrdersPage         = lazy(() => import('../pages/OrdersPage'))
 const PricesPage         = lazy(() => import('../pages/PricesPage'))
