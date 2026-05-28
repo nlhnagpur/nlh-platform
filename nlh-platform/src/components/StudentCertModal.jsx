@@ -1,5 +1,4 @@
 import React, { useState, useRef } from 'react'
-import { toPng } from 'html-to-image'
 import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendStudentCertEmail } from '../services/email'
@@ -73,8 +72,6 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
   const [waPhone,     setWaPhone]     = useState(student.phone || '')
   const [showWaInput, setShowWaInput] = useState(false)
 
-  // Hidden full-size cert div for PNG capture
-  const certCaptureRef = useRef(null)
   // Stable cert ID for this session
   const certIdRef = useRef(null)
   if (!certIdRef.current && allEnrollments.length > 0) {
@@ -153,22 +150,13 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
       showToast('Select at least one course', 'warn')
       return
     }
-    if (!certCaptureRef.current) {
-      showToast('Certificate not ready — try again', 'warn')
-      return
-    }
     setWaSending(true)
     try {
       const waTo = toWAPhone(phone)
 
-      // ── 1. Capture the hidden full-size cert as PNG ──────────────────────
-      const dataUrl = await toPng(certCaptureRef.current, {
-        width: 2000, height: 1414, pixelRatio: 1, cacheBust: true,
-      })
-
-      // ── 2. Send — server re-fetches student/course data from DB (tamper-proof)
+      // Server generates cert image + sends WA template — no client-side capture
       const { data: { session: waSession } } = await sb.auth.getSession()
-      const imgRes = await fetch('/api/send-whatsapp-image', {
+      const res = await fetch('/api/send-cert-whatsapp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,26 +164,21 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         },
         body: JSON.stringify({
           to:            waTo,
-          imageBase64:   dataUrl,
-          filename:      `NLH-Certificate-${student.full_name.replace(/\s+/g, '-')}.png`,
           enrollmentIds: selected.map(function (e) { return e.id }),
         }),
       })
-      const imgData = await imgRes.json()
-      console.log('[WA] image send response:', JSON.stringify(imgData))
-      if (!imgData.success) {
-        const detail = imgData.detail?.error
+      const data = await res.json()
+      console.log('[WA] cert send response:', JSON.stringify(data))
+      if (!data.success) {
+        const detail = data.detail?.error
         const code   = detail?.code ? ` (code ${detail.code})` : ''
-        throw new Error((detail?.message || imgData.error || 'Image send failed') + code)
+        throw new Error((detail?.message || data.error || 'Send failed') + code)
       }
 
-      const msgId = imgData.data?.messages?.[0]?.id || '—'
-      console.log('[WA] image message id:', msgId, '→ sent to', waTo)
-
-      // ── 4. Mark as sent ───────────────────────────────────────────────────
+      // Mark as sent
       await sb.from('enrollments')
         .update({ cert_wa_sent_at: new Date().toISOString() })
-        .in('id', selected.map(e => e.id))
+        .in('id', selected.map(function (e) { return e.id }))
       setWaSent(true)
       setShowWaInput(false)
       showToast(`Certificate sent via WhatsApp to ${waTo} ✓`)
@@ -404,78 +387,6 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
               </p>
             )}
           </div>
-        </div>
-
-        {/* ── Hidden full-size cert for PNG capture (off-screen) ── */}
-        <div
-          ref={certCaptureRef}
-          aria-hidden="true"
-          style={{
-            position: 'fixed', top: '-9999px', left: '-9999px',
-            width: 2000, height: 1414,
-            backgroundImage: 'url(/certificate/assets/cert-bg.png)',
-            backgroundSize: '100% 100%',
-            fontFamily: '"DM Sans", Arial, sans-serif',
-            pointerEvents: 'none',
-          }}
-        >
-          {/* Student name */}
-          <div style={{
-            position: 'absolute', top: 700, left: 80, right: 80,
-            transform: 'translateY(-100%)', textAlign: 'center',
-            fontWeight: 700,
-            fontSize: Math.min(110, Math.floor(1840 / Math.max((`${title} ${student.full_name}`).length * 0.62, 1))),
-            color: '#C41818', whiteSpace: 'nowrap', lineHeight: 1, letterSpacing: '-0.02em',
-          }}>
-            {title} {student.full_name}
-          </div>
-          {/* Body text */}
-          <div style={{
-            position: 'absolute', top: 775, left: 80, right: 80,
-            textAlign: 'center', fontSize: 38, color: '#1A1A2E', lineHeight: 1.38,
-          }}>
-            <div>{parentText}</div>
-            <div style={{ fontSize: 34, color: '#2A2A40', marginTop: 10 }}>has successfully completed</div>
-            <div style={{ fontSize: 50, fontWeight: 700, color: '#0A1A33', margin: '8px 0 6px', lineHeight: 1.2 }}>
-              {selected.map(function (e, i) {
-                const course = e.skus?.courses?.group_name || 'Course'
-                const level  = e.skus?.level_name || ''
-                const text   = level ? `${course} — ${level}` : course
-                return (
-                  <React.Fragment key={e.id || i}>
-                    {i > 0 && ', '}
-                    <span style={{ whiteSpace: 'nowrap' }}>{text}</span>
-                  </React.Fragment>
-                )
-              })}
-            </div>
-            <div style={{ fontSize: 34, color: '#2A2A40', marginTop: 6 }}>
-              at <span style={{ fontWeight: 600 }}>{centerText}</span>
-            </div>
-          </div>
-          {/* Date */}
-          <div style={{
-            position: 'absolute', top: 1190, left: 610, width: 460,
-            transform: 'translateY(-100%)', textAlign: 'center',
-            fontSize: 30, fontWeight: 600, color: '#1A1A2E', letterSpacing: '0.02em',
-          }}>
-            {todayDMY()}
-          </div>
-          {/* Cert ID */}
-          <div style={{
-            position: 'absolute', top: 1372, left: 0, right: 0,
-            textAlign: 'center', fontFamily: '"DM Mono", monospace',
-            fontSize: 16, letterSpacing: '0.14em', textTransform: 'uppercase',
-            color: 'rgba(30,30,60,0.55)',
-          }}>
-            {certIdRef.current}
-          </div>
-          {/* Mascot */}
-          <img
-            src="/certificate/assets/mascot.png"
-            alt=""
-            style={{ position: 'absolute', top: 330, right: 28, width: 270, height: 'auto' }}
-          />
         </div>
 
         <div className="modal-actions">

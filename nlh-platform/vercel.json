@@ -4,5 +4,11 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  ],
+  "functions": {
+    "api/send-cert-whatsapp.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
 }
