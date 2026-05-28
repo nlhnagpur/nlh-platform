@@ -107,11 +107,8 @@ export default function OnboardingPage() {
         parent_id: frParentId || null,
       }).select().single()
       if (error) throw error
-
-      await sb.from('users').update({
-        franchisee_id: fr.id,
-        role: frTier.toLowerCase(),
-      }).ilike('email', currentUser.email)
+      // DB trigger (tr_franchisee_onboarded) automatically sets
+      // users.role = tier and users.franchisee_id = fr.id
 
       setCurrentFranchiseeId(fr.id)
       showToast('Profile created! Welcome to NLH Platform.')

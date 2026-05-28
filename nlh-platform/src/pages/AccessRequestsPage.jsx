@@ -95,28 +95,18 @@ export default function AccessRequestsPage() {
         'Content-Type': 'application/json',
         ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
       },
-      body: JSON.stringify({ email: req.email, password: tempPass, fullName: req.name }),
+      body: JSON.stringify({
+        email:        req.email,
+        password:     tempPass,
+        fullName:     req.name,
+        role:         req.type,
+        franchiseeId: req.franchisee_id || null,
+      }),
     })
     const createData = await createRes.json()
 
     if (!createData.success) {
-      showToast('Auth signup failed: ' + (createData.error || 'Unknown error'))
-      setActionLoading(null)
-      return
-    }
-
-    const userId = createData.userId
-
-    // Insert into users table
-    const { error: userErr } = await sb.from('users').insert({
-      id: userId,
-      email: req.email,
-      full_name: req.name,
-      role: req.type,
-      franchisee_id: req.franchisee_id || null,
-    })
-    if (userErr) {
-      showToast('User insert failed: ' + userErr.message)
+      showToast('User creation failed: ' + (createData.error || 'Unknown error'))
       setActionLoading(null)
       return
     }
