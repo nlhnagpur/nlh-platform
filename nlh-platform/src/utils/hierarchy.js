@@ -3,22 +3,16 @@ import { sb } from '../supabase'
 /**
  * Returns all descendant franchisee IDs of rootId.
  * Does NOT include rootId itself.
- * Covers the full 3-level hierarchy (SMF → CF → UF) with 2 hops.
+ * Delegates to the get_descendant_ids PostgreSQL RPC (recursive CTE).
  */
 export async function getDescendantIds(rootId) {
   if (!rootId) return []
-  const { data: children } = await sb
-    .from('franchisees')
-    .select('id')
-    .eq('parent_id', rootId)
-  const childIds = (children || []).map(function (c) { return c.id })
-  if (childIds.length === 0) return []
-  const { data: grandchildren } = await sb
-    .from('franchisees')
-    .select('id')
-    .in('parent_id', childIds)
-  const grandchildIds = (grandchildren || []).map(function (g) { return g.id })
-  return [...childIds, ...grandchildIds]
+  const { data, error } = await sb.rpc('get_descendant_ids', { root_id: rootId })
+  if (error) {
+    console.error('[hierarchy] get_descendant_ids RPC error:', error.message)
+    return []
+  }
+  return (data || []).map(function (row) { return row.id })
 }
 
 /**
