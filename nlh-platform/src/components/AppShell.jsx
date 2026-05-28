@@ -1,33 +1,44 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import Sidebar from './Sidebar'
-import DashboardPage from '../pages/DashboardPage'
-import FranchiseesPage from '../pages/FranchiseesPage'
-import OrdersPage from '../pages/OrdersPage'
-import PricesPage from '../pages/PricesPage'
-import StudentsPage from '../pages/StudentsPage'
-import CoursesPage from '../pages/CoursesPage'
-import PriceHistoryPage from '../pages/PriceHistoryPage'
-import UsersPage from '../pages/UsersPage'
-import AccessRequestsPage from '../pages/AccessRequestsPage'
-import InstructorsPage from '../pages/InstructorsPage'
-import BatchesPage from '../pages/BatchesPage'
-import WhatsAppInboxPage from '../pages/WhatsAppInboxPage'
-import AccountingPage from '../pages/AccountingPage'
+
+// Lazy-load every page so each is its own JS chunk.
+// The shell + sidebar loads instantly; page code is fetched only when first visited.
+const DashboardPage      = lazy(() => import('../pages/DashboardPage'))
+const FranchiseesPage    = lazy(() => import('../pages/FranchiseesPage'))
+const OrdersPage         = lazy(() => import('../pages/OrdersPage'))
+const PricesPage         = lazy(() => import('../pages/PricesPage'))
+const StudentsPage       = lazy(() => import('../pages/StudentsPage'))
+const CoursesPage        = lazy(() => import('../pages/CoursesPage'))
+const PriceHistoryPage   = lazy(() => import('../pages/PriceHistoryPage'))
+const UsersPage          = lazy(() => import('../pages/UsersPage'))
+const AccessRequestsPage = lazy(() => import('../pages/AccessRequestsPage'))
+const InstructorsPage    = lazy(() => import('../pages/InstructorsPage'))
+const BatchesPage        = lazy(() => import('../pages/BatchesPage'))
+const WhatsAppInboxPage  = lazy(() => import('../pages/WhatsAppInboxPage'))
+const AccountingPage     = lazy(() => import('../pages/AccountingPage'))
 
 const PAGE_MAP = {
-  dashboard:       DashboardPage,
-  franchisees:     FranchiseesPage,
-  orders:          OrdersPage,
-  prices:          PricesPage,
-  students:        StudentsPage,
-  courses:         CoursesPage,
-  'price-history': PriceHistoryPage,
-  users:           UsersPage,
-  requests:        AccessRequestsPage,
+  dashboard:        DashboardPage,
+  franchisees:      FranchiseesPage,
+  orders:           OrdersPage,
+  prices:           PricesPage,
+  students:         StudentsPage,
+  courses:          CoursesPage,
+  'price-history':  PriceHistoryPage,
+  users:            UsersPage,
+  requests:         AccessRequestsPage,
   instructors:      InstructorsPage,
   batches:          BatchesPage,
   'whatsapp-inbox': WhatsAppInboxPage,
-  'accounting':     AccountingPage,
+  accounting:       AccountingPage,
+}
+
+function PageSpinner() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <span className="spinner" />
+    </div>
+  )
 }
 
 export default function AppShell() {
@@ -85,7 +96,9 @@ export default function AppShell() {
       />
 
       <div className="main">
-        <PageComponent onNavigate={handleNavigate} />
+        <Suspense fallback={<PageSpinner />}>
+          <PageComponent onNavigate={handleNavigate} />
+        </Suspense>
       </div>
     </div>
   )
