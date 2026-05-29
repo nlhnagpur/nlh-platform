@@ -171,7 +171,7 @@ export default async function handler(req, res) {
       type: 'template',
       template: {
         name:     'cert_issued',
-        language: { code: 'en' },
+        language: { code: 'en_US' },
         components: [
           {
             type:       'header',
