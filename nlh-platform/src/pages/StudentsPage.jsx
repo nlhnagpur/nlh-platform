@@ -68,11 +68,15 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   // ── Courses / Batch state ──
   const [localEnrollments, setLocalEnrollments] = useState(student.enrollments || [])
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
+  const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
+  const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
   const [batchPanelEnrId, setBatchPanelEnrId] = useState(null)  // enrollment.id whose panel is open
   const [panelData,       setPanelData]       = useState({ batches: [], loading: false })
   const [panelSaving,     setPanelSaving]     = useState(false)
   const [assignJoinDate,  setAssignJoinDate]  = useState(new Date().toISOString().slice(0, 10))
+  const [completingEnr,   setCompletingEnr]   = useState(null)  // enrollment pending completion-date entry
+  const [completeDate,    setCompleteDate]    = useState(new Date().toISOString().slice(0, 10))
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -151,6 +155,28 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
       const map = {}
       ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
       setBatchAssignments(map)
+
+      // Attended-session count per enrollment (for the "X / Y sessions" badge)
+      const { data: attRows } = await sb.from('session_attendance')
+        .select('enrollment_id')
+        .in('enrollment_id', enrIds)
+        .eq('attended', true)
+      const counts = {}
+      ;(attRows || []).forEach(function (a) {
+        counts[a.enrollment_id] = (counts[a.enrollment_id] || 0) + 1
+      })
+      setSessionCounts(counts)
+
+      // Total sessions per enrolled SKU
+      const enrSkuIds = localEnrollments.map(function (e) { return e.sku_id }).filter(Boolean)
+      if (enrSkuIds.length > 0) {
+        const { data: skuRows } = await sb.from('skus')
+          .select('id, total_sessions')
+          .in('id', enrSkuIds)
+        const totals = {}
+        ;(skuRows || []).forEach(function (s) { totals[s.id] = s.total_sessions })
+        setSkuTotals(totals)
+      }
     }
 
     // Load available SKUs for the "+ Add Course" panel
@@ -203,15 +229,37 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   // ── Assign student to an existing batch ──
   async function assignToBatch(batchId, enrollmentId) {
     setPanelSaving(true)
-    // Remove from any existing batch first
+    const assignedAt = assignJoinDate + 'T00:00:00+00:00'
+    const selectFields = 'id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))'
+
+    // Remove from any existing (different) batch first
     const existing = batchAssignments[enrollmentId]
-    if (existing) {
+    if (existing && existing.batch_id !== batchId) {
       await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
     }
-    const { data, error } = await sb.from('batch_students')
-      .insert({ batch_id: batchId, enrollment_id: enrollmentId, assigned_at: assignJoinDate + 'T00:00:00+00:00' })
-      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
-      .single()
+
+    // Reactivate a prior row for this (batch, enrollment) if one exists, else insert
+    const { data: prior } = await sb.from('batch_students')
+      .select('id')
+      .eq('batch_id', batchId)
+      .eq('enrollment_id', enrollmentId)
+      .order('assigned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let data, error
+    if (prior) {
+      ;({ data, error } = await sb.from('batch_students')
+        .update({ removed_at: null, assigned_at: assignedAt })
+        .eq('id', prior.id)
+        .select(selectFields)
+        .single())
+    } else {
+      ;({ data, error } = await sb.from('batch_students')
+        .insert({ batch_id: batchId, enrollment_id: enrollmentId, assigned_at: assignedAt })
+        .select(selectFields)
+        .single())
+    }
     setPanelSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     setBatchAssignments(function (prev) { return { ...prev, [enrollmentId]: data } })
@@ -233,8 +281,10 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   // ── Mark course complete + open WhatsApp review ──
   var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
 
-  async function markCourseComplete(en) {
-    var completed_at = new Date().toISOString()
+  async function markCourseComplete(en, endDate) {
+    // endDate is 'YYYY-MM-DD' (course end date chosen by the user); default to today.
+    var dateStr = endDate || new Date().toISOString().slice(0, 10)
+    var completed_at = dateStr + 'T12:00:00+00:00'
     var { error } = await sb.from('enrollments')
       .update({ completed_at, status: 'completed' })
       .eq('id', en.id)
@@ -244,7 +294,8 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
         return e.id === en.id ? { ...e, completed_at, status: 'completed' } : e
       })
     })
-    showToast('Marked as completed ✓')
+    setCompletingEnr(null)
+    showToast('Marked as completed on ' + fmtDate(dateStr) + ' ✓')
   }
 
   function sendReviewWhatsApp(en) {
@@ -512,6 +563,8 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                   const levelName   = en.skus?.level_name || '—'
 
                   const isCompleted  = !!en.completed_at
+                  const attended     = sessionCounts[en.id] || 0
+                  const totalSess    = skuTotals[en.sku_id] || 0
 
                   return (
                     <div key={en.id} style={{
@@ -532,6 +585,9 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                                 ✓ Completed
                               </span>
                             )}
+                            <span style={{ font: '600 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                              {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
+                            </span>
                           </div>
                           {bs ? (
                             <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginTop: 3 }}>
@@ -558,7 +614,10 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                         {canEdit && !isCompleted && (
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
-                            onClick={function () { markCourseComplete(en) }}>
+                            onClick={function () {
+                              setCompleteDate(new Date().toISOString().slice(0, 10))
+                              setCompletingEnr(en)
+                            }}>
                             ✓ Complete
                           </button>
                         )}
@@ -818,6 +877,47 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
             centre={certModal.centre}
             onClose={function () { setCertModal(null) }}
           />
+        )}
+
+        {/* Course completion date modal */}
+        {completingEnr && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setCompletingEnr(null) }}>
+            <div className="modal" style={{ maxWidth: 380 }}>
+              <div className="ch">
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Mark Course Complete</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    {(completingEnr.skus?.courses?.group_name || 'Course')}
+                    {completingEnr.skus?.level_name ? ' · ' + completingEnr.skus.level_name : ''}
+                  </div>
+                </div>
+                <button className="btn-icon" onClick={function () { setCompletingEnr(null) }}>✕</button>
+              </div>
+              <div style={{ padding: '4px 20px 16px' }}>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                  Course end date
+                  <input
+                    type="date"
+                    value={completeDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={function (e) { setCompleteDate(e.target.value) }}
+                    style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                  />
+                </label>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  The student stays on sessions up to this date and drops off any sessions after it.
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={function () { setCompletingEnr(null) }}>Cancel</button>
+                <button className="btn-p"
+                  disabled={!completeDate}
+                  onClick={function () { markCourseComplete(completingEnr, completeDate) }}>
+                  Mark Complete
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Footer actions */}
