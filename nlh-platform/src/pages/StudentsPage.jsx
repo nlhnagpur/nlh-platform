@@ -68,6 +68,8 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   // ── Courses / Batch state ──
   const [localEnrollments, setLocalEnrollments] = useState(student.enrollments || [])
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
+  const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
+  const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
   const [batchPanelEnrId, setBatchPanelEnrId] = useState(null)  // enrollment.id whose panel is open
   const [panelData,       setPanelData]       = useState({ batches: [], loading: false })
@@ -151,6 +153,28 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
       const map = {}
       ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
       setBatchAssignments(map)
+
+      // Attended-session count per enrollment (for the "X / Y sessions" badge)
+      const { data: attRows } = await sb.from('session_attendance')
+        .select('enrollment_id')
+        .in('enrollment_id', enrIds)
+        .eq('attended', true)
+      const counts = {}
+      ;(attRows || []).forEach(function (a) {
+        counts[a.enrollment_id] = (counts[a.enrollment_id] || 0) + 1
+      })
+      setSessionCounts(counts)
+
+      // Total sessions per enrolled SKU
+      const enrSkuIds = localEnrollments.map(function (e) { return e.sku_id }).filter(Boolean)
+      if (enrSkuIds.length > 0) {
+        const { data: skuRows } = await sb.from('skus')
+          .select('id, total_sessions')
+          .in('id', enrSkuIds)
+        const totals = {}
+        ;(skuRows || []).forEach(function (s) { totals[s.id] = s.total_sessions })
+        setSkuTotals(totals)
+      }
     }
 
     // Load available SKUs for the "+ Add Course" panel
@@ -203,15 +227,37 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   // ── Assign student to an existing batch ──
   async function assignToBatch(batchId, enrollmentId) {
     setPanelSaving(true)
-    // Remove from any existing batch first
+    const assignedAt = assignJoinDate + 'T00:00:00+00:00'
+    const selectFields = 'id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))'
+
+    // Remove from any existing (different) batch first
     const existing = batchAssignments[enrollmentId]
-    if (existing) {
+    if (existing && existing.batch_id !== batchId) {
       await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
     }
-    const { data, error } = await sb.from('batch_students')
-      .insert({ batch_id: batchId, enrollment_id: enrollmentId, assigned_at: assignJoinDate + 'T00:00:00+00:00' })
-      .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
-      .single()
+
+    // Reactivate a prior row for this (batch, enrollment) if one exists, else insert
+    const { data: prior } = await sb.from('batch_students')
+      .select('id')
+      .eq('batch_id', batchId)
+      .eq('enrollment_id', enrollmentId)
+      .order('assigned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let data, error
+    if (prior) {
+      ;({ data, error } = await sb.from('batch_students')
+        .update({ removed_at: null, assigned_at: assignedAt })
+        .eq('id', prior.id)
+        .select(selectFields)
+        .single())
+    } else {
+      ;({ data, error } = await sb.from('batch_students')
+        .insert({ batch_id: batchId, enrollment_id: enrollmentId, assigned_at: assignedAt })
+        .select(selectFields)
+        .single())
+    }
     setPanelSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     setBatchAssignments(function (prev) { return { ...prev, [enrollmentId]: data } })
@@ -512,6 +558,8 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                   const levelName   = en.skus?.level_name || '—'
 
                   const isCompleted  = !!en.completed_at
+                  const attended     = sessionCounts[en.id] || 0
+                  const totalSess    = skuTotals[en.sku_id] || 0
 
                   return (
                     <div key={en.id} style={{
@@ -532,6 +580,9 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                                 ✓ Completed
                               </span>
                             )}
+                            <span style={{ font: '600 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                              {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
+                            </span>
                           </div>
                           {bs ? (
                             <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginTop: 3 }}>

@@ -15,6 +15,21 @@ function timeRange(t) {
   return t.slice(0, 5) + ' – ' + end
 }
 
+// Collapse multiple batch_students rows for the same enrollment to a single row,
+// preferring an active (not-removed) row. Guards against duplicate roster entries
+// that can arise from re-adding a previously removed student.
+function dedupeByEnrollment(list) {
+  var sorted = [...list].sort(function (a, b) {
+    return (a.removed_at ? 1 : 0) - (b.removed_at ? 1 : 0)  // active rows first
+  })
+  var seen = {}
+  return sorted.filter(function (bs) {
+    if (seen[bs.enrollment_id]) return false
+    seen[bs.enrollment_id] = true
+    return true
+  })
+}
+
 // ── BulkAttendanceModal ───────────────────────────────────────────────────────
 
 function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
@@ -24,15 +39,21 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   const [batchStudents, setBatchStudents] = useState(batch.batch_students || [])
 
   // All students currently in the batch (not removed)
-  var activeStudents = batchStudents.filter(function (bs) { return !bs.removed_at })
+  var activeStudents = dedupeByEnrollment(batchStudents.filter(function (bs) { return !bs.removed_at }))
 
-  // Returns only students who had joined by `date` and not yet removed before `date`
+  // Who can be marked for a NEW session on `date`:
+  //   • joined on or before the session date
+  //   • NOT removed from the batch (removed students never get new attendance rows;
+  //     their already-saved historical records remain untouched in Session History)
+  //   • has not completed the course before this date
+  // This makes the marking list match the live roster (WYSIWYG).
   function studentsForDate(date) {
-    return batchStudents.filter(function (bs) {
-      var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
-      var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
-      return (!joined || joined <= date) && (!removed || removed > date)
+    var list = batchStudents.filter(function (bs) {
+      var joined    = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
+      var completed = bs.enrollments && bs.enrollments.completed_at ? bs.enrollments.completed_at.slice(0, 10) : null
+      return (!joined || joined <= date) && !bs.removed_at && (!completed || completed >= date)
     })
+    return dedupeByEnrollment(list)
   }
 
   function initAtt(date) {
@@ -267,7 +288,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                       {new Date(s.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </div>
                     <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>
-                      {s.is_holiday ? 'Holiday' : cnt + '/' + activeStudents.length + ' present'}
+                      {s.is_holiday ? 'Holiday' : cnt + '/' + sessStuds.length + ' present'}
                     </div>
                   </div>
                   <button type="button"
@@ -509,18 +530,28 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
 // ── SessionHistoryModal ────────────────────────────────────────────────────────
 
 function SessionHistoryModal({ batch, onClose }) {
-  // Fetch ALL batch_students (including removed) so studentsForDate works correctly
-  // for historical sessions where a student may have joined then later left
+  // Fetch ALL batch_students (including removed) so the edit roster can still show
+  // students who have since left the batch but were recorded for a past session.
   const [batchStudents, setBatchStudents] = useState(batch.batch_students || [])
 
-  // Returns students who were active on a given date (joined ≤ date, not yet removed)
-  function studentsForDate(date) {
-    return batchStudents.filter(function (bs) {
-      var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
-      var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
-      return (!joined || joined <= date) && (!removed || removed > date)
-    })
+  // The roster shown when viewing/editing a historical session is the UNION of:
+  //   (a) students whose attendance was already recorded for that session
+  //       (preserves since-removed students like a kid who left the batch), and
+  //   (b) students currently active on the session date (joined ≤ date, not
+  //       removed, not completed before the date) — lets you add anyone missing.
+  function computeEditRoster(bsList, sess) {
+    var date     = sess.session_date
+    var savedIds = (sess.session_attendance || []).map(function (a) { return a.enrollment_id })
+    var activeIds = bsList.filter(function (bs) {
+      var joined    = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
+      var completed = bs.enrollments && bs.enrollments.completed_at ? bs.enrollments.completed_at.slice(0, 10) : null
+      return (!joined || joined <= date) && !bs.removed_at && (!completed || completed >= date)
+    }).map(function (bs) { return bs.enrollment_id })
+    var ids = {}
+    savedIds.concat(activeIds).forEach(function (id) { ids[id] = true })
+    return dedupeByEnrollment(bsList.filter(function (bs) { return ids[bs.enrollment_id] }))
   }
+  function editRosterFor(sess) { return computeEditRoster(batchStudents, sess) }
 
   const [sessions,       setSessions]       = useState([])
   const [loading,        setLoading]        = useState(true)
@@ -545,7 +576,7 @@ function SessionHistoryModal({ batch, onClose }) {
     loadSessions()
     // Fresh fetch — include all records (even removed) for accurate date-range filtering
     sb.from('batch_students')
-      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, students(id, full_name))')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, students(id, full_name))')
       .eq('batch_id', batch.id)
       .then(function (res) { if (res.data) setBatchStudents(res.data) })
   }, [])
@@ -559,27 +590,17 @@ function SessionHistoryModal({ batch, onClose }) {
     // Always do a fresh fetch when entering edit mode so recently-added students
     // (e.g. Parth added from StudentModal after page load) are always included
     var { data: freshBS } = await sb.from('batch_students')
-      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, students(id, full_name))')
+      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, students(id, full_name))')
       .eq('batch_id', batch.id)
     var currentBS = freshBS || batchStudents
     if (freshBS) setBatchStudents(freshBS)
 
-    // studentsForDate using fresh data directly (state update hasn't applied yet)
-    function freshStudentsForDate(date) {
-      return currentBS.filter(function (bs) {
-        var joined  = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
-        var removed = bs.removed_at  ? bs.removed_at.slice(0, 10)  : null
-        return (!joined || joined <= date) && (!removed || removed > date)
-      })
-    }
-
-    // Seed edit map from existing attendance; default any new students to Present
+    // Seed edit map from existing attendance; default any newly-added students to Present
     var map = {}
     if ((sess.session_attendance || []).length > 0) {
       sess.session_attendance.forEach(function (a) { map[a.enrollment_id] = !!a.attended })
     }
-    // Include students active on this date that weren't in the recorded attendance yet
-    freshStudentsForDate(sess.session_date).forEach(function (bs) {
+    computeEditRoster(currentBS, sess).forEach(function (bs) {
       if (!(bs.enrollment_id in map)) map[bs.enrollment_id] = true
     })
 
@@ -598,7 +619,7 @@ function SessionHistoryModal({ batch, onClose }) {
     // Delete existing attendance for this session then re-insert
     // Only include students who were in the batch on this session's date
     await sb.from('session_attendance').delete().eq('session_id', sess.id)
-    var rows = studentsForDate(sess.session_date).map(function (bs) {
+    var rows = editRosterFor(sess).map(function (bs) {
       return {
         session_id:    sess.id,
         enrollment_id: bs.enrollment_id,
@@ -840,7 +861,7 @@ function SessionHistoryModal({ batch, onClose }) {
 
                     {/* ── Edit mode ── */}
                     {isEditing && (function () {
-                      var editStudents = studentsForDate(sess.session_date)
+                      var editStudents = editRosterFor(sess)
                       return (
                       <div style={{ padding: '10px 14px 14px', background: 'var(--purple-bg)', borderTop: '1px solid var(--purple)' }}>
                         <div style={{ font: '600 11px var(--font)', color: 'var(--purple)', marginBottom: 8 }}>
@@ -851,7 +872,7 @@ function SessionHistoryModal({ batch, onClose }) {
                             Loading student list…
                           </div>
                         ) : editStudents.length === 0 ? (
-                          <p className="hint">No students had joined by this date.</p>
+                          <p className="hint">No students to mark for this session.</p>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
                             {editStudents.map(function (bs) {
@@ -1244,13 +1265,38 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   async function assign() {
     if (!selectedEnr) return
     setSaving(true)
-    const { data, error } = await sb.from('batch_students')
-      .insert({ batch_id: batch.id, enrollment_id: selectedEnr, assigned_at: addJoinDate + 'T00:00:00+00:00' })
-      .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))')
-      .single()
+    const assignedAt = addJoinDate + 'T00:00:00+00:00'
+    const selectFields = 'id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))'
+
+    // Reactivate an existing (previously removed) row for this enrollment instead
+    // of inserting a duplicate — prevents the same student appearing twice.
+    const { data: existing } = await sb.from('batch_students')
+      .select('id, removed_at')
+      .eq('batch_id', batch.id)
+      .eq('enrollment_id', selectedEnr)
+      .order('assigned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let data, error
+    if (existing) {
+      ;({ data, error } = await sb.from('batch_students')
+        .update({ removed_at: null, assigned_at: assignedAt })
+        .eq('id', existing.id)
+        .select(selectFields)
+        .single())
+    } else {
+      ;({ data, error } = await sb.from('batch_students')
+        .insert({ batch_id: batch.id, enrollment_id: selectedEnr, assigned_at: assignedAt })
+        .select(selectFields)
+        .single())
+    }
     setSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    setStudents(function (s) { return [...s, data] })
+    setStudents(function (s) {
+      const without = s.filter(function (x) { return x.enrollment_id !== data.enrollment_id })
+      return [...without, data]
+    })
     setSelectedEnr('')
     setShowAdd(false)
     onChange()
@@ -1652,7 +1698,7 @@ export default function BatchesPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {sorted.map(function (batch) {
-            const activeStudents = (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+            const activeStudents = dedupeByEnrollment((batch.batch_students || []).filter(function (bs) { return !bs.removed_at }))
             const sessLabel      = String(batch.sessions_done || 0)
             const courses        = batchCourses(batch)
             const coursesLabel   = courses.length > 0 ? courses.join(', ') : '—'
@@ -1758,7 +1804,6 @@ export default function BatchesPage() {
                               .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, completed_at, status, students(id, full_name, phone, parent_name), skus(level_name, total_sessions, courses(group_name)))')
                               .eq('batch_id', batch.id)
                               .then(function (res) {
-                                console.log('[roster] batch:', batch.name, 'data:', res.data, 'error:', res.error)
                                 if (res.data) setBatches(function (prev) {
                                   return prev.map(function (b) { return b.id === batch.id ? { ...b, batch_students: res.data } : b })
                                 })
