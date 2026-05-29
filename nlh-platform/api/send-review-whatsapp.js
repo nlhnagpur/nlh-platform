@@ -3,8 +3,8 @@
 // can't be used to send arbitrary content.
 //
 // Body: { to, parentName, studentName, courseName }
-// Template `review_request` (language en) — named body variables:
-//   {{parent_name}}, {{student_name}}, {{course_name}}
+// Template `review_request` (language en) — positional body variables:
+//   {{1}} parent name, {{2}} student name, {{3}} course name
 // The Google review link is static text inside the approved template.
 
 import { requireAuth } from './_auth.js'
@@ -33,9 +33,9 @@ export default async function handler(req, res) {
       components: [{
         type: 'body',
         parameters: [
-          { type: 'text', parameter_name: 'parent_name',  text: parentName  || 'Parent' },
-          { type: 'text', parameter_name: 'student_name', text: studentName || 'your child' },
-          { type: 'text', parameter_name: 'course_name',  text: courseName  || 'the course' },
+          { type: 'text', text: parentName  || 'Parent' },
+          { type: 'text', text: studentName || 'your child' },
+          { type: 'text', text: courseName  || 'the course' },
         ],
       }],
     },
