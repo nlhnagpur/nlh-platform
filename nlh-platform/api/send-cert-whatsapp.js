@@ -67,12 +67,13 @@ export default async function handler(req, res) {
     String(today.getDate()).padStart(2, '0')
 
   // Template text vars (also used in URL params)
+  // Note: use ASCII hyphen instead of em-dash — Meta rejects non-ASCII in template params
   const studentName = student.full_name  || 'Student'
   const parentName  = student.parent_name || 'Parent'
   const courses     = enrollments.map(function (e) {
     const c = e.skus?.courses?.group_name || 'Course'
     const l = e.skus?.level_name || ''
-    return l ? `${c} — ${l}` : c
+    return l ? `${c} - ${l}` : c
   }).join(', ')
 
   // ── Step 2: Build cert page URL ────────────────────────────────────────────
@@ -171,7 +172,7 @@ export default async function handler(req, res) {
       type: 'template',
       template: {
         name:     'cert_issued',
-        language: { code: 'en_US' },
+        language: { code: 'en' },
         components: [
           {
             type:       'header',
@@ -194,9 +195,17 @@ export default async function handler(req, res) {
   console.log('[cert] message status:', msgRes.status, JSON.stringify(msgData))
 
   if (msgRes.ok) return res.status(200).json({ success: true, data: msgData })
+
+  const errMsg   = msgData.error?.message || 'Message send failed'
+  const errCode  = msgData.error?.code
+  const subcode  = msgData.error?.error_subcode || msgData.error?.error_data
+  const fullMsg  = errCode
+    ? `(#${errCode}) ${errMsg}${subcode ? ` [subcode: ${subcode}]` : ''}`
+    : errMsg
+
   return res.status(msgRes.status).json({
     success: false,
-    error:   msgData.error?.message || 'Message send failed',
+    error:   fullMsg,
     detail:  msgData,
   })
 }
