@@ -44,6 +44,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   const [form, setForm] = useState({
     full_name: student.full_name || '',
     parent_name: student.parent_name || '',
+    gender: student.gender || '',
     dob: student.dob || '',
     registered_at: student.registered_at || '',
     phone: student.phone || '',
@@ -103,6 +104,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     const payload = {
       full_name:      form.full_name.trim(),
       parent_name:    form.parent_name.trim(),
+      gender:         form.gender || null,
       dob:            form.dob || null,
       registered_at:  form.registered_at || null,
       phone:          form.phone.trim(),
@@ -456,6 +458,13 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
               </label>
               <label>Parent / Guardian
                 <input value={form.parent_name} onChange={field('parent_name')} disabled={!canEdit} />
+              </label>
+              <label>Gender
+                <select value={form.gender} onChange={field('gender')} disabled={!canEdit}>
+                  <option value="">— Select —</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
               </label>
               <label>Date of Birth
                 <input type="date" value={form.dob} onChange={field('dob')} disabled={!canEdit} />
@@ -1020,7 +1029,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const admin = isAdminRole(currentRole)
 
   const [form, setForm] = useState({
-    full_name: '', parent_name: '', dob: '', registered_at: '', phone: '', email: '',
+    full_name: '', parent_name: '', gender: '', dob: '', registered_at: '', phone: '', email: '',
     pincode: '', city: '', area: '', state: '', country: 'India', address: '',
     channel: 'franchise',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
@@ -1174,6 +1183,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       const { data: st, error: stErr } = await sb.from('students').insert({
         full_name: form.full_name.trim(),
         parent_name: form.parent_name.trim(),
+        gender: form.gender || null,
         dob: form.dob || null,
         registered_at: form.registered_at || new Date().toISOString().slice(0, 10),
         phone: form.phone.trim(),
@@ -1410,6 +1420,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             </label>
             <label>Parent / Guardian
               <input value={form.parent_name} onChange={field('parent_name')} placeholder="Parent name" />
+            </label>
+            <label>Gender
+              <select value={form.gender} onChange={field('gender')}>
+                <option value="">— Select —</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
             </label>
             <label>Date of Birth
               <input type="date" value={form.dob} onChange={field('dob')} />
