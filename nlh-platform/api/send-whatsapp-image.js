@@ -5,7 +5,7 @@
 //   3. Send as cert_issued template — text vars come from DB, not client
 
 import { createClient }  from '@supabase/supabase-js'
-import { requireAdmin }  from './_auth.js'
+import { requireAuth }  from './_auth.js'
 
 const SUPABASE_URL  = 'https://frnnoxudtlvhyyoqdqzx.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE'
@@ -17,7 +17,7 @@ export const config = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  if (await requireAdmin(req, res)) return
+  if (await requireAuth(req, res)) return
 
   const token   = process.env.WHATSAPP_TOKEN
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID

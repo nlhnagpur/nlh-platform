@@ -14,7 +14,7 @@
 //   student_cert         { enrollmentId, parentEmail }
 
 import { createClient } from '@supabase/supabase-js'
-import { requireAdmin }  from './_auth.js'
+import { requireAuth, requireAdmin }  from './_auth.js'
 
 const SUPABASE_URL  = 'https://frnnoxudtlvhyyoqdqzx.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE'
@@ -449,13 +449,20 @@ function buildStudentCert(student, enrollment, centre) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (await requireAdmin(req, res)) return
+  // All callers must be authenticated; admin-only types do an extra role check below
+  if (await requireAuth(req, res)) return
 
   const key = process.env.BREVO_KEY
   if (!key) return res.status(500).json({ error: 'Email service not configured' })
 
   const { type, data, bcc: clientBcc } = req.body
   if (!type || !data) return res.status(400).json({ error: 'Missing type or data' })
+
+  // These template types are restricted to admin roles
+  const ADMIN_ONLY_TYPES = new Set(['invite', 'welcome', 'franchisee_welcome_letter', 'franchisee_cert'])
+  if (ADMIN_ONLY_TYPES.has(type)) {
+    if (await requireAdmin(req, res)) return
+  }
 
   const callerToken = (req.headers['authorization'] || '').replace('Bearer ', '')
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
