@@ -77,6 +77,9 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   const [assignJoinDate,  setAssignJoinDate]  = useState(new Date().toISOString().slice(0, 10))
   const [completingEnr,   setCompletingEnr]   = useState(null)  // enrollment pending completion-date entry
   const [completeDate,    setCompleteDate]    = useState(new Date().toISOString().slice(0, 10))
+  const [reviewingEn,     setReviewingEn]     = useState(null)  // enrollment pending review-send
+  const [reviewPhone,     setReviewPhone]     = useState('')
+  const [reviewSending,   setReviewSending]   = useState(false)
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -297,17 +300,24 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     showToast('Marked as completed on ' + fmtDate(dateStr) + ' ✓')
   }
 
-  async function sendReviewWhatsApp(en) {
-    var phone = student.phone || ''
-    if (!phone) { showToast('No phone number on file', 'warn'); return }
+  function openReview(en) {
+    setReviewPhone(student.phone || '')
+    setReviewingEn(en)
+  }
+
+  async function doSendReview() {
+    if (!reviewingEn) return
+    if (!reviewPhone.trim()) { showToast('Enter a WhatsApp number', 'warn'); return }
+    var en = reviewingEn
     var course = (en.skus?.courses?.group_name || '') + (en.skus?.level_name ? ' ' + en.skus.level_name : '')
-    showToast('Sending review request…')
-    var res = await sendWAReviewRequest(phone, {
+    setReviewSending(true)
+    var res = await sendWAReviewRequest(reviewPhone.trim(), {
       parentName:  student.parent_name,
       studentName: student.full_name,
       courseName:  course.trim(),
     })
-    if (res.success) showToast('Review request sent on WhatsApp ✓')
+    setReviewSending(false)
+    if (res.success) { showToast('Review request sent on WhatsApp ✓'); setReviewingEn(null) }
     else showToast('Review send failed: ' + (res.error || 'Unknown error'), 'err')
   }
 
@@ -623,7 +633,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                         {isCompleted && (
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, background: '#25D366', borderColor: '#25D366', color: '#fff' }}
-                            onClick={function () { sendReviewWhatsApp(en) }}
+                            onClick={function () { openReview(en) }}
                             title="Send Google Review request on WhatsApp">
                             💬 Review
                           </button>
@@ -913,6 +923,45 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                   disabled={!completeDate}
                   onClick={function () { markCourseComplete(completingEnr, completeDate) }}>
                   Mark Complete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Send-review modal (editable recipient number) */}
+        {reviewingEn && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setReviewingEn(null) }}>
+            <div className="modal" style={{ maxWidth: 380 }}>
+              <div className="ch">
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Send Google Review Request</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    {(reviewingEn.skus?.courses?.group_name || 'Course')}
+                    {reviewingEn.skus?.level_name ? ' · ' + reviewingEn.skus.level_name : ''}
+                  </div>
+                </div>
+                <button className="btn-icon" onClick={function () { setReviewingEn(null) }}>✕</button>
+              </div>
+              <div style={{ padding: '4px 20px 16px' }}>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                  Parent's WhatsApp number
+                  <input
+                    type="tel"
+                    value={reviewPhone}
+                    onChange={function (e) { setReviewPhone(e.target.value) }}
+                    placeholder="e.g. 9028006800"
+                    style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                  />
+                </label>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  Defaults to the number on file. Change it to send to any number (e.g. to verify delivery).
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={function () { setReviewingEn(null) }} disabled={reviewSending}>Cancel</button>
+                <button className="btn-p" onClick={doSendReview} disabled={reviewSending || !reviewPhone.trim()}>
+                  {reviewSending ? 'Sending…' : 'Send on WhatsApp'}
                 </button>
               </div>
             </div>

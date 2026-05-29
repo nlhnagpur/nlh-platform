@@ -1478,6 +1478,9 @@ export default function BatchesPage() {
   const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
   const [completing,         setCompleting]         = useState(null) // { enrollmentId, batchId, studentName, parentName, phone, courseName }
   const [completeDate,       setCompleteDate]       = useState(new Date().toISOString().slice(0, 10))
+  const [reviewing,          setReviewing]          = useState(null) // { studentName, parentName, courseName }
+  const [reviewPhone,        setReviewPhone]        = useState('')
+  const [reviewSending,      setReviewSending]      = useState(false)
 
   // ── load ──────────────────────────────────────────────────────────────────
 
@@ -1578,16 +1581,26 @@ export default function BatchesPage() {
     setRosterStats(function (prev) { return { ...prev, [batchId]: map } })
   }
 
-  async function sendReview(bs, courseLabel) {
-    var phone = bs.enrollments?.students?.phone
-    if (!phone) { showToast('No phone number on file', 'warn'); return }
-    showToast('Sending review request…')
-    var res = await sendWAReviewRequest(phone, {
-      parentName:  bs.enrollments?.students?.parent_name,
+  function openReview(bs, courseLabel) {
+    setReviewPhone(bs.enrollments?.students?.phone || '')
+    setReviewing({
       studentName: bs.enrollments?.students?.full_name,
+      parentName:  bs.enrollments?.students?.parent_name,
       courseName:  courseLabel,
     })
-    if (res.success) showToast('Review request sent on WhatsApp ✓')
+  }
+
+  async function doSendReview() {
+    if (!reviewing) return
+    if (!reviewPhone.trim()) { showToast('Enter a WhatsApp number', 'warn'); return }
+    setReviewSending(true)
+    var res = await sendWAReviewRequest(reviewPhone.trim(), {
+      parentName:  reviewing.parentName,
+      studentName: reviewing.studentName,
+      courseName:  reviewing.courseName,
+    })
+    setReviewSending(false)
+    if (res.success) { showToast('Review request sent on WhatsApp ✓'); setReviewing(null) }
     else showToast('Review send failed: ' + (res.error || 'Unknown error'), 'err')
   }
 
@@ -1912,7 +1925,7 @@ export default function BatchesPage() {
                                     whiteSpace: 'nowrap',
                                   }}
                                     title="Send Google review request on WhatsApp"
-                                    onClick={function () { sendReview(bs, course + (level ? ' ' + level : '')) }}>
+                                    onClick={function () { openReview(bs, course + (level ? ' ' + level : '')) }}>
                                     💬 Review
                                   </button>
                                 </>
@@ -2087,6 +2100,43 @@ export default function BatchesPage() {
                   )
                 }}>
                 Mark Complete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewing && (
+        <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setReviewing(null) }}>
+          <div className="modal" style={{ maxWidth: 380 }}>
+            <div className="ch">
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Send Google Review Request</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                  {reviewing.studentName || 'Student'} · {reviewing.courseName || 'Course'}
+                </div>
+              </div>
+              <button className="btn-icon" onClick={function () { setReviewing(null) }}>✕</button>
+            </div>
+            <div style={{ padding: '4px 20px 16px' }}>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                Parent's WhatsApp number
+                <input
+                  type="tel"
+                  value={reviewPhone}
+                  onChange={function (e) { setReviewPhone(e.target.value) }}
+                  placeholder="e.g. 9028006800"
+                  style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                />
+              </label>
+              <p className="hint" style={{ marginTop: 8 }}>
+                Defaults to the number on file. Change it to send to any number (e.g. to verify delivery).
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={function () { setReviewing(null) }} disabled={reviewSending}>Cancel</button>
+              <button className="btn-p" onClick={doSendReview} disabled={reviewSending || !reviewPhone.trim()}>
+                {reviewSending ? 'Sending…' : 'Send on WhatsApp'}
               </button>
             </div>
           </div>
