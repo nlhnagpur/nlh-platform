@@ -1758,6 +1758,7 @@ export default function BatchesPage() {
                               .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, completed_at, status, students(id, full_name, phone, parent_name), skus(level_name, total_sessions, courses(group_name)))')
                               .eq('batch_id', batch.id)
                               .then(function (res) {
+                                console.log('[roster] batch:', batch.name, 'data:', res.data, 'error:', res.error)
                                 if (res.data) setBatches(function (prev) {
                                   return prev.map(function (b) { return b.id === batch.id ? { ...b, batch_students: res.data } : b })
                                 })
