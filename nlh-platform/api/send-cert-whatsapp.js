@@ -181,9 +181,9 @@ export default async function handler(req, res) {
           {
             type:       'body',
             parameters: [
-              { type: 'text', text: studentName },
-              { type: 'text', text: parentName  },
-              { type: 'text', text: courses     },
+              { type: 'text', parameter_name: 'student_name', text: studentName },
+              { type: 'text', parameter_name: 'parent_name',  text: parentName  },
+              { type: 'text', parameter_name: 'course_name',  text: courses     },
             ],
           },
         ],
