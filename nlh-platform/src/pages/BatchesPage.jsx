@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
+import { sendWAReviewRequest } from '../services/whatsapp'
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -1577,7 +1578,18 @@ export default function BatchesPage() {
     setRosterStats(function (prev) { return { ...prev, [batchId]: map } })
   }
 
-  var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
+  async function sendReview(bs, courseLabel) {
+    var phone = bs.enrollments?.students?.phone
+    if (!phone) { showToast('No phone number on file', 'warn'); return }
+    showToast('Sending review request…')
+    var res = await sendWAReviewRequest(phone, {
+      parentName:  bs.enrollments?.students?.parent_name,
+      studentName: bs.enrollments?.students?.full_name,
+      courseName:  courseLabel,
+    })
+    if (res.success) showToast('Review request sent on WhatsApp ✓')
+    else showToast('Review send failed: ' + (res.error || 'Unknown error'), 'err')
+  }
 
   async function markComplete(enrollmentId, batchId, studentName, parentName, phone, courseName, endDate) {
     var dateStr = endDate || new Date().toISOString().slice(0, 10)
@@ -1600,17 +1612,8 @@ export default function BatchesPage() {
         }
       })
     })
-    // Send WhatsApp review request to parent
-    if (phone) {
-      var clean = phone.replace(/\D/g, '')
-      if (clean.length === 10) clean = '91' + clean
-      var msg = 'Dear ' + (parentName || 'Parent') + ',\n\n'
-        + (studentName || 'Your child') + ' has successfully completed the *' + (courseName || 'course') + '* programme at *New Learning Horizons*! 🎉\n\n'
-        + 'We would love to hear your feedback. A quick Google Review would mean a lot to us:\n'
-        + GOOGLE_REVIEW_URL + '\n\n'
-        + 'Thank you for being part of the NLH family! 🌟'
-      window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank')
-    }
+    // Completion no longer auto-opens WhatsApp. The Google-review request is
+    // sent separately via the "Review" action on the roster.
   }
 
   // ── filter ────────────────────────────────────────────────────────────────
@@ -1897,11 +1900,22 @@ export default function BatchesPage() {
                               )}
                               {/* Complete button / badge */}
                               {isCompleted ? (
-                                <span style={{
-                                  flexShrink: 0, font: '600 10px var(--font)', color: 'var(--green)',
-                                  padding: '2px 8px', border: '1px solid var(--green)',
-                                  borderRadius: 20, background: 'var(--green-bg)', whiteSpace: 'nowrap',
-                                }}>✓ Completed</span>
+                                <>
+                                  <span style={{
+                                    flexShrink: 0, font: '600 10px var(--font)', color: 'var(--green)',
+                                    padding: '2px 8px', border: '1px solid var(--green)',
+                                    borderRadius: 20, background: 'var(--green-bg)', whiteSpace: 'nowrap',
+                                  }}>✓ Completed</span>
+                                  <button className="btn" style={{
+                                    fontSize: 10, padding: '2px 8px', flexShrink: 0,
+                                    background: '#25D366', borderColor: '#25D366', color: '#fff',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                    title="Send Google review request on WhatsApp"
+                                    onClick={function () { sendReview(bs, course + (level ? ' ' + level : '')) }}>
+                                    💬 Review
+                                  </button>
+                                </>
                               ) : (
                                 <button className="btn" style={{
                                   fontSize: 10, padding: '2px 8px', flexShrink: 0,
@@ -2058,7 +2072,7 @@ export default function BatchesPage() {
               </label>
               <p className="hint" style={{ marginTop: 8 }}>
                 The student stays on sessions up to this date and drops off any sessions after it.
-                A Google review request will open on WhatsApp.
+                After completing, use the <strong>💬 Review</strong> button to send the parent a Google-review request.
               </p>
             </div>
             <div className="modal-actions">

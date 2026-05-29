@@ -145,6 +145,21 @@ export function openWACertificate(phone, { studentName, parentName, courses, cer
   return true
 }
 
+// ── Template: review_request ──────────────────────────────────────────────────
+// Sends a Google-review request to a parent from the NLH business number.
+// Named params: parent_name, student_name, course_name (review link is static
+// inside the approved template). Uses a dedicated requireAuth endpoint so a
+// franchisee can send it for their own completed students.
+export async function sendWAReviewRequest(to, { parentName, studentName, courseName }) {
+  if (!toWAPhone(to)) return { success: false, error: 'No valid phone number on file' }
+  const res = await fetch('/api/send-review-whatsapp', {
+    method: 'POST',
+    headers: await waAuthHeaders(),
+    body: JSON.stringify({ to, parentName, studentName, courseName }),
+  })
+  return res.json()
+}
+
 // ── Template: fee_reminder ────────────────────────────────────────────────────
 // Params: {{1}} franchisee name, {{2}} balance amount
 export async function sendWAFeeReminder(to, { name, balance }) {

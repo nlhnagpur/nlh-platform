@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
-import { sendWAStudentEnrolled } from '../services/whatsapp'
+import { sendWAStudentEnrolled, sendWAReviewRequest } from '../services/whatsapp'
 import StudentCertModal from '../components/StudentCertModal'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -278,8 +278,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     showToast('Removed from batch')
   }
 
-  // ── Mark course complete + open WhatsApp review ──
-  var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
+  // ── Mark course complete ──
 
   async function markCourseComplete(en, endDate) {
     // endDate is 'YYYY-MM-DD' (course end date chosen by the user); default to today.
@@ -298,18 +297,18 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     showToast('Marked as completed on ' + fmtDate(dateStr) + ' ✓')
   }
 
-  function sendReviewWhatsApp(en) {
+  async function sendReviewWhatsApp(en) {
     var phone = student.phone || ''
-    var clean = phone.replace(/\D/g, '')
-    if (clean.length === 10) clean = '91' + clean
-    if (!clean) { showToast('No phone number on file', 'warn'); return }
+    if (!phone) { showToast('No phone number on file', 'warn'); return }
     var course = (en.skus?.courses?.group_name || '') + (en.skus?.level_name ? ' ' + en.skus.level_name : '')
-    var msg = 'Dear ' + (student.parent_name || 'Parent') + ',\n\n'
-      + student.full_name + ' has successfully completed the *' + course + '* programme at *New Learning Horizons*! 🎉\n\n'
-      + 'We would love to hear your feedback. A quick Google Review would mean a lot to us:\n'
-      + GOOGLE_REVIEW_URL + '\n\n'
-      + 'Thank you for being part of the NLH family! 🌟'
-    window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank')
+    showToast('Sending review request…')
+    var res = await sendWAReviewRequest(phone, {
+      parentName:  student.parent_name,
+      studentName: student.full_name,
+      courseName:  course.trim(),
+    })
+    if (res.success) showToast('Review request sent on WhatsApp ✓')
+    else showToast('Review send failed: ' + (res.error || 'Unknown error'), 'err')
   }
 
   // ── Remove an enrollment ──
