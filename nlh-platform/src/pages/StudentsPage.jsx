@@ -75,6 +75,8 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   const [panelData,       setPanelData]       = useState({ batches: [], loading: false })
   const [panelSaving,     setPanelSaving]     = useState(false)
   const [assignJoinDate,  setAssignJoinDate]  = useState(new Date().toISOString().slice(0, 10))
+  const [completingEnr,   setCompletingEnr]   = useState(null)  // enrollment pending completion-date entry
+  const [completeDate,    setCompleteDate]    = useState(new Date().toISOString().slice(0, 10))
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -279,8 +281,10 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   // ── Mark course complete + open WhatsApp review ──
   var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
 
-  async function markCourseComplete(en) {
-    var completed_at = new Date().toISOString()
+  async function markCourseComplete(en, endDate) {
+    // endDate is 'YYYY-MM-DD' (course end date chosen by the user); default to today.
+    var dateStr = endDate || new Date().toISOString().slice(0, 10)
+    var completed_at = dateStr + 'T12:00:00+00:00'
     var { error } = await sb.from('enrollments')
       .update({ completed_at, status: 'completed' })
       .eq('id', en.id)
@@ -290,7 +294,8 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
         return e.id === en.id ? { ...e, completed_at, status: 'completed' } : e
       })
     })
-    showToast('Marked as completed ✓')
+    setCompletingEnr(null)
+    showToast('Marked as completed on ' + fmtDate(dateStr) + ' ✓')
   }
 
   function sendReviewWhatsApp(en) {
@@ -609,7 +614,10 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                         {canEdit && !isCompleted && (
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
-                            onClick={function () { markCourseComplete(en) }}>
+                            onClick={function () {
+                              setCompleteDate(new Date().toISOString().slice(0, 10))
+                              setCompletingEnr(en)
+                            }}>
                             ✓ Complete
                           </button>
                         )}
@@ -869,6 +877,47 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
             centre={certModal.centre}
             onClose={function () { setCertModal(null) }}
           />
+        )}
+
+        {/* Course completion date modal */}
+        {completingEnr && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setCompletingEnr(null) }}>
+            <div className="modal" style={{ maxWidth: 380 }}>
+              <div className="ch">
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Mark Course Complete</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    {(completingEnr.skus?.courses?.group_name || 'Course')}
+                    {completingEnr.skus?.level_name ? ' · ' + completingEnr.skus.level_name : ''}
+                  </div>
+                </div>
+                <button className="btn-icon" onClick={function () { setCompletingEnr(null) }}>✕</button>
+              </div>
+              <div style={{ padding: '4px 20px 16px' }}>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                  Course end date
+                  <input
+                    type="date"
+                    value={completeDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={function (e) { setCompleteDate(e.target.value) }}
+                    style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                  />
+                </label>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  The student stays on sessions up to this date and drops off any sessions after it.
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={function () { setCompletingEnr(null) }}>Cancel</button>
+                <button className="btn-p"
+                  disabled={!completeDate}
+                  onClick={function () { markCourseComplete(completingEnr, completeDate) }}>
+                  Mark Complete
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Footer actions */}

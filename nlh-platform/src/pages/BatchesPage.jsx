@@ -1475,6 +1475,8 @@ export default function BatchesPage() {
   const [historyModal,       setHistoryModal]       = useState(null) // batch object
   const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
   const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
+  const [completing,         setCompleting]         = useState(null) // { enrollmentId, batchId, studentName, parentName, phone, courseName }
+  const [completeDate,       setCompleteDate]       = useState(new Date().toISOString().slice(0, 10))
 
   // ── load ──────────────────────────────────────────────────────────────────
 
@@ -1577,13 +1579,15 @@ export default function BatchesPage() {
 
   var GOOGLE_REVIEW_URL = 'https://g.page/r/CQW0Giwe5ILEEBM/review'
 
-  async function markComplete(enrollmentId, batchId, studentName, parentName, phone, courseName) {
-    var completed_at = new Date().toISOString()
+  async function markComplete(enrollmentId, batchId, studentName, parentName, phone, courseName, endDate) {
+    var dateStr = endDate || new Date().toISOString().slice(0, 10)
+    var completed_at = dateStr + 'T12:00:00+00:00'
     var { error } = await sb.from('enrollments')
       .update({ completed_at, status: 'completed' })
       .eq('id', enrollmentId)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    showToast('Marked as completed ✓')
+    setCompleting(null)
+    showToast('Marked as completed on ' + fmtDate(dateStr) + ' ✓')
     setBatches(function (prev) {
       return prev.map(function (b) {
         if (b.id !== batchId) return b
@@ -1905,13 +1909,15 @@ export default function BatchesPage() {
                                   whiteSpace: 'nowrap',
                                 }}
                                   onClick={function () {
-                                    markComplete(
-                                      enrollId, batch.id,
-                                      bs.enrollments?.students?.full_name,
-                                      bs.enrollments?.students?.parent_name,
-                                      bs.enrollments?.students?.phone,
-                                      course + (level ? ' ' + level : '')
-                                    )
+                                    setCompleteDate(new Date().toISOString().slice(0, 10))
+                                    setCompleting({
+                                      enrollmentId: enrollId,
+                                      batchId:      batch.id,
+                                      studentName:  bs.enrollments?.students?.full_name,
+                                      parentName:   bs.enrollments?.students?.parent_name,
+                                      phone:        bs.enrollments?.students?.phone,
+                                      courseName:   course + (level ? ' ' + level : ''),
+                                    })
                                   }}>
                                   ✓ Complete
                                 </button>
@@ -2025,6 +2031,52 @@ export default function BatchesPage() {
           onClose={function () { setEditBatchModal(null) }}
           onSaved={function () { setEditBatchModal(null); load() }}
         />
+      )}
+
+      {completing && (
+        <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setCompleting(null) }}>
+          <div className="modal" style={{ maxWidth: 380 }}>
+            <div className="ch">
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Mark Course Complete</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                  {completing.studentName || 'Student'} · {completing.courseName || 'Course'}
+                </div>
+              </div>
+              <button className="btn-icon" onClick={function () { setCompleting(null) }}>✕</button>
+            </div>
+            <div style={{ padding: '4px 20px 16px' }}>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                Course end date
+                <input
+                  type="date"
+                  value={completeDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={function (e) { setCompleteDate(e.target.value) }}
+                  style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                />
+              </label>
+              <p className="hint" style={{ marginTop: 8 }}>
+                The student stays on sessions up to this date and drops off any sessions after it.
+                A Google review request will open on WhatsApp.
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={function () { setCompleting(null) }}>Cancel</button>
+              <button className="btn-p"
+                disabled={!completeDate}
+                onClick={function () {
+                  markComplete(
+                    completing.enrollmentId, completing.batchId,
+                    completing.studentName, completing.parentName,
+                    completing.phone, completing.courseName, completeDate
+                  )
+                }}>
+                Mark Complete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
