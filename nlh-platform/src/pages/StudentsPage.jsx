@@ -1879,6 +1879,8 @@ export default function StudentsPage() {
       setLoading(true)
       let q = sb.from('students')
         .select('*, franchisees(business_name, city), enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        // Sort by date of joining (registered_at); students with no date go last
+        .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
 
       if (admin) {
