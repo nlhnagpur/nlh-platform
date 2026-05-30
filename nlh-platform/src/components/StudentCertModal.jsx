@@ -225,22 +225,22 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
 
               {/* Body text block */}
               <div style={{
-                position: 'absolute', top: 775, left: 80, right: 80,
-                textAlign: 'center', fontSize: 36, color: '#1A1A2E', lineHeight: 1.38,
+                position: 'absolute', top: 752, left: 80, right: 80,
+                textAlign: 'center', fontSize: 36, color: '#1A1A2E', lineHeight: 1.28,
               }}>
                 <div>{parentText}</div>
-                <div style={{ fontSize: 34, color: '#2A2A40', marginTop: 10 }}>
+                <div style={{ fontSize: 34, color: '#2A2A40', marginTop: 8 }}>
                   has successfully completed
                 </div>
 
                 {student.camp_name ? (
-                  <div style={{ fontSize: 44, fontWeight: 700, fontStyle: 'italic', color: '#C2410C', margin: '6px 0 2px', lineHeight: 1.2 }}>
+                  <div style={{ fontSize: 42, fontWeight: 700, fontStyle: 'italic', color: '#C2410C', margin: '4px 0 2px', lineHeight: 1.15 }}>
                     {student.camp_name}
                   </div>
                 ) : null}
 
                 {selected.length > 0
-                  ? <div style={{ fontSize: 46, fontWeight: 700, color: '#0A1A33', margin: '6px 0', lineHeight: 1.3 }}>
+                  ? <div style={{ fontSize: 44, fontWeight: 700, color: '#0A1A33', margin: '5px 0 4px', lineHeight: 1.14 }}>
                       {selected.map(function (e, i) {
                         const course = e.skus?.courses?.group_name || 'Course'
                         const level  = e.skus?.level_name || ''
@@ -248,7 +248,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
                         return i === 0 ? text : `, ${text}`
                       }).join('')}
                     </div>
-                  : <div style={{ fontSize: 46, fontWeight: 700, color: '#ccc', margin: '6px 0' }}>
+                  : <div style={{ fontSize: 44, fontWeight: 700, color: '#ccc', margin: '5px 0 4px' }}>
                       — select courses below —
                     </div>
                 }

@@ -237,32 +237,32 @@ textarea { resize: vertical; }
 
 /* 2–5. Body text block — below the rainbow bar */
 .co-body {
-  top: 775px;
+  top: 752px;
   left: 80px; right: 80px;
   text-align: center;
   font-family: 'DM Sans', sans-serif;
   font-size: 38px;
   color: #1A1A2E;
-  line-height: 1.38;
+  line-height: 1.28;
 }
 .co-body-sm {
-  font-size: 36px;
+  font-size: 34px;
   color: #2A2A40;
 }
 .co-camp {
-  font-size: 46px;
+  font-size: 42px;
   font-weight: 700;
   font-style: italic;
   color: #C2410C;
-  margin: 6px 0 2px;
-  line-height: 1.2;
+  margin: 4px 0 2px;
+  line-height: 1.15;
 }
 .co-program {
-  font-size: 50px;
+  font-size: 44px;
   font-weight: 700;
   color: #0A1A33;
-  margin: 8px 0 6px;
-  line-height: 1.2;
+  margin: 5px 0 4px;
+  line-height: 1.14;
 }
 
 /* 6. Date value */
