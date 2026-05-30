@@ -62,7 +62,6 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
   })
-  const [showCamp, setShowCamp] = useState(!!student.camp_name)
   const [certModal,   setCertModal]   = useState(null)
   const [centreCache, setCentreCache] = useState(null)
   const [saving,      setSaving]      = useState(false)
@@ -508,35 +507,14 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
               <label className="col-span-2">Street / Building Address
                 <input value={form.address} onChange={field('address')} disabled={!canEdit} placeholder="Flat/Shop no., building, street" />
               </label>
-              <div className="col-span-2">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: canEdit ? 'pointer' : 'default' }}>
-                  <input
-                    type="checkbox"
-                    checked={showCamp}
-                    disabled={!canEdit}
-                    onChange={function (e) {
-                      setShowCamp(e.target.checked)
-                      if (!e.target.checked) setForm(function (f) { return { ...f, camp_name: '' } })
-                    }}
-                    style={{ width: 'auto' }}
-                  />
-                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Special Camp category</span>
-                </label>
-                {showCamp && (
-                  <input
-                    value={form.camp_name}
-                    onChange={field('camp_name')}
-                    disabled={!canEdit}
-                    placeholder="Camp name (e.g. Summer Camp 2026)"
-                    style={{ marginTop: 8 }}
-                  />
-                )}
-                <p className="hint" style={{ marginTop: 4 }}>
-                  Appears on the certificate above the course names.
-                </p>
-              </div>
               <label>Enrolment Channel
-                <select value={form.channel} onChange={field('channel')} disabled={!canEdit}>
+                <select
+                  value={form.channel}
+                  disabled={!canEdit}
+                  onChange={function (e) {
+                    const v = e.target.value
+                    setForm(function (f) { return { ...f, channel: v, camp_name: v === 'camp' ? f.camp_name : '' } })
+                  }}>
                   <option value="franchise">Franchise Centre</option>
                   <option value="own_centre">NLH Own Centre</option>
                   <option value="international">International / Online</option>
@@ -548,6 +526,17 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                   <option value="other">Other</option>
                 </select>
               </label>
+              {form.channel === 'camp' && (
+                <label>Camp name
+                  <input
+                    value={form.camp_name}
+                    onChange={field('camp_name')}
+                    disabled={!canEdit}
+                    placeholder="e.g. Summer Camp 2026"
+                  />
+                  <p className="hint">Appears on the certificate above the course names.</p>
+                </label>
+              )}
               <label>Payment Status
                 <div style={{ paddingTop: 6 }}>
                   <StatusBadge status={derivedStatus} />
@@ -1054,7 +1043,6 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
     channel: 'franchise',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
-  const [showCamp, setShowCamp] = useState(false)
   const [showAddress, setShowAddress] = useState(false)
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
@@ -1459,28 +1447,6 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             <label>Parent Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
-            <div className="col-span-2">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={showCamp}
-                  onChange={function (e) {
-                    setShowCamp(e.target.checked)
-                    if (!e.target.checked) setForm(function (f) { return { ...f, camp_name: '' } })
-                  }}
-                  style={{ width: 'auto' }}
-                />
-                <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Special Camp category</span>
-              </label>
-              {showCamp && (
-                <input
-                  value={form.camp_name}
-                  onChange={field('camp_name')}
-                  placeholder="Camp name (e.g. Summer Camp 2026)"
-                  style={{ marginTop: 8 }}
-                />
-              )}
-            </div>
           </div>
 
           {/* ── Section 2: Centre ── */}
@@ -1757,7 +1723,12 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                   <input value={form.address} onChange={field('address')} placeholder="Flat/Shop no., building, street" />
                 </label>
                 <label>Enrolment Channel
-                  <select value={form.channel} onChange={field('channel')}>
+                  <select
+                    value={form.channel}
+                    onChange={function (e) {
+                      const v = e.target.value
+                      setForm(function (f) { return { ...f, channel: v, camp_name: v === 'camp' ? f.camp_name : '' } })
+                    }}>
                     <option value="franchise">Franchise Centre</option>
                     <option value="own_centre">NLH Own Centre</option>
                     <option value="international">International / Online</option>
@@ -1769,6 +1740,16 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                     <option value="other">Other</option>
                   </select>
                 </label>
+                {form.channel === 'camp' && (
+                  <label>Camp name
+                    <input
+                      value={form.camp_name}
+                      onChange={field('camp_name')}
+                      placeholder="e.g. Summer Camp 2026"
+                    />
+                    <p className="hint">Appears on the certificate above the course names.</p>
+                  </label>
+                )}
               </div>
             )}
           </div>
