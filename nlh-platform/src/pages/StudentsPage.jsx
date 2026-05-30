@@ -92,6 +92,11 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   const [changingEn,      setChangingEn]      = useState(null)  // enrollment whose level is being changed
   const [changeSkuId,     setChangeSkuId]     = useState('')
   const [changeSaving,    setChangeSaving]    = useState(false)
+  // Fee payment ledger
+  const [payments,        setPayments]        = useState([])
+  const [showPayModal,    setShowPayModal]    = useState(false)
+  const [payForm,         setPayForm]         = useState({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
+  const [paySaving,       setPaySaving]       = useState(false)
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -115,7 +120,8 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   async function save() {
     setSaving(true)
     const feeTotal = form.fee_total === '' ? null : Number(form.fee_total)
-    const feePaid  = form.fee_paid  === '' ? null : Number(form.fee_paid)
+    // fee_paid is NOT written here — it is maintained by the payment ledger
+    // (student_payments) via a DB trigger. We only set fee_total + status.
     const payload = {
       full_name:      form.full_name.trim(),
       parent_name:    form.parent_name.trim(),
@@ -133,8 +139,6 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
       address:        form.address.trim(),
       channel:        form.channel || 'walk-in',
       fee_total:      feeTotal,
-      fee_paid:       feePaid,
-      payment_mode:   form.payment_mode || null,
       payment_status: derivedStatus,
     }
     const { error } = await sb.from('students').update(payload).eq('id', student.id)
@@ -154,6 +158,55 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     setSaving(false)
     showToast('Saved')
     onSaved({ ...student, ...payload })
+  }
+
+  // ── Payment ledger ──
+  useEffect(function () {
+    let cancelled = false
+    sb.from('student_payments')
+      .select('id, amount, mode, reference, paid_at, note')
+      .eq('student_id', student.id)
+      .order('paid_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .then(function (res) { if (!cancelled && res.data) setPayments(res.data) })
+    return function () { cancelled = true }
+  }, [student.id])
+
+  function applyPaid(newPayments) {
+    const newPaid = newPayments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+    setForm(function (f) { return { ...f, fee_paid: newPaid } })
+    onSaved({ ...student, fee_paid: newPaid, payment_status: deriveStatus(form.fee_total, newPaid) })
+  }
+
+  async function recordPayment() {
+    const amt = Number(payForm.amount)
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    setPaySaving(true)
+    const { data, error } = await sb.from('student_payments').insert({
+      student_id:    student.id,
+      franchisee_id: student.franchisee_id || null,
+      amount:        amt,
+      mode:          payForm.mode || null,
+      reference:     payForm.reference.trim() || null,
+      paid_at:       payForm.paid_at || new Date().toISOString().slice(0, 10),
+    }).select('id, amount, mode, reference, paid_at, note').single()
+    setPaySaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    const next = [data, ...payments]
+    setPayments(next)
+    applyPaid(next)
+    setShowPayModal(false)
+    setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
+    showToast('Payment of ₹' + fmtAmt(amt) + ' recorded ✓')
+  }
+
+  async function deletePayment(id) {
+    const { error } = await sb.from('student_payments').delete().eq('id', id)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    const next = payments.filter(function (p) { return p.id !== id })
+    setPayments(next)
+    applyPaid(next)
+    showToast('Payment removed')
   }
 
   // ── Load courses tab ──
@@ -596,32 +649,71 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
             </div>
 
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
-              <strong>Fee Tracking</strong>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <strong>Fee Tracking</strong>
+                {canEdit && (
+                  <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
+                    onClick={function () {
+                      setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
+                      setShowPayModal(true)
+                    }}>
+                    + Record Payment
+                  </button>
+                )}
+              </div>
               <div className="form-grid" style={{ marginTop: 8 }}>
                 <label>Fee Total (₹)
                   <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!canEdit} />
                 </label>
                 <label>Fee Paid (₹)
-                  <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!canEdit} />
+                  <input value={'₹' + fmtAmt(form.fee_paid || 0)} disabled
+                    style={{ color: 'var(--green)' }} title="Sum of recorded payments" />
                 </label>
                 <label>Balance
                   <input
-                    value={'₹' + fmtAmt(balance)}
+                    value={balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared'}
                     disabled
                     style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
                   />
                 </label>
-                <label>Payment Mode
-                  <select value={form.payment_mode} onChange={field('payment_mode')} disabled={!canEdit}>
-                    <option value="">—</option>
-                    <option value="cash">Cash</option>
-                    <option value="upi">UPI</option>
-                    <option value="bank_transfer">Bank Transfer / NEFT</option>
-                    <option value="cheque">Cheque</option>
-                    <option value="card">Card</option>
-                    <option value="online">Online Payment</option>
-                  </select>
-                </label>
+              </div>
+
+              {/* Payment history */}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
+                  Payment history
+                </div>
+                {payments.length === 0 ? (
+                  <p className="hint" style={{ margin: 0 }}>No payments recorded yet.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {payments.map(function (p) {
+                      return (
+                        <div key={p.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)',
+                        }}>
+                          <div style={{ font: '700 13px var(--mono)', color: 'var(--green)', minWidth: 72 }}>₹{fmtAmt(p.amount)}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ font: '500 12px var(--font)', color: 'var(--text)' }}>
+                              {fmtDate(p.paid_at)}
+                              {p.mode && <span style={{ color: 'var(--text3)' }}> · {p.mode.replace(/_/g, ' ')}</span>}
+                            </div>
+                            {(p.reference || p.note) && (
+                              <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>{p.reference || p.note}</div>
+                            )}
+                          </div>
+                          {admin && (
+                            <button className="btn" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red, #dc2626)', borderColor: 'var(--red, #dc2626)' }}
+                              onClick={function () { if (window.confirm('Remove this ₹' + fmtAmt(p.amount) + ' payment entry?')) deletePayment(p.id) }}>
+                              🗑
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1098,6 +1190,66 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                 <button className="btn" onClick={function () { setChangingEn(null) }} disabled={changeSaving}>Cancel</button>
                 <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId}>
                   {changeSaving ? 'Saving…' : 'Update'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Record payment modal */}
+        {showPayModal && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setShowPayModal(false) }}>
+            <div className="modal" style={{ maxWidth: 420 }}>
+              <div className="ch">
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Record Payment</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    Balance due: <span style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 600 }}>
+                      {balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared'}
+                    </span>
+                  </div>
+                </div>
+                <button className="btn-icon" onClick={function () { setShowPayModal(false) }}>✕</button>
+              </div>
+              <div style={{ padding: '4px 20px 16px' }}>
+                <div className="form-grid">
+                  <label>Amount received (₹) *
+                    <input type="number" autoFocus value={payForm.amount}
+                      onChange={function (e) { setPayForm(function (f) { return { ...f, amount: e.target.value } }) }}
+                      placeholder="e.g. 1500" />
+                  </label>
+                  <label>Date
+                    <input type="date" value={payForm.paid_at}
+                      onChange={function (e) { setPayForm(function (f) { return { ...f, paid_at: e.target.value } }) }} />
+                  </label>
+                  <label>Mode
+                    <select value={payForm.mode}
+                      onChange={function (e) { setPayForm(function (f) { return { ...f, mode: e.target.value } }) }}>
+                      <option value="cash">Cash</option>
+                      <option value="upi">UPI</option>
+                      <option value="bank_transfer">Bank Transfer / NEFT</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="card">Card</option>
+                      <option value="online">Online Payment</option>
+                    </select>
+                  </label>
+                  <label>Reference (optional)
+                    <input value={payForm.reference}
+                      onChange={function (e) { setPayForm(function (f) { return { ...f, reference: e.target.value } }) }}
+                      placeholder="UTR / cheque no. / note" />
+                  </label>
+                </div>
+                {payForm.amount && Number(payForm.amount) > 0 && (
+                  <p className="hint" style={{ marginTop: 8 }}>
+                    New paid: ₹{fmtAmt((Number(form.fee_paid) || 0) + Number(payForm.amount))}
+                    {' '}of ₹{fmtAmt(form.fee_total || 0)}
+                  </p>
+                )}
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={function () { setShowPayModal(false) }} disabled={paySaving}>Cancel</button>
+                <button className="btn-p" onClick={recordPayment} disabled={paySaving || !payForm.amount}>
+                  {paySaving ? 'Saving…' : 'Record Payment'}
                 </button>
               </div>
             </div>
