@@ -1900,7 +1900,10 @@ export default function StudentsPage() {
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended count }
 
+  // Centre filter dropdown still available to multi-centre roles; the column
+  // itself is replaced by a Sessions/Billing summary.
   const showCentreCol = admin || currentRole === 'smf' || currentRole === 'cf'
 
   useEffect(() => {
@@ -1908,7 +1911,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Sort by date of joining (registered_at); students with no date go last
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -1930,6 +1933,18 @@ export default function StudentsPage() {
       if (error) { console.error('Students load error:', error); showToast('Failed to load students: ' + error.message, 'err') }
       setStudents(data || [])
       setLoading(false)
+
+      // Attended-session counts per enrollment (for the Sessions column)
+      const enrIds = (data || []).flatMap(function (s) { return (s.enrollments || []).map(function (e) { return e.id }) })
+      if (enrIds.length > 0) {
+        const { data: attRows } = await sb.from('session_attendance')
+          .select('enrollment_id').in('enrollment_id', enrIds).eq('attended', true)
+        const m = {}
+        ;(attRows || []).forEach(function (a) { m[a.enrollment_id] = (m[a.enrollment_id] || 0) + 1 })
+        setAttMap(m)
+      } else {
+        setAttMap({})
+      }
     }
     load()
   }, [admin, currentRole, currentFranchiseeId])
@@ -2097,7 +2112,7 @@ export default function StudentsPage() {
               <thead>
                 <tr>
                   <th>Student</th>
-                  {showCentreCol && <th className="hide-mobile">Centre</th>}
+                  <th className="hide-mobile">Sessions</th>
                   <th className="hide-mobile">Parent</th>
                   <th>Courses</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Total</th>
@@ -2109,11 +2124,12 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={showCentreCol ? 9 : 8} className="empty">No students found</td></tr>
+                  <tr><td colSpan={9} className="empty">No students found</td></tr>
                 )}
                 {filtered.map(function (s) {
                   const balance = (s.fee_total || 0) - (s.fee_paid || 0)
                   const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean))]
+                  const monthEnd = daysLeftInMonth() <= 5
                   return (
                     <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelected(s) }}>
                       <td>
@@ -2131,12 +2147,32 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </td>
-                      {showCentreCol && (
-                        <td className="hide-mobile" style={{ color: 'var(--text2)', fontSize: 12 }}>
-                          <div>{s.franchisees?.business_name || '—'}</div>
-                          {s.franchisees?.city && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.franchisees.city}</div>}
-                        </td>
-                      )}
+                      <td className="hide-mobile" style={{ fontSize: 11 }}>
+                        {(s.enrollments || []).length === 0
+                          ? <span style={{ color: 'var(--text3)' }}>—</span>
+                          : (s.enrollments || []).map(function (e) {
+                              const cn  = e.skus?.courses?.group_name || 'Course'
+                              const bt  = e.skus?.courses?.billing_type
+                              const tot = e.skus?.total_sessions || 0
+                              const att = attMap[e.id] || 0
+                              const done = !e.completed_at && tot > 0 && att >= tot
+                              let txt, color, bg
+                              if (e.completed_at) { txt = '✓ done'; color = 'var(--green)'; bg = 'var(--green-bg)' }
+                              else if (bt === 'monthly') {
+                                if (monthEnd) { txt = '📅 renew'; color = '#1D4ED8'; bg = '#DBEAFE' }
+                                else { txt = 'monthly'; color = 'var(--text2)'; bg = 'var(--bg2)' }
+                              }
+                              else if (tot > 0) { txt = att + '/' + tot; color = done ? '#B45309' : 'var(--text2)'; bg = done ? '#FEF3C7' : 'var(--bg2)' }
+                              else { txt = att + ' sess'; color = 'var(--text2)'; bg = 'var(--bg2)' }
+                              return (
+                                <div key={e.id} style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 2, whiteSpace: 'nowrap' }}>
+                                  <span style={{ color: 'var(--text3)', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cn}</span>
+                                  <span style={{ color: color, background: bg, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{txt}</span>
+                                </div>
+                              )
+                            })
+                        }
+                      </td>
                       <td className="hide-mobile" style={{ color: 'var(--text2)' }}>
                         <div>{s.parent_name || '—'}</div>
                         {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
