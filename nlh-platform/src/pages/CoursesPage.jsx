@@ -197,12 +197,14 @@ export default function CoursesPage() {
       { field: 'student_fee', label: 'Student Fee' },
     ]
     if (currentRole === 'smf') return [
-      { field: 'smf_rate', label: 'My Rate (SMF)' },
-      { field: 'cf_rate',  label: 'CF Rate' },
+      { field: 'smf_rate',    label: 'My Rate (SMF)' },
+      { field: 'cf_rate',     label: 'CF Rate' },
+      { field: 'student_fee', label: 'Student Fee' },
     ]
     if (currentRole === 'cf') return [
-      { field: 'cf_rate', label: 'My Rate (CF)' },
-      { field: 'uf_rate', label: 'UF Rate' },
+      { field: 'cf_rate',     label: 'My Rate (CF)' },
+      { field: 'uf_rate',     label: 'UF Rate' },
+      { field: 'student_fee', label: 'Student Fee' },
     ]
     if (currentRole === 'student') return [
       { field: 'student_fee', label: 'Course Fee' },
