@@ -4,6 +4,12 @@ export function isAdminRole(r) {
   return ADMIN_ROLES.includes(r)
 }
 
+export const MANAGER_PLUS_ROLES = ['owner', 'super_admin', 'admin', 'manager']
+
+export function isManagerOrAbove(r) {
+  return MANAGER_PLUS_ROLES.includes(r)
+}
+
 const ownerNav = [
   { id: 'dashboard',        l: 'Dashboard',        c: '#534AB7' },
   { id: 'franchisees',      l: 'Franchisees',       c: '#1D7A4F' },
