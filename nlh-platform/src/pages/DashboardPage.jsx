@@ -416,6 +416,118 @@ function TopFranchiseesCard({ topFranchisees, onNavigate }) {
   )
 }
 
+// ── Follow-ups card ────────────────────────────────────────────────────────────
+// Aggregates students needing attention: session courses whose sessions are all
+// done but not marked complete, and monthly courses near month-end (collect fee).
+function daysLeftInMonth() {
+  const d = new Date()
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() - d.getDate()
+}
+
+function FollowUpsCard({ onNavigate }) {
+  const [items,   setItems]   = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(function () {
+    let cancelled = false
+    async function load() {
+      // RLS scopes these to what the current role may see (all for admins,
+      // own tree for franchisees), so no explicit franchisee filter is needed.
+      const { data: enrolls } = await sb.from('enrollments')
+        .select('id, completed_at, students(full_name, phone), skus(level_name, total_sessions, courses(group_name, billing_type))')
+        .is('completed_at', null)
+      const list = enrolls || []
+      const ids  = list.map(function (e) { return e.id })
+
+      const counts = {}
+      if (ids.length > 0) {
+        const { data: att } = await sb.from('session_attendance')
+          .select('enrollment_id').in('enrollment_id', ids).eq('attended', true)
+        ;(att || []).forEach(function (a) { counts[a.enrollment_id] = (counts[a.enrollment_id] || 0) + 1 })
+      }
+
+      const monthEnd = daysLeftInMonth() <= 5
+      const out = []
+      list.forEach(function (e) {
+        const name   = e.students?.full_name || 'Student'
+        const course = e.skus?.courses?.group_name || 'Course'
+        const level  = e.skus?.level_name || ''
+        const bt     = e.skus?.courses?.billing_type
+        const tot    = e.skus?.total_sessions || 0
+        const att    = counts[e.id] || 0
+        if (tot > 0 && att >= tot) {
+          out.push({ id: e.id, type: 'sessions', name, course, level, detail: att + '/' + tot + ' sessions done' })
+        } else if (bt === 'monthly' && monthEnd) {
+          out.push({ id: e.id, type: 'monthly', name, course, level, detail: 'Monthly · collect next month' })
+        }
+      })
+      // sessions-done first, then monthly
+      out.sort(function (a, b) { return a.type === b.type ? 0 : a.type === 'sessions' ? -1 : 1 })
+      if (!cancelled) { setItems(out); setLoading(false) }
+    }
+    load()
+    return function () { cancelled = true }
+  }, [])
+
+  const sessionsCount = items.filter(function (i) { return i.type === 'sessions' }).length
+  const monthlyCount  = items.filter(function (i) { return i.type === 'monthly' }).length
+
+  return (
+    <div className="card-new">
+      <div className="card-h">
+        <div>
+          <div className="card-t" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            🔔 Follow-ups
+            {!loading && items.length > 0 && (
+              <span style={{ font: '700 11px var(--mono)', color: '#B45309', background: '#FEF3C7', borderRadius: 20, padding: '1px 8px' }}>{items.length}</span>
+            )}
+          </div>
+          <div className="card-ts">
+            {sessionsCount} session{sessionsCount !== 1 ? 's' : ''} done · {monthlyCount} monthly renewal{monthlyCount !== 1 ? 's' : ''}
+          </div>
+        </div>
+        <div className="card-link" onClick={function () { onNavigate && onNavigate('students') }}>Students →</div>
+      </div>
+
+      {loading ? (
+        <div className="hint" style={{ padding: '14px 0' }}>Checking…</div>
+      ) : items.length === 0 ? (
+        <div style={{ padding: '18px 0', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
+          ✓ Nothing needs attention right now.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 340, overflowY: 'auto' }}>
+          {items.map(function (it) {
+            const isSess = it.type === 'sessions'
+            return (
+              <div key={it.id}
+                onClick={function () { onNavigate && onNavigate('students') }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                  padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)',
+                }}>
+                <span style={{
+                  flexShrink: 0, font: '600 10px var(--font)', whiteSpace: 'nowrap',
+                  color: isSess ? '#B45309' : '#1D4ED8',
+                  background: isSess ? '#FEF3C7' : '#DBEAFE',
+                  border: '1px solid ' + (isSess ? '#FCD34D' : '#93C5FD'),
+                  borderRadius: 20, padding: '2px 8px',
+                }}>{isSess ? '⚠ Review' : '📅 Renew'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>{it.name}</div>
+                  <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                    {it.course}{it.level ? ' · ' + it.level : ''} — {it.detail}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage({ onNavigate }) {
@@ -1050,6 +1162,9 @@ export default function DashboardPage({ onNavigate }) {
             : <QuickActions onNavigate={onNavigate} />
           }
         </div>
+
+        {/* ── follow-ups (full-width) ── */}
+        <FollowUpsCard onNavigate={onNavigate} />
 
         {/* ── top franchisees (full-width, admin only) ── */}
         {isAdmin && topFranchisees.length > 0 && (
