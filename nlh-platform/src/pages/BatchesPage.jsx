@@ -43,23 +43,28 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   var activeStudents = dedupeByEnrollment(batchStudents.filter(function (bs) { return !bs.removed_at }))
 
   // Who can be marked for a NEW session on `date`:
-  //   • joined on or before the session date
-  //   • NOT removed from the batch (removed students never get new attendance rows;
-  //     their already-saved historical records remain untouched in Session History)
-  //   • has not completed the course before this date
-  // This makes the marking list match the live roster (WYSIWYG).
+  //   • every current batch member (NOT removed, not completed before this date)
+  // Join date no longer hides anyone — a member who joined after the session
+  // date still appears so they can be marked, but defaults to Absent (see initAtt)
+  // with a "joined DD MMM" hint, so recent joiners are never silently unmarkable.
   function studentsForDate(date) {
     var list = batchStudents.filter(function (bs) {
-      var joined    = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
       var completed = bs.enrollments && bs.enrollments.completed_at ? bs.enrollments.completed_at.slice(0, 10) : null
-      return (!joined || joined <= date) && !bs.removed_at && (!completed || completed >= date)
+      return !bs.removed_at && (!completed || completed >= date)
     })
     return dedupeByEnrollment(list)
   }
 
+  // True if the student joined the batch AFTER the given session date
+  function joinedAfter(bs, date) {
+    var joined = bs.assigned_at ? bs.assigned_at.slice(0, 10) : null
+    return !!joined && joined > date
+  }
+
   function initAtt(date) {
     var map = {}
-    studentsForDate(date).forEach(function (bs) { map[bs.enrollment_id] = true })
+    // Default present, except members who joined after this date (default absent)
+    studentsForDate(date).forEach(function (bs) { map[bs.enrollment_id] = !joinedAfter(bs, date) })
     return map
   }
 
@@ -465,12 +470,16 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                     </button>
                   </div>
                 ) : activeSessStuds.length === 0 ? (
-                  <p className="hint">No students had joined by this date.</p>
+                  <p className="hint">No active students in this batch.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {activeSessStuds.map(function (bs) {
                       var present = activeSession.attendance[bs.enrollment_id] !== false
                       var name    = bs.enrollments?.students?.full_name || '—'
+                      var late    = joinedAfter(bs, activeSession.date)
+                      var joinStr = bs.assigned_at
+                        ? new Date(bs.assigned_at.slice(0, 10) + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                        : ''
                       return (
                         <div key={bs.id}
                           onClick={function () { toggle(bs.enrollment_id) }}
@@ -489,7 +498,14 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
                             fontWeight: 700, fontSize: 13,
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>{present ? '✓' : '✗'}</div>
-                          <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>{name}</div>
+                          <div style={{ flex: 1, font: '500 13px var(--font)', color: 'var(--text)' }}>
+                            {name}
+                            {late && (
+                              <span style={{ marginLeft: 6, font: '500 10px var(--font)', color: '#B45309', background: '#FEF3C7', borderRadius: 10, padding: '1px 6px', whiteSpace: 'nowrap' }}>
+                                joined {joinStr}
+                              </span>
+                            )}
+                          </div>
                           <div style={{ font: '600 11px var(--mono)', color: present ? 'var(--green)' : 'var(--text3)' }}>
                             {present ? 'Present' : 'Absent'}
                           </div>
