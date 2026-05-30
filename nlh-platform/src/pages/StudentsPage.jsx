@@ -10,6 +10,13 @@ import StudentCertModal from '../components/StudentCertModal'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
+// Days remaining in the current calendar month (today = the last day → 0)
+function daysLeftInMonth() {
+  const d = new Date()
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  return lastDay - d.getDate()
+}
+
 // Shared: derive payment_status from fee amounts — single source of truth
 function deriveStatus(total, paid) {
   const t = Number(total) || 0
@@ -71,6 +78,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
   const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
+  const [skuBilling,      setSkuBilling]      = useState({})   // { [sku_id]: billing_type }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
   const [batchPanelEnrId, setBatchPanelEnrId] = useState(null)  // enrollment.id whose panel is open
   const [panelData,       setPanelData]       = useState({ batches: [], loading: false })
@@ -175,15 +183,20 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
       })
       setSessionCounts(counts)
 
-      // Total sessions per enrolled SKU
+      // Total sessions + billing type per enrolled SKU
       const enrSkuIds = localEnrollments.map(function (e) { return e.sku_id }).filter(Boolean)
       if (enrSkuIds.length > 0) {
         const { data: skuRows } = await sb.from('skus')
-          .select('id, total_sessions')
+          .select('id, total_sessions, courses(billing_type)')
           .in('id', enrSkuIds)
         const totals = {}
-        ;(skuRows || []).forEach(function (s) { totals[s.id] = s.total_sessions })
+        const billing = {}
+        ;(skuRows || []).forEach(function (s) {
+          totals[s.id]  = s.total_sessions
+          billing[s.id] = s.courses?.billing_type || null
+        })
         setSkuTotals(totals)
+        setSkuBilling(billing)
       }
     }
 
@@ -630,6 +643,11 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                   const isCompleted  = !!en.completed_at
                   const attended     = sessionCounts[en.id] || 0
                   const totalSess    = skuTotals[en.sku_id] || 0
+                  const billingType  = skuBilling[en.sku_id] || null
+                  // Session-based course finished its sessions but not marked complete → follow up
+                  const sessionsDone = !isCompleted && totalSess > 0 && attended >= totalSess
+                  // Monthly course nearing month-end → collect next month's fee if continuing
+                  const monthEnding  = !isCompleted && billingType === 'monthly' && daysLeftInMonth() <= 5
 
                   return (
                     <div key={en.id} style={{
@@ -650,9 +668,21 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                                 ✓ Completed
                               </span>
                             )}
-                            <span style={{ font: '600 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                            <span style={{ font: '600 10px var(--mono)', color: sessionsDone ? '#B45309' : 'var(--purple)', background: sessionsDone ? '#FEF3C7' : 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                               {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
                             </span>
+                            {sessionsDone && (
+                              <span title="All sessions attended but course not marked complete — follow up"
+                                style={{ font: '600 10px var(--font)', color: '#B45309', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                ⚠ Sessions done — review
+                              </span>
+                            )}
+                            {monthEnding && (
+                              <span title="Monthly course — month ending, collect next month's fee if continuing"
+                                style={{ font: '600 10px var(--font)', color: '#1D4ED8', background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                📅 Renew — month ending
+                              </span>
+                            )}
                           </div>
                           {bs ? (
                             <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', marginTop: 3 }}>

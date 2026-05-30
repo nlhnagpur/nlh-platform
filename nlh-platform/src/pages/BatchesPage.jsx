@@ -1904,12 +1904,19 @@ export default function BatchesPage() {
                                 <div style={{
                                   flexShrink: 0, textAlign: 'right',
                                   font: '600 11px var(--mono)',
-                                  color: isCompleted ? 'var(--green)' : attended > 0 ? 'var(--text)' : 'var(--text3)',
+                                  color: isCompleted ? 'var(--green)' : (!isCompleted && totalSess > 0 && attended >= totalSess) ? '#B45309' : attended > 0 ? 'var(--text)' : 'var(--text3)',
                                 }}>
                                   {attended}
                                   {totalSess > 0 && <span style={{ color: 'var(--text3)', fontWeight: 400 }}>/{totalSess}</span>}
                                   <div style={{ font: '500 9px var(--font)', color: 'var(--text3)', fontWeight: 400 }}>sessions</div>
                                 </div>
+                              )}
+                              {/* All sessions done but not completed → follow up */}
+                              {statsLoaded && !isCompleted && totalSess > 0 && attended >= totalSess && (
+                                <span title="All sessions attended but course not marked complete — follow up"
+                                  style={{ flexShrink: 0, font: '600 10px var(--font)', color: '#B45309', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                                  ⚠ Review
+                                </span>
                               )}
                               {/* Complete button / badge */}
                               {isCompleted ? (
