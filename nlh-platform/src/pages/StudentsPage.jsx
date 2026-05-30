@@ -81,6 +81,9 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   const [reviewingEn,     setReviewingEn]     = useState(null)  // enrollment pending review-send
   const [reviewPhone,     setReviewPhone]     = useState('')
   const [reviewSending,   setReviewSending]   = useState(false)
+  const [changingEn,      setChangingEn]      = useState(null)  // enrollment whose level is being changed
+  const [changeSkuId,     setChangeSkuId]     = useState('')
+  const [changeSaving,    setChangeSaving]    = useState(false)
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -321,6 +324,40 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     setReviewSending(false)
     if (res.success) { showToast('Review request sent on WhatsApp ✓'); setReviewingEn(null) }
     else showToast('Review send failed: ' + (res.error || 'Unknown error'), 'err')
+  }
+
+  // ── Change an enrollment's course / level (swap sku_id in place) ──
+  function openChangeLevel(en) {
+    setChangeSkuId(en.sku_id || '')
+    setChangingEn(en)
+  }
+
+  async function saveChangeLevel() {
+    if (!changingEn) return
+    const newSkuId = changeSkuId
+    if (!newSkuId || newSkuId === changingEn.sku_id) { setChangingEn(null); return }
+    // Prevent creating a duplicate of an existing enrollment
+    const dup = localEnrollments.some(function (e) { return e.id !== changingEn.id && e.sku_id === newSkuId })
+    if (dup) { showToast('Student is already enrolled in that level', 'warn'); return }
+    const target = allCentreSkus.find(function (s) { return s.id === newSkuId })
+    setChangeSaving(true)
+    const { error } = await sb.from('enrollments').update({ sku_id: newSkuId }).eq('id', changingEn.id)
+    setChangeSaving(false)
+    if (error) { showToast('Change failed: ' + error.message, 'err'); return }
+    setLocalEnrollments(function (prev) {
+      return prev.map(function (e) {
+        if (e.id !== changingEn.id) return e
+        return {
+          ...e,
+          sku_id: newSkuId,
+          skus: target
+            ? { level_name: target.level_name, courses: target.courses || e.skus?.courses }
+            : e.skus,
+        }
+      })
+    })
+    setChangingEn(null)
+    showToast('Course / level updated ✓')
   }
 
   // ── Remove an enrollment ──
@@ -696,6 +733,16 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                           >✕ Batch</button>
                         )}
 
+                        {/* Change course / level */}
+                        {canEdit && (
+                          <button
+                            className="btn-s"
+                            style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0 }}
+                            onClick={function () { openChangeLevel(en) }}
+                            title="Change course / level"
+                          >⇄ Level</button>
+                        )}
+
                         {/* Remove enrollment entirely */}
                         {admin && (
                           <button
@@ -981,6 +1028,46 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
                 <button className="btn" onClick={function () { setReviewingEn(null) }} disabled={reviewSending}>Cancel</button>
                 <button className="btn-p" onClick={doSendReview} disabled={reviewSending || !reviewPhone.trim()}>
                   {reviewSending ? 'Sending…' : 'Send on WhatsApp'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Change course / level modal */}
+        {changingEn && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setChangingEn(null) }}>
+            <div className="modal" style={{ maxWidth: 420 }}>
+              <div className="ch">
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Change Course / Level</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    Currently: {(changingEn.skus?.courses?.group_name || 'Course')}
+                    {changingEn.skus?.level_name ? ' · ' + changingEn.skus.level_name : ''}
+                  </div>
+                </div>
+                <button className="btn-icon" onClick={function () { setChangingEn(null) }}>✕</button>
+              </div>
+              <div style={{ padding: '4px 20px 16px' }}>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>New course / level
+                  <select value={changeSkuId} onChange={function (e) { setChangeSkuId(e.target.value) }} style={{ marginTop: 6 }}>
+                    {allCentreSkus.map(function (s) {
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {(s.courses?.group_name || 'Course') + (s.level_name ? ' — ' + s.level_name : '')}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </label>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  Keeps the batch assignment, attendance and certificate history — only the course/level is swapped.
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={function () { setChangingEn(null) }} disabled={changeSaving}>Cancel</button>
+                <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId}>
+                  {changeSaving ? 'Saving…' : 'Update'}
                 </button>
               </div>
             </div>
