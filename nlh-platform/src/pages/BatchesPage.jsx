@@ -2007,8 +2007,9 @@ export default function BatchesPage() {
                     )}
 
                     <button className="btn-s" style={{ fontSize: 11 }}
+                      title="Add or remove students and edit their joining dates"
                       onClick={function () { setAddStudentModal({ ...batch, instructor_name: ciName }) }}>
-                      + Add Student
+                      👥 Manage Roster
                     </button>
                   </div>
                 )}
