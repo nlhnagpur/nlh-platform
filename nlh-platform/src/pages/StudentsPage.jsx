@@ -45,6 +45,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     full_name: student.full_name || '',
     parent_name: student.parent_name || '',
     gender: student.gender || '',
+    camp_name: student.camp_name || '',
     dob: student.dob || '',
     registered_at: student.registered_at || '',
     phone: student.phone || '',
@@ -61,6 +62,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
     fee_total: student.fee_total ?? '',
     fee_paid: student.fee_paid ?? '',
   })
+  const [showCamp, setShowCamp] = useState(!!student.camp_name)
   const [certModal,   setCertModal]   = useState(null)
   const [centreCache, setCentreCache] = useState(null)
   const [saving,      setSaving]      = useState(false)
@@ -108,6 +110,7 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
       full_name:      form.full_name.trim(),
       parent_name:    form.parent_name.trim(),
       gender:         form.gender || null,
+      camp_name:      form.camp_name.trim() || null,
       dob:            form.dob || null,
       registered_at:  form.registered_at || null,
       phone:          form.phone.trim(),
@@ -505,6 +508,33 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
               <label className="col-span-2">Street / Building Address
                 <input value={form.address} onChange={field('address')} disabled={!canEdit} placeholder="Flat/Shop no., building, street" />
               </label>
+              <div className="col-span-2">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: canEdit ? 'pointer' : 'default' }}>
+                  <input
+                    type="checkbox"
+                    checked={showCamp}
+                    disabled={!canEdit}
+                    onChange={function (e) {
+                      setShowCamp(e.target.checked)
+                      if (!e.target.checked) setForm(function (f) { return { ...f, camp_name: '' } })
+                    }}
+                    style={{ width: 'auto' }}
+                  />
+                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Special Camp category</span>
+                </label>
+                {showCamp && (
+                  <input
+                    value={form.camp_name}
+                    onChange={field('camp_name')}
+                    disabled={!canEdit}
+                    placeholder="Camp name (e.g. Summer Camp 2026)"
+                    style={{ marginTop: 8 }}
+                  />
+                )}
+                <p className="hint" style={{ marginTop: 4 }}>
+                  Appears on the certificate above the course names.
+                </p>
+              </div>
               <label>Enrolment Channel
                 <select value={form.channel} onChange={field('channel')} disabled={!canEdit}>
                   <option value="franchise">Franchise Centre</option>
@@ -1019,11 +1049,12 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const admin = isAdminRole(currentRole)
 
   const [form, setForm] = useState({
-    full_name: '', parent_name: '', gender: '', dob: '', registered_at: '', phone: '', email: '',
+    full_name: '', parent_name: '', gender: '', camp_name: '', dob: '', registered_at: '', phone: '', email: '',
     pincode: '', city: '', area: '', state: '', country: 'India', address: '',
     channel: 'franchise',
     franchisee_id: admin ? '' : (currentFranchiseeId || ''),
   })
+  const [showCamp, setShowCamp] = useState(false)
   const [showAddress, setShowAddress] = useState(false)
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
@@ -1174,6 +1205,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         full_name: form.full_name.trim(),
         parent_name: form.parent_name.trim(),
         gender: form.gender || null,
+        camp_name: form.camp_name.trim() || null,
         dob: form.dob || null,
         registered_at: form.registered_at || new Date().toISOString().slice(0, 10),
         phone: form.phone.trim(),
@@ -1427,6 +1459,28 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             <label>Parent Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
+            <div className="col-span-2">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showCamp}
+                  onChange={function (e) {
+                    setShowCamp(e.target.checked)
+                    if (!e.target.checked) setForm(function (f) { return { ...f, camp_name: '' } })
+                  }}
+                  style={{ width: 'auto' }}
+                />
+                <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Special Camp category</span>
+              </label>
+              {showCamp && (
+                <input
+                  value={form.camp_name}
+                  onChange={field('camp_name')}
+                  placeholder="Camp name (e.g. Summer Camp 2026)"
+                  style={{ marginTop: 8 }}
+                />
+              )}
+            </div>
           </div>
 
           {/* ── Section 2: Centre ── */}

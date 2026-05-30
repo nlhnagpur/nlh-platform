@@ -249,6 +249,14 @@ textarea { resize: vertical; }
   font-size: 36px;
   color: #2A2A40;
 }
+.co-camp {
+  font-size: 46px;
+  font-weight: 700;
+  font-style: italic;
+  color: #C2410C;
+  margin: 6px 0 2px;
+  line-height: 1.2;
+}
 .co-program {
   font-size: 50px;
   font-weight: 700;

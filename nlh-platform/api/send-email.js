@@ -423,6 +423,7 @@ function buildStudentCert(student, enrollment, centre) {
     '<div style="font-size:22px;font-weight:700;color:#CC0000;font-style:italic;margin-bottom:4px">' + studentName + '</div>' +
     (parentLine ? '<div style="font-size:10px;color:#555;margin-bottom:10px">' + parentLine + '</div>' : '') +
     '<div style="font-size:10px;color:#1A1916;margin-bottom:4px">Has successfully completed</div>' +
+    (student.camp_name ? '<div style="font-size:14px;font-weight:700;font-style:italic;color:#C2410C;margin-bottom:4px;line-height:1.3">' + student.camp_name + '</div>' : '') +
     '<div style="font-size:14px;font-weight:700;color:#1A3A6A;margin-bottom:4px;line-height:1.3">' + fullCourse + '</div>' +
     '<div style="font-size:10px;color:#555;margin-bottom:14px">at ' + centreLine + '</div>' +
     '<table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px dashed #89CFF0;padding-top:10px"><tr>' +

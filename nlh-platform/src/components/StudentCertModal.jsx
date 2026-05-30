@@ -47,6 +47,7 @@ export function printStudentCert(student, selectedEnrollments, centre) {
     rel,
     parent:   student.parent_name || '',
     location,
+    camp:     student.camp_name || '',
     program:  programs,
     level:    levels,
     center:   centerFull,
@@ -231,6 +232,12 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
                 <div style={{ fontSize: 34, color: '#2A2A40', marginTop: 10 }}>
                   has successfully completed
                 </div>
+
+                {student.camp_name ? (
+                  <div style={{ fontSize: 44, fontWeight: 700, fontStyle: 'italic', color: '#C2410C', margin: '6px 0 2px', lineHeight: 1.2 }}>
+                    {student.camp_name}
+                  </div>
+                ) : null}
 
                 {selected.length > 0
                   ? <div style={{ fontSize: 46, fontWeight: 700, color: '#0A1A33', margin: '6px 0', lineHeight: 1.3 }}>

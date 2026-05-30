@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     .select(`
       id,
       skus ( level_name, courses ( group_name ) ),
-      students ( full_name, parent_name, gender, city ),
+      students ( full_name, parent_name, gender, city, camp_name ),
       franchisees ( business_name, city )
     `)
     .in('id', enrollmentIds)
@@ -94,6 +94,7 @@ export default async function handler(req, res) {
     rel:      isMale ? 'S/o.'  : 'D/o.',
     parent:   parentName,
     location: student.city || '',
+    camp:     student.camp_name || '',
     program:  enrollments.map(function (e) { return e.skus?.courses?.group_name || '' }).join('|'),
     level:    enrollments.map(function (e) { return e.skus?.level_name || '' }).join('|'),
     center:   centreText,

@@ -51,6 +51,7 @@ PROGRAMS.forEach(p => {
   set('f-name',     p.get('name'));
   set('f-parent',   p.get('parent'));
   set('f-location', p.get('location'));
+  set('f-camp',     p.get('camp'));
   set('f-program',  p.get('program'));
   set('f-level',    p.get('level'));
   set('f-center',   p.get('center'));
@@ -110,6 +111,7 @@ function render() {
   const rel     = $('f-rel').value.trim();
   const parent  = $('f-parent').value.trim();
   const loc     = $('f-location').value.trim();
+  const camp    = $('f-camp') ? $('f-camp').value.trim() : '';
   const prog    = $('f-program').value.trim();
   const level   = $('f-level').value.trim();
   const center  = $('f-center').value.trim();
@@ -118,6 +120,13 @@ function render() {
 
   $('c-name').textContent   = [title, name].filter(Boolean).join(' ');
   $('c-parent').textContent = [rel && parent ? `${rel} ${parent}` : parent, loc ? `R/o. ${loc}` : ''].filter(Boolean).join(', ');
+
+  // Optional special-camp line (above the courses)
+  const campEl = $('c-camp');
+  if (campEl) {
+    campEl.textContent   = camp;
+    campEl.style.display = camp ? '' : 'none';
+  }
 
   // Support pipe-separated programs/levels for multi-course certificates
   const progs  = prog.split('|').map(s => s.trim()).filter(Boolean);
@@ -172,7 +181,7 @@ function autoSizeName() {
 }
 
 // Wire all inputs
-['f-title','f-name','f-rel','f-parent','f-location','f-program','f-level','f-center','f-date','f-id']
+['f-title','f-name','f-rel','f-parent','f-location','f-camp','f-program','f-level','f-center','f-date','f-id']
   .forEach(id => {
     const el = $(id);
     if (el) { el.addEventListener('input', render); el.addEventListener('change', render); }
