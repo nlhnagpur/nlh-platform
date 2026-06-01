@@ -62,7 +62,14 @@ export async function requireAdmin(req, res) {
     return true
   }
 
-  const { data: profile } = await sb.from('users').select('role').eq('id', user.id).single()
+  // Look up the role by EMAIL (case-insensitive) — the users table id does not
+  // match the auth UID for these accounts, so an id-based lookup fails. This
+  // mirrors the rest of the system (RLS helpers use email ILIKE auth email).
+  const { data: profile } = await sb.from('users')
+    .select('role')
+    .ilike('email', user.email)
+    .limit(1)
+    .maybeSingle()
   if (!profile || !ADMIN_ROLES.has(profile.role)) {
     res.status(403).json({ error: 'Insufficient permissions' })
     return true
