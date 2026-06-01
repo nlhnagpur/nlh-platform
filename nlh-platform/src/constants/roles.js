@@ -22,6 +22,7 @@ const ownerNav = [
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
+  { id: 'email-log',        l: 'Email log',         c: '#0F766E' },
   { id: 'users',            l: 'Manage logins',     c: '#A32D2D' },
   { id: 'requests',         l: 'Access requests',   c: '#534AB7' },
 ]
@@ -38,6 +39,7 @@ const adminNav = [
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
+  { id: 'email-log',        l: 'Email log',         c: '#0F766E' },
   { id: 'users',            l: 'Manage logins',     c: '#A32D2D' },
   { id: 'requests',         l: 'Access requests',   c: '#534AB7' },
 ]
@@ -53,6 +55,7 @@ const managerNav = [
   { id: 'accounting',     l: 'HO Accounting',    c: '#0F766E' },
   { id: 'courses',        l: 'Courses & SKUs',   c: '#534AB7' },
   { id: 'prices',         l: 'Kit prices',       c: '#1D7A4F' },
+  { id: 'email-log',      l: 'Email log',        c: '#0F766E' },
 ]
 
 const staffNav = [

@@ -16,6 +16,7 @@ const InstructorsPage    = lazy(() => import('../pages/InstructorsPage'))
 const BatchesPage        = lazy(() => import('../pages/BatchesPage'))
 const WhatsAppInboxPage  = lazy(() => import('../pages/WhatsAppInboxPage'))
 const AccountingPage     = lazy(() => import('../pages/AccountingPage'))
+const EmailLogPage       = lazy(() => import('../pages/EmailLogPage'))
 
 const PAGE_MAP = {
   dashboard:        DashboardPage,
@@ -31,6 +32,7 @@ const PAGE_MAP = {
   batches:          BatchesPage,
   'whatsapp-inbox': WhatsAppInboxPage,
   accounting:       AccountingPage,
+  'email-log':      EmailLogPage,
 }
 
 function PageSpinner() {

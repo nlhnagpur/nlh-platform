@@ -589,7 +589,23 @@ export default async function handler(req, res) {
   }
 
   // ── Send via Brevo ─────────────────────────────────────────────────────────
-  const finalBcc = bcc || (clientBcc && clientBcc.length ? clientBcc : null)
+  // Always send a monitoring copy to the admin inbox (deduped). BCC keeps the
+  // admin address hidden from parents/franchisees and avoids reply-all noise.
+  const bccSet = new Set([ADMIN_EMAIL])
+  if (bcc) bcc.forEach(function (e) { bccSet.add(e) })
+  if (clientBcc) clientBcc.forEach(function (e) { bccSet.add(e) })
+  const finalBcc = Array.from(bccSet)
+
+  // Record the attempt in the in-app email log (never blocks the send)
+  async function logEmail(status, error, messageId) {
+    try {
+      await sb.from('email_log').insert({
+        type, recipient: to, recipient_name: toName || to, subject,
+        status, error: error || null, message_id: messageId || null,
+        bcc: finalBcc.join(', '),
+      })
+    } catch (_) { /* logging must never break sending */ }
+  }
 
   try {
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -602,16 +618,21 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         sender:      { name: 'New Learning Horizons', email: ADMIN_EMAIL },
         to:          [{ email: to, name: toName || to }],
-        ...(finalBcc && finalBcc.length ? { bcc: finalBcc.map(function (e) { return { email: e } }) } : {}),
+        bcc:         finalBcc.map(function (e) { return { email: e } }),
         subject,
         htmlContent,
       }),
     })
 
     const result = await response.json()
-    if (response.ok) return res.status(200).json({ success: true, id: result.messageId })
+    if (response.ok) {
+      await logEmail('sent', null, result.messageId)
+      return res.status(200).json({ success: true, id: result.messageId })
+    }
+    await logEmail('failed', result.message || 'Send failed', null)
     return res.status(response.status).json({ success: false, error: result.message || 'Send failed' })
   } catch (err) {
+    await logEmail('failed', err.message, null)
     return res.status(500).json({ success: false, error: err.message })
   }
 }
