@@ -347,7 +347,12 @@ function ActivityFeed({ orders, isAdmin }) {
 
 // ── Franchisee activity card (non-admin role) ──────────────────────────────────
 
-function QuickActions({ onNavigate }) {
+function QuickActions({ onNavigate, currentRole }) {
+  const tier = (currentRole || '').toUpperCase()
+  const manualUrl = ['SMF', 'CF', 'UF'].includes(tier) ? '/manuals/NLH-Operating-Manual-' + tier + '.docx' : null
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', cursor: 'pointer', textAlign: 'left', transition: 'all .15s', textDecoration: 'none' }
+  function hoverIn(e) { e.currentTarget.style.background = 'var(--purple-bg)'; e.currentTarget.style.borderColor = 'rgba(83,74,183,.2)' }
+  function hoverOut(e) { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.borderColor = 'var(--border)' }
   return (
     <div className="card-new">
       <div className="card-h">
@@ -364,9 +369,7 @@ function QuickActions({ onNavigate }) {
         ].map(function(item) {
           return (
             <button key={item[0]} onClick={function() { onNavigate && onNavigate(item[0]) }}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', cursor: 'pointer', textAlign: 'left', transition: 'all .15s' }}
-              onMouseEnter={function(e) { e.currentTarget.style.background = 'var(--purple-bg)'; e.currentTarget.style.borderColor = 'rgba(83,74,183,.2)' }}
-              onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+              style={rowStyle} onMouseEnter={hoverIn} onMouseLeave={hoverOut}
             >
               <span style={{ fontSize: 18 }}>{item[1]}</span>
               <div>
@@ -376,6 +379,16 @@ function QuickActions({ onNavigate }) {
             </button>
           )
         })}
+        {manualUrl && (
+          <a href={manualUrl} download
+            style={rowStyle} onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
+            <span style={{ fontSize: 18 }}>📘</span>
+            <div>
+              <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>Operating Manual</div>
+              <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 2 }}>Download your {tier} guide (.docx)</div>
+            </div>
+          </a>
+        )}
       </div>
     </div>
   )
@@ -1159,7 +1172,7 @@ export default function DashboardPage({ onNavigate }) {
           {/* activity feed (admin) / quick actions (franchisee) */}
           {isAdmin
             ? <ActivityFeed orders={displayOrders} isAdmin={isAdmin} />
-            : <QuickActions onNavigate={onNavigate} />
+            : <QuickActions onNavigate={onNavigate} currentRole={currentRole} />
           }
         </div>
 
