@@ -541,6 +541,182 @@ function FollowUpsCard({ onNavigate }) {
   )
 }
 
+// ── Students panel (inline registry — rows expand in place, no popup) ──────────
+function StudentsPanel({ onNavigate }) {
+  const [rows, setRows]     = useState([])
+  const [loading, setLoad]  = useState(true)
+  const [search, setSearch] = useState('')
+  const [openId, setOpenId] = useState(null)
+
+  useEffect(function () {
+    let cancelled = false
+    sb.from('students')
+      .select('id, full_name, parent_name, phone, fee_total, fee_paid, payment_status, registered_at, city, franchisees(business_name), enrollments(id, completed_at, skus(level_name, courses(group_name)))')
+      .order('registered_at', { ascending: false, nullsFirst: false })
+      .limit(300)
+      .then(function (res) { if (!cancelled) { setRows(res.data || []); setLoad(false) } })
+    return function () { cancelled = true }
+  }, [])
+
+  const filtered = rows.filter(function (s) {
+    const q = search.toLowerCase()
+    return !q || (s.full_name || '').toLowerCase().includes(q) ||
+      (s.parent_name || '').toLowerCase().includes(q) || (s.phone || '').includes(q)
+  })
+
+  return (
+    <div className="card-new">
+      <div className="card-h">
+        <div>
+          <div className="card-t">👥 Active Student Registry</div>
+          <div className="card-ts">{rows.length} students · tap a row to expand</div>
+        </div>
+        <input className="search" placeholder="Search student / parent / phone…"
+          value={search} onChange={function (e) { setSearch(e.target.value) }} style={{ maxWidth: 240 }} />
+      </div>
+      {loading ? (
+        <div className="hint" style={{ padding: 16 }}>Loading students…</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty" style={{ padding: 24 }}>No students found.</div>
+      ) : (
+        <div className="tbl-scroll" style={{ maxHeight: 520, overflowY: 'auto' }}>
+          <table className="big-tbl">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th className="hide-mobile">Parent / contact</th>
+                <th>Courses</th>
+                <th style={{ textAlign: 'right' }}>Balance</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(function (s) {
+                const balance  = (s.fee_total || 0) - (s.fee_paid || 0)
+                const courses  = [...new Set((s.enrollments || []).map(function (e) { return e.skus?.courses?.group_name }).filter(Boolean))]
+                const isOpen   = openId === s.id
+                const ok       = s.payment_status === 'paid' || balance <= 0
+                return (
+                  <React.Fragment key={s.id}>
+                    <tr style={{ cursor: 'pointer', background: isOpen ? 'var(--purple-bg)' : undefined }}
+                      onClick={function () { setOpenId(isOpen ? null : s.id) }}>
+                      <td>
+                        <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{s.full_name}</div>
+                        {(s.registered_at) && <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>Joined {fmtDate(s.registered_at)}</div>}
+                      </td>
+                      <td className="hide-mobile" style={{ color: 'var(--text2)' }}>
+                        <div style={{ fontSize: 12 }}>{s.parent_name || '—'}</div>
+                        {s.phone && <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{s.phone}</div>}
+                      </td>
+                      <td>
+                        {courses.length === 0 ? <span style={{ color: 'var(--text3)' }}>—</span>
+                          : courses.slice(0, 3).map(function (c) {
+                              return <span key={c} style={{ display: 'inline-block', font: '600 10px var(--font)', color: 'var(--purple)', background: 'var(--purple-bg)', borderRadius: 10, padding: '1px 7px', margin: '1px 3px 1px 0' }}>{c}</span>
+                            })}
+                        {courses.length > 3 && <span style={{ font: '600 10px var(--mono)', color: 'var(--text3)' }}>+{courses.length - 3}</span>}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <span className="amt" style={{ color: balance > 0 ? 'var(--red, #dc2626)' : 'var(--green)' }}>{balance > 0 ? '₹' + fmtAmt(balance) : '✓'}</span>
+                      </td>
+                      <td>
+                        <span style={{ font: '600 10px var(--font)', whiteSpace: 'nowrap', color: ok ? 'var(--green)' : '#B45309', background: ok ? 'var(--green-bg)' : '#FEF3C7', borderRadius: 20, padding: '1px 8px' }}>
+                          {s.payment_status || (ok ? 'paid' : 'pending')}
+                        </span>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={5} style={{ background: 'var(--bg2)', padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
+                            <div style={{ minWidth: 220 }}>
+                              <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 6 }}>Courses</div>
+                              {(s.enrollments || []).length === 0 ? <div style={{ color: 'var(--text3)', fontSize: 12 }}>No enrollments</div>
+                                : (s.enrollments || []).map(function (e) {
+                                    return (
+                                      <div key={e.id} style={{ font: '500 12px var(--font)', color: 'var(--text)', marginBottom: 2 }}>
+                                        {e.skus?.courses?.group_name || 'Course'}
+                                        {e.skus?.level_name ? ' · ' + e.skus.level_name : ''}
+                                        {e.completed_at ? <span style={{ color: 'var(--green)', marginLeft: 6 }}>✓</span> : ''}
+                                      </div>
+                                    )
+                                  })}
+                            </div>
+                            <div style={{ minWidth: 180 }}>
+                              <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 6 }}>Fees</div>
+                              <div style={{ fontSize: 12, color: 'var(--text2)' }}>Total: <b>₹{fmtAmt(s.fee_total)}</b></div>
+                              <div style={{ fontSize: 12, color: 'var(--text2)' }}>Paid: <b style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</b></div>
+                              <div style={{ fontSize: 12, color: 'var(--text2)' }}>Balance: <b style={{ color: balance > 0 ? 'var(--red, #dc2626)' : 'var(--green)' }}>₹{fmtAmt(balance)}</b></div>
+                            </div>
+                            <div style={{ minWidth: 160 }}>
+                              <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 6 }}>Centre</div>
+                              <div style={{ fontSize: 12, color: 'var(--text2)' }}>{s.franchisees?.business_name || '—'}</div>
+                              {s.city && <div style={{ fontSize: 11, color: 'var(--text3)' }}>{s.city}</div>}
+                              <button className="btn-s" style={{ fontSize: 11, marginTop: 10 }}
+                                onClick={function (ev) { ev.stopPropagation(); onNavigate && onNavigate('students') }}>
+                                Open in Students →
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Orders panel (inline list) ────────────────────────────────────────────────
+function OrdersPanel({ orders, isAdmin, onNavigate }) {
+  const list = orders || []
+  return (
+    <div className="card-new">
+      <div className="card-h">
+        <div>
+          <div className="card-t">📦 Orders</div>
+          <div className="card-ts">{list.length} recent orders</div>
+        </div>
+        <div className="card-link" onClick={function () { onNavigate && onNavigate('orders') }}>Manage in Orders →</div>
+      </div>
+      {list.length === 0 ? (
+        <div className="empty" style={{ padding: 24 }}>No orders yet.</div>
+      ) : (
+        <div className="tbl-scroll" style={{ maxHeight: 520, overflowY: 'auto' }}>
+          <table className="big-tbl">
+            <thead>
+              <tr>
+                <th>Order</th>
+                {isAdmin && <th>Centre</th>}
+                <th>Status</th>
+                <th className="hide-mobile">Date</th>
+                <th style={{ textAlign: 'right' }}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map(function (o) {
+                return (
+                  <tr key={o.id} style={{ cursor: 'pointer' }} onClick={function () { onNavigate && onNavigate('orders') }}>
+                    <td style={{ font: '600 12px var(--mono)', color: 'var(--text)' }}>{o.invoice_no || o.order_ref || o.id.slice(0, 8)}</td>
+                    {isAdmin && <td style={{ fontSize: 12, color: 'var(--text2)' }}>{o.placer?.business_name || '—'}</td>}
+                    <td><OrderBadge status={o.status} /></td>
+                    <td className="hide-mobile mono" style={{ color: 'var(--text3)', fontSize: 11 }}>{fmtDate(o.created_at)}</td>
+                    <td style={{ textAlign: 'right' }}><div className="amt">{o.grand_total ? '₹' + fmtAmt(o.grand_total) : '—'}</div></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function DashboardPage({ onNavigate }) {
@@ -569,6 +745,7 @@ export default function DashboardPage({ onNavigate }) {
   const [searchRes, setSearchRes]           = useState(null)
   const [searchLoading, setSearchLoading]   = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [dashTab, setDashTab] = useState('overview')  // overview | students | orders | followups
   const searchWrapRef = useRef(null)
   const exportRef     = useRef(null)
 
@@ -1039,6 +1216,32 @@ export default function DashboardPage({ onNavigate }) {
           )}
         </div>
 
+        {/* ── inline dashboard tabs ── */}
+        <div className="status-pills" style={{ marginTop: 18, marginBottom: 4 }}>
+          {[
+            { id: 'overview',  label: '🏠 Overview' },
+            { id: 'students',  label: '👥 Students' },
+            { id: 'orders',    label: '📦 Orders' },
+            { id: 'followups', label: '🔔 Follow-ups' },
+          ].map(function (t) {
+            return (
+              <button key={t.id} className={'sp' + (dashTab === t.id ? ' on on-pend' : '')}
+                onClick={function () { setDashTab(t.id) }}>{t.label}</button>
+            )
+          })}
+        </div>
+
+        {/* ── Students tab ── */}
+        {dashTab === 'students' && <StudentsPanel onNavigate={onNavigate} />}
+
+        {/* ── Orders tab ── */}
+        {dashTab === 'orders' && <OrdersPanel orders={displayOrders} isAdmin={isAdmin} onNavigate={onNavigate} />}
+
+        {/* ── Follow-ups tab ── */}
+        {dashTab === 'followups' && <FollowUpsCard onNavigate={onNavigate} />}
+
+        {/* ── Overview tab (default dashboard) ── */}
+        {dashTab === 'overview' && (<>
         {/* ── programs strip ── */}
         <div className="programs-card">
           <div className="pc-head">
@@ -1176,13 +1379,11 @@ export default function DashboardPage({ onNavigate }) {
           }
         </div>
 
-        {/* ── follow-ups (full-width) ── */}
-        <FollowUpsCard onNavigate={onNavigate} />
-
         {/* ── top franchisees (full-width, admin only) ── */}
         {isAdmin && topFranchisees.length > 0 && (
           <TopFranchiseesCard topFranchisees={topFranchisees} onNavigate={onNavigate} />
         )}
+        </>)}
 
       </div>
     </div>
