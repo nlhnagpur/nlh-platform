@@ -41,7 +41,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
-export function StudentDetailModal({ student, onClose, onSaved }) {
+export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
   const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
@@ -498,8 +498,16 @@ export function StudentDetailModal({ student, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 860, maxWidth: '96vw' }}>
+    <div
+      className={inline ? '' : 'modal-bg'}
+      onClick={inline ? undefined : function (e) { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className={inline ? '' : 'modal'}
+        style={inline
+          ? { width: '100%', background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.05)' }
+          : { width: 860, maxWidth: '96vw' }}
+      >
         {/* Hero header */}
         {(function () {
           var av = (student.full_name || '?').split(' ').map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase()
@@ -2255,8 +2263,19 @@ export default function StudentsPage() {
           )
         })()}
 
-        {/* Students table */}
-        {loading ? (
+        {/* Inline student detail (opens in the main window, below the stats) */}
+        {selected ? (
+          <div style={{ marginTop: 4 }}>
+            <button className="btn" style={{ marginBottom: 12, fontSize: 13 }}
+              onClick={function () { setSelected(null) }}>← Back to students</button>
+            <StudentDetailModal
+              inline
+              student={selected}
+              onClose={function () { setSelected(null) }}
+              onSaved={handleSaved}
+            />
+          </div>
+        ) : loading ? (
           <div className="loading">Loading students…</div>
         ) : (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
@@ -2356,14 +2375,6 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
-
-      {selected && (
-        <StudentDetailModal
-          student={selected}
-          onClose={() => setSelected(null)}
-          onSaved={handleSaved}
-        />
-      )}
 
       {showAdd && (
         <AddStudentModal
