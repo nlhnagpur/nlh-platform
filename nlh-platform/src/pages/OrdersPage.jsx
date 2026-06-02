@@ -1596,73 +1596,63 @@ export default function OrdersPage() {
 
   function renderActions(order) {
     const busy = actionLoading && actionLoading.startsWith(order.id)
+    const dispInfo = order.dispatched_at ? [
+      order.awb_number ? 'AWB ' + order.awb_number : null,
+      order.courier_partner,
+      order.dispatch_date,
+      order.dispatch_weight != null ? order.dispatch_weight + ' kg' : null,
+      order.dispatch_freight > 0 ? '₹' + fmtAmt(order.dispatch_freight) : null,
+    ].filter(Boolean).join(' · ') : ''
     return (
-      <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        {order.status === 'pending' && isAdmin && (
-          <button className="row-action primary" disabled={busy} onClick={function () { handleMarkInvoiced(order) }}>
-            {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
-          </button>
-        )}
-        {order.status === 'invoiced' && !isAdmin && (
-          <>
-            {/* Razorpay: uncomment when RAZORPAY_KEY_ID env var is set in Vercel
-            <button className="row-action green" disabled={busy}
-              onClick={function () { handlePayOnline(order) }}>
-              {isActing(order.id, 'pay') ? '…' : '💳 Pay Online'}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, minWidth: 0 }}>
+        {/* ── action buttons: one clean aligned row ── */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {order.status === 'pending' && isAdmin && (
+            <button className="row-action primary" disabled={busy} onClick={function () { handleMarkInvoiced(order) }}>
+              {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
             </button>
-            */}
+          )}
+          {order.status === 'invoiced' && !isAdmin && (
             <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
-          </>
-        )}
-        {order.status === 'invoiced' && isAdmin && (
-          <>
-            <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+          )}
+          {order.status === 'invoiced' && isAdmin && (
+            <>
+              <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
               <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
                 {isActing(order.id, 'reminder') ? '…' : 'Remind'}
               </button>
-              {order.last_reminded_at && (
-                <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
-                  Reminded {fmtDate(order.last_reminded_at.slice(0, 10))}
-                  {order.reminder_count > 1 ? ' ×' + order.reminder_count : ''}
-                </span>
-              )}
-            </div>
-            <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
-          </>
-        )}
-        {order.status === 'payment_submitted' && isAdmin && (
-          <button className="row-action primary" disabled={busy} onClick={function () { handleVerifyPayment(order) }}>
-            {isActing(order.id, 'verify') ? '…' : 'Verify'}
+              <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
+            </>
+          )}
+          {order.status === 'payment_submitted' && isAdmin && (
+            <button className="row-action primary" disabled={busy} onClick={function () { handleVerifyPayment(order) }}>
+              {isActing(order.id, 'verify') ? '…' : 'Verify'}
+            </button>
+          )}
+          {order.status === 'closed' && isAdmin && (
+            <button className="row-action" disabled={busy} onClick={function () { handleReopen(order) }}>
+              {isActing(order.id, 'reopen') ? '…' : 'Reopen'}
+            </button>
+          )}
+          {['invoiced', 'payment_submitted', 'closed'].includes(order.status) && (
+            <button className="row-action" onClick={function () { setInvoiceViewOrder(order) }}>PDF</button>
+          )}
+          <button className="row-action" onClick={function () { setDispatchOrder(order) }}>
+            {order.dispatched_at ? 'Dispatch ✎' : 'Dispatch'}
           </button>
+        </div>
+
+        {/* ── metadata, muted, on their own lines below ── */}
+        {order.last_reminded_at && (
+          <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
+            Reminded {fmtDate(order.last_reminded_at.slice(0, 10))}
+            {order.reminder_count > 1 ? ' ×' + order.reminder_count : ''}
+          </span>
         )}
-        {order.status === 'closed' && isAdmin && (
-          <button className="row-action" disabled={busy} onClick={function () { handleReopen(order) }}>
-            {isActing(order.id, 'reopen') ? '…' : 'Reopen'}
-          </button>
-        )}
-        {['invoiced', 'payment_submitted', 'closed'].includes(order.status) && (
-          <button className="row-action" onClick={function () { setInvoiceViewOrder(order) }}>PDF</button>
-        )}
-        {!order.dispatched_at && (
-          <button className="row-action" onClick={function () { setDispatchOrder(order) }}>Dispatch</button>
-        )}
-        {order.dispatched_at && (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:1 }}>
-            <span style={{ color:'var(--text3)', fontSize:11, fontFamily:'var(--mono)' }}>
-              {order.awb_number || 'Dispatched'}
-            </span>
-            <span style={{ fontSize:10, color:'var(--text3)' }}>
-              {[
-                order.courier_partner,
-                order.dispatch_date,
-                order.dispatch_weight != null ? order.dispatch_weight + ' kg' : null,
-                order.dispatch_freight > 0 ? '₹' + fmtAmt(order.dispatch_freight) : null,
-              ].filter(Boolean).join(' · ')}
-            </span>
-            <button className="row-action" style={{ fontSize:10, padding:'2px 8px' }}
-              onClick={function () { setDispatchOrder(order) }}>Edit</button>
-          </div>
+        {order.dispatched_at && dispInfo && (
+          <span style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'right', maxWidth: 260 }}>
+            📦 {dispInfo}
+          </span>
         )}
       </div>
     )
