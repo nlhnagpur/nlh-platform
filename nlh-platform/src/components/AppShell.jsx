@@ -35,6 +35,42 @@ const PAGE_MAP = {
   'email-log':      EmailLogPage,
 }
 
+// Recover gracefully when a lazy page chunk fails to load — almost always
+// because a new version was deployed and the old hashed chunk filename no
+// longer exists on the server. Instead of a blank screen, reload once to
+// fetch the fresh bundle (or show a Reload button as a fallback).
+function isChunkError(err) {
+  const m = (err && err.message) || ''
+  return /loading chunk|dynamically imported module|failed to fetch dynamically|importing a module|ChunkLoadError/i.test(m)
+}
+
+class PageErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  componentDidCatch(error) {
+    if (isChunkError(error)) {
+      const last = Number(sessionStorage.getItem('nlh-chunk-reload') || 0)
+      if (Date.now() - last > 10000) {              // at most once / 10s — avoids reload loops
+        sessionStorage.setItem('nlh-chunk-reload', String(Date.now()))
+        window.location.reload()
+      }
+    }
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text2)' }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>⚠️</div>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Couldn’t load this page</div>
+          <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 18 }}>A new version may have just been released. Reloading usually fixes it.</div>
+          <button className="btn-p" onClick={function () { window.location.reload() }}>Reload</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function PageSpinner() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
@@ -98,9 +134,11 @@ export default function AppShell() {
       />
 
       <div className="main">
-        <Suspense fallback={<PageSpinner />}>
-          <PageComponent onNavigate={handleNavigate} />
-        </Suspense>
+        <PageErrorBoundary key={currentPage}>
+          <Suspense fallback={<PageSpinner />}>
+            <PageComponent onNavigate={handleNavigate} />
+          </Suspense>
+        </PageErrorBoundary>
       </div>
     </div>
   )
