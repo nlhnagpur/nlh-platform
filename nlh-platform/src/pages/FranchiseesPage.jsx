@@ -251,7 +251,7 @@ function renewalStatus(fr) {
 
 // ── FranchiseeDetailModal ──────────────────────────────────────────────────────
 
-function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
+function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inline }) {
   const { currentRole, currentUser } = useAuth()
   const admin = isAdminRole(currentRole)
 
@@ -405,8 +405,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved }) {
 
   return (
     <>
-    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+    <div className={inline ? '' : 'modal-bg'} onClick={inline ? undefined : (e => e.target === e.currentTarget && onClose())}>
+      <div className={inline ? '' : 'modal'}
+        style={inline ? { width: '100%', background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.05)' } : undefined}>
         {/* ── HERO HEADER ── */}
         {(function () {
           var ts = {
@@ -1352,6 +1353,19 @@ export default function FranchiseesPage() {
           )}
         </div>
 
+        {selected ? (
+          <div style={{ marginTop: 4 }}>
+            <button className="btn" style={{ marginBottom: 12, fontSize: 13 }}
+              onClick={function () { setSelected(null) }}>← Back to franchisees</button>
+            <FranchiseeDetailModal
+              inline
+              franchisee={selected}
+              allCourses={allCourses}
+              onClose={function () { setSelected(null) }}
+              onSaved={handleSaved}
+            />
+          </div>
+        ) : (<>
         {/* Toolbar with search + tier filter */}
         <div className="fr-toolbar">
           <input
@@ -1506,16 +1520,8 @@ export default function FranchiseesPage() {
             </div>
           )
         })()}
+        </>)}
       </div>
-
-      {selected && (
-        <FranchiseeDetailModal
-          franchisee={selected}
-          allCourses={allCourses}
-          onClose={() => setSelected(null)}
-          onSaved={handleSaved}
-        />
-      )}
 
       {showAdd && (
         <AddFranchiseeModal

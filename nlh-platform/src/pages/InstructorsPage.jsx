@@ -56,7 +56,7 @@ function groupSkus(allSkus) {
 
 const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
 
-function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSaved }) {
+function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSaved, inline }) {
   const [tab, setTab]           = useState('profile')
   const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false, batches: false, payroll: false })
   const [saving, setSaving]     = useState(false)
@@ -512,8 +512,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const showSettlement   = ['refunded', 'partial', 'forfeited'].includes(caution.caution_status)
 
   return (
-    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 700, maxWidth: '96vw' }}>
+    <div className={inline ? '' : 'modal-bg'} onClick={inline ? undefined : function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className={inline ? '' : 'modal'}
+        style={inline ? { width: '100%', background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.05)' } : { width: 700, maxWidth: '96vw' }}>
 
         {/* Hero header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 20px 14px', background: 'linear-gradient(135deg,#f5f3ff,#ede9fe)', borderBottom: '1px solid var(--border)' }}>
@@ -2311,6 +2312,23 @@ export default function InstructorsPage() {
     setSelected(function (s) { return s && s.id === updated.id ? { ...s, ...updated } : s })
   }
 
+  async function closeDetail() {
+    const cur = selected
+    if (cur) {
+      // Re-fetch so the list reflects any appointment changes made in the detail
+      const { data } = await sb.from('instructors')
+        .select('*, instructor_courses(id,status,remuneration_mode,remuneration_rate,skus(level_name,courses(group_name)))')
+        .eq('id', cur.id)
+        .single()
+      if (data) {
+        setInstructors(function (prev) {
+          return prev.map(function (i) { return i.id === data.id ? { ...i, ...data } : i })
+        })
+      }
+    }
+    setSelected(null)
+  }
+
   function handleAdded(ins) {
     setInstructors(function (prev) {
       return [...prev, { ...ins, instructor_courses: [] }]
@@ -2439,8 +2457,21 @@ export default function InstructorsPage() {
           })}
         </div>
 
-        {/* table */}
-        {loading ? (
+        {/* Inline instructor detail (opens in the main window) */}
+        {selected ? (
+          <div style={{ marginTop: 4 }}>
+            <button className="btn" style={{ marginBottom: 12, fontSize: 13 }}
+              onClick={closeDetail}>← Back to instructors</button>
+            <InstructorDetailModal
+              inline
+              instructor={selected}
+              allSkus={allSkus}
+              nlhCentreId={nlhCentreId}
+              onClose={closeDetail}
+              onSaved={handleSaved}
+            />
+          </div>
+        ) : loading ? (
           <div className="loading">Loading instructors…</div>
         ) : (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
@@ -2521,28 +2552,6 @@ export default function InstructorsPage() {
           </div>
         )}
       </div>
-
-      {selected && (
-        <InstructorDetailModal
-          instructor={selected}
-          allSkus={allSkus}
-          nlhCentreId={nlhCentreId}
-          onClose={async function () {
-            // Re-fetch this instructor so the list reflects any appointment changes
-            const { data } = await sb.from('instructors')
-              .select('*, instructor_courses(id,status,remuneration_mode,remuneration_rate,skus(level_name,courses(group_name)))')
-              .eq('id', selected.id)
-              .single()
-            if (data) {
-              setInstructors(function (prev) {
-                return prev.map(function (i) { return i.id === data.id ? { ...i, ...data } : i })
-              })
-            }
-            setSelected(null)
-          }}
-          onSaved={handleSaved}
-        />
-      )}
 
       {showAdd && nlhCentreId && (
         <AddInstructorModal
