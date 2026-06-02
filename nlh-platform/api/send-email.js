@@ -242,6 +242,25 @@ function buildWelcome(email, name, role, password) {
   const firstName = (name || email.split('@')[0]).split(' ')[0]
   const loginUrl  = BASE + '/login'
 
+  // When no real temporary password is supplied (the franchisee/reset-link flow),
+  // we point the user to the separate "Set your password" email instead of
+  // showing a fake password chip.
+  const usesResetLink = !password || /reset link/i.test(password)
+
+  const passwordBlock = usesResetLink
+    ? '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px">' +
+      '<tr><td style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px">Password</td></tr>' +
+      '<tr><td style="font-size:13px;color:#1A1916;line-height:1.5">We\'ve sent you a separate <strong style="color:#534AB7">&ldquo;Set your password&rdquo;</strong> email — click the secure link in it to choose your password, then sign in here.</td></tr>' +
+      '</table>'
+    : '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px">' +
+      '<tr><td style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px">Temporary Password</td></tr>' +
+      '<tr><td><span style="display:inline-block;background:#FFFFFF;border:1.5px solid #DDD9F9;border-radius:8px;padding:7px 14px;font-family:Courier New,Courier,monospace;font-size:15px;font-weight:700;color:#534AB7;letter-spacing:.08em">' + password + '</span></td></tr>' +
+      '</table>'
+
+  const securityNote = usesResetLink
+    ? '<div style="font-size:12px;color:#92400E;line-height:1.6"><strong>🔑 Setting your password</strong><br>Open the separate &ldquo;Set your password&rdquo; email we just sent and click the secure link. If it isn\'t in your inbox, check spam, or use <a href="' + loginUrl + '" style="color:#92400E;font-weight:700">Forgot Password</a> on the login page.</div>'
+    : '<div style="font-size:12px;color:#92400E;line-height:1.6"><strong>🔒 Keep your account secure</strong><br>This is a temporary password. After your first login, reset it via <a href="' + loginUrl + '" style="color:#92400E;font-weight:700">Forgot Password</a> on the login page.</div>'
+
   const header = purpleHeader('🎓', 'New Learning Horizons', 'ISO 9001:2015 Certified &nbsp;·&nbsp; Enriching Children\'s Future')
   const body =
     '<tr><td style="background:#FFFFFF;padding:40px 40px 32px">' +
@@ -254,10 +273,7 @@ function buildWelcome(email, name, role, password) {
     '<tr><td style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px">Login Email</td></tr>' +
     '<tr><td style="font-size:14px;font-weight:600;color:#1A1916">' + email + '</td></tr>' +
     '</table>' +
-    '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px">' +
-    '<tr><td style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px">Temporary Password</td></tr>' +
-    '<tr><td><span style="display:inline-block;background:#FFFFFF;border:1.5px solid #DDD9F9;border-radius:8px;padding:7px 14px;font-family:Courier New,Courier,monospace;font-size:15px;font-weight:700;color:#534AB7;letter-spacing:.08em">' + (password || 'NLH@123') + '</span></td></tr>' +
-    '</table>' +
+    passwordBlock +
     '<table width="100%" cellpadding="0" cellspacing="0">' +
     '<tr><td style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding-bottom:4px">Your Role</td></tr>' +
     '<tr><td><span style="display:inline-block;background:#EDE9FF;color:#534AB7;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.04em">' + roleLabel + '</span></td></tr>' +
@@ -267,7 +283,7 @@ function buildWelcome(email, name, role, password) {
     '<a href="' + loginUrl + '" style="display:inline-block;background:#534AB7;color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:700;padding:15px 40px;border-radius:10px">Log In to NLH Platform &nbsp;→</a>' +
     '</td></tr></table>' +
     '<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="background:#FFFBEB;border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:14px 18px">' +
-    '<div style="font-size:12px;color:#92400E;line-height:1.6"><strong>🔒 Keep your account secure</strong><br>This is a temporary password. After your first login, reset it via <a href="' + loginUrl + '" style="color:#92400E;font-weight:700">Forgot Password</a> on the login page.</div>' +
+    securityNote +
     '</td></tr></table>' +
     '</td></tr>'
 
@@ -543,14 +559,15 @@ export default async function handler(req, res) {
 
         to = fr.email; toName = fr.owner_name || fr.business_name || fr.email
 
-        // Resolve registered course names
+        // Resolve registered course names — dedupe by program (group_name), since
+        // a program with several levels has several course rows sharing one name.
         let courseNames = []
         if (fr.registered_courses && fr.registered_courses.length > 0) {
           const { data: courses } = await sb
             .from('courses')
             .select('group_name')
             .in('id', fr.registered_courses)
-          courseNames = (courses || []).map(function (c) { return c.group_name })
+          courseNames = Array.from(new Set((courses || []).map(function (c) { return c.group_name }).filter(Boolean)))
         }
 
         if (type === 'franchisee_welcome_letter') {

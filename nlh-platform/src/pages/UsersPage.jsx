@@ -263,8 +263,16 @@ export default function UsersPage() {
   async function loadUsers() {
     setLoading(true)
     const { data, error } = await sb.from('users').select('*').order('created_at', { ascending: false })
-    if (error) showToast('Failed to load users: ' + error.message)
-    else setUsers(data || [])
+    if (error) { showToast('Failed to load users: ' + error.message); setLoading(false); return }
+
+    // Merge last sign-in time from auth.users (admin-guarded RPC)
+    const { data: signins } = await sb.rpc('user_last_signins')
+    const signinMap = {}
+    ;(signins || []).forEach(function (s) { if (s.email) signinMap[s.email.toLowerCase()] = s.last_sign_in_at })
+
+    setUsers((data || []).map(function (u) {
+      return { ...u, last_sign_in_at: u.last_sign_in_at || signinMap[(u.email || '').toLowerCase()] || null }
+    }))
     setLoading(false)
   }
 
@@ -305,16 +313,18 @@ export default function UsersPage() {
   }
 
   // Stats
-  const total    = users.length
-  const adminCnt = users.filter(function (u) { return ADMIN_ROLES.includes(u.role) }).length
-  const frCnt    = users.filter(function (u) { return FRANCHISE_ROLES.includes(u.role) }).length
-  const blocked  = users.filter(function (u) { return u.is_active === false }).length
+  const total      = users.length
+  const adminCnt   = users.filter(function (u) { return ADMIN_ROLES.includes(u.role) }).length
+  const frCnt      = users.filter(function (u) { return FRANCHISE_ROLES.includes(u.role) }).length
+  const studentCnt = users.filter(function (u) { return u.role === 'student' }).length
+  const blocked    = users.filter(function (u) { return u.is_active === false }).length
 
   // Tab + search filter
   const filtered = users
     .filter(function (u) {
       if (tab === 'admin')     return ADMIN_ROLES.includes(u.role)
       if (tab === 'franchise') return FRANCHISE_ROLES.includes(u.role)
+      if (tab === 'student')   return u.role === 'student'
       if (tab === 'blocked')   return u.is_active === false
       return true
     })
@@ -341,6 +351,7 @@ export default function UsersPage() {
     { id: 'all',       label: 'All',          count: total },
     { id: 'admin',     label: 'Admin team',   count: adminCnt },
     { id: 'franchise', label: 'Franchisees',  count: frCnt },
+    { id: 'student',   label: 'Students',     count: studentCnt },
     { id: 'blocked',   label: 'Blocked',      count: blocked },
   ]
 
@@ -367,10 +378,11 @@ export default function UsersPage() {
         {/* Mini stats */}
         <div className="mini-stats">
           {[
-            { ic: '👥', num: total,    lbl: 'Total users' },
-            { ic: '🔑', num: adminCnt, lbl: 'Admin team' },
-            { ic: '🏢', num: frCnt,    lbl: 'Franchisees' },
-            { ic: '🚫', num: blocked,  lbl: 'Blocked' },
+            { ic: '👥', num: total,      lbl: 'Total users' },
+            { ic: '🔑', num: adminCnt,   lbl: 'Admin team' },
+            { ic: '🏢', num: frCnt,      lbl: 'Franchisees' },
+            { ic: '🎓', num: studentCnt, lbl: 'Students' },
+            { ic: '🚫', num: blocked,    lbl: 'Blocked' },
           ].map(function (s) {
             return (
               <div className="mini" key={s.lbl}>
