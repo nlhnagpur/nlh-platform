@@ -281,6 +281,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [certEmailing, setCertEmailing] = useState(false)
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
   const [resending, setResending] = useState(false)
+  const [changingEmail, setChangingEmail] = useState(false)
+  const [newEmail, setNewEmail] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
   const [payments, setPayments] = useState([])
   const [showPayModal, setShowPayModal] = useState(false)
   const [studentCount, setStudentCount] = useState(null)
@@ -356,6 +359,31 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const rs = renewalStatus({ ...franchisee, ...form })
 
   async function resendAccess() {
+    return resendAccessImpl()
+  }
+
+  async function changeEmail() {
+    const ne = (newEmail || '').trim().toLowerCase()
+    if (!ne || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ne)) { showToast('Enter a valid email address', 'warn'); return }
+    if (ne === (form.email || '').toLowerCase()) { setChangingEmail(false); return }
+    setSavingEmail(true)
+    const { data: { session } } = await sb.auth.getSession()
+    const res = await fetch('/api/change-user-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: 'Bearer ' + session.access_token } : {}) },
+      body: JSON.stringify({ oldEmail: form.email, newEmail: ne, table: 'franchisees', rowId: franchisee.id }),
+    })
+    const data = await res.json().catch(function () { return {} })
+    setSavingEmail(false)
+    if (!res.ok || !data.success) { showToast('Email change failed: ' + (data.error || 'Unknown error'), 'err'); return }
+    setForm(function (f) { return { ...f, email: ne } })
+    setChangingEmail(false)
+    setNewEmail('')
+    onSaved({ ...franchisee, email: ne })
+    showToast('Login email updated to ' + ne + ' ✓')
+  }
+
+  async function resendAccessImpl() {
     if (!franchisee.email) { showToast('No email on record', 'warn'); return }
     setResending(true)
     try {
@@ -473,7 +501,29 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 <input value={form.name} onChange={field('name')} disabled={!admin} placeholder="Optional — e.g. Bright Minds Academy" />
               </label>
               <label>Email
-                <input value={form.email} disabled />
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input value={form.email} disabled style={{ flex: 1 }} />
+                  {admin && !changingEmail && (
+                    <button type="button" className="btn-s" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                      onClick={function () { setNewEmail(form.email || ''); setChangingEmail(true) }}>✎ Change</button>
+                  )}
+                </div>
+                {admin && changingEmail && (
+                  <>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+                      <input type="email" value={newEmail} onChange={function (e) { setNewEmail(e.target.value) }}
+                        placeholder="new@email.com" style={{ flex: 1 }} autoFocus />
+                      <button type="button" className="btn-p" style={{ fontSize: 11 }} onClick={changeEmail} disabled={savingEmail}>
+                        {savingEmail ? 'Saving…' : 'Save'}
+                      </button>
+                      <button type="button" className="btn" style={{ fontSize: 11 }} disabled={savingEmail}
+                        onClick={function () { setChangingEmail(false); setNewEmail('') }}>Cancel</button>
+                    </div>
+                    <p className="hint" style={{ marginTop: 4 }}>
+                      Updates their login email everywhere (login, profile, certificates). They sign in with the new email next time; their password is unchanged.
+                    </p>
+                  </>
+                )}
               </label>
               {admin && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
