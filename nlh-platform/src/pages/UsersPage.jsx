@@ -257,6 +257,7 @@ export default function UsersPage() {
   const [search,  setSearch]  = useState('')
   const [tab,     setTab]     = useState('all')
   const [modal,   setModal]   = useState(null)
+  const [sort,    setSort]    = useState({ key: 'last_sign_in_at', dir: 'desc' })  // default: recently active first
 
   useEffect(function () { loadUsers() }, [])
 
@@ -338,6 +339,39 @@ export default function UsersPage() {
       )
     })
 
+  // ── Sorting (clickable column headers) ──
+  function sortVal(u, key) {
+    if (key === 'name')   return (u.full_name || u.email || '').toLowerCase()
+    if (key === 'role')   return (ROLE_RANK[u.role] != null ? ROLE_RANK[u.role] : -1)
+    if (key === 'status') return u.is_active === false ? 0 : 1
+    if (key === 'last_sign_in_at') return u.last_sign_in_at ? new Date(u.last_sign_in_at).getTime() : 0
+    return 0
+  }
+  const sorted = [...filtered].sort(function (a, b) {
+    const va = sortVal(a, sort.key), vb = sortVal(b, sort.key)
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0
+    return sort.dir === 'asc' ? cmp : -cmp
+  })
+  function toggleSort(key) {
+    setSort(function (s) {
+      if (s.key === key) return { key: key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      // sensible default direction per column
+      return { key: key, dir: (key === 'name' || key === 'role') ? 'asc' : 'desc' }
+    })
+  }
+  function SortHead({ k, children, align }) {
+    const active = sort.key === k
+    return (
+      <th onClick={function () { toggleSort(k) }}
+        style={{ cursor: 'pointer', userSelect: 'none', textAlign: align || 'left', whiteSpace: 'nowrap' }}>
+        {children}
+        <span style={{ marginLeft: 4, color: active ? 'var(--purple)' : 'var(--text3)', fontSize: 10 }}>
+          {active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+        </span>
+      </th>
+    )
+  }
+
   // Hierarchy: can current user act on this target?
   function canAct(target) {
     if (!target) return false
@@ -412,22 +446,22 @@ export default function UsersPage() {
         {/* Users table */}
         {loading ? (
           <div className="loading"><span className="spinner" />Loading users…</div>
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div className="empty">No users found.</div>
         ) : (
           <div className="card tbl-scroll" style={{ marginTop: 0 }}>
             <table className="big-tbl">
               <thead>
                 <tr>
-                  <th>User</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Last sign-in</th>
+                  <SortHead k="name">User</SortHead>
+                  <SortHead k="role">Role</SortHead>
+                  <SortHead k="status">Status</SortHead>
+                  <SortHead k="last_sign_in_at">Last sign-in</SortHead>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(function (u) {
+                {sorted.map(function (u) {
                   const [avBg, avCol] = avColor(u.email)
                   const isBlocked = u.is_active === false
                   const isSelf    = u.email === currentUser?.email
