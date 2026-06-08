@@ -18,6 +18,7 @@ const ownerNav = [
   { id: 'instructors',      l: 'Instructors',       c: '#6D28D9' },
   { id: 'batches',          l: 'Batches',           c: '#0F766E' },
   { id: 'whatsapp-inbox',   l: 'WhatsApp Inbox',    c: '#25D366' },
+  { id: 'messages',         l: 'Franchisee chat',   c: '#0891B2' },
   { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
@@ -35,6 +36,7 @@ const adminNav = [
   { id: 'instructors',      l: 'Instructors',       c: '#6D28D9' },
   { id: 'batches',          l: 'Batches',           c: '#0F766E' },
   { id: 'whatsapp-inbox',   l: 'WhatsApp Inbox',    c: '#25D366' },
+  { id: 'messages',         l: 'Franchisee chat',   c: '#0891B2' },
   { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
@@ -77,6 +79,7 @@ export const NAV_ITEMS = {
     { id: 'franchisees', l: 'My franchisees',   c: '#1D7A4F' },
     { id: 'students',    l: 'My students',      c: '#1A5FA8' },
     { id: 'courses',     l: 'Course catalogue', c: '#534AB7' },
+    { id: 'messages',    l: 'Head Office',      c: '#0891B2' },
   ],
   cf: [
     { id: 'dashboard',   l: 'Dashboard',      c: '#534AB7' },
@@ -84,12 +87,14 @@ export const NAV_ITEMS = {
     { id: 'franchisees', l: 'My franchisees', c: '#1D7A4F' },
     { id: 'students',    l: 'My students',    c: '#1A5FA8' },
     { id: 'courses',     l: 'My courses',     c: '#534AB7' },
+    { id: 'messages',    l: 'Head Office',    c: '#0891B2' },
   ],
   uf: [
     { id: 'dashboard', l: 'Dashboard',  c: '#534AB7' },
     { id: 'orders',    l: 'My orders',  c: '#8A5200' },
     { id: 'students',  l: 'My students', c: '#1A5FA8' },
     { id: 'courses',   l: 'My courses', c: '#534AB7' },
+    { id: 'messages',  l: 'Head Office', c: '#0891B2' },
   ],
   student: [
     { id: 'dashboard', l: 'Dashboard',   c: '#534AB7' },

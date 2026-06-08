@@ -17,6 +17,7 @@ const BatchesPage        = lazy(() => import('../pages/BatchesPage'))
 const WhatsAppInboxPage  = lazy(() => import('../pages/WhatsAppInboxPage'))
 const AccountingPage     = lazy(() => import('../pages/AccountingPage'))
 const EmailLogPage       = lazy(() => import('../pages/EmailLogPage'))
+const MessagesPage       = lazy(() => import('../pages/MessagesPage'))
 
 const PAGE_MAP = {
   dashboard:        DashboardPage,
@@ -33,6 +34,7 @@ const PAGE_MAP = {
   'whatsapp-inbox': WhatsAppInboxPage,
   accounting:       AccountingPage,
   'email-log':      EmailLogPage,
+  messages:         MessagesPage,
 }
 
 // Recover gracefully when a lazy page chunk fails to load — almost always
