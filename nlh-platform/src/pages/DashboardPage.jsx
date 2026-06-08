@@ -437,6 +437,148 @@ function daysLeftInMonth() {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() - d.getDate()
 }
 
+// ── Prominent chat surface on the dashboard. Renders only when messages
+// exist; jumps to a strong "unread" state the moment something is waiting. ──
+function DashboardMessagesCard({ onNavigate, isAdmin, franchiseeId }) {
+  const [msgs, setMsgs]   = useState(null)   // null = still loading
+  const [names, setNames] = useState({})
+
+  useEffect(function () {
+    let cancelled = false
+    async function load() {
+      let q = sb.from('messages').select('*').order('created_at', { ascending: false }).limit(400)
+      if (!isAdmin) {
+        if (!franchiseeId) { if (!cancelled) setMsgs([]); return }
+        q = q.eq('franchisee_id', franchiseeId)
+      }
+      const { data } = await q
+      if (cancelled) return
+      setMsgs(data || [])
+      if (isAdmin && (data || []).length) {
+        const { data: fr } = await sb.from('franchisees').select('id, business_name, owner_name')
+        const map = {}
+        ;(fr || []).forEach(function (f) { map[f.id] = f.business_name || f.owner_name || 'Franchisee' })
+        if (!cancelled) setNames(map)
+      }
+    }
+    load()
+    const t = setInterval(load, 20000)
+    return function () { cancelled = true; clearInterval(t) }
+  }, [isAdmin, franchiseeId])
+
+  if (msgs === null || msgs.length === 0) return null  // only surface once chat is in use
+
+  function preview(s) { s = s || ''; return s.length > 60 ? s.slice(0, 60) + '…' : s }
+  function tShort(ts) {
+    const d = new Date(ts), now = new Date()
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+  }
+
+  // ── Franchisee perspective: one thread with HO ──
+  if (!isAdmin) {
+    const unread = msgs.filter(function (m) { return m.from_ho && !m.read_by_franchisee })
+    const latest = msgs[0]
+    const hot = unread.length > 0
+    return (
+      <div onClick={function () { onNavigate && onNavigate('messages') }}
+        style={{
+          cursor: 'pointer', marginTop: 16, padding: '14px 16px', borderRadius: 14,
+          display: 'flex', alignItems: 'center', gap: 14,
+          background: hot ? 'linear-gradient(95deg,#0E7490,#0891B2)' : 'var(--bg2)',
+          border: '1px solid ' + (hot ? '#0E7490' : 'var(--border)'),
+          color: hot ? '#fff' : 'var(--text)',
+          boxShadow: hot ? '0 6px 20px rgba(8,145,178,.28)' : 'none',
+        }}>
+        <div style={{ fontSize: 26, lineHeight: 1 }}>💬</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: '800 14px var(--font)' }}>
+            {hot ? unread.length + ' new message' + (unread.length > 1 ? 's' : '') + ' from Head Office' : 'Head Office chat'}
+          </div>
+          <div style={{ font: '500 12px var(--font)', opacity: hot ? .92 : .7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {(latest.from_ho ? 'HO: ' : 'You: ') + preview(latest.body)}
+          </div>
+        </div>
+        <div style={{
+          flexShrink: 0, font: '700 12px var(--font)', whiteSpace: 'nowrap',
+          padding: '7px 14px', borderRadius: 10,
+          background: hot ? 'rgba(255,255,255,.18)' : 'var(--purple)', color: '#fff',
+        }}>Open chat →</div>
+      </div>
+    )
+  }
+
+  // ── HO perspective: many threads, group unread by franchisee ──
+  const unread = msgs.filter(function (m) { return !m.from_ho && !m.read_by_ho })
+  const groups = {}
+  unread.forEach(function (m) {
+    const g = groups[m.franchisee_id] || (groups[m.franchisee_id] = { count: 0, last: m })
+    g.count++
+    if (new Date(m.created_at) > new Date(g.last.created_at)) g.last = m
+  })
+  const groupList = Object.keys(groups)
+    .map(function (fid) { return { fid: fid, count: groups[fid].count, last: groups[fid].last } })
+    .sort(function (a, b) { return new Date(b.last.created_at) - new Date(a.last.created_at) })
+  const totalUnread = unread.length
+  const hot = totalUnread > 0
+  const latest = msgs[0]
+
+  return (
+    <div style={{
+      marginTop: 16, borderRadius: 14, overflow: 'hidden',
+      border: '1px solid ' + (hot ? '#0E7490' : 'var(--border)'),
+      boxShadow: hot ? '0 6px 20px rgba(8,145,178,.22)' : 'none',
+    }}>
+      <div onClick={function () { onNavigate && onNavigate('messages') }}
+        style={{
+          cursor: 'pointer', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12,
+          background: hot ? 'linear-gradient(95deg,#0E7490,#0891B2)' : 'var(--bg2)',
+          color: hot ? '#fff' : 'var(--text)',
+        }}>
+        <div style={{ fontSize: 24, lineHeight: 1 }}>💬</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: '800 14px var(--font)' }}>
+            {hot
+              ? totalUnread + ' unread message' + (totalUnread > 1 ? 's' : '') + ' from ' + groupList.length + ' franchisee' + (groupList.length > 1 ? 's' : '')
+              : 'Franchisee chat'}
+          </div>
+          <div style={{ font: '500 12px var(--font)', opacity: hot ? .92 : .7 }}>
+            {hot ? 'Needs a reply' : 'Last: ' + (names[latest.franchisee_id] || 'Franchisee') + ' · ' + preview(latest.body)}
+          </div>
+        </div>
+        <div style={{
+          flexShrink: 0, font: '700 12px var(--font)', whiteSpace: 'nowrap',
+          padding: '7px 14px', borderRadius: 10,
+          background: hot ? 'rgba(255,255,255,.18)' : 'var(--purple)', color: '#fff',
+        }}>Open inbox →</div>
+      </div>
+
+      {hot && (
+        <div style={{ background: 'var(--bg)', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {groupList.slice(0, 4).map(function (g) {
+            return (
+              <div key={g.fid}
+                onClick={function () { onNavigate && onNavigate('messages') }}
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)' }}>
+                <span style={{ flexShrink: 0, font: '700 10px var(--font)', color: '#fff', background: 'var(--green, #1D7A4F)', borderRadius: 20, padding: '1px 8px' }}>{g.count}</span>
+                <span style={{ font: '700 12px var(--font)', color: 'var(--text)', whiteSpace: 'nowrap' }}>{names[g.fid] || 'Franchisee'}</span>
+                <span style={{ flex: 1, minWidth: 0, font: '500 12px var(--font)', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview(g.last.body)}</span>
+                <span style={{ flexShrink: 0, font: '500 10px var(--font)', color: 'var(--text3)' }}>{tShort(g.last.created_at)}</span>
+              </div>
+            )
+          })}
+          {groupList.length > 4 && (
+            <div onClick={function () { onNavigate && onNavigate('messages') }}
+              style={{ cursor: 'pointer', textAlign: 'center', font: '600 11px var(--font)', color: 'var(--purple)', padding: '4px 0' }}>
+              +{groupList.length - 4} more franchisee{groupList.length - 4 > 1 ? 's' : ''} waiting →
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FollowUpsCard({ onNavigate }) {
   const [items,   setItems]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -1215,6 +1357,9 @@ export default function DashboardPage({ onNavigate }) {
             </>
           )}
         </div>
+
+        {/* ── prominent chat surface (only shows once chat is in use) ── */}
+        <DashboardMessagesCard onNavigate={onNavigate} isAdmin={isAdmin} franchiseeId={currentFranchiseeId} />
 
         {/* ── inline dashboard tabs ── */}
         <div className="status-pills" style={{ marginTop: 18, marginBottom: 4 }}>
