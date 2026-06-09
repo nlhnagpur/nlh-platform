@@ -915,60 +915,66 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     setSaving(false)
   }
 
+  const selectedFr = franchisees.find(function (f) { return f.id === placerId })
+
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>New Order</h3>
-          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>x</button>
+      <div className="modal modal-lg ord-modal" onClick={function (e) { e.stopPropagation() }}
+        style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
+
+        {/* ── Branded header ── */}
+        <div style={{ background: 'linear-gradient(105deg,#534AB7,#6D28D9)', color: '#fff', padding: '16px 22px', display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 11, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,.18)' }}>
+            <img src="/NLH%20Logo.png" alt="NLH" style={{ width: '88%', height: '88%', objectFit: 'contain' }} onError={function (e) { e.target.style.display = 'none' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: '800 18px var(--font)', letterSpacing: '-.01em', lineHeight: 1.1 }}>New Order</div>
+            <div style={{ font: '600 10px var(--mono)', opacity: .85, letterSpacing: '.1em', textTransform: 'uppercase', marginTop: 3 }}>New Learning Horizons · Order form</div>
+          </div>
+          <button onClick={onClose} aria-label="Close"
+            style={{ background: 'rgba(255,255,255,.18)', border: 'none', color: '#fff', width: 32, height: 32, borderRadius: 9, cursor: 'pointer', fontSize: 15, flexShrink: 0 }}>✕</button>
         </div>
-        <div>
+
+        {/* ── Body ── */}
+        <div style={{ padding: '18px 22px', overflowY: 'auto', background: 'var(--bg2, #FAFAF8)', flex: 1 }}>
           {loading ? (
-            <div className="muted">Loading...</div>
+            <div className="muted">Loading…</div>
           ) : (
             <>
-              {showFrDropdown && (
-                <div className="fr">
-                  <label>
-                    {isAdmin ? 'Franchisee' : 'Place order for'}
-                    {isMasterFr && <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 11, marginLeft: 6 }}>(yourself or a sub-franchisee)</span>}
-                  </label>
-                  <select value={placerId} onChange={function (e) { handleFranchiseeChange(e.target.value) }}>
-                    {isAdmin && <option value="">-- Select franchisee --</option>}
-                    {franchisees.map(function (f) {
-                      const isSelf = f.id === currentFranchiseeId
-                      return (
-                        <option key={f.id} value={f.id}>
-                          [{f.tier}] {f.business_name}{isSelf && isMasterFr ? ' (you)' : ''}
-                        </option>
-                      )
-                    })}
-                  </select>
+              {/* Bill-to / Deliver-to header strip */}
+              <div style={{ display: 'grid', gridTemplateColumns: showFrDropdown ? '1fr 1fr' : '1fr', gap: 14, marginBottom: 16 }}>
+                {showFrDropdown && (
+                  <div>
+                    <div style={lblCap}>{isAdmin ? 'Bill to franchisee' : 'Place order for'}{isMasterFr && <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400, color: 'var(--text3)' }}> · you or a sub-franchisee</span>}</div>
+                    <select value={placerId} onChange={function (e) { handleFranchiseeChange(e.target.value) }} style={fld}>
+                      {isAdmin && <option value="">— Select franchisee —</option>}
+                      {franchisees.map(function (f) {
+                        const isSelf = f.id === currentFranchiseeId
+                        return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}{isSelf && isMasterFr ? ' (you)' : ''}</option>
+                      })}
+                    </select>
+                    {selectedFr && (
+                      <div style={{ marginTop: 6, font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                        {[selectedFr.city, selectedFr.state].filter(Boolean).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <div style={lblCap}>Deliver to{deliverTo && <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400, color: 'var(--text3)' }}> · auto-filled, editable</span>}</div>
+                  <textarea rows={showFrDropdown ? 2 : 2} value={deliverTo}
+                    onChange={function (e) { setDeliverTo(e.target.value) }} placeholder="Delivery address…"
+                    style={Object.assign({}, fld, { resize: 'vertical', minHeight: 44 })} />
                 </div>
-              )}
-
-              <div className="fr">
-                <label>
-                  Deliver To
-                  {deliverTo && <span style={{ fontWeight: 400, color: 'var(--text3)', fontSize: 11, marginLeft: 6 }}>(auto-filled from franchisee record — edit if needed)</span>}
-                </label>
-                <textarea
-                  rows={2}
-                  value={deliverTo}
-                  onChange={function (e) { setDeliverTo(e.target.value) }}
-                  placeholder="Delivery address..."
-                />
               </div>
 
-              {/* SKU lines */}
-              <div style={{ marginTop: 12 }}>
-                {/* Column headers */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px 100px 90px 32px', gap: 6, marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>SKU</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Qty</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Rate (Rs)</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', textAlign: 'right' }}>Amount</span>
-                  <span />
+              {/* ── Invoice-style line items card ── */}
+              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,.03)' }}>
+                {/* header row */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 64px 96px 92px 30px', gap: 8, padding: '9px 12px', background: 'var(--purple-bg, #F1EEFB)', borderBottom: '1px solid var(--border)' }}>
+                  {['Item / SKU', 'Qty', 'Rate', 'Amount', ''].map(function (h, i) {
+                    return <span key={i} style={{ font: '700 9.5px var(--mono)', color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '.06em', textAlign: i === 3 ? 'right' : i === 1 || i === 2 ? 'left' : 'left' }}>{h}</span>
+                  })}
                 </div>
 
                 {lines.map(function (line, idx) {
@@ -977,111 +983,81 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                   const lineRate = parseInt(line.rate, 10) || 0
                   const lineAmt = lineRate * (parseInt(line.qty, 10) || 0)
                   const isOverridden = sku && lineRate !== defaultRate
-
                   return (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 72px 100px 90px 32px', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                      <select
-                        value={line.sku_id}
-                        onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }}
-                      >
-                        <option value="">-- Select SKU --</option>
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 64px 96px 92px 30px', gap: 8, padding: '8px 12px', alignItems: 'center', background: idx % 2 ? 'var(--bg2, #FAFAF8)' : '#fff', borderBottom: '1px solid var(--bg4, #F1F0EC)' }}>
+                      <select value={line.sku_id} onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }} style={fldSm}>
+                        <option value="">— Select SKU —</option>
                         {Object.entries(
-                          visibleSkus.reduce(function (acc, s) {
-                            const c = s.courses?.group_name || 'Other'
-                            if (!acc[c]) acc[c] = []
-                            acc[c].push(s)
-                            return acc
-                          }, {})
+                          visibleSkus.reduce(function (acc, s) { const c = s.courses?.group_name || 'Other'; if (!acc[c]) acc[c] = []; acc[c].push(s); return acc }, {})
                         ).map(function ([course, skus]) {
-                          return (
-                            <optgroup key={course} label={course}>
-                              {skus.map(function (s) {
-                                return <option key={s.id} value={s.id}>{s.level_name}</option>
-                              })}
-                            </optgroup>
-                          )
+                          return <optgroup key={course} label={course}>{skus.map(function (s) { return <option key={s.id} value={s.id}>{s.level_name}</option> })}</optgroup>
                         })}
                       </select>
-
-                      <input
-                        type="number" min={1} value={line.qty}
-                        onChange={function (e) { updateLine(idx, 'qty', e.target.value) }}
-                      />
-
+                      <input type="number" min={1} value={line.qty} onChange={function (e) { updateLine(idx, 'qty', e.target.value) }} style={fldSm} />
                       <div style={{ position: 'relative' }}>
-                        <input
-                          type="number" min={0} value={line.rate}
-                          onChange={function (e) { updateLine(idx, 'rate', e.target.value) }}
-                          style={{ width: '100%', fontWeight: 600, borderColor: isOverridden ? 'var(--amber, #F59E0B)' : undefined }}
-                          title={isOverridden ? 'Overriding default rate of Rs ' + defaultRate : 'Default rate for tier'}
-                        />
+                        <input type="number" min={0} value={line.rate} onChange={function (e) { updateLine(idx, 'rate', e.target.value) }}
+                          style={Object.assign({}, fldSm, { fontWeight: 600, borderColor: isOverridden ? 'var(--amber, #F59E0B)' : undefined })}
+                          title={isOverridden ? 'Overriding default rate of Rs ' + defaultRate : 'Default rate for tier'} />
                         {isOverridden && (
-                          <span
-                            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#B45309', cursor: 'pointer' }}
-                            title={'Reset to Rs ' + defaultRate}
-                            onClick={function () { updateLine(idx, 'rate', defaultRate) }}
-                          >
-                            reset
-                          </span>
+                          <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 8.5, color: '#B45309', cursor: 'pointer' }}
+                            title={'Reset to Rs ' + defaultRate} onClick={function () { updateLine(idx, 'rate', defaultRate) }}>reset</span>
                         )}
                       </div>
-
-                      <span style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600 }}>
-                        {fmtAmt(lineAmt)}
-                      </span>
-
-                      <button
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, padding: 0 }}
-                        onClick={function () { removeLine(idx) }}
-                        disabled={lines.length === 1}
-                      >
-                        x
-                      </button>
+                      <span style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color: lineAmt > 0 ? 'var(--text)' : 'var(--text3)' }}>{fmtAmt(lineAmt)}</span>
+                      <button onClick={function () { removeLine(idx) }} disabled={lines.length === 1}
+                        style={{ background: 'none', border: 'none', cursor: lines.length === 1 ? 'default' : 'pointer', color: 'var(--text3)', fontSize: 16, padding: 0, opacity: lines.length === 1 ? .3 : 1 }} title="Remove">✕</button>
                     </div>
                   )
                 })}
 
-                <button className="btn-s btn-sm" onClick={addLine} style={{ marginTop: 6 }}>
-                  + Add SKU
-                </button>
+                <div style={{ padding: '10px 12px' }}>
+                  <button className="btn-s btn-sm" onClick={addLine} style={{ border: '1.5px dashed var(--purple)', color: 'var(--purple)', background: 'none' }}>+ Add item</button>
+                </div>
               </div>
 
-              {/* Coupon + Total */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Coupon</span>
+              {/* ── Coupon + branded totals panel ── */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginTop: 16 }}>
+                <div>
+                  <div style={lblCap}>🎟️ Discount coupon</div>
                   <CouponField context="order" amount={subTotal} franchiseeId={placerId || currentFranchiseeId || null}
                     applied={coupon}
                     onApply={function (c) { setCoupon(Object.assign({}, c, { _base: subTotal })) }}
                     onClear={function () { setCoupon(null) }}
                     disabled={subTotal <= 0} compact />
                 </div>
-                <div style={{ textAlign: 'right' }}>
+                <div style={{ minWidth: 210, background: 'var(--purple-bg, #F1EEFB)', border: '1px solid #DDD6F3', borderLeft: '3px solid var(--purple)', borderRadius: 12, padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', color: 'var(--text2)', marginBottom: 4 }}>
+                    <span>Subtotal</span><span style={{ fontFamily: 'var(--mono)' }}>Rs {fmtAmt(subTotal)}</span>
+                  </div>
                   {couponDiscount > 0 && (
-                    <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-                      <span>Subtotal Rs {fmtAmt(subTotal)}</span>
-                      <span style={{ color: 'var(--green, #1D7A4F)', marginLeft: 8 }}>− Rs {fmtAmt(couponDiscount)}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', marginBottom: 4 }}>
+                      <span>Discount{coupon?.code ? ' (' + coupon.code + ')' : ''}</span><span style={{ fontFamily: 'var(--mono)' }}>− Rs {fmtAmt(couponDiscount)}</span>
                     </div>
                   )}
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>Order Total</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--purple)' }}>
-                    Rs {fmtAmt(netTotal)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: '1px solid #DDD6F3', marginTop: 6, paddingTop: 8 }}>
+                    <span style={{ font: '700 12px var(--font)', color: 'var(--text)' }}>Order Total</span>
+                    <span style={{ font: '800 20px var(--mono)', color: 'var(--purple)' }}>Rs {fmtAmt(netTotal)}</span>
                   </div>
                 </div>
               </div>
             </>
           )}
         </div>
-        <div className="modal-actions">
+
+        {/* ── Footer ── */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 22px', borderTop: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
           <button className="btn-s" onClick={onClose}>Cancel</button>
-          <button className="btn-p" onClick={handleSubmit} disabled={saving || loading}>
-            {saving ? 'Placing Order...' : 'Place Order'}
-          </button>
+          <button className="btn-p" onClick={handleSubmit} disabled={saving || loading}>{saving ? 'Placing Order…' : 'Place Order'}</button>
         </div>
       </div>
     </div>
   )
 }
+
+// Shared field styles for the branded order form
+const lblCap = { font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 5, display: 'block' }
+const fld    = { width: '100%', font: '500 13px var(--font)', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border2, #d8d5cc)', background: '#fff', boxSizing: 'border-box', color: 'var(--text)' }
+const fldSm  = { width: '100%', font: '500 12.5px var(--font)', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)', background: '#fff', boxSizing: 'border-box', color: 'var(--text)' }
 
 // ---------------------------------------------------------------------------
 // PDF invoice generation — NLH branded pastel design
