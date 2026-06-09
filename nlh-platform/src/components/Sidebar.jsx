@@ -19,9 +19,10 @@ const NAV_ICONS = {
   'price-history':  '📜',
   users:            '🔑',
   requests:         '🤝',
+  coupons:          '🎟️',
 }
 
-const SETTINGS_IDS   = ['prices', 'courses', 'price-history', 'users', 'requests']
+const SETTINGS_IDS   = ['prices', 'courses', 'coupons', 'price-history', 'users', 'requests']
 const ACCOUNTING_IDS = ['accounting']
 
 function initials(name) {

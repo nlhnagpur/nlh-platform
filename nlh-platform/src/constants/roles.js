@@ -21,6 +21,7 @@ const ownerNav = [
   { id: 'messages',         l: 'Franchisee chat',   c: '#0891B2' },
   { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
+  { id: 'coupons',          l: 'Discount coupons',  c: '#C2410C' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
   { id: 'email-log',        l: 'Email log',         c: '#0F766E' },
@@ -39,6 +40,7 @@ const adminNav = [
   { id: 'messages',         l: 'Franchisee chat',   c: '#0891B2' },
   { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
+  { id: 'coupons',          l: 'Discount coupons',  c: '#C2410C' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
   { id: 'email-log',        l: 'Email log',         c: '#0F766E' },
@@ -56,6 +58,7 @@ const managerNav = [
   { id: 'whatsapp-inbox', l: 'WhatsApp Inbox',   c: '#25D366' },
   { id: 'accounting',     l: 'HO Accounting',    c: '#0F766E' },
   { id: 'courses',        l: 'Courses & SKUs',   c: '#534AB7' },
+  { id: 'coupons',        l: 'Discount coupons', c: '#C2410C' },
   { id: 'prices',         l: 'Kit prices',       c: '#1D7A4F' },
   { id: 'email-log',      l: 'Email log',        c: '#0F766E' },
 ]
