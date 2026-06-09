@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
-import { NAV_ITEMS, ROLE_LABELS } from '../constants/roles'
+import { NAV_ITEMS, ROLE_LABELS, isAdminRole } from '../constants/roles'
 
 const NAV_ICONS = {
   dashboard:        '📊',
@@ -11,6 +12,7 @@ const NAV_ICONS = {
   batches:          '🗓️',
   invoices:         '🧾',
   'whatsapp-inbox': '💬',
+  messages:         '🗨️',
   accounting:       '📚',
   courses:          '📖',
   prices:           '🏷️',
@@ -28,9 +30,32 @@ function initials(name) {
 }
 
 export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
-  const { currentRole, currentUser, signOut } = useAuth()
+  const { currentRole, currentUser, currentFranchiseeId, signOut } = useAuth()
   const navItems = NAV_ITEMS[currentRole] || NAV_ITEMS.admin
   const isAdmin = ['owner', 'super_admin', 'admin', 'manager', 'staff'].includes(currentRole)
+
+  // ── Live unread-message count for the chat nav badge ──
+  const [unreadMsgs, setUnreadMsgs] = useState(0)
+  useEffect(function () {
+    if (currentRole === null) return
+    const hasChat = (NAV_ITEMS[currentRole] || []).some(function (i) { return i.id === 'messages' })
+    if (!hasChat) return
+    let cancelled = false
+    async function tick() {
+      let q = sb.from('messages').select('id', { count: 'exact', head: true })
+      if (isAdminRole(currentRole)) {
+        q = q.eq('from_ho', false).eq('read_by_ho', false)
+      } else {
+        if (!currentFranchiseeId) return
+        q = q.eq('franchisee_id', currentFranchiseeId).eq('from_ho', true).eq('read_by_franchisee', false)
+      }
+      const { count } = await q
+      if (!cancelled) setUnreadMsgs(count || 0)
+    }
+    tick()
+    const t = setInterval(tick, 12000)
+    return function () { cancelled = true; clearInterval(t) }
+  }, [currentRole, currentFranchiseeId, currentPage])
 
   const userName     = currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || 'User'
   const roleLabel    = ROLE_LABELS[currentRole] || (currentRole || '').toUpperCase()
@@ -38,7 +63,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
 
   // Group nav items
   const ops           = navItems.filter(function(item) {
-    return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'batches', 'invoices', 'whatsapp-inbox'].includes(item.id)
+    return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'batches', 'invoices', 'whatsapp-inbox', 'messages'].includes(item.id)
   })
   const accountingAll = navItems.filter(function(item) {
     return ACCOUNTING_IDS.includes(item.id)
@@ -49,7 +74,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
 
   // Fallback: items not in any known section
   const other = navItems.filter(function(item) {
-    return !['dashboard','franchisees','orders','students','instructors','batches','invoices','whatsapp-inbox',...ACCOUNTING_IDS,...SETTINGS_IDS].includes(item.id)
+    return !['dashboard','franchisees','orders','students','instructors','batches','invoices','whatsapp-inbox','messages',...ACCOUNTING_IDS,...SETTINGS_IDS].includes(item.id)
   })
 
   // Auto-expand settings when current page lives there
@@ -58,13 +83,21 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
   })
 
   function NavItem({ item }) {
+    const badge = item.id === 'messages' && unreadMsgs > 0 ? unreadMsgs : 0
     return (
       <div
         className={'nav ' + (currentPage === item.id ? 'on' : '')}
         onClick={function() { onNavigate(item.id) }}
       >
         <span className="nav-ic">{NAV_ICONS[item.id] || '●'}</span>
-        <span>{item.l}</span>
+        <span style={{ flex: 1 }}>{item.l}</span>
+        {badge > 0 && (
+          <span style={{
+            flexShrink: 0, font: '700 10px var(--font)', color: '#fff',
+            background: '#dc2626', borderRadius: 20, padding: '1px 7px',
+            minWidth: 18, textAlign: 'center', lineHeight: '15px',
+          }}>{badge > 99 ? '99+' : badge}</span>
+        )}
       </div>
     )
   }
