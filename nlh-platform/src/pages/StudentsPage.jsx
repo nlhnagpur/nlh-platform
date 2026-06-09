@@ -106,6 +106,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [availableSkus,     setAvailableSkus]     = useState([])   // SKUs the centre offers, minus already enrolled
   const [selectedNewSkus,   setSelectedNewSkus]   = useState([])
   const [addingEnrollment,  setAddingEnrollment]  = useState(false)
+  const [addCoupon,         setAddCoupon]         = useState(null)   // { coupon_id, code, discount }
+  const [addBatchData,      setAddBatchData]      = useState({})     // { skuId: { batches, eligibleCIs, loading } }
+  const [addBatchSel,       setAddBatchSel]       = useState({})     // { skuId: batchId | '__new__' }
+  const [addNewBatch,       setAddNewBatch]       = useState({})     // { skuId: { ci, name, days, time, is_individual } }
 
   // ── Delete state ──
   const [deleting, setDeleting] = useState(false)
@@ -456,10 +460,32 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (updated) onSaved(updated)
   }
 
-  // ── Add new enrollments ──
+  // ── Load batches eligible for a SKU (for the Add-Course batch picker) ──
+  async function loadAddBatchData(skuId) {
+    if (addBatchData[skuId]) return
+    setAddBatchData(function (prev) { return { ...prev, [skuId]: { batches: [], eligibleCIs: [], loading: true } } })
+    const { data: ciRows } = await sb.from('instructor_courses')
+      .select('instructor_id, instructors(id, full_name, status)')
+      .eq('sku_id', skuId).eq('status', 'active')
+    const eligibleCIs = (ciRows || [])
+      .map(function (r) { return r.instructors })
+      .filter(function (i) { return i && i.status === 'active' })
+      .filter(function (i, idx, arr) { return arr.findIndex(function (x) { return x.id === i.id }) === idx })
+    const eligibleCIIds = eligibleCIs.map(function (ci) { return ci.id })
+    const { data: batches } = eligibleCIIds.length
+      ? await sb.from('batches')
+          .select('id, name, schedule_days, schedule_time, is_individual, instructor_id, instructors(id, full_name)')
+          .in('instructor_id', eligibleCIIds).eq('is_active', true).order('created_at')
+      : { data: [] }
+    setAddBatchData(function (prev) { return { ...prev, [skuId]: { batches: batches || [], eligibleCIs: eligibleCIs, loading: false } } })
+  }
+
+  // ── Add new enrollments — records fees (with optional coupon) and assigns batches ──
   async function addEnrollments() {
     if (!selectedNewSkus.length) { showToast('Select at least one course', 'warn'); return }
     setAddingEnrollment(true)
+
+    // 1) Insert the enrollments
     const rows = selectedNewSkus.map(function (sku) { return {
       student_id:    student.id,
       sku_id:        sku.id,
@@ -467,15 +493,67 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     } })
     const { data, error } = await sb.from('enrollments').insert(rows)
       .select('id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
-    setAddingEnrollment(false)
-    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
+
+    // 2) Assign / create a batch per selected course
+    const assignedAt = (student.registered_at || new Date().toISOString().slice(0, 10)) + 'T00:00:00+00:00'
+    for (let i = 0; i < selectedNewSkus.length; i++) {
+      const sku = selectedNewSkus[i]
+      const enr = added.find(function (e) { return e.sku_id === sku.id })
+      const sel = addBatchSel[sku.id]
+      if (!enr || !sel) continue
+      let batchId = sel
+      if (sel === '__new__') {
+        const nbf = addNewBatch[sku.id] || {}
+        if (!nbf.ci || !nbf.name || !nbf.name.trim()) continue
+        const { data: nb, error: bErr } = await sb.from('batches').insert({
+          instructor_id: nbf.ci, franchisee_id: student.franchisee_id, name: nbf.name.trim(),
+          is_individual: nbf.is_individual || false,
+          schedule_days: (nbf.days || []).length ? nbf.days.join(', ') : null,
+          schedule_time: nbf.time || null, is_active: true, sessions_done: 0,
+        }).select('id').single()
+        if (bErr) { showToast('Batch create failed for ' + sku.level_name + ': ' + bErr.message, 'warn'); continue }
+        batchId = nb.id
+      }
+      await sb.from('batch_students').insert({ batch_id: batchId, enrollment_id: enr.id, assigned_at: assignedAt })
+    }
+
+    // 3) Fees — add the new courses' fee (net of any coupon) to the Fee Total
+    const addedFee = selectedNewSkus.reduce(function (s, sk) { return s + (sk.student_fee || 0) }, 0)
+    const discount = addCoupon ? Math.min(addCoupon.discount, addedFee) : 0
+    const netAdded = Math.max(0, addedFee - discount)
+    const newFeeTotal = (Number(form.fee_total) || 0) + netAdded
+    if (addedFee > 0) {
+      await sb.from('students').update({ fee_total: newFeeTotal, payment_status: deriveStatus(newFeeTotal, form.fee_paid) }).eq('id', student.id)
+      setForm(function (f) { return { ...f, fee_total: newFeeTotal } })
+    }
+    if (addCoupon && discount > 0) {
+      await sb.rpc('redeem_coupon', {
+        p_code: addCoupon.code, p_context: 'student', p_amount: addedFee,
+        p_franchisee: student.franchisee_id, p_ref: student.id,
+      })
+    }
+
+    // 4) Reflect batch assignments for the new courses immediately
+    const newEnrIds = added.map(function (e) { return e.id })
+    if (newEnrIds.length) {
+      const { data: bsRows } = await sb.from('batch_students')
+        .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+        .in('enrollment_id', newEnrIds).is('removed_at', null)
+      if (bsRows && bsRows.length) setBatchAssignments(function (prev) {
+        const n = { ...prev }; bsRows.forEach(function (r) { n[r.enrollment_id] = r }); return n
+      })
+    }
+
+    // 5) Local state + cleanup
     setLocalEnrollments(function (prev) { return [...prev, ...added] })
     const addedSkuIds = added.map(function (e) { return e.sku_id })
     setAvailableSkus(function (prev) { return prev.filter(function (s) { return !addedSkuIds.includes(s.id) }) })
-    setSelectedNewSkus([])
-    setShowAddEnrollment(false)
-    showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added ✓')
+    setSelectedNewSkus([]); setShowAddEnrollment(false)
+    setAddCoupon(null); setAddBatchSel({}); setAddNewBatch({})
+    setAddingEnrollment(false)
+    showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
       .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
@@ -1033,6 +1111,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                               type="checkbox"
                                               checked={checked}
                                               onChange={function () {
+                                                setAddCoupon(null)  // fee changed — re-apply against new total
+                                                if (!checked) loadAddBatchData(sku.id)
                                                 setSelectedNewSkus(function (prev) {
                                                   return checked
                                                     ? prev.filter(function (s) { return s.id !== sku.id })
@@ -1054,8 +1134,109 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             </div>
                           )
                         })()}
+
+                        {selectedNewSkus.length > 0 && (function () {
+                          const addedFee = selectedNewSkus.reduce(function (s, sk) { return s + (sk.student_fee || 0) }, 0)
+                          const discount = addCoupon ? Math.min(addCoupon.discount, addedFee) : 0
+                          const netAdded = Math.max(0, addedFee - discount)
+                          const newTotal = (Number(form.fee_total) || 0) + netAdded
+                          return (
+                            <>
+                              {/* Fee + coupon for the new courses */}
+                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Coupon</span>
+                                  <CouponField context="student" amount={addedFee} franchiseeId={student.franchisee_id}
+                                    applied={addCoupon} onApply={setAddCoupon} onClear={function () { setAddCoupon(null) }} compact />
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>New course fees</div>
+                                  <div style={{ font: '700 16px var(--font)', color: 'var(--purple)' }}>
+                                    ₹{fmtAmt(netAdded)}
+                                    {discount > 0 && <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', textDecoration: 'line-through', marginLeft: 6 }}>₹{fmtAmt(addedFee)}</span>}
+                                  </div>
+                                  <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>Fee Total becomes ₹{fmtAmt(newTotal)}</div>
+                                </div>
+                              </div>
+
+                              {/* Batch assignment per new course */}
+                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
+                                <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
+                                  📋 Assign to batch <span style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>(optional — can be done later)</span>
+                                </div>
+                                {selectedNewSkus.map(function (sku) {
+                                  const bd  = addBatchData[sku.id] || { batches: [], eligibleCIs: [], loading: true }
+                                  const sel = addBatchSel[sku.id] || ''
+                                  const nbf = addNewBatch[sku.id] || { ci: '', name: '', days: [], time: '', is_individual: false }
+                                  function updateNbf(patch) { setAddNewBatch(function (prev) { return { ...prev, [sku.id]: { ...nbf, ...patch } } }) }
+                                  return (
+                                    <div key={sku.id} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 8 }}>
+                                      <div style={{ background: 'var(--bg3)', padding: '7px 12px', font: '600 12px var(--font)', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span>{sku.courses?.group_name || '—'}</span>
+                                        <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{sku.level_name}</span>
+                                      </div>
+                                      <div style={{ padding: '10px 12px' }}>
+                                        {bd.loading ? <span className="hint">Loading batches…</span> : (
+                                          <>
+                                            <select value={sel}
+                                              onChange={function (e) { setAddBatchSel(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
+                                              style={{ fontSize: 12, width: '100%' }}>
+                                              <option value="">— No batch yet (assign later) —</option>
+                                              {bd.batches.map(function (b) {
+                                                return <option key={b.id} value={b.id}>{b.name}{b.instructors?.full_name ? ' · ' + b.instructors.full_name : ''}{b.schedule_days ? ' · ' + b.schedule_days : ''}{b.schedule_time ? ' ' + b.schedule_time : ''}</option>
+                                              })}
+                                              <option value="__new__">+ Create new batch</option>
+                                            </select>
+                                            {sel === '__new__' && (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                                                {bd.eligibleCIs.length === 0 ? (
+                                                  <p className="hint" style={{ color: 'var(--red)' }}>⚠ No active Course Instructors appointed for this level yet.</p>
+                                                ) : (
+                                                  <label style={{ font: '500 11px var(--font)' }}>Course Instructor *
+                                                    <select value={nbf.ci} onChange={function (e) { updateNbf({ ci: e.target.value }) }} style={{ marginTop: 4, fontSize: 12 }}>
+                                                      <option value="">— Select CI —</option>
+                                                      {bd.eligibleCIs.map(function (ci) { return <option key={ci.id} value={ci.id}>{ci.full_name}</option> })}
+                                                    </select>
+                                                  </label>
+                                                )}
+                                                <label style={{ font: '500 11px var(--font)' }}>Batch Name *
+                                                  <input value={nbf.name} onChange={function (e) { updateNbf({ name: e.target.value }) }} placeholder="e.g. Saturday Morning Group" style={{ marginTop: 4, fontSize: 12 }} />
+                                                </label>
+                                                <div>
+                                                  <div style={{ font: '500 11px var(--font)', marginBottom: 5 }}>Schedule Days</div>
+                                                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                                    {DAYS.map(function (d) {
+                                                      const active = nbf.days.includes(d)
+                                                      return <button key={d} type="button"
+                                                        onClick={function () { updateNbf({ days: active ? nbf.days.filter(function (x) { return x !== d }) : [...nbf.days, d] }) }}
+                                                        style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', border: active ? '1.5px solid var(--purple)' : '1px solid var(--border)', background: active ? 'var(--purple-bg)' : 'var(--card)', color: active ? 'var(--purple)' : 'var(--text2)', fontWeight: active ? 700 : 500 }}>{d}</button>
+                                                    })}
+                                                  </div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                                                  <label style={{ font: '500 11px var(--font)', flex: 1 }}>Time
+                                                    <input type="time" value={nbf.time} onChange={function (e) { updateNbf({ time: e.target.value }) }} style={{ marginTop: 4, fontSize: 12 }} />
+                                                  </label>
+                                                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, font: '500 11px var(--font)', paddingBottom: 5 }}>
+                                                    <input type="checkbox" checked={nbf.is_individual} onChange={function (e) { updateNbf({ is_individual: e.target.checked }) }} />
+                                                    Individual
+                                                  </label>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </>
+                          )
+                        })()}
+
                         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                          <button className="btn" style={{ fontSize: 12 }} onClick={function () { setShowAddEnrollment(false); setSelectedNewSkus([]) }}>
+                          <button className="btn" style={{ fontSize: 12 }} onClick={function () { setShowAddEnrollment(false); setSelectedNewSkus([]); setAddCoupon(null); setAddBatchSel({}); setAddNewBatch({}) }}>
                             Cancel
                           </button>
                           <button
