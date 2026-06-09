@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendStudentCertEmail } from '../services/email'
 import { toWAPhone } from '../services/whatsapp'
+import ModalHeader from './ModalHeader'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -209,10 +210,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 580 }}>
-        <div className="ch">
-          <span>🎓 Certificate of Accomplishment</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title="Certificate of Accomplishment" subtitle="New Learning Horizons" onClose={onClose} />
 
         <div style={{ padding: '0 20px' }}>
 

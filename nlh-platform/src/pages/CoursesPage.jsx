@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, showToast } from '../utils'
 import { isAdminRole, isManagerOrAbove } from '../constants/roles'
+import ModalHeader from '../components/ModalHeader'
 
 // ── CoursesPage ────────────────────────────────────────────────────────────────
 
@@ -558,12 +559,10 @@ function LevelModal({ spec, existingGroups, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 560, width: '94vw' }}>
-        <div className="ch">
-          <div style={{ fontWeight: 700, fontSize: 14 }}>
-            {isEdit ? 'Edit Level' : spec.newProgram ? 'New Program' : 'Add Level — ' + spec.groupName}
-          </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush
+          title={isEdit ? 'Edit Level' : spec.newProgram ? 'New Program' : 'Add Level'}
+          subtitle={spec.newProgram ? 'New Learning Horizons · Catalogue' : (spec.groupName || 'New Learning Horizons · Catalogue')}
+          onClose={onClose} />
         <div style={{ padding: '4px 20px 16px', maxHeight: '70vh', overflowY: 'auto' }}>
           <div className="form-grid">
             <label className={spec.newProgram ? '' : 'col-span-2'}>Program{spec.newProgram ? ' name' : ''}
@@ -648,10 +647,7 @@ function RenameProgramModal({ groupName, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 380 }}>
-        <div className="ch">
-          <div style={{ fontWeight: 700, fontSize: 14 }}>Rename Program</div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title="Rename Program" subtitle="New Learning Horizons · Catalogue" onClose={onClose} />
         <div style={{ padding: '4px 20px 16px' }}>
           <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Program name
             <input value={name} onChange={function (e) { setName(e.target.value) }} style={{ marginTop: 6 }} />

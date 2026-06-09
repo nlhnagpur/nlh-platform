@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendWelcomeEmail } from '../services/email'
+import ModalHeader from '../components/ModalHeader'
 
 function CredentialsModal({ email, password, onClose }) {
   const [copied, setCopied] = useState(false)
@@ -17,10 +18,7 @@ function CredentialsModal({ email, password, onClose }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Login Credentials Created</h3>
-          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Login Credentials Created" subtitle="New Learning Horizons · Access" onClose={onClose} />
         <div >
           <p style={{ color:'var(--text2)', fontSize:12, marginBottom: 16 }}>
             Share these credentials with the new user. They should change their password on first login.

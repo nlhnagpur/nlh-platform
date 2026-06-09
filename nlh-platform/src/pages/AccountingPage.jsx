@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
+import ModalHeader from '../components/ModalHeader'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -334,10 +335,7 @@ function AddAccountModal({ onClose, onSaved, accounts }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Add Account</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Add Account" subtitle="New Learning Horizons · Accounting" onClose={onClose} />
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:10 }}>
             <div>
@@ -593,10 +591,7 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Add Expense</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Add Expense" subtitle="New Learning Horizons · Accounting" onClose={onClose} />
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
@@ -984,10 +979,7 @@ function AddSplitModal({ onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Add Revenue Split</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Add Revenue Split" subtitle="New Learning Horizons · Accounting" onClose={onClose} />
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
@@ -1052,10 +1044,7 @@ function MarkPaidModal({ split, onClose, onPaid }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Mark as Paid</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Mark as Paid" subtitle="New Learning Horizons · Accounting" onClose={onClose} />
         <p style={{ fontSize:14, color:'var(--text2)', margin:'8px 0 16px' }}>
           Recording <strong style={{ fontFamily:'var(--mono)' }}>₹{fmtAmt(outstanding)}</strong> received
           from <strong>{split.franchisees?.business_name}</strong>
@@ -1180,10 +1169,7 @@ function AddVendorModal({ onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Add Vendor</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Add Vendor" subtitle="New Learning Horizons · Accounting" onClose={onClose} />
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div>
@@ -1256,10 +1242,7 @@ function VendorDetailModal({ vendor, onClose, onUpdated }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>{vendor.name}</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title={vendor.name} subtitle="New Learning Horizons · Vendor" onClose={onClose} />
         <table style={{ width:'100%', fontSize:13, borderCollapse:'collapse' }}>
           <tbody>
             {[
@@ -1390,10 +1373,7 @@ function AddBankModal({ accounts, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function(e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Add Bank Account</h3>
-          <button style={{ background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)' }} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Add Bank Account" subtitle="New Learning Horizons · Accounting" onClose={onClose} />
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div>
             <label className="lbl">Display Name *</label>

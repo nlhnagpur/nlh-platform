@@ -6,6 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
 import { sendWAPaymentReceived } from '../services/whatsapp'
+import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 import { StudentDetailModal } from './StudentsPage'
 
@@ -153,10 +154,7 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="ch">
-          <span>📥 Record Payment — {franchisee.business_name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title="Record Payment" subtitle={franchisee.business_name} onClose={onClose} />
         <div style={{ padding: '0 20px 4px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: '#f8f7ff', border: '1px solid #ddd9f9', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
             <span style={{ color: 'var(--text2)' }}>Outstanding balance: </span>
@@ -1150,10 +1148,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="ch">
-          <span>Add Franchisee</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title="Add Franchisee" subtitle="New Learning Horizons · Partner onboarding" onClose={onClose} />
         <div >
           <div className="form-grid">
             <label>Owner Name *

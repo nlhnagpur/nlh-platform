@@ -1654,10 +1654,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title="Edit Batch" subtitle={batch.name} onClose={onClose} />
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
             <label className="col-span-2">Batch Name *
@@ -1795,15 +1792,9 @@ function AttendanceModal({ batch, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Attendance</div>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              Session #{sessionNum || '…'} · {batch.instructors?.full_name}
-            </div>
-          </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={batch.name + ' — Attendance'}
+          subtitle={'Session #' + (sessionNum || '…') + ' · ' + (batch.instructors?.full_name || '')}
+          onClose={onClose} />
         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
             Session Date *

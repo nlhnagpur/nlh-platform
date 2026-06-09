@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 import { sendWAReviewRequest } from '../services/whatsapp'
+import ModalHeader from '../components/ModalHeader'
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -238,15 +239,9 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 1000, width: '96vw' }}>
-        <div className="ch">
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Mark Attendance</div>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {batch.instructors?.full_name || '—'} · {(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length} student{(batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length !== 1 ? 's' : ''}
-            </div>
-          </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={batch.name + ' — Mark Attendance'}
+          subtitle={(batch.instructors?.full_name || '—') + ' · ' + (batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length + ' students'}
+          onClose={onClose} />
 
         <div style={{ display: 'flex', minHeight: 320 }}>
 
@@ -679,22 +674,16 @@ function SessionHistoryModal({ batch, onClose }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name} — Session History</div>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {loading ? '…' : (function () {
-                var hols = sessions.filter(function (s) { return s.is_holiday }).length
-                var sess = sessions.length - hols
-                var parts = []
-                if (sess > 0) parts.push(sess + ' session' + (sess !== 1 ? 's' : ''))
-                if (hols > 0) parts.push(hols + ' holiday' + (hols !== 1 ? 's' : ''))
-                return parts.length ? parts.join(' · ') : 'No sessions yet'
-              })()}
-            </div>
-          </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={batch.name + ' — Session History'}
+          subtitle={loading ? '…' : (function () {
+            var hols = sessions.filter(function (s) { return s.is_holiday }).length
+            var sess = sessions.length - hols
+            var parts = []
+            if (sess > 0) parts.push(sess + ' session' + (sess !== 1 ? 's' : ''))
+            if (hols > 0) parts.push(hols + ' holiday' + (hols !== 1 ? 's' : ''))
+            return parts.length ? parts.join(' · ') : 'No sessions yet'
+          })()}
+          onClose={onClose} />
 
         <div style={{ maxHeight: '60vh', overflowY: 'auto', padding: '8px 20px 16px' }}>
           {loading ? (
@@ -987,10 +976,7 @@ function ChangeInstructorModal({ batch, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <span style={{ fontWeight: 700 }}>Change Instructor — {batch.name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={'Change Instructor'} subtitle={batch.name} onClose={onClose} />
         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
             Current instructor: <strong>{currentName}</strong>
@@ -1072,10 +1058,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <span style={{ fontWeight: 700 }}>Edit Batch — {batch.name}</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={'Edit Batch'} subtitle={batch.name} onClose={onClose} />
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
             <label className="col-span-2">Batch Name *
@@ -1171,10 +1154,7 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <span style={{ fontWeight: 700 }}>New Batch</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={'New Batch'} subtitle="New Learning Horizons · Batch setup" onClose={onClose} />
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
             <label className="col-span-2">Batch Name *
@@ -1346,15 +1326,9 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{batch.name}</div>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {batch.instructor_name} · {students.length} student{students.length !== 1 ? 's' : ''}
-            </div>
-          </div>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={batch.name + ' — Roster'}
+          subtitle={(batch.instructor_name || '') + ' · ' + students.length + ' student' + (students.length !== 1 ? 's' : '')}
+          onClose={onClose} />
         <div style={{ padding: '0 20px 20px' }}>
           {students.length === 0 && (
             <p className="hint" style={{ marginBottom: 8 }}>No students assigned yet.</p>
@@ -2090,15 +2064,9 @@ export default function BatchesPage() {
       {completing && (
         <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setCompleting(null) }}>
           <div className="modal" style={{ maxWidth: 380 }}>
-            <div className="ch">
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Mark Course Complete</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                  {completing.studentName || 'Student'} · {completing.courseName || 'Course'}
-                </div>
-              </div>
-              <button className="btn-icon" onClick={function () { setCompleting(null) }}>✕</button>
-            </div>
+            <ModalHeader flush title="Mark Course Complete"
+              subtitle={(completing.studentName || 'Student') + ' · ' + (completing.courseName || 'Course')}
+              onClose={function () { setCompleting(null) }} />
             <div style={{ padding: '4px 20px 16px' }}>
               <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
                 Course end date
@@ -2136,15 +2104,9 @@ export default function BatchesPage() {
       {reviewing && (
         <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setReviewing(null) }}>
           <div className="modal" style={{ maxWidth: 380 }}>
-            <div className="ch">
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Send Google Review Request</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                  {reviewing.studentName || 'Student'} · {reviewing.courseName || 'Course'}
-                </div>
-              </div>
-              <button className="btn-icon" onClick={function () { setReviewing(null) }}>✕</button>
-            </div>
+            <ModalHeader flush title="Send Google Review Request"
+              subtitle={(reviewing.studentName || 'Student') + ' · ' + (reviewing.courseName || 'Course')}
+              onClose={function () { setReviewing(null) }} />
             <div style={{ padding: '4px 20px 16px' }}>
               <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
                 Parent's WhatsApp number
@@ -2187,10 +2149,7 @@ function NewBatchPicker({ instructors, onPicked, onClose }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
-        <div className="ch">
-          <span style={{ fontWeight: 700 }}>New Batch — Select Instructor</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title={'New Batch'} subtitle="Select a Course Instructor" onClose={onClose} />
         <div style={{ padding: '16px 20px 20px' }}>
           <div className="form-grid">
             <label className="col-span-2">Course Instructor *

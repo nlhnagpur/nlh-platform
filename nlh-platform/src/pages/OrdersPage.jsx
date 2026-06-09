@@ -75,10 +75,7 @@ function PaySubmitModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Submit Payment Proof</h3>
-          <button style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"var(--text3)"}} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Submit Payment Proof" subtitle="New Learning Horizons · Payment" onClose={onClose} />
         <div >
           <div className="fr">
             <label>Payment Mode</label>
@@ -157,10 +154,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Record Payment</h3>
-          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Record Payment" subtitle="New Learning Horizons · Payment" onClose={onClose} />
         <div>
           {/* Order total summary */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
@@ -309,10 +303,7 @@ function DispatchModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Mark Dispatched</h3>
-          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>×</button>
-        </div>
+        <ModalHeader flush title="Mark Dispatched" subtitle="New Learning Horizons · Dispatch" onClose={onClose} />
         <div className="form-grid">
           {/* Courier — with saved-vendor datalist */}
           <label className="col-span-2">Courier / Vendor

@@ -1090,16 +1090,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {completingEnr && (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setCompletingEnr(null) }}>
             <div className="modal" style={{ maxWidth: 380 }}>
-              <div className="ch">
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Mark Course Complete</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    {(completingEnr.skus?.courses?.group_name || 'Course')}
-                    {completingEnr.skus?.level_name ? ' · ' + completingEnr.skus.level_name : ''}
-                  </div>
-                </div>
-                <button className="btn-icon" onClick={function () { setCompletingEnr(null) }}>✕</button>
-              </div>
+              <ModalHeader flush title="Mark Course Complete"
+                subtitle={(completingEnr.skus?.courses?.group_name || 'Course') + (completingEnr.skus?.level_name ? ' · ' + completingEnr.skus.level_name : '')}
+                onClose={function () { setCompletingEnr(null) }} />
               <div style={{ padding: '4px 20px 16px' }}>
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
                   Course end date
@@ -1131,16 +1124,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {reviewingEn && (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setReviewingEn(null) }}>
             <div className="modal" style={{ maxWidth: 380 }}>
-              <div className="ch">
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Send Google Review Request</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    {(reviewingEn.skus?.courses?.group_name || 'Course')}
-                    {reviewingEn.skus?.level_name ? ' · ' + reviewingEn.skus.level_name : ''}
-                  </div>
-                </div>
-                <button className="btn-icon" onClick={function () { setReviewingEn(null) }}>✕</button>
-              </div>
+              <ModalHeader flush title="Send Google Review Request"
+                subtitle={(reviewingEn.skus?.courses?.group_name || 'Course') + (reviewingEn.skus?.level_name ? ' · ' + reviewingEn.skus.level_name : '')}
+                onClose={function () { setReviewingEn(null) }} />
               <div style={{ padding: '4px 20px 16px' }}>
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
                   Parent's WhatsApp number
@@ -1170,16 +1156,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {changingEn && (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setChangingEn(null) }}>
             <div className="modal" style={{ maxWidth: 420 }}>
-              <div className="ch">
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Change Course / Level</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    Currently: {(changingEn.skus?.courses?.group_name || 'Course')}
-                    {changingEn.skus?.level_name ? ' · ' + changingEn.skus.level_name : ''}
-                  </div>
-                </div>
-                <button className="btn-icon" onClick={function () { setChangingEn(null) }}>✕</button>
-              </div>
+              <ModalHeader flush title="Change Course / Level"
+                subtitle={'Currently: ' + (changingEn.skus?.courses?.group_name || 'Course') + (changingEn.skus?.level_name ? ' · ' + changingEn.skus.level_name : '')}
+                onClose={function () { setChangingEn(null) }} />
               <div style={{ padding: '4px 20px 16px' }}>
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>New course / level
                   <select value={changeSkuId} onChange={function (e) { setChangeSkuId(e.target.value) }} style={{ marginTop: 6 }}>
@@ -1210,17 +1189,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {showPayModal && (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setShowPayModal(false) }}>
             <div className="modal" style={{ maxWidth: 420 }}>
-              <div className="ch">
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Record Payment</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    Balance due: <span style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 600 }}>
-                      {balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared'}
-                    </span>
-                  </div>
-                </div>
-                <button className="btn-icon" onClick={function () { setShowPayModal(false) }}>✕</button>
-              </div>
+              <ModalHeader flush title="Record Payment"
+                subtitle={'Balance due: ' + (balance > 0 ? '₹' + fmtAmt(balance) : 'Cleared')}
+                onClose={function () { setShowPayModal(false) }} />
               <div style={{ padding: '4px 20px 16px' }}>
                 <div className="form-grid">
                   <label>Amount received (₹) *

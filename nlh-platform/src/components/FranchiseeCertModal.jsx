@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendFranchiseeCertEmail } from '../services/email'
+import ModalHeader from './ModalHeader'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -79,10 +80,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 580 }}>
-        <div className="ch">
-          <span>📜 Franchise Certificate</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+        <ModalHeader flush title="Franchise Certificate" subtitle="New Learning Horizons" onClose={onClose} />
 
         {/* ── Preview card ── */}
         <div style={{ padding: '0 20px' }}>
