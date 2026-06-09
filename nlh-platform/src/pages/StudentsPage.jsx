@@ -546,6 +546,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       })
     }
 
+    // 4b) Pull session totals + billing for the new SKUs so rows show "0 / N" immediately
+    const newSkuIds = added.map(function (e) { return e.sku_id })
+    if (newSkuIds.length) {
+      const { data: skuRows } = await sb.from('skus').select('id, total_sessions, courses(billing_type)').in('id', newSkuIds)
+      if (skuRows) {
+        setSkuTotals(function (prev) { const n = { ...prev }; skuRows.forEach(function (s) { n[s.id] = s.total_sessions }); return n })
+        setSkuBilling(function (prev) { const n = { ...prev }; skuRows.forEach(function (s) { n[s.id] = s.courses?.billing_type || null }); return n })
+      }
+    }
+    setSessionCounts(function (prev) { const n = { ...prev }; added.forEach(function (e) { if (n[e.id] == null) n[e.id] = 0 }); return n })
+
     // 5) Local state + cleanup
     setLocalEnrollments(function (prev) { return [...prev, ...added] })
     const addedSkuIds = added.map(function (e) { return e.sku_id })
