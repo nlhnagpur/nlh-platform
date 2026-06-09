@@ -39,22 +39,88 @@ function avColor(seed) {
   return palette[h % palette.length]
 }
 
+function humanSize(b) {
+  if (!b && b !== 0) return ''
+  if (b < 1024) return b + ' B'
+  if (b < 1024 * 1024) return (b / 1024).toFixed(0) + ' KB'
+  return (b / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+const MAX_FILE = 15 * 1024 * 1024 // 15 MB
+
+// Upload a file to the chat-attachments bucket; returns attachment metadata.
+async function uploadAttachment(file, folder) {
+  const ext  = (file.name.split('.').pop() || '').toLowerCase()
+  const rand = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()))
+  const path = (folder || 'misc') + '/' + rand + (ext ? '.' + ext : '')
+  const { error } = await sb.storage.from('chat-attachments').upload(path, file, {
+    contentType: file.type || 'application/octet-stream', upsert: false,
+  })
+  if (error) throw error
+  const { data } = sb.storage.from('chat-attachments').getPublicUrl(path)
+  return { url: data.publicUrl, name: file.name, type: file.type || '', size: file.size }
+}
+
+function isImageType(t) { return /^image\//.test(t || '') }
+
+// Renders an attachment inside a message bubble.
+function AttachmentView({ m, mine }) {
+  if (!m.attachment_url) return null
+  const img = isImageType(m.attachment_type)
+  if (img) {
+    return (
+      <a href={m.attachment_url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: m.body ? 6 : 0 }}>
+        <img src={m.attachment_url} alt={m.attachment_name || 'image'}
+          style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 10, display: 'block' }} />
+      </a>
+    )
+  }
+  return (
+    <a href={m.attachment_url} target="_blank" rel="noreferrer" download={m.attachment_name}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginTop: m.body ? 6 : 0,
+        padding: '8px 10px', borderRadius: 10, textDecoration: 'none',
+        background: mine ? 'rgba(255,255,255,.16)' : 'var(--bg2, #F5F4F0)',
+        border: '1px solid ' + (mine ? 'rgba(255,255,255,.25)' : 'var(--border)'),
+        color: mine ? '#fff' : 'var(--text)',
+      }}>
+      <span style={{ fontSize: 20, flexShrink: 0 }}>📄</span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', font: '600 12px var(--font)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.attachment_name || 'Attachment'}</span>
+        <span style={{ display: 'block', font: '500 10px var(--font)', opacity: .7 }}>{humanSize(m.attachment_size)} · Download</span>
+      </span>
+    </a>
+  )
+}
+
 // ── A single conversation (list of bubbles + composer) ────────────────────
 function ChatThread({ franchiseeId, messages, peerName, peerSub, onSend, sending }) {
   const [body, setBody] = useState('')
+  const [file, setFile] = useState(null)
   const scrollRef = useRef(null)
   const endRef = useRef(null)
+  const fileRef = useRef(null)
 
   useEffect(function () {
     if (endRef.current) endRef.current.scrollIntoView({ block: 'end' })
   }, [messages.length, franchiseeId])
 
+  function pickFile(e) {
+    const f = e.target.files && e.target.files[0]
+    if (!f) return
+    if (f.size > MAX_FILE) { showToast('File too large (max 15 MB)', 'err'); e.target.value = ''; return }
+    setFile(f)
+  }
+
   function submit(e) {
     if (e) e.preventDefault()
     const text = body.trim()
-    if (!text || sending) return
+    if ((!text && !file) || sending) return
     setBody('')
-    onSend(text)
+    const sent = file
+    setFile(null)
+    if (fileRef.current) fileRef.current.value = ''
+    onSend({ body: text, file: sent })
   }
 
   function onKeyDown(e) {
@@ -95,7 +161,11 @@ function ChatThread({ franchiseeId, messages, peerName, peerSub, onSend, sending
                   {!m._mine && m.sender_name && (
                     <div style={{ font: '700 10px var(--font)', color: 'var(--purple)', marginBottom: 2 }}>{m.sender_name}</div>
                   )}
-                  <div style={{ font: '500 13px var(--font)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4 }}>{m.body}</div>
+                  {m.broadcast_id && (
+                    <div style={{ font: '700 9px var(--font)', letterSpacing: '.04em', marginBottom: 3, opacity: .85 }}>📢 BROADCAST</div>
+                  )}
+                  {m.body && <div style={{ font: '500 13px var(--font)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4 }}>{m.body}</div>}
+                  <AttachmentView m={m} mine={m._mine} />
                   <div style={{ font: '500 9px var(--font)', textAlign: 'right', marginTop: 3, opacity: 0.6 }}>{fmtTime(m.created_at)}</div>
                 </div>
               </div>
@@ -105,19 +175,152 @@ function ChatThread({ franchiseeId, messages, peerName, peerSub, onSend, sending
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={submit} style={{ display: 'flex', gap: 8, padding: 12, borderTop: '1px solid var(--border)', background: '#fff' }}>
-        <textarea
-          value={body}
-          onChange={function (e) { setBody(e.target.value) }}
-          onKeyDown={onKeyDown}
-          placeholder={'Message ' + (peerName || '') + '…'}
-          rows={1}
-          style={{ flex: 1, resize: 'none', maxHeight: 120, font: '500 13px var(--font)', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)' }}
-        />
-        <button type="submit" className="btn-p" disabled={sending || !body.trim()} style={{ alignSelf: 'flex-end', whiteSpace: 'nowrap' }}>
-          {sending ? '…' : 'Send'}
-        </button>
-      </form>
+      <div style={{ borderTop: '1px solid var(--border)', background: '#fff' }}>
+        {file && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 0' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderRadius: 8, background: 'var(--bg2, #F5F4F0)', border: '1px solid var(--border)', maxWidth: '100%' }}>
+              <span style={{ fontSize: 16 }}>{isImageType(file.type) ? '🖼️' : '📄'}</span>
+              <span style={{ font: '600 12px var(--font)', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{file.name}</span>
+              <span style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>{humanSize(file.size)}</span>
+              <span onClick={function () { setFile(null); if (fileRef.current) fileRef.current.value = '' }}
+                style={{ cursor: 'pointer', color: 'var(--text3)', fontWeight: 700, marginLeft: 2 }}>✕</span>
+            </span>
+          </div>
+        )}
+        <form onSubmit={submit} style={{ display: 'flex', gap: 8, padding: 12, alignItems: 'flex-end' }}>
+          <input ref={fileRef} type="file" onChange={pickFile} style={{ display: 'none' }}
+            accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.zip" />
+          <button type="button" title="Attach file" onClick={function () { fileRef.current && fileRef.current.click() }}
+            style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg2, #F5F4F0)', cursor: 'pointer', fontSize: 17 }}>📎</button>
+          <textarea
+            value={body}
+            onChange={function (e) { setBody(e.target.value) }}
+            onKeyDown={onKeyDown}
+            placeholder={'Message ' + (peerName || '') + '…'}
+            rows={1}
+            style={{ flex: 1, resize: 'none', maxHeight: 120, font: '500 13px var(--font)', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)' }}
+          />
+          <button type="submit" className="btn-p" disabled={sending || (!body.trim() && !file)} style={{ whiteSpace: 'nowrap' }}>
+            {sending ? '…' : 'Send'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Broadcast composer (HO only) ──────────────────────────────────────────
+function BroadcastModal({ franchisees, onClose, onSend, sending }) {
+  const [body, setBody]   = useState('')
+  const [file, setFile]   = useState(null)
+  const [search, setSearch] = useState('')
+  const [tier, setTier]   = useState('ALL')      // ALL | SMF | CF | UF
+  const [picked, setPicked] = useState({})        // id -> true
+  const fileRef = useRef(null)
+
+  const pool = franchisees.filter(function (f) {
+    if (tier !== 'ALL' && (f.tier || '').toUpperCase() !== tier) return false
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return (f.business_name || '').toLowerCase().includes(q) ||
+           (f.owner_name || '').toLowerCase().includes(q) ||
+           (f.city || '').toLowerCase().includes(q)
+  })
+
+  const pickedIds = Object.keys(picked).filter(function (k) { return picked[k] })
+  const allPoolPicked = pool.length > 0 && pool.every(function (f) { return picked[f.id] })
+
+  function toggle(id) {
+    setPicked(function (p) { const n = Object.assign({}, p); if (n[id]) delete n[id]; else n[id] = true; return n })
+  }
+  function toggleAllPool() {
+    setPicked(function (p) {
+      const n = Object.assign({}, p)
+      if (allPoolPicked) pool.forEach(function (f) { delete n[f.id] })
+      else pool.forEach(function (f) { n[f.id] = true })
+      return n
+    })
+  }
+  function pickFile(e) {
+    const f = e.target.files && e.target.files[0]
+    if (!f) return
+    if (f.size > MAX_FILE) { showToast('File too large (max 15 MB)', 'err'); e.target.value = ''; return }
+    setFile(f)
+  }
+  function submit() {
+    onSend({ body: body, file: file, recipientIds: pickedIds })
+  }
+
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" style={{ width: 640, maxWidth: '96vw' }} onClick={function (e) { e.stopPropagation() }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h3 style={{ margin: 0, font: '800 16px var(--font)' }}>📢 Broadcast to franchisees</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text3)' }}>✕</button>
+        </div>
+
+        {/* recipient filters */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+          {['ALL', 'SMF', 'CF', 'UF'].map(function (t) {
+            return (
+              <button key={t} onClick={function () { setTier(t) }}
+                className={'sp' + (tier === t ? ' on on-pend' : '')}
+                style={{ fontSize: 12 }}>{t === 'ALL' ? 'All tiers' : t}</button>
+            )
+          })}
+          <input className="search" placeholder="Search…" value={search}
+            onChange={function (e) { setSearch(e.target.value) }} style={{ flex: 1, minWidth: 120, fontSize: 13 }} />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 2px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', font: '600 12px var(--font)', color: 'var(--text2)' }}>
+            <input type="checkbox" checked={allPoolPicked} onChange={toggleAllPool} />
+            Select all shown ({pool.length})
+          </label>
+          <span style={{ font: '700 12px var(--font)', color: 'var(--purple)' }}>{pickedIds.length} selected</span>
+        </div>
+
+        <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 12 }}>
+          {pool.length === 0 ? (
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>No franchisees match.</div>
+          ) : pool.map(function (f) {
+            const name = f.business_name || f.owner_name || 'Franchisee'
+            return (
+              <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--bg4, #F1F0EC)' }}>
+                <input type="checkbox" checked={!!picked[f.id]} onChange={function () { toggle(f.id) }} />
+                <span style={{ font: '700 13px var(--font)', color: 'var(--text)' }}>{name}</span>
+                <span style={{ font: '600 9px var(--font)', color: 'var(--text3)', background: 'var(--bg4, #EFEEE9)', borderRadius: 20, padding: '1px 7px' }}>{f.tier || '—'}</span>
+                {f.city && <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{f.city}</span>}
+              </label>
+            )
+          })}
+        </div>
+
+        <textarea value={body} onChange={function (e) { setBody(e.target.value) }}
+          placeholder="Write your announcement…" rows={4}
+          style={{ width: '100%', resize: 'vertical', font: '500 13px var(--font)', padding: 10, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 10 }} />
+
+        <input ref={fileRef} type="file" onChange={pickFile} style={{ display: 'none' }}
+          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.zip" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <button type="button" onClick={function () { fileRef.current && fileRef.current.click() }}
+            className="btn" style={{ fontSize: 13 }}>📎 Attach file</button>
+          {file && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, font: '600 12px var(--font)', color: 'var(--text2)' }}>
+              {isImageType(file.type) ? '🖼️' : '📄'} {file.name} <span style={{ color: 'var(--text3)' }}>({humanSize(file.size)})</span>
+              <span onClick={function () { setFile(null); if (fileRef.current) fileRef.current.value = '' }} style={{ cursor: 'pointer', color: 'var(--text3)', fontWeight: 700 }}>✕</span>
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={submit}
+            disabled={sending || pickedIds.length === 0 || (!body.trim() && !file)}>
+            {sending ? 'Sending…' : 'Send to ' + pickedIds.length + ' franchisee' + (pickedIds.length === 1 ? '' : 's')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -132,6 +335,7 @@ export default function MessagesPage() {
   const [loading, setLoading]         = useState(true)
   const [search, setSearch]           = useState('')
   const [sending, setSending]         = useState(false)
+  const [showBroadcast, setShowBroadcast] = useState(false)
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
 
@@ -175,11 +379,24 @@ export default function MessagesPage() {
   }, [activeId, messages.length, markRead])
 
   // ── Send ──
-  async function handleSend(text) {
+  async function handleSend(payload) {
+    const text = (payload && payload.body) || ''
+    const file = payload && payload.file
     const fid = activeIdRef.current
     if (!fid) return
     setSending(true)
-    const row = {
+    let attach = {}
+    if (file) {
+      try {
+        const a = await uploadAttachment(file, fid)
+        attach = { attachment_url: a.url, attachment_name: a.name, attachment_type: a.type, attachment_size: a.size }
+      } catch (err) {
+        setSending(false)
+        showToast('Upload failed: ' + (err.message || err), 'err')
+        return
+      }
+    }
+    const row = Object.assign({
       franchisee_id: fid,
       sender_id: currentUser?.id || null,
       sender_name: senderName,
@@ -187,11 +404,41 @@ export default function MessagesPage() {
       body: text,
       read_by_ho: isHO,
       read_by_franchisee: !isHO,
-    }
+    }, attach)
     const { data, error } = await sb.from('messages').insert(row).select().single()
     setSending(false)
     if (error) { showToast('Could not send: ' + error.message, 'err'); return }
     setMessages(function (prev) { return prev.concat(data) })
+  }
+
+  // ── Broadcast: one message fanned out to many franchisee threads ──
+  async function handleBroadcast(payload) {
+    const text = (payload.body || '').trim()
+    const file = payload.file
+    const ids  = payload.recipientIds || []
+    if (!ids.length) { showToast('Pick at least one recipient', 'warn'); return }
+    if (!text && !file) { showToast('Add a message or attachment', 'warn'); return }
+    setSending(true)
+    let attach = {}
+    if (file) {
+      try {
+        const a = await uploadAttachment(file, 'broadcast')
+        attach = { attachment_url: a.url, attachment_name: a.name, attachment_type: a.type, attachment_size: a.size }
+      } catch (err) { setSending(false); showToast('Upload failed: ' + (err.message || err), 'err'); return }
+    }
+    const bid = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()))
+    const rows = ids.map(function (fid) {
+      return Object.assign({
+        franchisee_id: fid, sender_id: currentUser?.id || null, sender_name: senderName,
+        from_ho: true, body: text, read_by_ho: true, read_by_franchisee: false, broadcast_id: bid,
+      }, attach)
+    })
+    const { data, error } = await sb.from('messages').insert(rows).select()
+    setSending(false)
+    if (error) { showToast('Broadcast failed: ' + error.message, 'err'); return }
+    setMessages(function (prev) { return prev.concat(data || []) })
+    setShowBroadcast(false)
+    showToast('📢 Broadcast sent to ' + ids.length + ' franchisee' + (ids.length > 1 ? 's' : ''), 'ok')
   }
 
   // messages for the active thread, tagged with _mine for bubble alignment
@@ -267,7 +514,15 @@ export default function MessagesPage() {
     <div className="pg">
       <header className="tb">
         <div className="crumb">Communication <span className="sep">›</span> <b>Franchisee chat</b>{totalUnread > 0 && <span style={{ marginLeft: 8, font: '700 11px var(--font)', color: '#fff', background: 'var(--red, #dc2626)', borderRadius: 20, padding: '1px 8px' }}>{totalUnread} new</span>}</div>
+        <div className="tb-r">
+          <button className="btn-p" onClick={function () { setShowBroadcast(true) }} style={{ whiteSpace: 'nowrap' }}>📢 Broadcast</button>
+        </div>
       </header>
+
+      {showBroadcast && (
+        <BroadcastModal franchisees={franchisees} sending={sending}
+          onClose={function () { setShowBroadcast(false) }} onSend={handleBroadcast} />
+      )}
 
       <div className="content" style={{ paddingTop: 12 }}>
         <div className="card" style={{ padding: 0, overflow: 'hidden', height: 'calc(100vh - 150px)', display: 'flex' }}>
