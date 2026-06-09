@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
-import { sendWAStudentEnrolled, sendWAReviewRequest } from '../services/whatsapp'
+import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
 import StudentCertModal from '../components/StudentCertModal'
@@ -102,6 +102,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [showPayModal,    setShowPayModal]    = useState(false)
   const [payForm,         setPayForm]         = useState({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
   const [paySaving,       setPaySaving]       = useState(false)
+  const [sendReceipt,     setSendReceipt]     = useState(true)
+  const [receiptPhone,    setReceiptPhone]    = useState(student.phone || '')
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -208,6 +210,32 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setShowPayModal(false)
     setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
     showToast('Payment of ₹' + fmtAmt(amt) + ' recorded ✓')
+
+    // WhatsApp receipt to the parent
+    if (sendReceipt && receiptPhone) {
+      const newPaid = next.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+      const newBalance = Math.max(0, (Number(form.fee_total) || 0) - newPaid)
+      const r = await sendWAStudentReceipt(receiptPhone, {
+        name: student.parent_name || student.full_name,
+        amount: fmtAmt(amt), balance: newBalance,
+      })
+      if (r && r.success) showToast('Receipt sent on WhatsApp ✓')
+      else showToast('Payment saved · WhatsApp receipt failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+    }
+  }
+
+  // ── Resend a receipt for a past payment ──
+  async function resendReceipt(p) {
+    const phone = receiptPhone || student.phone
+    if (!phone) { showToast('No parent phone on file', 'warn'); return }
+    const paidSoFar = payments.reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+    const bal = Math.max(0, (Number(form.fee_total) || 0) - paidSoFar)
+    const r = await sendWAStudentReceipt(phone, {
+      name: student.parent_name || student.full_name,
+      amount: fmtAmt(p.amount), balance: bal,
+    })
+    if (r && r.success) showToast('Receipt resent on WhatsApp ✓')
+    else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
   async function deletePayment(id) {
@@ -856,6 +884,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>{p.reference || p.note}</div>
                             )}
                           </div>
+                          {canManageFees && (
+                            <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}
+                              title="Resend WhatsApp receipt to parent"
+                              onClick={function () { resendReceipt(p) }}>
+                              💬 Receipt
+                            </button>
+                          )}
                           {admin && (
                             <button className="btn" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red, #dc2626)', borderColor: 'var(--red, #dc2626)' }}
                               onClick={function () { if (window.confirm('Remove this ₹' + fmtAmt(p.amount) + ' payment entry?')) deletePayment(p.id) }}>
@@ -1483,8 +1518,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   <p className="hint" style={{ marginTop: 8 }}>
                     New paid: ₹{fmtAmt((Number(form.fee_paid) || 0) + Number(payForm.amount))}
                     {' '}of ₹{fmtAmt(form.fee_total || 0)}
+                    {' · '}Balance ₹{fmtAmt(Math.max(0, (Number(form.fee_total) || 0) - ((Number(form.fee_paid) || 0) + Number(payForm.amount))))}
                   </p>
                 )}
+
+                {/* WhatsApp receipt to parent */}
+                <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg)', border: '1px solid var(--green, #1D7A4F)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={sendReceipt} onChange={function (e) { setSendReceipt(e.target.checked) }} />
+                    💬 Send WhatsApp receipt to parent
+                  </label>
+                  {sendReceipt && (
+                    <input value={receiptPhone} onChange={function (e) { setReceiptPhone(e.target.value) }}
+                      placeholder="Parent WhatsApp number"
+                      style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
+                  )}
+                </div>
               </div>
               <div className="modal-actions">
                 <button className="btn" onClick={function () { setShowPayModal(false) }} disabled={paySaving}>Cancel</button>

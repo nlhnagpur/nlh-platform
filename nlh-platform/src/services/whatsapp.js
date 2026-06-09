@@ -105,6 +105,20 @@ export async function sendWAPaymentReceived(to, { name, amount, balance }) {
   })
 }
 
+// ── Payment receipt to a parent (franchisee-usable) ──────────────────────────
+// Sends the `payment_received` template via a requireAuth endpoint so a
+// franchisee can send a receipt for their own student's payment.
+// { name, amount, balance } — amount is a plain number, balance a plain number.
+export async function sendWAStudentReceipt(to, { name, amount, balance }) {
+  if (!toWAPhone(to)) return { success: false, error: 'No valid phone number on file' }
+  const res = await fetch('/api/send-payment-whatsapp', {
+    method: 'POST',
+    headers: await waAuthHeaders(),
+    body: JSON.stringify({ to: toWAPhone(to), name, amount, balance }),
+  })
+  return res.json()
+}
+
 // ── Template: student_enrolled ────────────────────────────────────────────────
 // Params: {{1}} parent name, {{2}} student name, {{3}} courses, {{4}} centre
 export async function sendWAStudentEnrolled(to, { parentName, studentName, courses, centre }) {
