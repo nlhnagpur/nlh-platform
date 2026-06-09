@@ -6,6 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest } from '../services/whatsapp'
+import CouponField from '../components/CouponField'
 import StudentCertModal from '../components/StudentCertModal'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -1329,7 +1330,11 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const [regFilter, setRegFilter] = useState(null)
   const [selectedSkus, setSelectedSkus] = useState([])
   const [feeTotal, setFeeTotal] = useState(0)
+  const [coupon, setCoupon] = useState(null)   // { coupon_id, code, discount }
   const [saving, setSaving] = useState(false)
+
+  const couponDiscount = coupon ? Math.min(coupon.discount, feeTotal) : 0
+  const netFee = Math.max(0, feeTotal - couponDiscount)
 
   // ── Batch assignment state ──
   // { [sku_id]: { batches: [], eligibleCIs: [], loading: bool } }
@@ -1443,6 +1448,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       const exists = prev.find(function (s) { return s.id === sku.id })
       const next = exists ? prev.filter(function (s) { return s.id !== sku.id }) : [...prev, sku]
       setFeeTotal(next.reduce(function (sum, s) { return sum + (s.student_fee || 0) }, 0))
+      setCoupon(null)  // fee changed — re-apply coupon against the new total
       if (!exists) {
         // selecting — load batch data for this SKU
         loadBatchData(sku.id)
@@ -1484,12 +1490,23 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         channel: form.channel || 'walk-in',
         franchisee_id: form.franchisee_id,
         is_active: true,
-        fee_total: feeTotal,
+        fee_total: netFee,
         fee_paid: 0,
-        payment_status: deriveStatus(feeTotal, 0),
+        payment_status: deriveStatus(netFee, 0),
+        coupon_id: coupon?.coupon_id || null,
+        coupon_code: coupon?.code || null,
+        discount_amount: couponDiscount,
       }).select().single()
 
       if (stErr) { showToast('Failed to create student: ' + stErr.message, 'err'); setSaving(false); return }
+
+      // Record coupon redemption against this student (server validates + logs)
+      if (coupon && couponDiscount > 0) {
+        await sb.rpc('redeem_coupon', {
+          p_code: coupon.code, p_context: 'student', p_amount: feeTotal,
+          p_franchisee: form.franchisee_id, p_ref: st.id,
+        })
+      }
 
       // Insert enrollments and capture IDs for batch assignment
       let enrData = []
@@ -1789,6 +1806,22 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                 </span>
               )}
             </div>
+            {feeTotal > 0 && (
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexWrap:'wrap',
+                background:'var(--bg2, #F7F6F2)', border:'1px solid var(--border)', borderRadius:10, padding:'10px 12px', margin:'8px 0 2px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ font:'600 12px var(--font)', color:'var(--text2)' }}>🎟️ Discount coupon</span>
+                  <CouponField context="student" amount={feeTotal} franchiseeId={form.franchisee_id || null}
+                    applied={coupon} onApply={setCoupon} onClear={function () { setCoupon(null) }} compact />
+                </div>
+                {couponDiscount > 0 && (
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ font:'500 11px var(--font)', color:'var(--text3)', textDecoration:'line-through' }}>₹{fmtAmt(feeTotal)}</div>
+                    <div style={{ font:'700 15px var(--font)', color:'var(--green, #1D7A4F)' }}>Payable ₹{fmtAmt(netFee)}</div>
+                  </div>
+                )}
+              </div>
+            )}
             {!regFilter ? (
               <p className="hint">Select a centre above to see available courses.</p>
             ) : groups.length === 0 ? (

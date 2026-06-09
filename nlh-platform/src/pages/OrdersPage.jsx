@@ -8,6 +8,7 @@ import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderInvoiced, sendWAOrderDispatched } from '../services/whatsapp'
 import InvoiceView from '../components/InvoiceView'
+import CouponField from '../components/CouponField'
 
 // JSX badge components
 function StatusBadge({ status }) {
@@ -410,6 +411,9 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const [courierCharges, setCourierCharges] = useState(order.courier_charges || 0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [coupon, setCoupon] = useState(
+    order.coupon_id ? { coupon_id: order.coupon_id, code: order.coupon_code, discount: order.discount_amount || 0 } : null
+  )
 
   useEffect(function () { loadData() }, [])
 
@@ -421,6 +425,9 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     if (itemsRes.error) showToast('Failed to load items: ' + itemsRes.error.message)
     else setItems(itemsRes.data || [])
     setAllSkus(skusRes.data || [])
+    // Make sure we have the current coupon on the order
+    const { data: ord } = await sb.from('orders').select('coupon_id, coupon_code, discount_amount').eq('id', order.id).single()
+    if (ord && ord.coupon_id) setCoupon({ coupon_id: ord.coupon_id, code: ord.coupon_code, discount: ord.discount_amount || 0 })
     setLoading(false)
   }
 
@@ -459,8 +466,14 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
 
   function lineTotal(item) { return (item.ordered_qty || 0) * (item.rate || 0) }
 
+  function itemsSubtotal() {
+    return items.reduce(function (s, it) { return s + lineTotal(it) }, 0)
+  }
+  function couponDisc() {
+    return coupon ? Math.min(coupon.discount || 0, itemsSubtotal()) : 0
+  }
   function grandTotal() {
-    return items.reduce(function (s, it) { return s + lineTotal(it) }, 0) + (parseInt(courierCharges, 10) || 0)
+    return Math.max(0, itemsSubtotal() + (parseInt(courierCharges, 10) || 0) - couponDisc())
   }
 
   async function handleSave() {
@@ -492,11 +505,26 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     }
     const cc = parseInt(courierCharges, 10) || 0
     const subTotal = items.reduce(function (s, it) { return s + (it.ordered_qty || 0) * (it.rate || 0) }, 0)
+    const discount = coupon ? Math.min(coupon.discount || 0, subTotal) : 0
     await sb.from('orders').update({
       courier_charges: cc,
       subtotal:        subTotal,
-      grand_total:     subTotal + cc,
+      grand_total:     Math.max(0, subTotal + cc - discount),
+      discount_amount: discount,
+      coupon_id:       coupon?.coupon_id || null,
+      coupon_code:     coupon?.code || null,
     }).eq('id', order.id)
+
+    // Sync the redemption ledger: clear any previous redemption for this order,
+    // then re-record the current coupon (handles add / change / remove).
+    await sb.rpc('clear_coupon_redemption', { p_context: 'order', p_ref: order.id })
+    if (coupon && discount > 0) {
+      await sb.rpc('redeem_coupon', {
+        p_code: coupon.code, p_context: 'order', p_amount: subTotal,
+        p_franchisee: order.placer_id, p_ref: order.id,
+      })
+    }
+
     showToast('Invoice updated.')
     onSaved()
     setSaving(false)
@@ -620,16 +648,34 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                 </button>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16, gap: 16 }}>
-                <div className="fr" style={{ margin: 0, flex: 1 }}>
-                  <label>Courier Charges (Rs)</label>
-                  <input
-                    type="number" value={courierCharges}
-                    onChange={function (e) { setCourierCharges(e.target.value) }}
-                    style={{ width: 140 }}
-                  />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16, gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div className="fr" style={{ margin: 0 }}>
+                    <label>Courier Charges (Rs)</label>
+                    <input
+                      type="number" value={courierCharges}
+                      onChange={function (e) { setCourierCharges(e.target.value) }}
+                      style={{ width: 140 }}
+                    />
+                  </div>
+                  {isAdmin && (
+                    <div className="fr" style={{ margin: 0 }}>
+                      <label>🎟️ Discount coupon</label>
+                      <CouponField context="order" amount={itemsSubtotal()} franchiseeId={order.placer_id}
+                        applied={coupon}
+                        onApply={function (c) { setCoupon(c) }}
+                        onClear={function () { setCoupon(null) }}
+                        disabled={itemsSubtotal() <= 0} compact />
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign: 'right', padding: '10px 16px', background: 'var(--bg3)', borderRadius: 10, minWidth: 180 }}>
+                  {couponDisc() > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>
+                      Subtotal Rs {fmtAmt(itemsSubtotal())}
+                      <span style={{ color: 'var(--green, #1D7A4F)', display: 'block' }}>Coupon − Rs {fmtAmt(couponDisc())}</span>
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>Grand Total</div>
                   <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--purple)' }}>
                     Rs {fmtAmt(grandTotal())}
@@ -668,6 +714,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   const [lines, setLines] = useState([{ sku_id: '', qty: 1, rate: 0 }])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [coupon, setCoupon] = useState(null)   // { coupon_id, code, discount, _base }
 
   // Build a delivery address string from franchisee fields
   function buildAddress(fr) {
@@ -793,6 +840,16 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     }, 0)
   }
 
+  const subTotal = calcTotal()
+  const couponDiscount = coupon ? Math.min(coupon.discount, subTotal) : 0
+  const netTotal = Math.max(0, subTotal - couponDiscount)
+
+  // If the order amount changes after a coupon was applied, drop it so the
+  // discount can't go stale (re-apply against the new total).
+  useEffect(function () {
+    if (coupon && coupon._base != null && coupon._base !== subTotal) setCoupon(null)
+  }, [subTotal])  // eslint-disable-line
+
   async function handleSubmit() {
     const fid = placerId || currentFranchiseeId
     if (!fid) { showToast('Select a franchisee.'); return }
@@ -803,6 +860,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     const { data: refData } = await sb.rpc('next_order_ref')
     const orderRef = refData || ('ORD-' + Date.now())
     const total = calcTotal()
+    const discount = coupon ? Math.min(coupon.discount, total) : 0
 
     // Derive tier from loaded franchisees if not already set (e.g. admin didn't change selection)
     const resolvedTier = placerTier || (franchisees.find(function (f) { return f.id === fid })?.tier) || 'UF'
@@ -814,7 +872,11 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         placer_id: fid,
         placer_tier: resolvedTier,
         deliver_to: deliverTo.trim(),
-        grand_total: total,
+        subtotal: total,
+        grand_total: Math.max(0, total - discount),
+        discount_amount: discount,
+        coupon_id: coupon?.coupon_id || null,
+        coupon_code: coupon?.code || null,
         status: 'pending',
       })
       .select().single()
@@ -823,6 +885,14 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
       showToast('Failed to create order: ' + orderErr.message)
       setSaving(false)
       return
+    }
+
+    // Record coupon redemption against this order (server validates + logs)
+    if (coupon && discount > 0) {
+      await sb.rpc('redeem_coupon', {
+        p_code: coupon.code, p_context: 'order', p_amount: total,
+        p_franchisee: fid, p_ref: orderData.id,
+      })
     }
 
     const itemRows = validLines.map(function (line) {
@@ -976,12 +1046,26 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                 </button>
               </div>
 
-              {/* Total */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              {/* Coupon + Total */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Coupon</span>
+                  <CouponField context="order" amount={subTotal} franchiseeId={placerId || currentFranchiseeId || null}
+                    applied={coupon}
+                    onApply={function (c) { setCoupon(Object.assign({}, c, { _base: subTotal })) }}
+                    onClear={function () { setCoupon(null) }}
+                    disabled={subTotal <= 0} compact />
+                </div>
                 <div style={{ textAlign: 'right' }}>
+                  {couponDiscount > 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+                      <span>Subtotal Rs {fmtAmt(subTotal)}</span>
+                      <span style={{ color: 'var(--green, #1D7A4F)', marginLeft: 8 }}>− Rs {fmtAmt(couponDiscount)}</span>
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>Order Total</div>
                   <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--purple)' }}>
-                    Rs {fmtAmt(calcTotal())}
+                    Rs {fmtAmt(netTotal)}
                   </div>
                 </div>
               </div>
@@ -1195,9 +1279,10 @@ async function generateInvoicePDF(order, items) {
   // ═══════════════════════════════════════════════════════════
   // 4.  PAYMENT  +  TOTALS
   // ═══════════════════════════════════════════════════════════
-  const courier = order.courier_charges || 0
-  const total   = order.grand_total || (subtotal + courier)
-  const botH    = 66
+  const courier  = order.courier_charges || 0
+  const discount = order.discount_amount || 0
+  const total    = order.grand_total || (subtotal + courier - discount)
+  const botH     = discount > 0 ? 75 : 66
   const payW    = 106
   const totX    = L + payW + 4
   const totW    = CW - payW - 4
@@ -1264,6 +1349,13 @@ async function generateInvoicePDF(order, items) {
   }
   totRow('Subtotal', 'Rs ' + fmtAmt(subtotal))
   totRow('Courier charges', courier > 0 ? 'Rs ' + fmtAmt(courier) : 'As per actuals')
+  if (discount > 0) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); tc(...TMD)
+    doc.text('Discount' + (order.coupon_code ? ' (' + order.coupon_code + ')' : ''), tL, ty)
+    doc.setFont('helvetica', 'bold'); tc(...GREEN)
+    doc.text('- Rs ' + fmtAmt(discount), tR, ty, { align: 'right' })
+    ty += 8.5
+  }
   totRow('GST', 'Not applicable')
 
   dc(180, 170, 220); doc.setLineWidth(0.35)
@@ -1410,7 +1502,9 @@ export default function OrdersPage() {
     const itemsTotal = (itemRows || []).reduce(function (sum, it) {
       return sum + (it.ordered_qty || 0) * (it.rate || 0)
     }, 0)
-    const grandTotal = itemsTotal + (order.courier_charges || 0)
+    // Preserve any coupon discount already applied at checkout
+    const discount = Math.min(order.discount_amount || 0, itemsTotal)
+    const grandTotal = Math.max(0, itemsTotal + (order.courier_charges || 0) - discount)
 
     // Let the DB trigger (trg_invoice_no) assign invoice_no atomically from invoice_seq.
     const { error } = await sb
