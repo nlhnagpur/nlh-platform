@@ -9,6 +9,7 @@ import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../s
 import { sendWAOrderInvoiced, sendWAOrderDispatched } from '../services/whatsapp'
 import InvoiceView from '../components/InvoiceView'
 import CouponField from '../components/CouponField'
+import ModalHeader from '../components/ModalHeader'
 
 // JSX badge components
 function StatusBadge({ status }) {
@@ -532,14 +533,12 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}>
-        <div className="ch">
-          <h3>Edit Invoice — {order.order_ref}</h3>
-          <button style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--text3)'}} onClick={onClose}>x</button>
-        </div>
-        <div>
+      <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}
+        style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
+        <ModalHeader title={'Edit Invoice — ' + order.order_ref} subtitle="New Learning Horizons · Invoice editor" onClose={onClose} />
+        <div style={{ padding: '18px 22px', overflowY: 'auto', background: 'var(--bg2, #FAFAF8)', flex: 1 }}>
           {loading ? (
-            <div className="muted">Loading items...</div>
+            <div className="muted">Loading items…</div>
           ) : (
             <>
               <table className="tbl" style={{ marginBottom: 0 }}>
@@ -685,10 +684,10 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
             </>
           )}
         </div>
-        <div className="modal-actions">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 22px', borderTop: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
           <button className="btn-s" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={handleSave} disabled={saving || loading}>
-            {saving ? 'Saving...' : 'Save Changes'}
+            {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -922,18 +921,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
       <div className="modal modal-lg ord-modal" onClick={function (e) { e.stopPropagation() }}
         style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
 
-        {/* ── Branded header ── */}
-        <div style={{ background: 'linear-gradient(105deg,#534AB7,#6D28D9)', color: '#fff', padding: '16px 22px', display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 11, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,.18)' }}>
-            <img src="/NLH%20Logo.png" alt="NLH" style={{ width: '88%', height: '88%', objectFit: 'contain' }} onError={function (e) { e.target.style.display = 'none' }} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: '800 18px var(--font)', letterSpacing: '-.01em', lineHeight: 1.1 }}>New Order</div>
-            <div style={{ font: '600 10px var(--mono)', opacity: .85, letterSpacing: '.1em', textTransform: 'uppercase', marginTop: 3 }}>New Learning Horizons · Order form</div>
-          </div>
-          <button onClick={onClose} aria-label="Close"
-            style={{ background: 'rgba(255,255,255,.18)', border: 'none', color: '#fff', width: 32, height: 32, borderRadius: 9, cursor: 'pointer', fontSize: 15, flexShrink: 0 }}>✕</button>
-        </div>
+        <ModalHeader title="New Order" subtitle="New Learning Horizons · Order form" onClose={onClose} />
 
         {/* ── Body ── */}
         <div style={{ padding: '18px 22px', overflowY: 'auto', background: 'var(--bg2, #FAFAF8)', flex: 1 }}>

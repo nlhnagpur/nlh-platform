@@ -7,6 +7,7 @@ import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
+import ModalHeader from '../components/ModalHeader'
 import StudentCertModal from '../components/StudentCertModal'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -1609,13 +1610,10 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="ch">
-          <span>➕ Add Student</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+      <div className="modal" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
+        <ModalHeader title="New Student" subtitle="New Learning Horizons · Admission form" onClose={onClose} />
 
-        <div>
+        <div style={{ padding: '18px 22px', overflowY: 'auto', background: 'var(--bg2, #FAFAF8)', flex: 1 }}>
           {/* ── Phone — primary student ID (always visible) ── */}
           <div style={{ marginBottom: 14 }}>
             <label style={{ font: '600 12px var(--font)', color: 'var(--text)', display: 'block', marginBottom: 4 }}>
@@ -2067,7 +2065,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           </>)}
         </div>
 
-        <div className="modal-actions">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 22px', borderTop: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
           <button className="btn" onClick={onClose}>Cancel</button>
           {(phoneMatches.length === 0 || phoneConfirmed) && (
             <button className="btn-p" onClick={save} disabled={saving}>
