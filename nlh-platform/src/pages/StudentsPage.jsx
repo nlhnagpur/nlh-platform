@@ -47,6 +47,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
   const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
+  // Fees / discounts / payments: any admin, or any franchisee who can see this
+  // student (visibility is already hierarchy-scoped), incl. parent CF / SMF.
+  const canManageFees = admin || ['uf', 'cf', 'smf'].includes(currentRole)
 
   const [tab, setTab] = useState('profile')
 
@@ -461,6 +464,38 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (updated) onSaved(updated)
   }
 
+  // ── Save just the agreed fee (quick, without the full profile save) ──
+  async function saveFeeOnly() {
+    const ft = form.fee_total === '' ? null : Number(form.fee_total)
+    const { error } = await sb.from('students')
+      .update({ fee_total: ft, payment_status: deriveStatus(ft, form.fee_paid) })
+      .eq('id', student.id)
+    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
+    showToast('Fee updated ✓')
+    if (onSaved) onSaved({ ...student, ...form, fee_total: ft, payment_status: deriveStatus(ft, form.fee_paid) })
+  }
+
+  // ── Apply a coupon discount to the student's agreed fee ──
+  async function applyFeeDiscount(c) {
+    const base = Number(form.fee_total) || 0
+    const disc = Math.min(c.discount || 0, base)
+    if (disc <= 0) { showToast('No discount applies to this amount', 'warn'); return }
+    const newTotal = Math.max(0, base - disc)
+    const { error } = await sb.from('students').update({
+      fee_total: newTotal,
+      coupon_id: c.coupon_id, coupon_code: c.code,
+      discount_amount: (student.discount_amount || 0) + disc,
+      payment_status: deriveStatus(newTotal, form.fee_paid),
+    }).eq('id', student.id)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    await sb.rpc('redeem_coupon', {
+      p_code: c.code, p_context: 'student', p_amount: base,
+      p_franchisee: student.franchisee_id, p_ref: student.id,
+    })
+    setForm(function (f) { return { ...f, fee_total: newTotal } })
+    showToast('Discount applied — ₹' + fmtAmt(disc) + ' off')
+  }
+
   // ── Load batches eligible for a SKU (for the Add-Course batch picker) ──
   async function loadAddBatchData(skuId) {
     if (addBatchData[skuId]) return
@@ -753,7 +788,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <strong>Fee Tracking</strong>
-                {canEdit && (
+                {canManageFees && (
                   <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
                     onClick={function () {
                       setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
@@ -764,12 +799,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 )}
               </div>
               <div className="form-grid" style={{ marginTop: 8 }}>
-                <label>Fee Total (₹)
-                  <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!canEdit} />
+                <label>Agreed Fee (₹)
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!canManageFees}
+                      placeholder="Type agreed amount" style={{ flex: 1 }} title="The total fee agreed with the parent — edit freely" />
+                    {canManageFees && (
+                      <button className="btn-s" style={{ fontSize: 12, whiteSpace: 'nowrap' }} onClick={saveFeeOnly} title="Save the fee amount">Save</button>
+                    )}
+                  </div>
                 </label>
                 <label>Fee Paid (₹)
                   <input value={'₹' + fmtAmt(form.fee_paid || 0)} disabled
-                    style={{ color: 'var(--green)' }} title="Sum of recorded payments" />
+                    style={{ color: 'var(--green)' }} title="Sum of recorded payments — record a payment to change this" />
                 </label>
                 <label>Balance
                   <input
@@ -779,6 +820,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   />
                 </label>
               </div>
+
+              {/* Give discount on the agreed fee */}
+              {canManageFees && (
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Give discount</span>
+                  <CouponField context="student" amount={Number(form.fee_total) || 0} franchiseeId={student.franchisee_id}
+                    applied={null} onApply={applyFeeDiscount} compact />
+                  <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>— or just lower the Agreed Fee above and Save</span>
+                </div>
+              )}
 
               {/* Payment history */}
               <div style={{ marginTop: 12 }}>
