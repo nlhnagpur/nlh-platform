@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
+import ModalHeader from '../components/ModalHeader'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -2038,13 +2039,10 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal">
-        <div className="ch">
-          <span>➕ Add Course Instructor (CI)</span>
-          <button className="btn-icon" onClick={onClose}>✕</button>
-        </div>
+      <div className="modal" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
+        <ModalHeader title="New Course Instructor" subtitle="New Learning Horizons · CI onboarding" onClose={onClose} />
 
-        <div>
+        <div style={{ padding: '18px 22px', overflowY: 'auto', background: 'var(--bg2, #FAFAF8)', flex: 1 }}>
           {/* ── Personal info ── */}
           <div className="form-grid">
             <label className="col-span-2">Full Name *
@@ -2241,7 +2239,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
           </div>
         </div>
 
-        <div className="modal-actions">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 22px', borderTop: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving}>
             {saving ? 'Adding…' : 'Add Instructor'}
