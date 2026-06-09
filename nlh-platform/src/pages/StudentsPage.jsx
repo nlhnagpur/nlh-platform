@@ -176,7 +176,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   useEffect(function () {
     let cancelled = false
     sb.from('student_payments')
-      .select('id, amount, mode, reference, paid_at, note')
+      .select('id, amount, mode, reference, paid_at, note, receipt_no')
       .eq('student_id', student.id)
       .order('paid_at', { ascending: false })
       .order('created_at', { ascending: false })
@@ -201,7 +201,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       mode:          payForm.mode || null,
       reference:     payForm.reference.trim() || null,
       paid_at:       payForm.paid_at || new Date().toISOString().slice(0, 10),
-    }).select('id, amount, mode, reference, paid_at, note').single()
+    }).select('id, amount, mode, reference, paid_at, note, receipt_no').single()
     setPaySaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     const next = [data, ...payments]
@@ -217,9 +217,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       const newBalance = Math.max(0, (Number(form.fee_total) || 0) - newPaid)
       const r = await sendWAStudentReceipt(receiptPhone, {
         name: student.parent_name || student.full_name,
-        amount: fmtAmt(amt), balance: newBalance,
+        receiptNo: data.receipt_no,
+        amount: fmtAmt(amt),
+        date: fmtDate(data.paid_at),
+        balance: newBalance,
       })
-      if (r && r.success) showToast('Receipt sent on WhatsApp ✓')
+      if (r && r.success) showToast('Receipt ' + (data.receipt_no || '') + ' sent on WhatsApp ✓')
       else showToast('Payment saved · WhatsApp receipt failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
     }
   }
@@ -232,7 +235,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const bal = Math.max(0, (Number(form.fee_total) || 0) - paidSoFar)
     const r = await sendWAStudentReceipt(phone, {
       name: student.parent_name || student.full_name,
-      amount: fmtAmt(p.amount), balance: bal,
+      receiptNo: p.receipt_no,
+      amount: fmtAmt(p.amount),
+      date: fmtDate(p.paid_at),
+      balance: bal,
     })
     if (r && r.success) showToast('Receipt resent on WhatsApp ✓')
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
@@ -880,9 +886,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               {fmtDate(p.paid_at)}
                               {p.mode && <span style={{ color: 'var(--text3)' }}> · {p.mode.replace(/_/g, ' ')}</span>}
                             </div>
-                            {(p.reference || p.note) && (
-                              <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>{p.reference || p.note}</div>
-                            )}
+                            <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>
+                              {p.receipt_no ? p.receipt_no : ''}
+                              {(p.reference || p.note) ? (p.receipt_no ? ' · ' : '') + (p.reference || p.note) : ''}
+                            </div>
                           </div>
                           {canManageFees && (
                             <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}

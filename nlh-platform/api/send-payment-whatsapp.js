@@ -3,9 +3,13 @@
 // to send arbitrary content. Uses requireAuth so a franchisee can send a receipt
 // for their own student's payment (not just admins).
 //
-// Body: { to, name, amount, balance }
-// Template `payment_received` (language en) — positional body variables:
-//   {{1}} name, {{2}} amount (already formatted), {{3}} balance text
+// Body: { to, name, receiptNo, amount, date, balance }
+// Template `payment_receipt` (language en) — positional body variables:
+//   {{1}} parent/student name
+//   {{2}} receipt number
+//   {{3}} amount (already formatted, e.g. ₹2,500)
+//   {{4}} payment date (e.g. 09 Jun 2026)
+//   {{5}} balance text (e.g. "₹1,500 remaining" / "Fully paid")
 
 import { requireAuth } from './_auth.js'
 
@@ -17,26 +21,28 @@ export default async function handler(req, res) {
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
   if (!token || !phoneId) return res.status(500).json({ error: 'WhatsApp not configured' })
 
-  const { to, name, amount, balance } = req.body
+  const { to, name, receiptNo, amount, date, balance } = req.body
   if (!to) return res.status(400).json({ error: 'Missing recipient number (to)' })
 
   const digits = String(to).replace(/\D/g, '')
   const e164   = digits.startsWith('91') ? digits : '91' + digits
 
-  const balanceText = Number(balance) > 0 ? '₹' + balance + ' remaining' : 'Fully paid ✅'
+  const balanceText = Number(balance) > 0 ? '₹' + balance + ' remaining' : 'Fully paid'
 
   const payload = {
     messaging_product: 'whatsapp',
     to:   e164,
     type: 'template',
     template: {
-      name:     'payment_received',
+      name:     'payment_receipt',
       language: { code: 'en' },
       components: [{
         type: 'body',
         parameters: [
           { type: 'text', text: name || 'Parent' },
+          { type: 'text', text: receiptNo || '—' },
           { type: 'text', text: '₹' + (amount != null ? amount : '') },
+          { type: 'text', text: date || '' },
           { type: 'text', text: balanceText },
         ],
       }],
