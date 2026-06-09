@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, startTransition } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
@@ -1654,25 +1654,28 @@ export default function BatchesPage() {
     return [...new Set(names)]
   }
 
-  const courseNames = Array.from(new Set(
-    batches.flatMap(function (b) { return batchCourses(b) })
-  )).sort()
+  const courseNames = useMemo(function () {
+    return Array.from(new Set(batches.flatMap(function (b) { return batchCourses(b) }))).sort()
+  }, [batches])
 
-  const filtered = batches.filter(function (b) {
-    if (filterStatus === 'active'   && !b.is_active) return false
-    if (filterStatus === 'inactive' && b.is_active)  return false
-    if (filterCI && b.instructor_id !== filterCI)    return false
-    if (filterCourse && !batchCourses(b).includes(filterCourse)) return false
-    return true
-  })
+  const sorted = useMemo(function () {
+    const filteredList = batches.filter(function (b) {
+      if (filterStatus === 'active'   && !b.is_active) return false
+      if (filterStatus === 'inactive' && b.is_active)  return false
+      if (filterCI && b.instructor_id !== filterCI)    return false
+      if (filterCourse && !batchCourses(b).includes(filterCourse)) return false
+      return true
+    })
+    return filteredList.sort(function (a, b) {
+      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+      const ta = a.schedule_time || 'ZZ'
+      const tb = b.schedule_time || 'ZZ'
+      if (ta !== tb) return ta < tb ? -1 : 1
+      return (a.name || '').localeCompare(b.name || '')
+    })
+  }, [batches, filterStatus, filterCI, filterCourse])
 
-  const sorted = [...filtered].sort(function (a, b) {
-    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
-    const ta = a.schedule_time || 'ZZ'
-    const tb = b.schedule_time || 'ZZ'
-    if (ta !== tb) return ta < tb ? -1 : 1
-    return (a.name || '').localeCompare(b.name || '')
-  })
+  const filtered = sorted
 
   // ── render ────────────────────────────────────────────────────────────────
 
@@ -1813,7 +1816,7 @@ export default function BatchesPage() {
                       {/* Take Attendance */}
                       {batch.is_active && (
                         <button className="btn-p" style={{ fontSize: 11, padding: '4px 12px' }}
-                          onClick={function () { setAttendanceModal(batch) }}>
+                          onClick={function () { startTransition(function () { setAttendanceModal(batch) }) }}>
                           📋 Attendance
                         </button>
                       )}
@@ -1821,7 +1824,7 @@ export default function BatchesPage() {
                       {/* Session history */}
                       <button className="btn" style={{ fontSize: 11, padding: '4px 10px' }}
                         title="View session history"
-                        onClick={function () { setHistoryModal(batch) }}>
+                        onClick={function () { startTransition(function () { setHistoryModal(batch) }) }}>
                         🗂 History
                       </button>
 
@@ -1831,7 +1834,7 @@ export default function BatchesPage() {
                         style={{ fontSize: 11, padding: '3px 10px', background: rosterOpen ? 'var(--purple-bg)' : '', borderColor: rosterOpen ? 'var(--purple)' : '', color: rosterOpen ? 'var(--purple)' : '' }}
                         onClick={function () {
                           var nowOpen = !openRosters[batch.id]
-                          setOpenRosters(function (r) { return { ...r, [batch.id]: nowOpen } })
+                          startTransition(function () { setOpenRosters(function (r) { return { ...r, [batch.id]: nowOpen } }) })
                           if (nowOpen) {
                             loadRosterStats(batch.id)
                             // Always refresh batch_students when opening the roster so students added
@@ -1853,7 +1856,7 @@ export default function BatchesPage() {
                       {batch.is_active && (
                         <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
                           title="Change instructor"
-                          onClick={function () { setChangeInstrModal(batch) }}>
+                          onClick={function () { startTransition(function () { setChangeInstrModal(batch) }) }}>
                           👤 CI
                         </button>
                       )}
@@ -1861,7 +1864,7 @@ export default function BatchesPage() {
                       {/* Edit batch */}
                       <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
                         title="Edit batch schedule"
-                        onClick={function () { setEditBatchModal(batch) }}>
+                        onClick={function () { startTransition(function () { setEditBatchModal(batch) }) }}>
                         ✏ Edit
                       </button>
 
@@ -2008,7 +2011,7 @@ export default function BatchesPage() {
 
                     <button className="btn-s" style={{ fontSize: 11 }}
                       title="Add or remove students and edit their joining dates"
-                      onClick={function () { setAddStudentModal({ ...batch, instructor_name: ciName }) }}>
+                      onClick={function () { const b = { ...batch, instructor_name: ciName }; startTransition(function () { setAddStudentModal(b) }) }}>
                       👥 Manage Roster
                     </button>
                   </div>
