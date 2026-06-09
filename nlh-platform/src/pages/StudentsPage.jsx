@@ -493,7 +493,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -638,7 +638,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -2388,8 +2388,8 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
-        // Sort by date of joining (registered_at); students with no date go last
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
 
@@ -2434,12 +2434,22 @@ export default function StudentsPage() {
       ).values()].sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
     : []
 
+  // Most-recent activity = latest of registration, creation, and any enrolment.
+  // Re-enrolling a student therefore bumps them to the top of the list.
+  function lastActivity(s) {
+    let t = 0
+    function take(v) { if (v) { const x = new Date(v).getTime(); if (x > t) t = x } }
+    take(s.registered_at); take(s.created_at)
+    ;(s.enrollments || []).forEach(function (e) { take(e.enrolled_at) })
+    return t
+  }
+
   const filtered = students.filter(function (s) {
     const q = search.toLowerCase()
     const matchesSearch = !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
     const matchesCentre = !centreFilter || s.franchisee_id === centreFilter
     return matchesSearch && matchesCentre
-  })
+  }).sort(function (a, b) { return lastActivity(b) - lastActivity(a) })
 
   function handleSaved(updated) {
     if (updated === null) {
