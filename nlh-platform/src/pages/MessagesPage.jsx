@@ -39,6 +39,17 @@ function avColor(seed) {
   return palette[h % palette.length]
 }
 
+function useIsMobile() {
+  const [m, setM] = useState(typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches)
+  useEffect(function () {
+    const mq = window.matchMedia('(max-width: 768px)')
+    function on() { setM(mq.matches) }
+    if (mq.addEventListener) mq.addEventListener('change', on); else mq.addListener(on)
+    return function () { if (mq.removeEventListener) mq.removeEventListener('change', on); else mq.removeListener(on) }
+  }, [])
+  return m
+}
+
 function humanSize(b) {
   if (!b && b !== 0) return ''
   if (b < 1024) return b + ' B'
@@ -328,6 +339,7 @@ function BroadcastModal({ franchisees, onClose, onSend, sending }) {
 export default function MessagesPage() {
   const { currentRole, currentFranchiseeId, currentUser } = useAuth()
   const isHO = isAdminRole(currentRole)
+  const isMobile = useIsMobile()
 
   const [franchisees, setFranchisees] = useState([])
   const [messages, setMessages]       = useState([])
@@ -459,11 +471,11 @@ export default function MessagesPage() {
           <div className="crumb">Communication <span className="sep">›</span> <b>Head Office chat</b></div>
         </header>
         <div className="content" style={{ paddingTop: 12 }}>
-          <div className="card" style={{ padding: 0, overflow: 'hidden', height: 'calc(100vh - 150px)', display: 'flex', flexDirection: 'column' }}>
+          <div className="card chat-shell" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
-              <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--purple)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '700 15px var(--font)' }}>HO</div>
-              <div>
-                <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>New Learning Horizons — Head Office</div>
+              <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--purple)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', font: '700 15px var(--font)', flexShrink: 0 }}>HO</div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ font: '700 14px var(--font)', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>New Learning Horizons — Head Office</div>
                 <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>Typically replies within a day · {threadMsgs.length} messages</div>
               </div>
             </div>
@@ -527,10 +539,11 @@ export default function MessagesPage() {
       )}
 
       <div className="content" style={{ paddingTop: 12 }}>
-        <div className="card" style={{ padding: 0, overflow: 'hidden', height: 'calc(100vh - 150px)', display: 'flex' }}>
+        <div className="card chat-shell" style={{ padding: 0, overflow: 'hidden', display: 'flex' }}>
 
-          {/* Thread list */}
-          <div style={{ width: 300, minWidth: 240, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff' }}>
+          {/* Thread list — full width on mobile; hidden when a chat is open */}
+          {(!isMobile || !activeId) && (
+          <div style={{ width: isMobile ? 'auto' : 300, flex: isMobile ? 1 : 'none', minWidth: isMobile ? 0 : 240, borderRight: isMobile ? 'none' : '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff' }}>
             <div style={{ padding: 10, borderBottom: '1px solid var(--border)' }}>
               <input className="search" placeholder="Search franchisee…" value={search}
                 onChange={function (e) { setSearch(e.target.value) }} style={{ width: '100%', fontSize: 13 }} />
@@ -566,8 +579,10 @@ export default function MessagesPage() {
               })}
             </div>
           </div>
+          )}
 
-          {/* Conversation */}
+          {/* Conversation — full screen on mobile when a chat is open */}
+          {(!isMobile || !!activeId) && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             {!activeFr ? (
               <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text3)', padding: 24 }}>
@@ -578,6 +593,10 @@ export default function MessagesPage() {
             ) : (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
+                  {isMobile && (
+                    <button onClick={function () { setActiveId(null) }} title="Back"
+                      style={{ flexShrink: 0, width: 34, height: 34, borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg2, #F5F4F0)', cursor: 'pointer', fontSize: 16 }}>←</button>
+                  )}
                   {(function () {
                     const name = activeFr.business_name || activeFr.owner_name || 'Franchisee'
                     const [bg, col] = avColor(name)
@@ -594,6 +613,7 @@ export default function MessagesPage() {
               </>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>

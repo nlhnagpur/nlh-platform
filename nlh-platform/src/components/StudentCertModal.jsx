@@ -6,6 +6,22 @@ import { toWAPhone } from '../services/whatsapp'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
+// Scales a fixed design-width canvas to fit its container (responsive preview).
+function useFitScale(designW) {
+  const ref = useRef(null)
+  const [scale, setScale] = useState(0.252)
+  React.useEffect(function () {
+    const el = ref.current
+    if (!el) return
+    function measure() { if (el.clientWidth) setScale(el.clientWidth / designW) }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return function () { ro.disconnect() }
+  }, [designW])
+  return [ref, scale]
+}
+
 function todayDMY() {
   const d = new Date()
   return [
@@ -60,6 +76,7 @@ export function printStudentCert(student, selectedEnrollments, centre) {
 
 export default function StudentCertModal({ student, enrollments, centre, onClose }) {
   const allEnrollments = enrollments || []
+  const [previewRef, previewScale] = useFitScale(2000)
 
   const [emailing,   setEmailing]   = useState(false)
   const [emailed,    setEmailed]    = useState(() => allEnrollments.some(e => !!e.cert_emailed_at))
@@ -200,14 +217,14 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         <div style={{ padding: '0 20px' }}>
 
           {/* ── Certificate preview — scaled replica of the real cert ── */}
-          <div style={{
+          <div ref={previewRef} style={{
             overflow: 'hidden', borderRadius: 8,
             border: '1px solid #D6D0C4', marginBottom: 14,
-            height: 358, position: 'relative', background: '#f5f4f0',
+            width: '100%', aspectRatio: '2000 / 1414', position: 'relative', background: '#f5f4f0',
           }}>
             <div style={{
               width: 2000, height: 1414,
-              transform: 'scale(0.252)', transformOrigin: 'top left',
+              transform: 'scale(' + previewScale + ')', transformOrigin: 'top left',
               position: 'absolute', top: 0, left: 0,
               backgroundImage: 'url(/certificate/assets/cert-bg.png)',
               backgroundSize: '100% 100%',

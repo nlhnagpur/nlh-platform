@@ -1433,7 +1433,13 @@ vercel-toolbar { display: none !important; }
 
   /* ── Toast at bottom centre ── */
   .toast { bottom: 16px; left: 50%; right: auto; transform: translateX(-50%); white-space: nowrap; }
+
+  /* ── Chat shell: taller on mobile (topbar only ~56px) ── */
+  .chat-shell { height: calc(100dvh - 84px) !important; border-radius: 12px; }
 }
+
+/* ── Chat (Messages page) shell height ── */
+.chat-shell { height: calc(100vh - 150px); height: calc(100dvh - 150px); }
 
 /* ═══════════════════════════════════════════════════════════════════════
    480px — Phone portrait (very small screens)
