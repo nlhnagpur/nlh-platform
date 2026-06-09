@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
-import { isAdminRole } from '../constants/roles'
+import { isAdminRole, isManagerOrAbove } from '../constants/roles'
 import { showToast } from '../utils'
 
 // ── Internal chat between Head Office (any admin) and each franchisee.
@@ -514,9 +514,11 @@ export default function MessagesPage() {
     <div className="pg">
       <header className="tb">
         <div className="crumb">Communication <span className="sep">›</span> <b>Franchisee chat</b>{totalUnread > 0 && <span style={{ marginLeft: 8, font: '700 11px var(--font)', color: '#fff', background: 'var(--red, #dc2626)', borderRadius: 20, padding: '1px 8px' }}>{totalUnread} new</span>}</div>
-        <div className="tb-r">
-          <button className="btn-p" onClick={function () { setShowBroadcast(true) }} style={{ whiteSpace: 'nowrap' }}>📢 Broadcast</button>
-        </div>
+        {isManagerOrAbove(currentRole) && (
+          <div className="tb-r">
+            <button className="btn-p" onClick={function () { setShowBroadcast(true) }} style={{ whiteSpace: 'nowrap' }}>📢 Broadcast</button>
+          </div>
+        )}
       </header>
 
       {showBroadcast && (

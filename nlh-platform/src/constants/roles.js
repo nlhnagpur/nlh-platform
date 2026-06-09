@@ -64,6 +64,7 @@ const staffNav = [
   { id: 'dashboard', l: 'Dashboard',      c: '#534AB7' },
   { id: 'orders',    l: 'Orders',         c: '#8A5200' },
   { id: 'students',  l: 'Students',       c: '#1A5FA8' },
+  { id: 'messages',  l: 'Franchisee chat', c: '#0891B2' },
   { id: 'courses',   l: 'Courses & SKUs', c: '#534AB7' },
 ]
 
