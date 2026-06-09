@@ -110,6 +110,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [addBatchData,      setAddBatchData]      = useState({})     // { skuId: { batches, eligibleCIs, loading } }
   const [addBatchSel,       setAddBatchSel]       = useState({})     // { skuId: batchId | '__new__' }
   const [addNewBatch,       setAddNewBatch]       = useState({})     // { skuId: { ci, name, days, time, is_individual } }
+  const [addEnrollDate,     setAddEnrollDate]     = useState(new Date().toISOString().slice(0, 10))
 
   // ── Delete state ──
   const [deleting, setDeleting] = useState(false)
@@ -485,19 +486,21 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (!selectedNewSkus.length) { showToast('Select at least one course', 'warn'); return }
     setAddingEnrollment(true)
 
-    // 1) Insert the enrollments
+    // 1) Insert the enrollments (with chosen enrollment date)
+    const enrolledAt = (addEnrollDate || new Date().toISOString().slice(0, 10)) + 'T00:00:00+00:00'
     const rows = selectedNewSkus.map(function (sku) { return {
       student_id:    student.id,
       sku_id:        sku.id,
       franchisee_id: student.franchisee_id,
+      enrolled_at:   enrolledAt,
     } })
     const { data, error } = await sb.from('enrollments').insert(rows)
       .select('id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
-    // 2) Assign / create a batch per selected course
-    const assignedAt = (student.registered_at || new Date().toISOString().slice(0, 10)) + 'T00:00:00+00:00'
+    // 2) Assign / create a batch per selected course (joining date = enrollment date)
+    const assignedAt = enrolledAt
     for (let i = 0; i < selectedNewSkus.length; i++) {
       const sku = selectedNewSkus[i]
       const enr = added.find(function (e) { return e.sku_id === sku.id })
@@ -1153,6 +1156,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           const newTotal = (Number(form.fee_total) || 0) + netAdded
                           return (
                             <>
+                              {/* Enrollment date for the new courses */}
+                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
+                                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>
+                                  📅 Enrollment date
+                                  <span style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
+                                    (start date for these levels &amp; batch joining date)
+                                  </span>
+                                  <input type="date" value={addEnrollDate}
+                                    onChange={function (e) { setAddEnrollDate(e.target.value) }}
+                                    style={{ marginTop: 5, fontSize: 13, width: '100%', maxWidth: 220 }} />
+                                </label>
+                              </div>
+
                               {/* Fee + coupon for the new courses */}
                               <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
