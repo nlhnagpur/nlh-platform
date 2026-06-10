@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast, statusBadge } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
-import { sendWAPaymentReceived } from '../services/whatsapp'
+import { sendWAPaymentReceived, sendWAFeeReminder } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 import { StudentDetailModal } from './StudentsPage'
@@ -115,6 +115,8 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
   const [ref,     setRef]     = useState('')
   const [notes,   setNotes]   = useState('')
   const [saving,  setSaving]  = useState(false)
+  const [sendWA,  setSendWA]  = useState(true)
+  const [waPhone, setWaPhone] = useState(franchisee.phone || '')
 
   async function handleSave() {
     const amt = Number(amount)
@@ -137,16 +139,18 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     if (feeErr) { showToast('Failed to update fee record: ' + feeErr.message, 'err'); setSaving(false); return }
     setSaving(false)
     showToast('Payment of ₹' + fmtAmt(amt) + ' recorded')
-    try {
-      if (franchisee.phone) {
-        await sendWAPaymentReceived(franchisee.phone, {
+    if (sendWA && waPhone) {
+      try {
+        const r = await sendWAPaymentReceived(waPhone, {
           name:    franchisee.business_name || 'Partner',
           amount:  fmtAmt(amt),
           balance: newBalance,
         })
+        if (r && r.success) showToast('WhatsApp receipt sent ✓')
+        else showToast('Payment saved · WhatsApp receipt failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+      } catch (waErr) {
+        showToast('Payment saved · WhatsApp receipt failed: ' + waErr.message, 'warn')
       }
-    } catch (waErr) {
-      console.warn('WhatsApp payment notification failed:', waErr.message)
     }
     onSaved(newFeePaid)
   }
@@ -185,6 +189,19 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
             <label style={{ gridColumn: '1 / -1' }}>Notes (optional)
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Part payment, balance next month" />
             </label>
+          </div>
+
+          {/* WhatsApp receipt to franchisee */}
+          <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendWA} onChange={e => setSendWA(e.target.checked)} />
+              💬 Send WhatsApp receipt to franchisee
+            </label>
+            {sendWA && (
+              <input value={waPhone} onChange={e => setWaPhone(e.target.value)}
+                placeholder="Franchisee WhatsApp number"
+                style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
+            )}
           </div>
         </div>
         <div className="modal-actions">
@@ -349,6 +366,15 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     if (editPayId === p.id) setEditPayId(null)
     await reloadPaymentsAndFee()
     showToast('Payment removed')
+  }
+
+  async function sendFeeReminder() {
+    if (!franchisee.phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+    const bal = (Number(form.enrollment_fee) || 0) - (Number(form.fee_paid) || 0)
+    if (bal <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
+    const r = await sendWAFeeReminder(franchisee.phone, { name: franchisee.business_name || 'Partner', balance: fmtAmt(bal) })
+    if (r && r.success) showToast('Fee reminder sent on WhatsApp ✓')
+    else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
   function field(k) {
@@ -615,9 +641,14 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>💰 Fee Tracking</span>
                 {admin && balance > 0 && (
-                  <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
-                    📥 Record Payment
-                  </button>
+                  <span style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn-s" onClick={sendFeeReminder} style={{ fontSize: 11 }} title="Send a WhatsApp fee reminder to the franchisee">
+                      💬 Send Reminder
+                    </button>
+                    <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
+                      📥 Record Payment
+                    </button>
+                  </span>
                 )}
               </div>
               <label>Enrollment Fee (₹)
