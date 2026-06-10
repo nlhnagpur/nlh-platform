@@ -262,6 +262,8 @@ function DispatchModal({ order, onClose, onSaved }) {
   const [freight,  setFreight]  = useState(order.dispatch_freight != null ? String(order.dispatch_freight) : '')
   const [saved,    setSaved]    = useState(getSavedCouriers)
   const [saving,   setSaving]   = useState(false)
+  const [sendWA,   setSendWA]   = useState(true)
+  const [waPhone,  setWaPhone]  = useState(order.placer?.phone || '')
 
   async function handleSave() {
     if (!awb.trim()) { showToast('Enter AWB / tracking number.', 'warn'); return }
@@ -282,18 +284,19 @@ function DispatchModal({ order, onClose, onSaved }) {
     } else {
       if (courier.trim()) { saveCourier(courier.trim()); setSaved(getSavedCouriers()) }
       showToast('Dispatched!')
-      try {
-        const phone = order.placer?.phone || ''
-        if (phone && awb.trim()) {
-          await sendWAOrderDispatched(phone, {
+      if (sendWA && waPhone && awb.trim()) {
+        try {
+          const r = await sendWAOrderDispatched(waPhone, {
             name:      order.placer?.business_name || 'Partner',
             invoiceNo: order.invoice_no || order.id,
             awb:       awb.trim(),
             courier:   courier.trim() || 'courier',
           })
+          if (r && r.success) showToast('Dispatch update sent on WhatsApp ✓')
+          else showToast('Dispatched · WhatsApp update failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+        } catch (waErr) {
+          showToast('Dispatched · WhatsApp update failed: ' + waErr.message, 'warn')
         }
-      } catch (waErr) {
-        console.warn('WhatsApp dispatch notification failed:', waErr.message)
       }
       onSaved()
     }
@@ -373,12 +376,57 @@ function DispatchModal({ order, onClose, onSaved }) {
               onChange={function (e) { setFreight(e.target.value) }}
             />
           </label>
+
+          {/* WhatsApp dispatch update to franchisee */}
+          <div className="col-span-2" style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendWA} onChange={function (e) { setSendWA(e.target.checked) }} />
+              💬 Send WhatsApp dispatch update to franchisee
+            </label>
+            {sendWA && (
+              <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
+                placeholder="Franchisee WhatsApp number" style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
+            )}
+          </div>
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Mark Dispatched'}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Confirms invoicing and lets the admin control the WhatsApp invoice notice.
+function InvoiceConfirmModal({ order, onClose, onConfirm }) {
+  const [sendWA, setSendWA] = useState(true)
+  const [waPhone, setWaPhone] = useState(order.placer?.phone || '')
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={function (e) { e.stopPropagation() }} style={{ maxWidth: 460 }}>
+        <ModalHeader flush title="Generate Invoice" subtitle={'Order ' + (order.order_ref || '')} onClose={onClose} />
+        <div style={{ padding: '4px 20px 8px' }}>
+          <p style={{ font: '500 13px var(--font)', color: 'var(--text2)', margin: '4px 0 12px' }}>
+            This will assign an invoice number and mark the order as <strong>invoiced</strong>
+            {' '}for <strong>{order.placer?.business_name || 'the franchisee'}</strong>.
+          </p>
+          <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendWA} onChange={function (e) { setSendWA(e.target.checked) }} />
+              💬 Send WhatsApp invoice notice to franchisee
+            </label>
+            {sendWA && (
+              <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
+                placeholder="Franchisee WhatsApp number" style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
+            )}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={function () { onConfirm({ sendWA: sendWA, waPhone: waPhone.trim() }) }}>Generate Invoice</button>
         </div>
       </div>
     </div>
@@ -1408,6 +1456,7 @@ export default function OrdersPage() {
   const [editInvoiceOrder, setEditInvoiceOrder] = useState(null)
   const [showNewOrder, setShowNewOrder] = useState(false)
   const [invoiceViewOrder, setInvoiceViewOrder] = useState(null)
+  const [invoiceConfirm, setInvoiceConfirm] = useState(null)
 
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
@@ -1448,7 +1497,7 @@ export default function OrdersPage() {
     setLoading(false)
   }
 
-  async function handleMarkInvoiced(order) {
+  async function handleMarkInvoiced(order, waOpts) {
     setActionLoading(order.id + '_invoice')
 
     // Compute grand_total from items before invoicing
@@ -1481,17 +1530,20 @@ export default function OrdersPage() {
       } catch (emailErr) {
         console.warn('Invoice email failed:', emailErr.message)
       }
-      try {
-        const phone = order.placer?.phone || ''
-        if (phone) {
-          await sendWAOrderInvoiced(phone, {
+      const wantWA = waOpts ? waOpts.sendWA : !!order.placer?.phone
+      const waPhone = waOpts ? waOpts.waPhone : (order.placer?.phone || '')
+      if (wantWA && waPhone) {
+        try {
+          const r = await sendWAOrderInvoiced(waPhone, {
             name:      order.placer?.business_name || 'Partner',
             invoiceNo: invoiceNo,
             amount:    fmtAmt(grandTotal),
           })
+          if (r && r.success) showToast('Invoice sent on WhatsApp ✓')
+          else showToast('Invoiced · WhatsApp failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+        } catch (waErr) {
+          showToast('Invoiced · WhatsApp failed: ' + waErr.message, 'warn')
         }
-      } catch (waErr) {
-        console.warn('WhatsApp invoice notification failed:', waErr.message)
       }
       await loadOrders()
     }
@@ -1657,7 +1709,7 @@ export default function OrdersPage() {
         {/* ── action buttons: one clean aligned row ── */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
           {order.status === 'pending' && isAdmin && (
-            <button className="row-action primary" disabled={busy} onClick={function () { handleMarkInvoiced(order) }}>
+            <button className="row-action primary" disabled={busy} onClick={function () { setInvoiceConfirm(order) }}>
               {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
             </button>
           )}
@@ -1844,6 +1896,18 @@ export default function OrdersPage() {
           order={dispatchOrder}
           onClose={function () { setDispatchOrder(null) }}
           onSaved={async function () { setDispatchOrder(null); await loadOrders() }}
+        />
+      )}
+
+      {invoiceConfirm && (
+        <InvoiceConfirmModal
+          order={invoiceConfirm}
+          onClose={function () { setInvoiceConfirm(null) }}
+          onConfirm={function (waOpts) {
+            const ord = invoiceConfirm
+            setInvoiceConfirm(null)
+            handleMarkInvoiced(ord, waOpts)
+          }}
         />
       )}
 

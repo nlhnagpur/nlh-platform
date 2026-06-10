@@ -1674,6 +1674,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const [feeTotal, setFeeTotal] = useState(0)
   const [coupon, setCoupon] = useState(null)   // { coupon_id, code, discount }
   const [saving, setSaving] = useState(false)
+  const [sendWAEnroll, setSendWAEnroll] = useState(true)
 
   const couponDiscount = coupon ? Math.min(coupon.discount, feeTotal) : 0
   const netFee = Math.max(0, feeTotal - couponDiscount)
@@ -1921,18 +1922,20 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       }
 
       showToast('Student added successfully')
-      try {
-        if (form.phone && selectedSkus.length > 0) {
+      if (sendWAEnroll && form.phone && selectedSkus.length > 0) {
+        try {
           const courseNames = selectedSkus.map(function (s) { return s.courses?.group_name || s.name }).join(', ')
-          await sendWAStudentEnrolled(form.phone, {
+          const r = await sendWAStudentEnrolled(form.phone, {
             parentName:  form.parent_name || 'Parent',
             studentName: form.full_name,
             courses:     courseNames,
             centre:      'New Learning Horizons',
           })
+          if (r && r.success) showToast('Enrollment confirmation sent on WhatsApp ✓')
+          else showToast('Student added · WhatsApp confirmation failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+        } catch (waErr) {
+          showToast('Student added · WhatsApp confirmation failed: ' + waErr.message, 'warn')
         }
-      } catch (waErr) {
-        console.warn('WhatsApp enrollment notification failed:', waErr.message)
       }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
@@ -2404,6 +2407,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           </div>
 
           </>)}
+
+          {selectedSkus.length > 0 && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)', font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendWAEnroll} onChange={function (e) { setSendWAEnroll(e.target.checked) }} />
+              💬 Send WhatsApp enrollment confirmation to parent {form.phone ? '(' + form.phone + ')' : '— add a mobile number above'}
+            </label>
+          )}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 22px', borderTop: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
