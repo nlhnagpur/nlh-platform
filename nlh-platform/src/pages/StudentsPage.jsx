@@ -104,6 +104,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [paySaving,       setPaySaving]       = useState(false)
   const [sendReceipt,     setSendReceipt]     = useState(true)
   const [receiptPhone,    setReceiptPhone]    = useState(student.phone || '')
+  const [editPayId,       setEditPayId]       = useState(null)
+  const [editPay,         setEditPay]         = useState({ amount: '', paid_at: '', mode: '', reference: '' })
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
@@ -250,7 +252,35 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const next = payments.filter(function (p) { return p.id !== id })
     setPayments(next)
     applyPaid(next)
+    if (editPayId === id) setEditPayId(null)
     showToast('Payment removed')
+  }
+
+  function startEditPay(p) {
+    setEditPayId(p.id)
+    setEditPay({
+      amount: String(p.amount ?? ''),
+      paid_at: (p.paid_at || '').slice(0, 10),
+      mode: p.mode || '',
+      reference: p.reference || '',
+    })
+  }
+
+  async function savePaymentEdit() {
+    const amt = Number(editPay.amount)
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    const { data, error } = await sb.from('student_payments').update({
+      amount:    amt,
+      paid_at:   editPay.paid_at || null,
+      mode:      editPay.mode || null,
+      reference: editPay.reference.trim() || null,
+    }).eq('id', editPayId).select('id, amount, mode, reference, paid_at, note, receipt_no').single()
+    if (error) { showToast('Update failed: ' + error.message, 'err'); return }
+    const next = payments.map(function (p) { return p.id === editPayId ? { ...p, ...data } : p })
+    setPayments(next)
+    applyPaid(next)
+    setEditPayId(null)
+    showToast('Payment updated ✓')
   }
 
   // ── Load courses tab ──
@@ -875,6 +905,26 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {payments.map(function (p) {
+                      if (admin && editPayId === p.id) {
+                        return (
+                          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'var(--bg)', border: '1.5px solid var(--purple)' }}>
+                            <input type="number" value={editPay.amount} onChange={function (e) { setEditPay(function (f) { return { ...f, amount: e.target.value } }) }}
+                              placeholder="Amount" style={{ width: 90, fontSize: 12 }} />
+                            <input type="date" value={editPay.paid_at} onChange={function (e) { setEditPay(function (f) { return { ...f, paid_at: e.target.value } }) }}
+                              style={{ fontSize: 12 }} />
+                            <select value={editPay.mode} onChange={function (e) { setEditPay(function (f) { return { ...f, mode: e.target.value } }) }} style={{ fontSize: 12 }}>
+                              <option value="">— mode —</option>
+                              {['cash', 'upi', 'cheque', 'card', 'online'].concat(
+                                editPay.mode && !['cash', 'upi', 'cheque', 'card', 'online'].includes(editPay.mode) ? [editPay.mode] : []
+                              ).map(function (m) { return <option key={m} value={m}>{m}</option> })}
+                            </select>
+                            <input value={editPay.reference} onChange={function (e) { setEditPay(function (f) { return { ...f, reference: e.target.value } }) }}
+                              placeholder="Reference / UTR" style={{ flex: 1, minWidth: 110, fontSize: 12 }} />
+                            <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }} onClick={savePaymentEdit}>Save</button>
+                            <button className="btn-s" style={{ fontSize: 10, padding: '3px 10px' }} onClick={function () { setEditPayId(null) }}>Cancel</button>
+                          </div>
+                        )
+                      }
                       return (
                         <div key={p.id} style={{
                           display: 'flex', alignItems: 'center', gap: 10,
@@ -897,6 +947,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               onClick={function () { resendReceipt(p) }}>
                               💬 Receipt
                             </button>
+                          )}
+                          {admin && (
+                            <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}
+                              title="Edit date / method / amount"
+                              onClick={function () { startEditPay(p) }}>✎ Edit</button>
                           )}
                           {admin && (
                             <button className="btn" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red, #dc2626)', borderColor: 'var(--red, #dc2626)' }}
