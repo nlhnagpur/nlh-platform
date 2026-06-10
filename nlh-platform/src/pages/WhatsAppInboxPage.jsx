@@ -167,7 +167,7 @@ export default function WhatsAppInboxPage() {
                 <div style={{ fontSize: 40, marginBottom: 14 }}>💬</div>
                 <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>No messages yet</div>
                 <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>
-                  Messages from franchisees will appear here once they send a WhatsApp to +91 712 351 4575
+                  Every WhatsApp sent from the platform (receipts, certificates, review requests, order updates…) and every reply received on +91 712 351 4575 appears here.
                 </div>
               </div>
             ) : contactList.map(function (c) {

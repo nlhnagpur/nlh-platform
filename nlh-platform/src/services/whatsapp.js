@@ -26,14 +26,33 @@ export function toWAPhone(raw) {
   return null
 }
 
-async function sendWA(to, payload) {
+// Record an outbound message so it shows in the WhatsApp Inbox thread and can
+// be tracked/audited. Non-fatal: a logging failure never blocks the send.
+export async function logOutbound(to, body, messageType) {
+  try {
+    const num = toWAPhone(to) || String(to || '').replace(/\D/g, '')
+    if (!num) return
+    await sb.from('whatsapp_messages').insert({
+      direction:    'outbound',
+      from_number:  '917123514575',
+      to_number:    num,
+      message_type: messageType || 'template',
+      message_body: body,
+      status:       'sent',
+    })
+  } catch (e) { /* ignore */ }
+}
+
+async function sendWA(to, payload, summary) {
   if (!to) return { success: false, error: 'No phone number' }
   const res = await fetch('/api/send-whatsapp', {
     method: 'POST',
     headers: await waAuthHeaders(),
     body: JSON.stringify({ to, ...payload }),
   })
-  return res.json()
+  const data = await res.json()
+  if (data && data.success && summary) logOutbound(to, summary, payload?.type === 'text' ? 'text' : 'template')
+  return data
 }
 
 // ── Template: hello_world (for testing) ───────────────────────────────────────
@@ -61,7 +80,7 @@ export async function sendWAOrderInvoiced(to, { name, invoiceNo, amount }) {
         ],
       }],
     },
-  })
+  }, '🧾 Invoice ' + invoiceNo + ' · ₹' + amount)
 }
 
 // ── Template: order_dispatched ────────────────────────────────────────────────
@@ -82,7 +101,7 @@ export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier 
         ],
       }],
     },
-  })
+  }, '📦 Dispatched ' + invoiceNo + ' · AWB ' + (awb || '—') + ' (' + (courier || 'courier') + ')')
 }
 
 // ── Template: payment_received ────────────────────────────────────────────────
@@ -102,7 +121,7 @@ export async function sendWAPaymentReceived(to, { name, amount, balance }) {
         ],
       }],
     },
-  })
+  }, '💰 Payment received · ₹' + amount + (balance > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'))
 }
 
 // ── Payment receipt to a parent (franchisee-usable) ──────────────────────────
@@ -116,7 +135,9 @@ export async function sendWAStudentReceipt(to, { name, receiptNo, amount, date, 
     headers: await waAuthHeaders(),
     body: JSON.stringify({ to: toWAPhone(to), name, receiptNo, amount, date, balance }),
   })
-  return res.json()
+  const data = await res.json()
+  if (data && data.success) logOutbound(to, '🧾 Receipt ' + (receiptNo || '') + ' · ₹' + amount + (Number(balance) > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'))
+  return data
 }
 
 // ── Template: student_enrolled ────────────────────────────────────────────────
@@ -137,7 +158,7 @@ export async function sendWAStudentEnrolled(to, { parentName, studentName, cours
         ],
       }],
     },
-  })
+  }, '🎓 Enrolled ' + studentName + ' · ' + courses)
 }
 
 
@@ -171,7 +192,9 @@ export async function sendWAReviewRequest(to, { parentName, studentName, courseN
     headers: await waAuthHeaders(),
     body: JSON.stringify({ to, parentName, studentName, courseName }),
   })
-  return res.json()
+  const data = await res.json()
+  if (data && data.success) logOutbound(to, '⭐ Google review request · ' + (studentName || '') + (courseName ? ' (' + courseName + ')' : ''))
+  return data
 }
 
 // ── Template: fee_reminder ────────────────────────────────────────────────────
@@ -190,5 +213,5 @@ export async function sendWAFeeReminder(to, { name, balance }) {
         ],
       }],
     },
-  })
+  }, '⏰ Fee reminder · ₹' + balance + ' due')
 }
