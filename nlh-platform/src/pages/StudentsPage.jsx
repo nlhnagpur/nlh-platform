@@ -2374,6 +2374,7 @@ export default function StudentsPage() {
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [centreFilter, setCentreFilter] = useState('')
+  const [sortBy, setSortBy] = useState('activity')   // activity | name | joined | balance
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -2449,7 +2450,12 @@ export default function StudentsPage() {
     const matchesSearch = !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
     const matchesCentre = !centreFilter || s.franchisee_id === centreFilter
     return matchesSearch && matchesCentre
-  }).sort(function (a, b) { return lastActivity(b) - lastActivity(a) })
+  }).sort(function (a, b) {
+    if (sortBy === 'name')    return (a.full_name || '').localeCompare(b.full_name || '')
+    if (sortBy === 'joined')  return new Date(b.registered_at || b.created_at || 0) - new Date(a.registered_at || a.created_at || 0)
+    if (sortBy === 'balance') return ((b.fee_total || 0) - (b.fee_paid || 0)) - ((a.fee_total || 0) - (a.fee_paid || 0))
+    return lastActivity(b) - lastActivity(a)   // 'activity' (default)
+  })
 
   function handleSaved(updated) {
     if (updated === null) {
@@ -2531,6 +2537,13 @@ export default function StudentsPage() {
               })}
             </select>
           )}
+          <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
+            style={{ fontSize: 12 }} title="Sort students by">
+            <option value="activity">↕ Recently active</option>
+            <option value="joined">Date joined</option>
+            <option value="name">Name (A–Z)</option>
+            <option value="balance">Balance due</option>
+          </select>
           <input
             className="search tb-search"
             placeholder="Search students by name or parent…"

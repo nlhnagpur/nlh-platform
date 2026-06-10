@@ -574,7 +574,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 <input type="number" value={form.enrollment_fee} onChange={field('enrollment_fee')} disabled={!admin} />
               </label>
               <label>Fee Paid (₹)
-                <input type="number" value={form.fee_paid} onChange={field('fee_paid')} disabled={!admin} />
+                <input value={'₹' + fmtAmt(Number(form.fee_paid) || 0)} disabled
+                  style={{ color: 'var(--green)' }}
+                  title="Maintained automatically from recorded payments — use “Record Payment” to add one" />
               </label>
               <label>Balance
                 <input value={'₹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />
