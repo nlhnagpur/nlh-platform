@@ -284,6 +284,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [savingEmail, setSavingEmail] = useState(false)
   const [payments, setPayments] = useState([])
   const [showPayModal, setShowPayModal] = useState(false)
+  const [editPayId, setEditPayId] = useState(null)
+  const [editPay, setEditPay] = useState({ amount: '', payment_date: '', payment_mode: '', reference_no: '' })
   const [studentCount, setStudentCount] = useState(null)
   const [selectedStudent, setSelectedStudent] = useState(null)
 
@@ -300,6 +302,54 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       .eq('franchisee_id', franchisee.id)
       .then(function ({ count }) { setStudentCount(count || 0) })
   }, [franchisee.id])
+
+  // Reload the ledger and recompute fee_paid from the sum of payments
+  async function reloadPaymentsAndFee() {
+    const { data } = await sb.from('franchisee_payments')
+      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at')
+      .eq('franchisee_id', franchisee.id)
+      .order('payment_date', { ascending: false })
+    const list = data || []
+    setPayments(list)
+    const total = list.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+    await sb.from('franchisees').update({ fee_paid: total }).eq('id', franchisee.id)
+    setForm(function (f) { return { ...f, fee_paid: String(total) } })
+    if (onSaved) onSaved({ ...franchisee, fee_paid: total })
+  }
+
+  function startEditPay(p) {
+    setEditPayId(p.id)
+    setEditPay({
+      amount: String(p.amount ?? ''),
+      payment_date: (p.payment_date || '').slice(0, 10),
+      payment_mode: p.payment_mode || '',
+      reference_no: p.reference_no || '',
+    })
+  }
+
+  async function savePaymentEdit() {
+    const amt = Number(editPay.amount)
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    const { error } = await sb.from('franchisee_payments').update({
+      amount:       amt,
+      payment_date: editPay.payment_date || null,
+      payment_mode: editPay.payment_mode || null,
+      reference_no: editPay.reference_no.trim() || null,
+    }).eq('id', editPayId)
+    if (error) { showToast('Update failed: ' + error.message, 'err'); return }
+    setEditPayId(null)
+    await reloadPaymentsAndFee()
+    showToast('Payment updated ✓')
+  }
+
+  async function deletePaymentEntry(p) {
+    if (!window.confirm('Delete this ₹' + fmtAmt(p.amount) + ' payment entry? Fee Paid will be recalculated.')) return
+    const { error } = await sb.from('franchisee_payments').delete().eq('id', p.id)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    if (editPayId === p.id) setEditPayId(null)
+    await reloadPaymentsAndFee()
+    showToast('Payment removed')
+  }
 
   function field(k) {
     return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) }
@@ -590,6 +640,26 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {payments.map(function (p) {
+                      if (admin && editPayId === p.id) {
+                        return (
+                          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 7, background: '#fff', border: '1.5px solid var(--purple)' }}>
+                            <input type="number" value={editPay.amount} onChange={function (e) { setEditPay(function (f) { return { ...f, amount: e.target.value } }) }}
+                              placeholder="Amount" style={{ width: 90, fontSize: 12 }} />
+                            <input type="date" value={editPay.payment_date} onChange={function (e) { setEditPay(function (f) { return { ...f, payment_date: e.target.value } }) }}
+                              style={{ fontSize: 12 }} />
+                            <select value={editPay.payment_mode} onChange={function (e) { setEditPay(function (f) { return { ...f, payment_mode: e.target.value } }) }} style={{ fontSize: 12 }}>
+                              <option value="">— mode —</option>
+                              {['UPI', 'Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online'].concat(
+                                editPay.payment_mode && !['UPI', 'Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online'].includes(editPay.payment_mode) ? [editPay.payment_mode] : []
+                              ).map(function (m) { return <option key={m} value={m}>{m}</option> })}
+                            </select>
+                            <input value={editPay.reference_no} onChange={function (e) { setEditPay(function (f) { return { ...f, reference_no: e.target.value } }) }}
+                              placeholder="Reference / UTR" style={{ flex: 1, minWidth: 120, fontSize: 12 }} />
+                            <button className="btn-p" style={{ fontSize: 11, padding: '4px 10px' }} onClick={savePaymentEdit}>Save</button>
+                            <button className="btn-s" style={{ fontSize: 11, padding: '4px 10px' }} onClick={function () { setEditPayId(null) }}>Cancel</button>
+                          </div>
+                        )
+                      }
                       return (
                         <div key={p.id} style={{
                           display: 'flex', alignItems: 'center', gap: 8,
@@ -614,6 +684,14 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                           {p.notes && (
                             <span style={{ color: 'var(--text3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {p.notes}
+                            </span>
+                          )}
+                          {admin && (
+                            <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                              <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} title="Edit date / method / amount"
+                                onClick={function () { startEditPay(p) }}>✎ Edit</button>
+                              <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }} title="Delete entry"
+                                onClick={function () { deletePaymentEntry(p) }}>🗑</button>
                             </span>
                           )}
                         </div>
