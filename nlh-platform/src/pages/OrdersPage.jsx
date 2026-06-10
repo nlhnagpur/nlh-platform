@@ -298,6 +298,33 @@ function DispatchModal({ order, onClose, onSaved }) {
           showToast('Dispatched · WhatsApp update failed: ' + waErr.message, 'warn')
         }
       }
+      // ── Auto-deduct HO stock for this dispatch (once per order, via each kit's BOM) ──
+      try {
+        const { data: already } = await sb.from('stock_ledger').select('id').eq('ref_type', 'order').eq('ref_id', order.id).limit(1)
+        if (!already || already.length === 0) {
+          const { data: oitems } = await sb.from('order_items').select('sku_id, ordered_qty, sent_qty').eq('order_id', order.id)
+          const skuIds = (oitems || []).map(function (o) { return o.sku_id }).filter(Boolean)
+          if (skuIds.length) {
+            const { data: kits } = await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds)
+            const rows = []
+            ;(oitems || []).forEach(function (o) {
+              const units = (o.sent_qty && o.sent_qty > 0) ? o.sent_qty : (o.ordered_qty || 0)
+              ;(kits || []).filter(function (k) { return k.sku_id === o.sku_id }).forEach(function (k) {
+                const qn = units * Number(k.quantity || 1)
+                if (qn > 0) rows.push({
+                  item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee',
+                  qty: -qn, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id,
+                  note: 'Dispatch ' + (order.invoice_no || order.order_ref || ''),
+                })
+              })
+            })
+            if (rows.length) {
+              await sb.from('stock_ledger').insert(rows)
+              showToast('HO stock deducted for ' + rows.length + ' item line' + (rows.length !== 1 ? 's' : ''))
+            }
+          }
+        }
+      } catch (stkErr) { console.warn('Stock deduction skipped:', stkErr.message) }
       onSaved()
     }
     setSaving(false)

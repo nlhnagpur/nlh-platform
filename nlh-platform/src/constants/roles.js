@@ -22,6 +22,7 @@ const ownerNav = [
   { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'coupons',          l: 'Discount coupons',  c: '#C2410C' },
+  { id: 'inventory',        l: 'Inventory & Kits',  c: '#0F766E' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
   { id: 'email-log',        l: 'Email log',         c: '#0F766E' },
@@ -41,6 +42,7 @@ const adminNav = [
   { id: 'accounting',       l: 'HO Accounting',     c: '#0F766E' },
   { id: 'courses',          l: 'Courses & SKUs',    c: '#534AB7' },
   { id: 'coupons',          l: 'Discount coupons',  c: '#C2410C' },
+  { id: 'inventory',        l: 'Inventory & Kits',  c: '#0F766E' },
   { id: 'prices',           l: 'Kit prices',        c: '#1D7A4F' },
   { id: 'price-history',    l: 'Price change log',  c: '#9C9A92' },
   { id: 'email-log',        l: 'Email log',         c: '#0F766E' },
@@ -59,6 +61,7 @@ const managerNav = [
   { id: 'accounting',     l: 'HO Accounting',    c: '#0F766E' },
   { id: 'courses',        l: 'Courses & SKUs',   c: '#534AB7' },
   { id: 'coupons',        l: 'Discount coupons', c: '#C2410C' },
+  { id: 'inventory',      l: 'Inventory & Kits', c: '#0F766E' },
   { id: 'prices',         l: 'Kit prices',       c: '#1D7A4F' },
   { id: 'email-log',      l: 'Email log',        c: '#0F766E' },
 ]
