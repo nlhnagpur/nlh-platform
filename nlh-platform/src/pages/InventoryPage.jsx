@@ -143,6 +143,7 @@ function ReceiptModal({ items, currentUserId, onClose, onSaved }) {
   const [itemId, setItemId] = useState('')
   const [qty, setQty] = useState('')
   const [cost, setCost] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   async function save() {
@@ -154,6 +155,7 @@ function ReceiptModal({ items, currentUserId, onClose, onSaved }) {
       item_id: itemId, location_type: 'ho', movement_type: 'receipt', qty: q,
       unit_cost: cost === '' ? null : Math.round(Number(cost)), ref_type: 'purchase',
       note: note.trim() || null, created_by: currentUserId || null,
+      created_at: (date || new Date().toISOString().slice(0, 10)) + 'T12:00:00+00:00',
     })
     setSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
@@ -172,6 +174,7 @@ function ReceiptModal({ items, currentUserId, onClose, onSaved }) {
             </select></label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label><span style={lbl}>Quantity received</span><input type="number" value={qty} onChange={function (e) { setQty(e.target.value) }} autoFocus style={inp} /></label>
+            <label><span style={lbl}>Receipt date</span><input type="date" value={date} onChange={function (e) { setDate(e.target.value) }} style={inp} /></label>
             <label><span style={lbl}>Unit cost (₹, optional)</span><input type="number" value={cost} onChange={function (e) { setCost(e.target.value) }} style={inp} /></label>
           </div>
           <label><span style={lbl}>Note / supplier (optional)</span><input value={note} onChange={function (e) { setNote(e.target.value) }} placeholder="e.g. GRN-1023, Vendor X" style={inp} /></label>
