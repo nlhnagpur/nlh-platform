@@ -234,6 +234,14 @@ export default function InventoryPage() {
   ledger.forEach(function (l) { if (l.location_type === 'ho') balance[l.item_id] = (balance[l.item_id] || 0) + (l.qty || 0) })
   function itemById(id) { return items.find(function (i) { return i.id === id }) }
 
+  async function deleteLedger(l) {
+    const it = items.find(function (i) { return i.id === l.item_id })
+    if (!window.confirm('Remove this stock entry (' + (l.qty > 0 ? '+' : '') + l.qty + ' ' + (it ? it.name : '') + ')? The balance will be recalculated.')) return
+    const { error } = await sb.from('stock_ledger').delete().eq('id', l.id)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    showToast('Stock entry removed'); load()
+  }
+
   async function removeItem(it) {
     if (!window.confirm('Delete item "' + it.name + '"? (Blocked if it is used in any kit or has stock movements.)')) return
     const { error } = await sb.from('inventory_items').delete().eq('id', it.id)
@@ -369,7 +377,7 @@ export default function InventoryPage() {
           ledger.length === 0 ? <div className="empty">No stock movements yet. Record a receipt to start.</div> : (
             <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
               <table className="big-tbl">
-                <thead><tr><th>When</th><th>Item</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th className="hide-mobile">Note</th></tr></thead>
+                <thead><tr><th>When</th><th>Item</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th className="hide-mobile">Note</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
                 <tbody>
                   {ledger.map(function (l) {
                     const it = itemById(l.item_id)
@@ -380,6 +388,12 @@ export default function InventoryPage() {
                         <td style={{ fontSize: 12 }}>{MOVE_LABEL[l.movement_type] || l.movement_type}</td>
                         <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
                         <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note || (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
+                        {canManage && (
+                          <td style={{ textAlign: 'right' }}>
+                            <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }}
+                              title="Remove this stock entry" onClick={function () { deleteLedger(l) }}>🗑</button>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
