@@ -14,7 +14,7 @@ const inp = { width: '100%', font: '500 13px var(--font)', padding: '8px 10px', 
 function ItemModal({ item, onClose, onSaved }) {
   const editing = !!item
   const [f, setF] = useState({
-    name: item?.name || '', item_code: item?.item_code || '', category: item?.category || 'component',
+    name: item?.name || '', category: item?.category || 'component',
     unit: item?.unit || 'pcs', hsn_code: item?.hsn_code || '', default_cost: item?.default_cost ?? '',
     reorder_level: item?.reorder_level ?? '', is_active: item?.is_active ?? true, notes: item?.notes || '',
   })
@@ -23,7 +23,7 @@ function ItemModal({ item, onClose, onSaved }) {
   async function save() {
     if (!f.name.trim()) { showToast('Item name is required', 'warn'); return }
     const row = {
-      name: f.name.trim(), item_code: f.item_code.trim() || null, category: f.category, unit: f.unit.trim() || 'pcs',
+      name: f.name.trim(), category: f.category, unit: f.unit.trim() || 'pcs',
       hsn_code: f.hsn_code.trim() || null, default_cost: f.default_cost === '' ? 0 : Math.round(Number(f.default_cost)),
       reorder_level: f.reorder_level === '' ? 0 : Math.round(Number(f.reorder_level)), is_active: !!f.is_active, notes: f.notes.trim() || null,
     }
@@ -42,9 +42,10 @@ function ItemModal({ item, onClose, onSaved }) {
         <ModalHeader title={editing ? 'Edit Item' : 'New Item'} subtitle="New Learning Horizons · Inventory" onClose={onClose} />
         <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <label style={{ gridColumn: 'span 2' }}><span style={lbl}>Item name</span>
-            <input value={f.name} onChange={function (e) { set('name', e.target.value) }} placeholder="e.g. Jr Abacus L1 — Practice Book" style={inp} /></label>
+            <input value={f.name} onChange={function (e) { set('name', e.target.value) }} placeholder="e.g. Jr Abacus L1 — Practice Book" autoFocus style={inp} /></label>
           <label><span style={lbl}>Item code</span>
-            <input value={f.item_code} onChange={function (e) { set('item_code', e.target.value.toUpperCase()) }} placeholder="ABC-L1-PRAC" style={Object.assign({}, inp, { fontFamily: 'var(--mono)' })} /></label>
+            <input value={editing ? item.item_code : 'Auto-generated (ITM-…)'} disabled
+              style={Object.assign({}, inp, { fontFamily: 'var(--mono)', color: 'var(--text3)', background: 'var(--bg2,#f5f4f0)' })} /></label>
           <label><span style={lbl}>Category</span>
             <select value={f.category} onChange={function (e) { set('category', e.target.value) }} style={inp}>
               {CATEGORIES.map(function (c) { return <option key={c} value={c}>{c}</option> })}</select></label>
