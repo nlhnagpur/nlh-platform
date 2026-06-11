@@ -790,10 +790,12 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     async function loadData() {
       // SKUs always loaded for everyone
       const sRes = await sb.from('skus')
-        .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id, courses(group_name)')
+        .select('id, level_name, uf_rate, cf_rate, smf_rate, course_id, sku_type, courses(group_name)')
         .order('sort_order')
       const allS = sRes.data || []
       setAllSkus(allS)
+      // Standalone supply / individual-sale SKUs are HO-only; franchisees never see them.
+      const ordPool = isAdmin ? allS : allS.filter(function (s) { return (s.sku_type || 'course_kit') !== 'supply' })
 
       if (isAdmin) {
         // Admin: see all franchisees
@@ -825,7 +827,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
           const fr = selfRes.data
           setPlacerTier(fr.tier || 'UF')
           setDeliverTo(buildAddress(fr))
-          setVisibleSkus(allS)   // SMF/CF see all SKUs
+          setVisibleSkus(ordPool)   // SMF/CF: course kits only (no HO supply SKUs)
         }
       } else {
         // UF: own data only, SKUs filtered to registered courses
@@ -839,9 +841,9 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
           setDeliverTo(buildAddress(fr))
           const regCourses = fr.registered_courses || []
           if (fr.tier === 'UF' && regCourses.length > 0) {
-            setVisibleSkus(allS.filter(function (s) { return regCourses.includes(s.course_id) }))
+            setVisibleSkus(ordPool.filter(function (s) { return regCourses.includes(s.course_id) }))
           } else {
-            setVisibleSkus(allS)
+            setVisibleSkus(ordPool)
           }
         }
       }
@@ -881,12 +883,13 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     const tier = fr.tier || 'UF'
     setPlacerTier(tier)
     setDeliverTo(buildAddress(fr))
-    // Filter SKUs by registered courses for UF; show all for SMF/CF
+    // Filter SKUs by registered courses for UF; supply SKUs stay HO-only.
+    const pool = isAdmin ? allSkus : allSkus.filter(function (s) { return (s.sku_type || 'course_kit') !== 'supply' })
     const regCourses = fr.registered_courses || []
     if (tier === 'UF' && regCourses.length > 0) {
-      setVisibleSkus(allSkus.filter(function (s) { return regCourses.includes(s.course_id) }))
+      setVisibleSkus(pool.filter(function (s) { return regCourses.includes(s.course_id) }))
     } else {
-      setVisibleSkus(allSkus)
+      setVisibleSkus(pool)
     }
     // Refresh rates on existing lines for the new tier
     setLines(function (prev) {
