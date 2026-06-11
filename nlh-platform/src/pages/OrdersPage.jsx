@@ -302,21 +302,25 @@ function DispatchModal({ order, onClose, onSaved }) {
       try {
         const { data: already } = await sb.from('stock_ledger').select('id').eq('ref_type', 'order').eq('ref_id', order.id).limit(1)
         if (!already || already.length === 0) {
-          const { data: oitems } = await sb.from('order_items').select('sku_id, ordered_qty, sent_qty').eq('order_id', order.id)
+          const { data: oitems } = await sb.from('order_items').select('sku_id, item_id, ordered_qty, sent_qty').eq('order_id', order.id)
           const skuIds = (oitems || []).map(function (o) { return o.sku_id }).filter(Boolean)
-          if (skuIds.length) {
-            const { data: kits } = await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds)
+          {
+            const kitsRes = skuIds.length ? await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds) : { data: [] }
+            const kits = kitsRes.data || []
             const rows = []
             ;(oitems || []).forEach(function (o) {
               const units = (o.sent_qty && o.sent_qty > 0) ? o.sent_qty : (o.ordered_qty || 0)
-              ;(kits || []).filter(function (k) { return k.sku_id === o.sku_id }).forEach(function (k) {
-                const qn = units * Number(k.quantity || 1)
-                if (qn > 0) rows.push({
-                  item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee',
-                  qty: -qn, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id,
-                  note: 'Dispatch ' + (order.invoice_no || order.order_ref || ''),
+              const note = 'Dispatch ' + (order.invoice_no || order.order_ref || '')
+              if (o.item_id) {
+                // raw inventory-item line — deduct the item directly
+                if (units > 0) rows.push({ item_id: o.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -units, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note })
+              } else {
+                // kit/supply SKU line — expand its bill of materials
+                kits.filter(function (k) { return k.sku_id === o.sku_id }).forEach(function (k) {
+                  const qn = units * Number(k.quantity || 1)
+                  if (qn > 0) rows.push({ item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -qn, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note })
                 })
-              })
+              }
             })
             if (rows.length) {
               await sb.from('stock_ledger').insert(rows)
@@ -474,6 +478,7 @@ function rateForSku(sku, tier) {
 function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const [items, setItems] = useState([])
   const [allSkus, setAllSkus] = useState([])
+  const [allItems, setAllItems] = useState([])
   const [deletedIds, setDeletedIds] = useState([])
   const [courierCharges, setCourierCharges] = useState(order.courier_charges || 0)
   const [loading, setLoading] = useState(true)
@@ -485,13 +490,15 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   useEffect(function () { loadData() }, [])
 
   async function loadData() {
-    const [itemsRes, skusRes] = await Promise.all([
-      sb.from('order_items').select('*, skus(level_name, uf_rate, cf_rate, smf_rate, courses(group_name))').eq('order_id', order.id),
+    const [itemsRes, skusRes, invRes] = await Promise.all([
+      sb.from('order_items').select('*, skus(level_name, uf_rate, cf_rate, smf_rate, courses(group_name)), inventory_items(name, unit)').eq('order_id', order.id),
       isAdmin ? sb.from('skus').select('id, level_name, uf_rate, cf_rate, smf_rate, courses(group_name)').order('sort_order') : { data: [] },
+      isAdmin ? sb.from('inventory_items').select('id, name, unit, sell_price').eq('is_active', true).order('name') : { data: [] },
     ])
     if (itemsRes.error) showToast('Failed to load items: ' + itemsRes.error.message)
     else setItems(itemsRes.data || [])
     setAllSkus(skusRes.data || [])
+    setAllItems(invRes.data || [])
     // Make sure we have the current coupon on the order
     const { data: ord } = await sb.from('orders').select('coupon_id, coupon_code, discount_amount').eq('id', order.id).single()
     if (ord && ord.coupon_id) setCoupon({ coupon_id: ord.coupon_id, code: ord.coupon_code, discount: ord.discount_amount || 0 })
@@ -507,21 +514,27 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     })
   }
 
-  function updateNewItemSku(idx, skuId) {
-    const sku = allSkus.find(function (s) { return s.id === skuId })
+  // value is "sku:<id>" (kit/supply) or "item:<id>" (raw inventory item)
+  function updateNewItemSku(idx, value) {
     const tier = order.placer_tier || 'UF'
-    const rate = sku ? (rateForSku(sku, tier)) : 0
     setItems(function (prev) {
       return prev.map(function (it, i) {
         if (i !== idx) return it
-        return { ...it, sku_id: skuId, skus: sku || null, rate, ordered_qty: it.ordered_qty || 1 }
+        if (value && value.indexOf('item:') === 0) {
+          const id = value.slice(5)
+          const inv = allItems.find(function (x) { return x.id === id })
+          return { ...it, item_id: id, sku_id: null, skus: null, inventory_items: inv ? { name: inv.name, unit: inv.unit } : null, rate: inv ? (inv.sell_price || 0) : 0, ordered_qty: it.ordered_qty || 1 }
+        }
+        const id = value && value.indexOf('sku:') === 0 ? value.slice(4) : value
+        const sku = allSkus.find(function (s) { return s.id === id })
+        return { ...it, sku_id: id, item_id: null, skus: sku || null, inventory_items: null, rate: sku ? rateForSku(sku, tier) : 0, ordered_qty: it.ordered_qty || 1 }
       })
     })
   }
 
   function addItem() {
     setItems(function (prev) {
-      return [...prev, { id: null, sku_id: '', ordered_qty: 1, sent_qty: 0, rate: 0, skus: null }]
+      return [...prev, { id: null, sku_id: '', item_id: null, ordered_qty: 1, sent_qty: 0, rate: 0, skus: null, inventory_items: null }]
     })
   }
 
@@ -559,10 +572,11 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
           .eq('id', item.id)
         if (error) { showToast('Error saving item: ' + error.message); setSaving(false); return }
       } else {
-        if (!item.sku_id) continue
+        if (!item.sku_id && !item.item_id) continue
         const { error } = await sb.from('order_items').insert({
           order_id: order.id,
-          sku_id: item.sku_id,
+          sku_id: item.sku_id || null,
+          item_id: item.item_id || null,
           ordered_qty: item.ordered_qty || 1,
           sent_qty: item.sent_qty || 0,
           rate: item.rate || 0,
@@ -627,11 +641,11 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                         <td>
                           {isNew ? (
                             <select
-                              value={item.sku_id}
+                              value={item.item_id ? 'item:' + item.item_id : (item.sku_id ? 'sku:' + item.sku_id : '')}
                               onChange={function (e) { updateNewItemSku(idx, e.target.value) }}
                               style={{ width: '100%', fontSize: 13 }}
                             >
-                              <option value="">— Select SKU —</option>
+                              <option value="">— Select SKU or item —</option>
                               {Object.entries(
                                 allSkus.reduce(function (acc, s) {
                                   const c = s.courses?.group_name || 'Other'
@@ -643,18 +657,28 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                                 return (
                                   <optgroup key={course} label={course}>
                                     {skus.map(function (s) {
-                                      return <option key={s.id} value={s.id}>{s.level_name}</option>
+                                      return <option key={s.id} value={'sku:' + s.id}>{s.level_name}</option>
                                     })}
                                   </optgroup>
                                 )
                               })}
+                              {allItems.length > 0 && (
+                                <optgroup label="📦 Inventory items (individual)">
+                                  {allItems.map(function (iv) {
+                                    return <option key={iv.id} value={'item:' + iv.id}>{iv.name}{iv.sell_price ? ' — ₹' + fmtAmt(iv.sell_price) : ''}</option>
+                                  })}
+                                </optgroup>
+                              )}
                             </select>
                           ) : (
                             <>
                               {item.skus?.courses?.group_name && (
                                 <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 1 }}>{item.skus.courses.group_name}</div>
                               )}
-                              <div style={{ fontWeight: 500 }}>{item.skus?.level_name || item.sku_id}</div>
+                              {item.item_id && !item.skus && (
+                                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 1 }}>📦 Inventory item</div>
+                              )}
+                              <div style={{ fontWeight: 500 }}>{item.inventory_items?.name || item.skus?.level_name || item.sku_id || '—'}</div>
                               {item.rate !== defaultRate && defaultRate > 0 && (
                                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>Default: Rs {fmtAmt(defaultRate)}</div>
                               )}
@@ -772,6 +796,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
 
   const [franchisees, setFranchisees] = useState([])
   const [allSkus, setAllSkus] = useState([])
+  const [allItems, setAllItems] = useState([])   // HO inventory items (admin only)
   const [visibleSkus, setVisibleSkus] = useState([])
   const [placerId, setPlacerId] = useState(showFrDropdown ? (isAdmin ? '' : currentFranchiseeId) : currentFranchiseeId)
   const [placerTier, setPlacerTier] = useState('')
@@ -795,6 +820,11 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         .order('sort_order')
       const allS = sRes.data || []
       setAllSkus(allS)
+      // HO can also bill raw inventory items individually
+      if (isAdmin) {
+        const ivRes = await sb.from('inventory_items').select('id, name, unit, sell_price').eq('is_active', true).order('name')
+        setAllItems(ivRes.data || [])
+      }
       // Standalone supply / individual-sale SKUs are HO-only; franchisees never see them.
       const ordPool = isAdmin ? allS : allS.filter(function (s) { return (s.sku_type || 'course_kit') !== 'supply' })
 
@@ -866,10 +896,18 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
       return prev.map(function (line, i) {
         if (i !== idx) return line
         const updated = { ...line, [field]: val }
-        // When SKU changes, auto-populate rate from tier default
+        // The line picker passes "sku:<id>" or "item:<id>"; set rate accordingly
         if (field === 'sku_id') {
-          const sku = allSkus.find(function (s) { return s.id === val })
-          updated.rate = rateForSku(sku, placerTier)
+          if (val && val.indexOf('item:') === 0) {
+            const id = val.slice(5)
+            const inv = allItems.find(function (x) { return x.id === id })
+            updated.sku_id = ''; updated.item_id = id; updated.rate = inv ? (inv.sell_price || 0) : 0
+          } else {
+            const id = val && val.indexOf('sku:') === 0 ? val.slice(4) : val
+            updated.sku_id = id; updated.item_id = null
+            const sku = allSkus.find(function (s) { return s.id === id })
+            updated.rate = rateForSku(sku, placerTier)
+          }
         }
         return updated
       })
@@ -922,7 +960,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   async function handleSubmit() {
     const fid = placerId || currentFranchiseeId
     if (!fid) { showToast('Select a franchisee.'); return }
-    const validLines = lines.filter(function (l) { return l.sku_id && parseInt(l.qty, 10) > 0 })
+    const validLines = lines.filter(function (l) { return (l.sku_id || l.item_id) && parseInt(l.qty, 10) > 0 })
     if (validLines.length === 0) { showToast('Add at least one SKU.'); return }
 
     setSaving(true)
@@ -967,7 +1005,8 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     const itemRows = validLines.map(function (line) {
       return {
         order_id: orderData.id,
-        sku_id: line.sku_id,
+        sku_id: line.sku_id || null,
+        item_id: line.item_id || null,
         ordered_qty: parseInt(line.qty, 10),
         sent_qty: 0,
         rate: parseInt(line.rate, 10) || 0,
@@ -1043,13 +1082,18 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                   const isOverridden = sku && lineRate !== defaultRate
                   return (
                     <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 64px 96px 92px 30px', gap: 8, padding: '8px 12px', alignItems: 'center', background: idx % 2 ? 'var(--bg2, #FAFAF8)' : '#fff', borderBottom: '1px solid var(--bg4, #F1F0EC)' }}>
-                      <select value={line.sku_id} onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }} style={fldSm}>
-                        <option value="">— Select SKU —</option>
+                      <select value={line.item_id ? 'item:' + line.item_id : (line.sku_id ? 'sku:' + line.sku_id : '')} onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }} style={fldSm}>
+                        <option value="">{isAdmin ? '— Select SKU or item —' : '— Select SKU —'}</option>
                         {Object.entries(
                           visibleSkus.reduce(function (acc, s) { const c = s.courses?.group_name || 'Other'; if (!acc[c]) acc[c] = []; acc[c].push(s); return acc }, {})
                         ).map(function ([course, skus]) {
-                          return <optgroup key={course} label={course}>{skus.map(function (s) { return <option key={s.id} value={s.id}>{s.level_name}</option> })}</optgroup>
+                          return <optgroup key={course} label={course}>{skus.map(function (s) { return <option key={s.id} value={'sku:' + s.id}>{s.level_name}</option> })}</optgroup>
                         })}
+                        {isAdmin && allItems.length > 0 && (
+                          <optgroup label="📦 Inventory items (individual)">
+                            {allItems.map(function (iv) { return <option key={iv.id} value={'item:' + iv.id}>{iv.name}{iv.sell_price ? ' — ₹' + fmtAmt(iv.sell_price) : ''}</option> })}
+                          </optgroup>
+                        )}
                       </select>
                       <input type="number" min={1} value={line.qty} onChange={function (e) { updateLine(idx, 'qty', e.target.value) }} style={fldSm} />
                       <div style={{ position: 'relative' }}>
@@ -1288,7 +1332,7 @@ async function generateInvoicePDF(order, items) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); tc(...TDK)
     const skuLabel = item.skus
       ? (item.skus.courses?.group_name ? item.skus.courses.group_name + ' — ' + item.skus.level_name : item.skus.level_name)
-      : (item.sku_id || '')
+      : (item.inventory_items?.name || item.sku_id || '')
     doc.text(doc.splitTextToSize(skuLabel, 70)[0], cSku, rY)
 
     doc.setFontSize(9); tc(...TDK)
@@ -1703,7 +1747,7 @@ export default function OrdersPage() {
   async function handleDownloadInvoice(order) {
     const { data: items, error } = await sb
       .from('order_items')
-      .select('*, skus(level_name, courses(group_name))')
+      .select('*, skus(level_name, courses(group_name)), inventory_items(name)')
       .eq('order_id', order.id)
     if (error) {
       showToast('Failed to load items: ' + error.message)

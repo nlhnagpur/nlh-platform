@@ -111,7 +111,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   useEffect(function() {
     async function loadData() {
       const [itemsRes, skusRes] = await Promise.all([
-        sb.from('order_items').select('*, skus(id,level_name,uf_rate,cf_rate,smf_rate,courses(group_name))').eq('order_id', order.id),
+        sb.from('order_items').select('*, skus(id,level_name,uf_rate,cf_rate,smf_rate,courses(group_name)), inventory_items(name)').eq('order_id', order.id),
         sb.from('skus').select('id,level_name,uf_rate,cf_rate,smf_rate,courses(group_name)').order('sort_order'),
       ])
       setItems(itemsRes.data || [])
@@ -231,7 +231,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     if (error) { alert('Save failed: ' + error.message); return }
 
     // Refresh items display
-    const { data: freshItems } = await sb.from('order_items').select('*, skus(id,level_name,uf_rate,cf_rate,smf_rate,courses(group_name))').eq('order_id', order.id)
+    const { data: freshItems } = await sb.from('order_items').select('*, skus(id,level_name,uf_rate,cf_rate,smf_rate,courses(group_name)), inventory_items(name)').eq('order_id', order.id)
     setItems(freshItems || [])
     setEditItems((freshItems || []).map(function(it) { return { ...it } }))
     setDeletedIds([])
@@ -368,7 +368,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 </div>
                 {editItems.map(function(item, idx) {
                   const courseName = item.skus?.courses?.group_name || ''
-                  const levelName  = item.skus?.level_name || ''
+                  const levelName  = item.skus?.level_name || item.inventory_items?.name || ''
                   return (
                     <div key={idx} style={{ display:'grid', gridTemplateColumns:'1fr 70px 70px 90px 32px', gap:8, padding:'7px 12px', borderBottom:'1px solid #F0EEE9', background: idx%2===1?'#FAFAF8':'#fff', alignItems:'center' }}>
                       {item._new || !item.id ? (
@@ -592,7 +592,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               </div>
               {items.map(function(item, i) {
                 const course = item.skus?.courses?.group_name||''
-                const level  = item.skus?.level_name||item.sku_id||'—'
+                const level  = item.skus?.level_name||item.inventory_items?.name||item.sku_id||'—'
                 const name   = course?course+' — '+level:level
                 const lineAmt = (item.rate||0)*(item.ordered_qty||0)
                 const sent    = item.sent_qty||0
