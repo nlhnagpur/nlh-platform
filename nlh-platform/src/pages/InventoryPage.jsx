@@ -193,55 +193,6 @@ const MOVE_LABEL = {
   issue_to_student: '🎓 Issued', adjustment: '⚙ Adjustment', return: '↩ Return',
 }
 
-// Make any inventory item individually billable (HO-only): set a price and
-// create/update a 1-item supply SKU so it flows through orders → charge → stock.
-function SellItemModal({ item, currentQty, onClose, onSaved }) {
-  const [price, setPrice] = useState(item.sell_price ? String(item.sell_price) : '')
-  const [saving, setSaving] = useState(false)
-  async function makeBillable() {
-    const p = Math.round(Number(price))
-    if (!p || p <= 0) { showToast('Enter a selling price (₹)', 'warn'); return }
-    setSaving(true)
-    if (p !== (item.sell_price || 0)) await sb.from('inventory_items').update({ sell_price: p }).eq('id', item.id)
-    const name = item.name + ' (individual)'
-    const { data: existing } = await sb.from('skus').select('id').eq('sku_type', 'supply').eq('level_name', name).limit(1)
-    if (existing && existing.length) {
-      const { error } = await sb.from('skus').update({ uf_rate: p, cf_rate: p, smf_rate: p, student_fee: p, is_active: true }).eq('id', existing[0].id)
-      if (error) { setSaving(false); showToast('Failed: ' + error.message, 'err'); return }
-      showToast('Updated — billable at ₹' + p)
-    } else {
-      const { data: sku, error } = await sb.from('skus').insert({
-        level_name: name, sku_type: 'supply', course_id: null, supply_category: 'Individual sale',
-        uf_rate: p, cf_rate: p, smf_rate: p, student_fee: p, is_active: true,
-      }).select('id').single()
-      if (error) { setSaving(false); showToast('Failed: ' + error.message, 'err'); return }
-      const { error: kerr } = await sb.from('kit_items').insert({ sku_id: sku.id, item_id: item.id, quantity: 1 })
-      if (kerr) { setSaving(false); showToast('Created but kit link failed: ' + kerr.message, 'warn'); return }
-      showToast('“' + item.name + '” is now individually billable')
-    }
-    setSaving(false)
-    onSaved()
-  }
-  return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={function (e) { e.stopPropagation() }} style={{ padding: 0, overflow: 'hidden', width: 460, maxWidth: '96vw' }}>
-        <ModalHeader title="Bill Item Individually" subtitle={item.name} onClose={onClose} />
-        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ font: '500 12px var(--font)', color: 'var(--text2)', background: 'var(--bg2,#f5f4f0)', borderRadius: 8, padding: '9px 11px', lineHeight: 1.5 }}>
-            In HO stock: <b>{currentQty} {item.unit}</b>. Setting a price makes this an <b>HO-only</b> line you can add to a franchisee order/invoice — selling 1 deducts 1 from stock. It stays free inside any kit.
-          </div>
-          <label><span style={lbl}>Selling price (₹)</span>
-            <input type="number" value={price} onChange={function (e) { setPrice(e.target.value) }} autoFocus placeholder="e.g. 100" style={inp} /></label>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn-p" onClick={makeBillable} disabled={saving}>{saving ? 'Saving…' : '🏷️ Make billable'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function InventoryPage() {
   const { currentRole, currentUser } = useAuth()
   const canManage = isManagerOrAbove(currentRole)
@@ -259,7 +210,6 @@ export default function InventoryPage() {
   const [supplyModal, setSupplyModal] = useState(false)
   const [receiptModal, setReceiptModal] = useState(false)
   const [kitSku, setKitSku] = useState(null)
-  const [sellModal, setSellModal] = useState(null)
 
   useEffect(function () { load() }, [])
   async function load() {
@@ -290,6 +240,13 @@ export default function InventoryPage() {
     const { error } = await sb.from('stock_ledger').delete().eq('id', l.id)
     if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
     showToast('Stock entry removed'); load()
+  }
+
+  async function deleteSupply(s) {
+    if (!window.confirm('Delete supply “' + s.level_name + '”?')) return
+    const { error } = await sb.from('skus').delete().eq('id', s.id)
+    if (error) { showToast('Cannot delete — it is used on an order/invoice. Deactivate it instead.', 'warn'); return }
+    showToast('Supply removed'); load()
   }
 
   async function removeItem(it) {
@@ -358,7 +315,6 @@ export default function InventoryPage() {
                         <td className="hide-mobile" style={{ textAlign: 'right', fontSize: 12, color: 'var(--text3)' }}>{i.reorder_level || '—'}</td>
                         {canManage && (
                           <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            <button className="btn-s" style={{ padding: '4px 9px', marginRight: 4 }} title="Bill this item individually (HO-only)" onClick={function () { setSellModal(i) }}>🏷️ Sell</button>
                             <button className="btn-s" style={{ padding: '4px 9px', marginRight: 4 }} onClick={function () { setItemModal(i) }}>Edit</button>
                             <button className="btn-s" style={{ padding: '4px 9px', color: 'var(--red,#dc2626)' }} onClick={function () { removeItem(i) }}>Delete</button>
                           </td>
@@ -379,7 +335,7 @@ export default function InventoryPage() {
             {filteredSkus.length === 0 ? <div className="empty">{skuFilter === 'supply' ? 'No supply SKUs yet. Add one with “+ Supply SKU”.' : 'No course kits.'}</div> : (
               <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
                 <table className="big-tbl">
-                  <thead><tr><th>SKU</th><th className="hide-mobile">{skuFilter === 'supply' ? 'Category' : 'Course'}</th><th style={{ textAlign: 'center' }}>Kit items</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
+                  <thead><tr><th>SKU</th><th className="hide-mobile">{skuFilter === 'supply' ? 'Category' : 'Course'}</th>{skuFilter === 'course_kit' && <th style={{ textAlign: 'center' }}>Kit items</th>}{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
                   <tbody>
                     {filteredSkus.map(function (s) {
                       const n = kitCounts[s.id] || 0
@@ -388,13 +344,17 @@ export default function InventoryPage() {
                         <tr key={s.id}>
                           <td><div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{s.level_name}</div></td>
                           <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text2)' }}>{skuFilter === 'supply' ? (s.supply_category || '—') : (s.courses?.group_name || '—')}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span style={{ font: '700 12px var(--mono)', color: n > 0 ? 'var(--green,#1D7A4F)' : 'var(--text3)' }}>{n}</span>
-                            <span style={{ color: 'var(--text3)', fontSize: 11 }}> item{n !== 1 ? 's' : ''}</span>
-                          </td>
+                          {skuFilter === 'course_kit' && (
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{ font: '700 12px var(--mono)', color: n > 0 ? 'var(--green,#1D7A4F)' : 'var(--text3)' }}>{n}</span>
+                              <span style={{ color: 'var(--text3)', fontSize: 11 }}> item{n !== 1 ? 's' : ''}</span>
+                            </td>
+                          )}
                           {canManage && (
                             <td style={{ textAlign: 'right' }}>
-                              <button className="btn-s" style={{ padding: '4px 10px' }} onClick={function () { setKitSku({ id: s.id, label: label }) }}>🧰 Edit kit</button>
+                              {skuFilter === 'course_kit'
+                                ? <button className="btn-s" style={{ padding: '4px 10px' }} onClick={function () { setKitSku({ id: s.id, label: label }) }}>🧰 Edit kit</button>
+                                : <button className="btn-s" style={{ padding: '4px 10px', color: 'var(--red,#dc2626)' }} onClick={function () { deleteSupply(s) }}>Delete</button>}
                             </td>
                           )}
                         </tr>
@@ -440,7 +400,6 @@ export default function InventoryPage() {
       {supplyModal && <SupplyModal onClose={function () { setSupplyModal(false) }} onSaved={function () { setSupplyModal(false); load() }} />}
       {receiptModal && <ReceiptModal items={items} currentUserId={currentUser?.id} onClose={function () { setReceiptModal(false) }} onSaved={function () { setReceiptModal(false); load() }} />}
       {kitSku && <KitEditorModal sku={kitSku} items={items} onClose={function () { setKitSku(null) }} onSaved={function () { setKitSku(null); load() }} />}
-      {sellModal && <SellItemModal item={sellModal} currentQty={balance[sellModal.id] || 0} onClose={function () { setSellModal(null) }} onSaved={function () { setSellModal(null); load() }} />}
     </div>
   )
 }

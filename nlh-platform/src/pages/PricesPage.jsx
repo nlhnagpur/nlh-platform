@@ -34,6 +34,7 @@ export default function PricesPage() {
     const { data, error } = await sb
       .from('skus')
       .select('*, courses(id, name, group_name)')
+      .eq('sku_type', 'course_kit')   // supplies are priced individually, not on the kit-price list
       .order('sort_order')
     if (error) {
       showToast('Failed to load SKUs: ' + error.message)
