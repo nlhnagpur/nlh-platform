@@ -592,7 +592,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       })
     }
 
-    showToast('Invoice updated.')
+    showToast(order.invoice_no ? 'Invoice updated.' : 'Order updated.')
     onSaved()
     setSaving(false)
   }
@@ -601,7 +601,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     <div className="modal-bg" onClick={onClose}>
       <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}
         style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
-        <ModalHeader title={'Edit Invoice — ' + order.order_ref} subtitle="New Learning Horizons · Invoice editor" onClose={onClose} />
+        <ModalHeader title={(order.invoice_no ? 'Edit Invoice — ' : 'Edit Order — ') + order.order_ref} subtitle={'New Learning Horizons · ' + (order.invoice_no ? 'Invoice editor' : 'Order editor')} onClose={onClose} />
         <div style={{ padding: '18px 22px', overflowY: 'auto', background: 'var(--bg2, #FAFAF8)', flex: 1 }}>
           {loading ? (
             <div className="muted">Loading items…</div>
@@ -671,16 +671,17 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                         <td>
                           <input
                             type="number" className="price-inp"
-                            value={item.sent_qty} min={0}
+                            value={item.sent_qty} min={0} disabled={!isAdmin}
                             onChange={function (e) { updateField(idx, 'sent_qty', e.target.value) }}
                           />
                         </td>
                         <td>
                           <input
                             type="number" className="price-inp"
-                            value={item.rate} min={0}
+                            value={item.rate} min={0} disabled={!isAdmin}
                             onChange={function (e) { updateField(idx, 'rate', e.target.value) }}
                             style={{ fontWeight: 600 }}
+                            title={!isAdmin ? 'Pricing is set by Head Office' : undefined}
                           />
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'var(--mono)' }}>
@@ -1738,6 +1739,9 @@ export default function OrdersPage() {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, minWidth: 0 }}>
         {/* ── action buttons: one clean aligned row ── */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {order.status === 'pending' && (
+            <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
+          )}
           {order.status === 'pending' && isAdmin && (
             <button className="row-action primary" disabled={busy} onClick={function () { setInvoiceConfirm(order) }}>
               {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
