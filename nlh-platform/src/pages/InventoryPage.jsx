@@ -16,7 +16,8 @@ function ItemModal({ item, onClose, onSaved }) {
   const [f, setF] = useState({
     name: item?.name || '', category: item?.category || 'component',
     unit: item?.unit || 'pcs', hsn_code: item?.hsn_code || '', default_cost: item?.default_cost ?? '',
-    reorder_level: item?.reorder_level ?? '', is_active: item?.is_active ?? true, notes: item?.notes || '',
+    sell_price: item?.sell_price ?? '', reorder_level: item?.reorder_level ?? '',
+    is_active: item?.is_active ?? true, notes: item?.notes || '',
   })
   const [saving, setSaving] = useState(false)
   function set(k, v) { setF(function (p) { return { ...p, [k]: v } }) }
@@ -25,6 +26,7 @@ function ItemModal({ item, onClose, onSaved }) {
     const row = {
       name: f.name.trim(), category: f.category, unit: f.unit.trim() || 'pcs',
       hsn_code: f.hsn_code.trim() || null, default_cost: f.default_cost === '' ? 0 : Math.round(Number(f.default_cost)),
+      sell_price: f.sell_price === '' ? 0 : Math.round(Number(f.sell_price)),
       reorder_level: f.reorder_level === '' ? 0 : Math.round(Number(f.reorder_level)), is_active: !!f.is_active, notes: f.notes.trim() || null,
     }
     setSaving(true)
@@ -53,8 +55,11 @@ function ItemModal({ item, onClose, onSaved }) {
             <input value={f.unit} onChange={function (e) { set('unit', e.target.value) }} placeholder="pcs / set / box" style={inp} /></label>
           <label><span style={lbl}>HSN code (GST)</span>
             <input value={f.hsn_code} onChange={function (e) { set('hsn_code', e.target.value) }} placeholder="optional" style={inp} /></label>
-          <label><span style={lbl}>Unit cost (₹)</span>
-            <input type="number" value={f.default_cost} onChange={function (e) { set('default_cost', e.target.value) }} placeholder="0" style={inp} /></label>
+          <label><span style={lbl}>Cost price (₹)</span>
+            <input type="number" value={f.default_cost} onChange={function (e) { set('default_cost', e.target.value) }} placeholder="what we pay" style={inp} /></label>
+          <label><span style={lbl}>Selling price (₹)
+            <span style={{ fontWeight: 400, color: 'var(--text3)' }}> · if sold separately</span></span>
+            <input type="number" value={f.sell_price} onChange={function (e) { set('sell_price', e.target.value) }} placeholder="replacement / standalone price" style={inp} /></label>
           <label><span style={lbl}>Reorder level</span>
             <input type="number" value={f.reorder_level} onChange={function (e) { set('reorder_level', e.target.value) }} placeholder="0" style={inp} /></label>
           <label style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -213,6 +218,24 @@ export default function InventoryPage() {
     showToast('Item deleted'); load()
   }
 
+  // Make a single item sellable on its own: create a 1-item supply SKU priced
+  // at its selling price, so it flows through the normal order → charge → stock-deduct path.
+  async function sellSeparately(it) {
+    if (!it.sell_price || it.sell_price <= 0) { showToast('Set a Selling price on this item first (Edit).', 'warn'); return }
+    const name = it.name + ' (individual)'
+    const { data: existing } = await sb.from('skus').select('id').eq('sku_type', 'supply').eq('level_name', name).limit(1)
+    if (existing && existing.length) { showToast('Already sellable — order “' + name + '” from Orders.'); return }
+    const { data: sku, error } = await sb.from('skus').insert({
+      level_name: name, sku_type: 'supply', course_id: null, supply_category: 'Individual sale',
+      uf_rate: it.sell_price, cf_rate: it.sell_price, smf_rate: it.sell_price, student_fee: it.sell_price, is_active: true,
+    }).select('id').single()
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    const { error: kerr } = await sb.from('kit_items').insert({ sku_id: sku.id, item_id: it.id, quantity: 1 })
+    if (kerr) { showToast('SKU created but kit link failed: ' + kerr.message, 'warn'); return }
+    showToast('“' + name + '” is now sellable — order it from Orders to charge & deduct stock.')
+    load()
+  }
+
   const q = search.trim().toLowerCase()
   const filteredItems = items.filter(function (i) {
     return !q || (i.name || '').toLowerCase().includes(q) || (i.item_code || '').toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q)
@@ -256,7 +279,7 @@ export default function InventoryPage() {
           filteredItems.length === 0 ? <div className="empty">No items yet. Add your kit components (books, tools, bags…).</div> : (
             <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
               <table className="big-tbl">
-                <thead><tr><th>Item</th><th className="hide-mobile">Category</th><th style={{ textAlign: 'right' }}>In stock (HO)</th><th className="hide-mobile" style={{ textAlign: 'right' }}>Reorder</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
+                <thead><tr><th>Item</th><th className="hide-mobile">Category</th><th className="hide-mobile" style={{ textAlign: 'right' }}>Sell ₹</th><th style={{ textAlign: 'right' }}>In stock (HO)</th><th className="hide-mobile" style={{ textAlign: 'right' }}>Reorder</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
                 <tbody>
                   {filteredItems.map(function (i) {
                     const bal = balance[i.id] || 0
@@ -266,11 +289,13 @@ export default function InventoryPage() {
                         <td><div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{i.name}</div>
                           {i.item_code && <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{i.item_code}</div>}</td>
                         <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text2)' }}>{i.category}</td>
+                        <td className="hide-mobile" style={{ textAlign: 'right', font: '600 12px var(--mono)', color: i.sell_price ? 'var(--text)' : 'var(--text3)' }}>{i.sell_price ? '₹' + fmtAmt(i.sell_price) : '—'}</td>
                         <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: low ? 'var(--red,#dc2626)' : 'var(--text)' }}>
                           {bal} {i.unit}{low && <span title="At or below reorder level"> 🔴</span>}</td>
                         <td className="hide-mobile" style={{ textAlign: 'right', fontSize: 12, color: 'var(--text3)' }}>{i.reorder_level || '—'}</td>
                         {canManage && (
                           <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {i.sell_price > 0 && <button className="btn-s" style={{ padding: '4px 9px', marginRight: 4 }} title="Make this item sellable on its own" onClick={function () { sellSeparately(i) }}>🏷️ Sell</button>}
                             <button className="btn-s" style={{ padding: '4px 9px', marginRight: 4 }} onClick={function () { setItemModal(i) }}>Edit</button>
                             <button className="btn-s" style={{ padding: '4px 9px', color: 'var(--red,#dc2626)' }} onClick={function () { removeItem(i) }}>Delete</button>
                           </td>
