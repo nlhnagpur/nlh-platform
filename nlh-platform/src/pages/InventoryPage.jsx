@@ -11,12 +11,15 @@ const lbl = { display: 'block', font: '600 11px var(--font)', color: 'var(--text
 const inp = { width: '100%', font: '500 13px var(--font)', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)', boxSizing: 'border-box' }
 
 // ── Add / edit an inventory item ───────────────────────────────────────────
-function ItemModal({ item, onClose, onSaved }) {
+function ItemModal({ item, currentUserId, currentQty, onClose, onSaved }) {
   const editing = !!item
+  // Opening stock can be set when creating an item, or for an existing item that
+  // still has zero stock. Once it has movements, use Stock → Record receipt.
+  const showOpening = !editing || (currentQty || 0) === 0
   const [f, setF] = useState({
     name: item?.name || '', category: item?.category || 'component',
     unit: item?.unit || 'pcs', hsn_code: item?.hsn_code || '', default_cost: item?.default_cost ?? '',
-    sell_price: item?.sell_price ?? '', reorder_level: item?.reorder_level ?? '',
+    sell_price: item?.sell_price ?? '', reorder_level: item?.reorder_level ?? '', opening: '',
     is_active: item?.is_active ?? true, notes: item?.notes || '',
   })
   const [saving, setSaving] = useState(false)
@@ -30,11 +33,19 @@ function ItemModal({ item, onClose, onSaved }) {
       reorder_level: f.reorder_level === '' ? 0 : Math.round(Number(f.reorder_level)), is_active: !!f.is_active, notes: f.notes.trim() || null,
     }
     setSaving(true)
-    const { error } = editing
-      ? await sb.from('inventory_items').update(row).eq('id', item.id)
-      : await sb.from('inventory_items').insert(row)
+    const { data: saved, error } = editing
+      ? await sb.from('inventory_items').update(row).eq('id', item.id).select('id').single()
+      : await sb.from('inventory_items').insert(row).select('id').single()
+    if (error) { setSaving(false); showToast(/duplicate|unique/i.test(error.message) ? 'That item code already exists' : 'Save failed: ' + error.message, 'err'); return }
+    // Opening stock → first receipt in the ledger
+    const openQ = f.opening === '' ? 0 : Math.round(Number(f.opening))
+    if (showOpening && openQ > 0 && saved?.id) {
+      await sb.from('stock_ledger').insert({
+        item_id: saved.id, location_type: 'ho', movement_type: 'receipt', qty: openQ,
+        unit_cost: row.default_cost || null, ref_type: 'manual', note: 'Opening stock', created_by: currentUserId || null,
+      })
+    }
     setSaving(false)
-    if (error) { showToast(/duplicate|unique/i.test(error.message) ? 'That item code already exists' : 'Save failed: ' + error.message, 'err'); return }
     showToast(editing ? 'Item updated' : 'Item added')
     onSaved()
   }
@@ -62,6 +73,15 @@ function ItemModal({ item, onClose, onSaved }) {
             <input type="number" value={f.sell_price} onChange={function (e) { set('sell_price', e.target.value) }} placeholder="replacement / standalone price" style={inp} /></label>
           <label><span style={lbl}>Reorder level</span>
             <input type="number" value={f.reorder_level} onChange={function (e) { set('reorder_level', e.target.value) }} placeholder="0" style={inp} /></label>
+          {showOpening ? (
+            <label style={{ gridColumn: 'span 2' }}><span style={lbl}>📦 Opening stock (HO)
+              <span style={{ fontWeight: 400, color: 'var(--text3)' }}> · current count in hand</span></span>
+              <input type="number" value={f.opening} onChange={function (e) { set('opening', e.target.value) }} placeholder="e.g. 50 — recorded as the first receipt" style={inp} /></label>
+          ) : (
+            <div style={{ gridColumn: 'span 2', font: '500 12px var(--font)', color: 'var(--text3)', alignSelf: 'center' }}>
+              In stock: <b style={{ color: 'var(--text)' }}>{currentQty}</b> {f.unit}. To change, use <b>Stock ledger → 📥 Record receipt</b>.
+            </div>
+          )}
           <label style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: 8 }}>
             <input type="checkbox" checked={f.is_active} onChange={function (e) { set('is_active', e.target.checked) }} />
             <span style={{ font: '600 13px var(--font)' }}>Active</span></label>
@@ -367,7 +387,7 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {itemModal && <ItemModal item={itemModal === 'new' ? null : itemModal} onClose={function () { setItemModal(null) }} onSaved={function () { setItemModal(null); load() }} />}
+      {itemModal && <ItemModal item={itemModal === 'new' ? null : itemModal} currentUserId={currentUser?.id} currentQty={itemModal === 'new' ? 0 : (balance[itemModal.id] || 0)} onClose={function () { setItemModal(null) }} onSaved={function () { setItemModal(null); load() }} />}
       {supplyModal && <SupplyModal onClose={function () { setSupplyModal(false) }} onSaved={function () { setSupplyModal(false); load() }} />}
       {receiptModal && <ReceiptModal items={items} currentUserId={currentUser?.id} onClose={function () { setReceiptModal(false) }} onSaved={function () { setReceiptModal(false); load() }} />}
       {kitSku && <KitEditorModal sku={kitSku} items={items} onClose={function () { setKitSku(null) }} onSaved={function () { setKitSku(null); load() }} />}
