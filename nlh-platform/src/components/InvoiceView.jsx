@@ -585,8 +585,12 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             </div>
 
             {/* items table — stretches to fill the page */}
-            <div style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'hidden', flex:1, display:'flex', flexDirection:'column' }}>
-              <div style={{ background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'7px 12px', display:'grid', gridTemplateColumns:'26px 1fr 44px 44px 70px 90px', gap:8, font:'700 8px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
+            <div style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'hidden', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
+              {/* mascot watermark — centered in the items area */}
+              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:0 }}>
+                <img src="/NLH%20Mascot.png" alt="" style={{ width:'45%', maxWidth:280, opacity:0.06, objectFit:'contain' }} />
+              </div>
+              <div style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'7px 12px', display:'grid', gridTemplateColumns:'26px 1fr 44px 44px 70px 90px', gap:8, font:'700 8px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
                 <div>#</div><div>SKU / Item</div>
                 <div style={{textAlign:'right'}}>Ord</div>
                 <div style={{textAlign:'right'}}>Sent</div>
@@ -600,7 +604,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 const lineAmt = (item.rate||0)*(item.ordered_qty||0)
                 const sent    = item.sent_qty||0
                 return (
-                  <div key={item.id} style={{ display:'grid', gridTemplateColumns:'26px 1fr 44px 44px 70px 90px', gap:8, padding:'6px 12px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:i%2===1?'#FAFAFE':'#fff', alignItems:'center' }}>
+                  <div key={item.id} style={{ position:'relative', zIndex:1, display:'grid', gridTemplateColumns:'26px 1fr 44px 44px 70px 90px', gap:8, padding:'6px 12px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:i%2===1?'#FAFAFE':'#fff', alignItems:'center' }}>
                     <div style={{ font:'600 8px "DM Mono",monospace', color:'#9C9A92' }}>{String(i+1).padStart(2,'0')}</div>
                     <div>
                       <div style={{ font:'600 10.5px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2 }}>{name}</div>
@@ -618,23 +622,28 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             {/* payment + totals */}
             <div style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8 }}>
               {/* payment */}
-              <div style={{ background:'linear-gradient(135deg,#FFF7DA,#FFE89B)', borderRadius:10, padding:'10px 12px', position:'relative', overflow:'hidden' }}>
+              <div style={{ background:'linear-gradient(135deg,#FFF7DA,#FFE89B)', borderRadius:10, padding:'10px 12px', position:'relative', overflow:'hidden', display:'flex', flexDirection:'column' }}>
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#F59E0B' }} />
                 <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:3 }}>Payment Details</div>
                 <div style={{ font:'500 9px "DM Mono",monospace', color:'#5C5A54', marginBottom:8, letterSpacing:'.02em' }}>NEFT / IMPS / UPI accepted</div>
-                <div style={{ background:'#fff', borderRadius:8, padding:'8px 10px', display:'grid', gridTemplateColumns:'1fr 90px', gap:10, boxShadow:'0 1px 3px rgba(0,0,0,.06)', alignItems:'center' }}>
+                <div style={{ background:'#fff', borderRadius:8, padding:'10px 12px', display:'grid', gridTemplateColumns:'1fr 122px', gap:12, boxShadow:'0 1px 3px rgba(0,0,0,.06)', alignItems:'center' }}>
                   <div>
-                    <div style={{ font:'700 10px "DM Sans",sans-serif', color:'#1E40AF' }}>🏦 IDFC First Bank · Byramji Town</div>
-                    <div style={{ display:'grid', gridTemplateColumns:'34px 1fr', gap:'3px 6px', font:'500 9.5px "DM Mono",monospace', marginTop:5, alignItems:'center' }}>
-                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600 }}>A/C</span><span style={{ color:'#1A1916', fontWeight:700 }}>10278096847</span>
-                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600 }}>IFSC</span><span style={{ color:'#1A1916', fontWeight:700 }}>IDFB0042504</span>
+                    <div style={{ font:'700 10px "DM Sans",sans-serif', color:'#1E40AF', marginBottom:6 }}>🏦 IDFC First Bank · Byramji Town</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'38px 1fr', gap:'6px 8px', alignItems:'center' }}>
+                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600, font:'600 8px "DM Mono",monospace' }}>A/C</span>
+                      <span style={{ color:'#1A1916', font:'700 13px "DM Mono",monospace', letterSpacing:'.02em' }}>10278096847</span>
+                      <span style={{ color:'#9C9A92', fontSize:8, textTransform:'uppercase', fontWeight:600, font:'600 8px "DM Mono",monospace' }}>IFSC</span>
+                      <span style={{ color:'#1A1916', font:'700 13px "DM Mono",monospace', letterSpacing:'.02em' }}>IDFB0042504</span>
                     </div>
-                    <div style={{ marginTop:6, background:'#EEEDFE', borderRadius:6, padding:'4px 8px', font:'700 8.5px "DM Mono",monospace', color:'#534AB7' }}>📱 UPI: newlearninghorizons@idfcbank</div>
                   </div>
-                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
                     <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#1E40AF', textTransform:'uppercase', letterSpacing:'.08em', textAlign:'center' }}>Scan &amp; Pay</div>
-                    <img src="/nlh-upi-qr.png" alt="QR" style={{ width:80, height:80, background:'#fff', borderRadius:5, padding:3, border:'2px solid #1E40AF', objectFit:'contain' }} />
+                    <img src="/nlh-upi-qr.png" alt="QR" style={{ width:116, height:116, background:'#fff', borderRadius:6, padding:4, border:'2px solid #1E40AF', objectFit:'contain' }} />
                   </div>
+                </div>
+                {/* UPI — full-width strip at the bottom of the payment box */}
+                <div style={{ marginTop:'auto', paddingTop:8 }}>
+                  <div style={{ background:'#EEEDFE', borderRadius:7, padding:'8px 12px', font:'700 11px "DM Mono",monospace', color:'#534AB7', textAlign:'center', letterSpacing:'.01em' }}>📱 UPI: newlearninghorizons@idfcbank</div>
                 </div>
               </div>
 
@@ -710,10 +719,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           </div>
 
           {/* ── COMPACT FOOTER — thank you + computer-generated note ── */}
-          <div style={{ background:'linear-gradient(115deg,#FFE89B,#FFD234)', padding:'8px 20px 8px 80px', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexShrink:0 }}>
-            <div style={{ position:'absolute', left:6, bottom:-6, width:58, height:58, filter:'drop-shadow(0 2px 6px rgba(217,119,6,.3))' }}>
-              <img src="/NLH%20Mascot.png" alt="" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
-            </div>
+          <div style={{ background:'linear-gradient(115deg,#FFE89B,#FFD234)', padding:'10px 20px', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexShrink:0 }}>
             <div style={{ font:'800 15px "DM Sans",sans-serif', color:'#1E40AF', letterSpacing:'-.01em' }}>Thank you for your order!</div>
             <div style={{ font:'600 7.5px "DM Mono",monospace', color:'#5B3A00', textTransform:'uppercase', letterSpacing:'.06em', textAlign:'right' }}>Computer generated invoice · No signature required</div>
           </div>
