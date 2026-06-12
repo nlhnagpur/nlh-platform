@@ -636,9 +636,9 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
 
             {/* items table — stretches to fill the page; flows to next page when long */}
             <div id="inv-items" style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'visible', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
-              {/* mascot watermark — sits low in the empty area so item rows don't cover it */}
-              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'flex-end', justifyContent:'center', paddingBottom:36, pointerEvents:'none', zIndex:0 }}>
-                <img src="/NLH%20Mascot.png" alt="" style={{ width:'46%', maxWidth:300, opacity:0.2, objectFit:'contain' }} />
+              {/* mascot watermark — centered behind the (transparent) item rows */}
+              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:0 }}>
+                <img src="/NLH%20Mascot.png" alt="" style={{ width:'46%', maxWidth:300, opacity:0.14, objectFit:'contain' }} />
               </div>
               <div style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'9px 14px', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, font:'700 10px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
                 <div>#</div><div>SKU / Item</div>
@@ -654,7 +654,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 const lineAmt = (item.rate||0)*(item.ordered_qty||0)
                 const sent    = item.sent_qty||0
                 return (
-                  <div key={item.id} style={{ position:'relative', zIndex:1, breakInside:'avoid', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, padding:'9px 14px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:i%2===1?'#FAFAFE':'#fff', alignItems:'center' }}>
+                  <div key={item.id} style={{ position:'relative', zIndex:1, breakInside:'avoid', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, padding:'9px 14px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:'transparent', alignItems:'center' }}>
                     <div style={{ font:'600 10px "DM Mono",monospace', color:'#9C9A92' }}>{String(i+1).padStart(2,'0')}</div>
                     <div>
                       <div style={{ font:'600 13px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.25 }}>{name}</div>
