@@ -1532,6 +1532,11 @@ export default function OrdersPage() {
   const [showNewOrder, setShowNewOrder] = useState(false)
   const [invoiceViewOrder, setInvoiceViewOrder] = useState(null)
   const [invoiceConfirm, setInvoiceConfirm] = useState(null)
+  const [cancelOrder, setCancelOrder] = useState(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelling, setCancelling] = useState(false)
+
+  const canCancel = ['owner', 'super_admin', 'admin'].includes(currentRole)
 
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
@@ -1756,6 +1761,23 @@ export default function OrdersPage() {
     await generateInvoicePDF(order, items || [])
   }
 
+  async function handleCancelInvoice() {
+    if (!cancelOrder) return
+    setCancelling(true)
+    const { error } = await sb.from('orders').update({
+      status: 'pending',
+      invoice_no: null,
+      invoice_cancelled_at: new Date().toISOString(),
+      invoice_cancelled_by: currentUser?.email || currentRole || 'admin',
+    }).eq('id', cancelOrder.id)
+    setCancelling(false)
+    if (error) { showToast('Failed to cancel: ' + error.message, 'err'); return }
+    showToast('Invoice ' + (cancelOrder.invoice_no || '') + ' cancelled · order returned to Pending')
+    setCancelOrder(null)
+    setCancelReason('')
+    await loadOrders()
+  }
+
   function isActing(orderId, action) {
     return actionLoading === orderId + '_' + action
   }
@@ -1819,6 +1841,9 @@ export default function OrdersPage() {
           <button className="row-action" onClick={function () { setDispatchOrder(order) }}>
             {order.dispatched_at ? 'Dispatch ✎' : 'Dispatch'}
           </button>
+          {canCancel && ['invoiced', 'payment_submitted'].includes(order.status) && (
+            <button className="row-action danger" onClick={function () { setCancelOrder(order) }}>Cancel</button>
+          )}
         </div>
 
         {/* ── metadata, muted, on their own lines below ── */}
@@ -2016,6 +2041,32 @@ export default function OrdersPage() {
           currentRole={currentRole}
           currentUser={currentUser}
         />
+      )}
+
+      {cancelOrder && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={function () { if (!cancelling) { setCancelOrder(null); setCancelReason('') } }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 28, maxWidth: 440, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}
+            onClick={function (e) { e.stopPropagation() }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 22 }}>⚠️</span>
+              <div style={{ font: '700 16px "DM Sans",sans-serif', color: '#A32D2D' }}>Cancel Invoice {cancelOrder.invoice_no}?</div>
+            </div>
+            <p style={{ font: '400 13px "DM Sans",sans-serif', color: '#5C5A54', lineHeight: 1.6, marginBottom: 16 }}>
+              This will <strong>void the invoice number</strong> and return the order to <em>Pending</em>. The number will not be reused.
+            </p>
+            <textarea value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }} placeholder="Reason (optional)" rows={2}
+              style={{ width: '100%', padding: '8px 11px', border: '1.5px solid #E2E0D8', borderRadius: 8, font: '13px "DM Sans",sans-serif', marginBottom: 16, resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={function () { setCancelOrder(null); setCancelReason('') }} disabled={cancelling}
+                style={{ padding: '9px 20px', border: '1px solid #D0CEC6', borderRadius: 8, background: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', color: '#5C5A54' }}>Keep Invoice</button>
+              <button onClick={handleCancelInvoice} disabled={cancelling}
+                style={{ padding: '9px 20px', border: 'none', borderRadius: 8, background: '#DC2626', color: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', opacity: cancelling ? .7 : 1 }}>
+                {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

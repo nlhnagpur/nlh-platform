@@ -1074,6 +1074,8 @@ vercel-toolbar { display: none !important; }
 .row-action.primary:hover { background:var(--purple2); }
 .row-action.green { background:var(--green-bg); color:var(--green); border-color:rgba(29,122,79,.25); }
 .row-action.green:hover { background:var(--green); color:#fff; }
+.row-action.danger { background:var(--red-bg); color:var(--red); border-color:rgba(220,38,38,.25); }
+.row-action.danger:hover { background:#DC2626; color:#fff; border-color:#DC2626; }
 
 /* ── Amount cell ── */
 .amt { font:600 12.5px var(--mono); color:var(--text); }

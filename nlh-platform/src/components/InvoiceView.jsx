@@ -94,6 +94,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const [editItems,    setEditItems]    = useState([])
   const [allSkus,      setAllSkus]      = useState([])
   const [deletedIds,   setDeletedIds]   = useState([])
+  const [kitMap,       setKitMap]       = useState({})   // sku_id -> [{ name, quantity }] kit composition
 
   // Live display (updated after save)
   const [liveCourier, setLiveCourier] = useState(order.courier_charges || 0)
@@ -117,6 +118,23 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       setItems(itemsRes.data || [])
       setEditItems((itemsRes.data || []).map(function(it) { return { ...it } }))
       setAllSkus(skusRes.data || [])
+
+      // Kit composition — items that make up each course kit on this order
+      const skuIds = (itemsRes.data || []).map(function(it) { return it.sku_id }).filter(Boolean)
+      if (skuIds.length > 0) {
+        const { data: kitRows } = await sb
+          .from('kit_items')
+          .select('sku_id, quantity, inventory_items(name)')
+          .in('sku_id', skuIds)
+        const map = {}
+        ;(kitRows || []).forEach(function(k) {
+          if (!map[k.sku_id]) map[k.sku_id] = []
+          map[k.sku_id].push({ name: k.inventory_items?.name || '—', quantity: k.quantity })
+        })
+        setKitMap(map)
+      } else {
+        setKitMap({})
+      }
 
       let placerFr = null
       if (order.placer_id) {
@@ -319,9 +337,6 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           {sending?'Sending…':'📧 Email'}
         </button>
         <button onClick={handlePrint} style={{ ...tbBtn(false), background:'#534AB7', color:'#fff', border:'none' }}>🖨 PDF</button>
-        {canCancel && (
-          <button onClick={function(){setShowCancelDlg(true)}} style={{ background:'rgba(220,38,38,.1)', color:'#A32D2D', border:'1.5px solid rgba(220,38,38,.35)', padding:'8px 14px', borderRadius:24, cursor:'pointer', font:'600 11px "DM Mono",monospace', letterSpacing:'.05em', textTransform:'uppercase' }}>✕ Cancel</button>
-        )}
       </div>
 
       {/* Cancel dialog */}
@@ -608,7 +623,19 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                     <div style={{ font:'600 8px "DM Mono",monospace', color:'#9C9A92' }}>{String(i+1).padStart(2,'0')}</div>
                     <div>
                       <div style={{ font:'600 10.5px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2 }}>{name}</div>
-                      {item.sku_id && <div style={{ font:'500 8px "DM Mono",monospace', color:'#C0BDB4', marginTop:1, textTransform:'uppercase' }}>{item.sku_id.slice(0,8).toUpperCase()}</div>}
+                      {item.sku_id && kitMap[item.sku_id] && kitMap[item.sku_id].length > 0 && (
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 5px', marginTop:3 }}>
+                          <span style={{ font:'700 7px "DM Mono",monospace', color:'#9C8BD9', textTransform:'uppercase', letterSpacing:'.06em', alignSelf:'center' }}>Kit:</span>
+                          {kitMap[item.sku_id].map(function(k, ki) {
+                            return (
+                              <span key={ki} style={{ font:'600 8px "DM Mono",monospace', color:'#534AB7', background:'#EEEDFE', borderRadius:4, padding:'1px 6px', whiteSpace:'nowrap' }}>
+                                {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {item.sku_id && <div style={{ font:'500 8px "DM Mono",monospace', color:'#C0BDB4', marginTop:2, textTransform:'uppercase' }}>{item.sku_id.slice(0,8).toUpperCase()}</div>}
                     </div>
                     <div style={{ textAlign:'right', font:'500 10px "DM Mono",monospace', color:'#5C5A54' }}>{item.ordered_qty||0}</div>
                     <div style={{ textAlign:'right', font:'500 10px "DM Mono",monospace', color:sent===item.ordered_qty?'#16A34A':'#5C5A54', fontWeight:sent===item.ordered_qty?700:500 }}>{sent}</div>
