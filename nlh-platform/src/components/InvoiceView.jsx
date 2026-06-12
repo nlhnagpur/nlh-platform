@@ -486,7 +486,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       ) : (
 
         /* ══════════ PDF VIEW ══════════ */
-        <div id="inv-sheet" style={{ width:'210mm', background:'#fff', boxShadow:'0 8px 28px rgba(0,0,0,.10)', display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:'"DM Sans",system-ui,sans-serif', WebkitPrintColorAdjust:'exact', printColorAdjust:'exact' }}>
+        <div id="inv-sheet" style={{ width:'210mm', minHeight:'297mm', background:'#fff', boxShadow:'0 8px 28px rgba(0,0,0,.10)', display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:'"DM Sans",system-ui,sans-serif', WebkitPrintColorAdjust:'exact', printColorAdjust:'exact' }}>
 
           {/* ── COMPACT HEADER ── */}
           <div style={{ background:'linear-gradient(115deg,#FFF6D9 0%,#FFE89B 45%,#FFD234 80%,#FFB347 100%)', padding:'10px 20px 0', position:'relative', overflow:'hidden', flexShrink:0 }}>
@@ -548,7 +548,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           </div>
 
           {/* ── BODY ── */}
-          <div style={{ padding:'10px 20px 0', flex:1, display:'flex', flexDirection:'column', gap:8 }}>
+          <div style={{ padding:'10px 20px 14px', flex:1, display:'flex', flexDirection:'column', gap:8 }}>
 
             {/* parties */}
             <div style={{ display:'grid', gridTemplateColumns:shipFr?'1fr 1fr 1fr':'1fr 1fr', gap:8 }}>
@@ -584,8 +584,8 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               })}
             </div>
 
-            {/* items table */}
-            <div style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'hidden' }}>
+            {/* items table — stretches to fill the page */}
+            <div style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'hidden', flex:1, display:'flex', flexDirection:'column' }}>
               <div style={{ background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'7px 12px', display:'grid', gridTemplateColumns:'26px 1fr 44px 44px 70px 90px', gap:8, font:'700 8px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
                 <div>#</div><div>SKU / Item</div>
                 <div style={{textAlign:'right'}}>Ord</div>
@@ -707,35 +707,15 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               </div>
             )}
 
-            {/* compact footer strip — thank you + support */}
-            <div style={{ background:'linear-gradient(115deg,#FFE89B,#FFD234)', borderRadius:10, padding:'9px 16px 9px 78px', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginTop:4 }}>
-              <div style={{ position:'absolute', left:4, bottom:-4, width:62, height:62, filter:'drop-shadow(0 2px 6px rgba(217,119,6,.3))' }}>
-                <img src="/NLH%20Mascot.png" alt="" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
-              </div>
-              <div>
-                <div style={{ font:'800 14px "DM Sans",sans-serif', color:'#1E40AF', letterSpacing:'-.01em' }}>Thank you for your order!</div>
-                <div style={{ font:'500 8px "DM Mono",monospace', color:'#5B3A00', textTransform:'uppercase', letterSpacing:'.06em', marginTop:1 }}>Enriching children's future · New Learning Horizons</div>
-              </div>
-              <div style={{ textAlign:'right', background:'rgba(255,255,255,.6)', padding:'6px 12px', borderRadius:20 }}>
-                <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.07em' }}>Support</div>
-                <div style={{ font:'800 13px "DM Sans",sans-serif', color:'#1E40AF', marginTop:1 }}>9373 111 311</div>
-              </div>
-            </div>
-
           </div>
 
-          {/* ── FOOTER ── */}
-          <div style={{ background:'#1F2937', color:'#fff', padding:'10px 20px', marginTop:10, position:'relative', flexShrink:0 }}>
-            <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg,#F59E0B,#EA580C,#F59E0B)' }} />
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
-              <div style={{ font:'600 8px "DM Mono",monospace', color:'#fff', textTransform:'uppercase', letterSpacing:'.09em' }}>
-                <span style={{ color:'#FCD34D' }}>New Learning Horizons</span> · Est. 2008 · ISO 9001:2015
-              </div>
-              <div style={{ font:'500 7.5px "DM Mono",monospace', color:'rgba(255,255,255,.5)', textTransform:'uppercase', letterSpacing:'.07em' }}>Computer generated invoice</div>
-              <div style={{ font:'600 8px "DM Mono",monospace', color:'#fff', letterSpacing:'.04em' }}>
-                nlhnagpur.info · <span style={{ color:'#FCD34D' }}>dhiral@nlhnagpur.info</span>
-              </div>
+          {/* ── COMPACT FOOTER — thank you + computer-generated note ── */}
+          <div style={{ background:'linear-gradient(115deg,#FFE89B,#FFD234)', padding:'8px 20px 8px 80px', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexShrink:0 }}>
+            <div style={{ position:'absolute', left:6, bottom:-6, width:58, height:58, filter:'drop-shadow(0 2px 6px rgba(217,119,6,.3))' }}>
+              <img src="/NLH%20Mascot.png" alt="" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
             </div>
+            <div style={{ font:'800 15px "DM Sans",sans-serif', color:'#1E40AF', letterSpacing:'-.01em' }}>Thank you for your order!</div>
+            <div style={{ font:'600 7.5px "DM Mono",monospace', color:'#5B3A00', textTransform:'uppercase', letterSpacing:'.06em', textAlign:'right' }}>Computer generated invoice · No signature required</div>
           </div>
 
         </div>
