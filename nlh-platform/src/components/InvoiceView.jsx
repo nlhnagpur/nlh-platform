@@ -330,13 +330,13 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
         <span style={{ font:'600 11px "DM Mono",monospace', color:'#5C5A54', marginRight:4, textTransform:'uppercase', letterSpacing:'.05em' }}>
           <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#16A34A', marginRight:5, verticalAlign:'middle' }} />{order.invoice_no||'Draft'}
         </span>
-        <button onClick={onClose} style={tbBtn(false)}>← Back</button>
         <button onClick={function(){setActiveTab('view')}} style={tbBtn(activeTab==='view','#534AB7')}>📄 View</button>
         <button onClick={function(){setActiveTab('edit')}} style={tbBtn(activeTab==='edit','#D97706')}>✏ Edit</button>
         <button onClick={handleSendEmail} disabled={sending||!fr.email} style={{ ...tbBtn(false), background:fr.email?'#16A34A':'#9C9A92', color:'#fff', border:'none', opacity:sending?.7:1, cursor:fr.email?'pointer':'not-allowed' }}>
           {sending?'Sending…':'📧 Email'}
         </button>
         <button onClick={handlePrint} style={{ ...tbBtn(false), background:'#534AB7', color:'#fff', border:'none' }}>🖨 PDF</button>
+        <button onClick={onClose} style={tbBtn(false)}>← Back</button>
       </div>
 
       {/* Cancel dialog */}
