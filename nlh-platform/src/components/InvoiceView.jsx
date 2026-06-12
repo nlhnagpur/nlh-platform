@@ -284,9 +284,11 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${order.invoice_no||order.id}</title>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',system-ui,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      @media print{@page{size:A4;margin:0}body{background:#fff}.np{display:none}}</style></head><body>
+      /* Keep the full A4 sheet (210x297mm) in the printout — drop the on-screen shadow */
+      #inv-sheet{width:210mm !important;min-height:297mm !important;box-shadow:none !important;margin:0 auto}
+      @media print{@page{size:A4;margin:0}body{background:#fff}.np{display:none}#inv-sheet{margin:0}}</style></head><body>
       <div class="np" style="text-align:right;padding:10px 20px;background:#f0f0f0"><button onclick="window.print()" style="background:#534AB7;color:#fff;border:none;padding:8px 18px;border-radius:7px;font:600 13px sans-serif;cursor:pointer">Print / Save PDF</button></div>
-      ${el.innerHTML}</body></html>`)
+      ${el.outerHTML}</body></html>`)
     win.document.close()
   }
 
