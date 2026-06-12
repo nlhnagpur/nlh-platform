@@ -666,7 +666,6 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                           })}
                         </div>
                       )}
-                      {item.sku_id && <div style={{ font:'500 9px "DM Mono",monospace', color:'#C0BDB4', marginTop:3, textTransform:'uppercase' }}>{item.sku_id.slice(0,8).toUpperCase()}</div>}
                     </div>
                     <div style={{ textAlign:'right', font:'500 12.5px "DM Mono",monospace', color:'#5C5A54' }}>{item.ordered_qty||0}</div>
                     <div style={{ textAlign:'right', font:'500 12.5px "DM Mono",monospace', color:sent===item.ordered_qty?'#16A34A':'#5C5A54', fontWeight:sent===item.ordered_qty?700:500 }}>{sent}</div>
