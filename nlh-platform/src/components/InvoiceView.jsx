@@ -216,7 +216,9 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     }
 
     const subTotal = editItems.reduce(function(s, it) { return s + (it.ordered_qty||0)*(it.rate||0) }, 0)
-    const grandTotal = subTotal + (editCourier || 0)
+    // Preserve any coupon discount already applied at checkout (re-clamp to new subtotal)
+    const discountAmt = Math.min(order.discount_amount || 0, subTotal)
+    const grandTotal = Math.max(0, subTotal + (editCourier || 0) - discountAmt)
 
     const { error } = await sb.from('orders').update({
       bill_to_franchisee_id: editBillToId || null,
@@ -286,7 +288,8 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const fr         = billToFr || placer || {}
   const shipFr     = shipToFr
   const subtotal   = items.reduce(function(s, i) { return s + (i.rate||0)*(i.ordered_qty||0) }, 0)
-  const liveGrandTotal = subtotal + liveCourier
+  const discount   = Math.min(order.discount_amount || 0, subtotal)
+  const liveGrandTotal = Math.max(0, subtotal + liveCourier - discount)
   const amtPaid    = order.amount_paid || 0
   const balance    = liveGrandTotal - amtPaid
   const payStatus  = order.status === 'closed' ? 'paid' : (amtPaid > 0 ? 'part' : 'unpaid')
@@ -299,7 +302,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
 
   // ── edit items computed ────────────────────────────────────────────────────
   const editSubtotal = editItems.reduce(function(s, it) { return s + (it.ordered_qty||0)*(it.rate||0) }, 0)
-  const editGrandTotal = editSubtotal + (editCourier || 0)
+  const editGrandTotal = Math.max(0, editSubtotal + (editCourier || 0) - Math.min(order.discount_amount || 0, editSubtotal))
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(0,0,0,0.6)', display:'flex', flexDirection:'column', alignItems:'center', overflowY:'auto', padding:'20px 16px 60px' }}>
@@ -642,12 +645,13 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 {[
                   { l:'Kit subtotal',    v:'₹'+fmtAmt(subtotal) },
                   { l:'Courier charges', v:liveCourier>0?'₹'+fmtAmt(liveCourier):'—' },
+                  ...(discount>0 ? [{ l:'Discount'+(order.coupon_code?' ('+order.coupon_code+')':''), v:'− ₹'+fmtAmt(discount), green:true }] : []),
                   { l:'Amount paid',     v:amtPaid>0?'₹'+fmtAmt(amtPaid):'—', muted:amtPaid===0 },
                 ].map(function(row,i) {
                   return (
                     <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 0', borderBottom:'1px dashed rgba(83,74,183,.2)' }}>
                       <span style={{ font:'500 10px "DM Sans",sans-serif', color:'#5C5A54' }}>{row.l}</span>
-                      <span style={{ font:'600 10px "DM Mono",monospace', color:row.muted?'#9C9A92':'#1A1916', fontWeight:row.muted?400:600 }}>{row.v}</span>
+                      <span style={{ font:'600 10px "DM Mono",monospace', color:row.green?'#1D7A4F':(row.muted?'#9C9A92':'#1A1916'), fontWeight:row.muted?400:600 }}>{row.v}</span>
                     </div>
                   )
                 })}
