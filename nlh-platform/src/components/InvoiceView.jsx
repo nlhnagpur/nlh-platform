@@ -277,18 +277,46 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   }
 
   // ── print ──────────────────────────────────────────────────────────────────
+  // Repeating header/footer on every printed page is achieved with a <table>:
+  // browsers reprint <thead>/<tfoot> on each page, while the <tbody> content
+  // (parties + items + totals) paginates and flows onto further A4 pages.
   function handlePrint() {
-    const el = document.getElementById('inv-sheet')
-    if (!el) return
+    function html(id) { const n = document.getElementById(id); return n ? n.outerHTML : '' }
+    function h(id) { const n = document.getElementById(id); return n ? n.offsetHeight : 0 }
+    const headHTML = html('inv-hd-band') + html('inv-hd-tag') + html('inv-hd-meta')
+    const bodyEl = document.getElementById('inv-body')
+    const footHTML = html('inv-foot')
+    if (!bodyEl) return
+    // Reserve full-page body height so a short invoice still fills A4 (footer at bottom)
+    const reserved = h('inv-hd-band') + h('inv-hd-tag') + h('inv-hd-meta') + h('inv-foot')
     const win = window.open('','_blank','width=900,height=800')
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${order.invoice_no||order.id}</title>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-      <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',system-ui,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      /* Keep the full A4 sheet (210x297mm) in the printout — drop the on-screen shadow */
-      #inv-sheet{width:210mm !important;min-height:297mm !important;box-shadow:none !important;margin:0 auto}
-      @media print{@page{size:A4;margin:0}body{background:#fff}.np{display:none}#inv-sheet{margin:0}}</style></head><body>
+      <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:'DM Sans',system-ui,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .sheet{width:210mm;margin:0 auto}
+      table.inv{width:100%;border-collapse:collapse}
+      table.inv thead{display:table-header-group}   /* repeats at top of every page */
+      table.inv tfoot{display:table-footer-group}    /* repeats at bottom of every page */
+      table.inv td{padding:0;vertical-align:top}
+      /* body padding lives on the tbody cell so it applies on every page;
+         min-height keeps a short invoice filling the A4 page (footer pinned low) */
+      .inv-bodycell{padding:10px 20px 14px;min-height:calc(297mm - ${reserved}px)}
+      /* replicate the flex column gap between body sections */
+      .inv-bodycell>*{margin-bottom:8px}
+      /* force the items column to block so the list paginates cleanly */
+      #inv-items{display:block !important}
+      @media print{@page{size:A4;margin:0}.np{display:none}}
+      </style></head><body>
       <div class="np" style="text-align:right;padding:10px 20px;background:#f0f0f0"><button onclick="window.print()" style="background:#534AB7;color:#fff;border:none;padding:8px 18px;border-radius:7px;font:600 13px sans-serif;cursor:pointer">Print / Save PDF</button></div>
-      ${el.outerHTML}</body></html>`)
+      <div class="sheet">
+        <table class="inv">
+          <thead><tr><td>${headHTML}</td></tr></thead>
+          <tfoot><tr><td>${footHTML}</td></tr></tfoot>
+          <tbody><tr><td class="inv-bodycell">${bodyEl.innerHTML}</td></tr></tbody>
+        </table>
+      </div></body></html>`)
     win.document.close()
   }
 
@@ -506,7 +534,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
         <div id="inv-sheet" style={{ width:'210mm', minHeight:'297mm', background:'#fff', boxShadow:'0 8px 28px rgba(0,0,0,.10)', display:'flex', flexDirection:'column', overflow:'visible', fontFamily:'"DM Sans",system-ui,sans-serif', WebkitPrintColorAdjust:'exact', printColorAdjust:'exact' }}>
 
           {/* ── COMPACT HEADER ── */}
-          <div style={{ background:'linear-gradient(115deg,#FFF6D9 0%,#FFE89B 45%,#FFD234 80%,#FFB347 100%)', padding:'10px 20px 0', position:'relative', overflow:'hidden', flexShrink:0 }}>
+          <div id="inv-hd-band" style={{ background:'linear-gradient(115deg,#FFF6D9 0%,#FFE89B 45%,#FFD234 80%,#FFB347 100%)', padding:'10px 20px 0', position:'relative', overflow:'hidden', flexShrink:0 }}>
             <svg style={{ position:'absolute', left:0, right:0, bottom:-1, width:'100%', height:20, pointerEvents:'none' }} viewBox="0 0 800 20" preserveAspectRatio="none">
               <path d="M0 20 L0 12 Q100 2,200 11 T400 11 T600 11 T800 12 L800 20 Z" fill="#fff" />
             </svg>
@@ -535,12 +563,12 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           </div>
 
           {/* ── TAGLINE ── */}
-          <div style={{ background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', textAlign:'center', padding:'5px 20px', font:'600 8px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.14em', flexShrink:0 }}>
+          <div id="inv-hd-tag" style={{ background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', textAlign:'center', padding:'5px 20px', font:'600 8px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.14em', flexShrink:0 }}>
             New Learning Horizons · ISO 9001:2015 Certified · Enriching Children's Future
           </div>
 
           {/* ── META ── */}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', background:'#F7F6F3', borderBottom:'1px solid #E2E0D8', padding:'8px 20px', gap:10, flexShrink:0 }}>
+          <div id="inv-hd-meta" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', background:'#F7F6F3', borderBottom:'1px solid #E2E0D8', padding:'8px 20px', gap:10, flexShrink:0 }}>
             {[
               { lbl:'Invoice no.', val:order.invoice_no||'DRAFT', mono:true },
               { lbl:'Order ref.',  val:order.order_ref||('ORD-'+String(order.id).slice(0,8).toUpperCase()), mono:true },
@@ -565,7 +593,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           </div>
 
           {/* ── BODY ── */}
-          <div style={{ padding:'10px 20px 14px', flex:1, display:'flex', flexDirection:'column', gap:8 }}>
+          <div id="inv-body" style={{ padding:'10px 20px 14px', flex:1, display:'flex', flexDirection:'column', gap:8 }}>
 
             {/* parties */}
             <div style={{ display:'grid', gridTemplateColumns:shipFr?'1fr 1fr 1fr':'1fr 1fr', gap:8, breakInside:'avoid' }}>
@@ -602,7 +630,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             </div>
 
             {/* items table — stretches to fill the page; flows to next page when long */}
-            <div style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'visible', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
+            <div id="inv-items" style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'visible', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
               {/* mascot watermark — centered in the items area */}
               <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:0 }}>
                 <img src="/NLH%20Mascot.png" alt="" style={{ width:'45%', maxWidth:280, opacity:0.06, objectFit:'contain' }} />
@@ -749,7 +777,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           </div>
 
           {/* ── COMPACT FOOTER — thank you + computer-generated note ── */}
-          <div style={{ background:'linear-gradient(115deg,#FFE89B,#FFD234)', padding:'10px 20px', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexShrink:0 }}>
+          <div id="inv-foot" style={{ background:'linear-gradient(115deg,#FFE89B,#FFD234)', padding:'10px 20px', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexShrink:0 }}>
             <div style={{ font:'800 15px "DM Sans",sans-serif', color:'#1E40AF', letterSpacing:'-.01em' }}>Thank you for your order!</div>
             <div style={{ font:'600 7.5px "DM Mono",monospace', color:'#5B3A00', textTransform:'uppercase', letterSpacing:'.06em', textAlign:'right' }}>Computer generated invoice · No signature required</div>
           </div>
