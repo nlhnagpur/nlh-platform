@@ -598,32 +598,37 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             {/* parties */}
             <div style={{ display:'grid', gridTemplateColumns:shipFr?'1fr 1fr 1fr':'1fr 1fr', gap:8, breakInside:'avoid' }}>
               {[
-                { lbl:'From', bg:'#EEEDFE', border:'#534AB7', nameColor:'#534AB7',
+                { lbl:'From', bg:'#EEEDFE', border:'#534AB7', badgeColor:'#534AB7', badge:'Head Office',
                   name:'New Learning Horizons',
-                  sub:'9, Anjuman Shopping Complex, Residency Rd, Sadar, Nagpur 440 001',
-                  extra:'☎ 9373 111 311' },
-                { lbl:'Bill to', bg:'linear-gradient(135deg,#FFF7DA,#FFEAA0)', border:'#F59E0B', nameColor:'#92400E',
-                  name:fr.business_name||'—',
-                  sub:[fr.address,fr.area,[fr.city,fr.state].filter(Boolean).join(', '),fr.phone?'☎ '+fr.phone:'',fr.email?'✉ '+fr.email:''].filter(Boolean).join(' · '),
-                  badge:fr.tier||'UF', badgeColor:'#D97706' },
-                shipFr ? { lbl:'Ship to', bg:'linear-gradient(135deg,#E6F5ED,#C6EDD8)', border:'#16A34A', nameColor:'#14532D',
-                  name:shipFr.business_name||'—',
-                  sub:[shipFr.address,[shipFr.city,shipFr.state].filter(Boolean).join(', '),shipFr.phone?'☎ '+shipFr.phone:''].filter(Boolean).join(' · '),
-                  badge:shipFr.tier||'UF', badgeColor:'#16A34A', note:'Goods dispatched here' } : null,
+                  address:'9, Anjuman Shopping Complex, Residency Rd, Sadar, Nagpur 440 001',
+                  phone:'9373 111 311', email:'dhiral@nlhnagpur.info' },
+                { lbl:'Bill to', bg:'linear-gradient(135deg,#FFF7DA,#FFEAA0)', border:'#F59E0B', badgeColor:'#D97706',
+                  badge:fr.tier||'UF', name:fr.business_name||'—',
+                  address:[fr.address,fr.area,[fr.city,fr.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '),
+                  phone:fr.phone, email:fr.email },
+                shipFr ? { lbl:'Ship to', bg:'linear-gradient(135deg,#E6F5ED,#C6EDD8)', border:'#16A34A', badgeColor:'#16A34A',
+                  badge:shipFr.tier||'UF', name:shipFr.business_name||'—',
+                  address:[shipFr.address,[shipFr.city,shipFr.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '),
+                  phone:shipFr.phone, email:shipFr.email, note:'Goods dispatched here' } : null,
               ].filter(Boolean).map(function(p,i) {
                 return (
-                  <div key={i} style={{ borderRadius:10, padding:'10px 12px', background:p.bg, position:'relative', overflow:'hidden' }}>
+                  <div key={i} style={{ borderRadius:10, padding:'9px 12px 24px', background:p.bg, position:'relative', overflow:'hidden', minHeight:88 }}>
                     <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:p.border }} />
-                    <div style={{ font:'700 7.5px "DM Mono",monospace', color:p.border, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:4 }}>{p.lbl}</div>
-                    <div style={{ font:'700 12px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2, marginBottom:3 }}>{p.name}</div>
-                    <div style={{ font:'500 9px "DM Mono",monospace', color:'#5C5A54', lineHeight:1.55 }}>{p.sub}</div>
-                    {p.extra && <div style={{ font:'500 9px "DM Mono",monospace', color:'#5C5A54' }}>{p.extra}</div>}
-                    {p.badge && (
-                      <div style={{ marginTop:5, display:'flex', gap:8, flexWrap:'wrap', font:'700 8px "DM Mono",monospace', textTransform:'uppercase' }}>
-                        <span style={{ background:'rgba(0,0,0,.08)', color:p.badgeColor, padding:'1px 7px', borderRadius:20 }}>{p.badge}</span>
-                        {p.note && <span style={{ color:p.badgeColor, fontSize:8 }}>{p.note}</span>}
-                      </div>
-                    )}
+                    {/* label + phone (bold) on one line */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginBottom:5 }}>
+                      <span style={{ font:'700 7.5px "DM Mono",monospace', color:p.border, textTransform:'uppercase', letterSpacing:'.1em' }}>{p.lbl}</span>
+                      {p.phone && <span style={{ font:'700 11px "DM Sans",sans-serif', color:'#1A1916', whiteSpace:'nowrap' }}>☎ {p.phone}</span>}
+                    </div>
+                    {/* badge inline before the name */}
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3, flexWrap:'wrap' }}>
+                      {p.badge && <span style={{ background:'rgba(0,0,0,.08)', color:p.badgeColor, padding:'2px 8px', borderRadius:20, font:'700 8px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.04em', flexShrink:0 }}>{p.badge}</span>}
+                      <span style={{ font:'700 12px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2 }}>{p.name}</span>
+                    </div>
+                    {/* address */}
+                    <div style={{ font:'500 9px "DM Mono",monospace', color:'#5C5A54', lineHeight:1.55 }}>{p.address}</div>
+                    {p.note && <div style={{ font:'700 8px "DM Mono",monospace', color:p.badgeColor, textTransform:'uppercase', marginTop:3 }}>{p.note}</div>}
+                    {/* email pinned to the bottom-left corner */}
+                    {p.email && <div style={{ position:'absolute', left:12, bottom:7, font:'500 9px "DM Mono",monospace', color:'#5C5A54', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'calc(100% - 18px)' }}>✉ {p.email}</div>}
                   </div>
                 )
               })}
@@ -631,9 +636,9 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
 
             {/* items table — stretches to fill the page; flows to next page when long */}
             <div id="inv-items" style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'visible', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
-              {/* mascot watermark — centered in the items area */}
-              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:0 }}>
-                <img src="/NLH%20Mascot.png" alt="" style={{ width:'42%', maxWidth:260, opacity:0.16, objectFit:'contain' }} />
+              {/* mascot watermark — sits low in the empty area so item rows don't cover it */}
+              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'flex-end', justifyContent:'center', paddingBottom:36, pointerEvents:'none', zIndex:0 }}>
+                <img src="/NLH%20Mascot.png" alt="" style={{ width:'46%', maxWidth:300, opacity:0.2, objectFit:'contain' }} />
               </div>
               <div style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'9px 14px', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, font:'700 10px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
                 <div>#</div><div>SKU / Item</div>
