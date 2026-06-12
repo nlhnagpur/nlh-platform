@@ -124,12 +124,12 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       if (skuIds.length > 0) {
         const { data: kitRows } = await sb
           .from('kit_items')
-          .select('sku_id, quantity, inventory_items(name)')
+          .select('sku_id, item_id, quantity, inventory_items(name)')
           .in('sku_id', skuIds)
         const map = {}
         ;(kitRows || []).forEach(function(k) {
           if (!map[k.sku_id]) map[k.sku_id] = []
-          map[k.sku_id].push({ name: k.inventory_items?.name || '—', quantity: k.quantity })
+          map[k.sku_id].push({ item_id: k.item_id, name: k.inventory_items?.name || '—', quantity: k.quantity })
         })
         setKitMap(map)
       } else {
@@ -627,9 +627,10 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                         <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 5px', marginTop:3 }}>
                           <span style={{ font:'700 7px "DM Mono",monospace', color:'#9C8BD9', textTransform:'uppercase', letterSpacing:'.06em', alignSelf:'center' }}>Kit:</span>
                           {kitMap[item.sku_id].map(function(k, ki) {
+                            const notSent = (item.excluded_kit_items || []).includes(k.item_id)
                             return (
-                              <span key={ki} style={{ font:'600 8px "DM Mono",monospace', color:'#534AB7', background:'#EEEDFE', borderRadius:4, padding:'1px 6px', whiteSpace:'nowrap' }}>
-                                {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}
+                              <span key={ki} style={{ font:'600 8px "DM Mono",monospace', color:notSent?'#B0ADA4':'#534AB7', background:notSent?'#F0EFEC':'#EEEDFE', borderRadius:4, padding:'1px 6px', whiteSpace:'nowrap', textDecoration:notSent?'line-through':'none' }}>
+                                {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}{notSent ? ' · not sent' : ''}
                               </span>
                             )
                           })}

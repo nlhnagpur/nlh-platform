@@ -302,7 +302,7 @@ function DispatchModal({ order, onClose, onSaved }) {
       try {
         const { data: already } = await sb.from('stock_ledger').select('id').eq('ref_type', 'order').eq('ref_id', order.id).limit(1)
         if (!already || already.length === 0) {
-          const { data: oitems } = await sb.from('order_items').select('sku_id, item_id, ordered_qty, sent_qty').eq('order_id', order.id)
+          const { data: oitems } = await sb.from('order_items').select('sku_id, item_id, ordered_qty, sent_qty, excluded_kit_items').eq('order_id', order.id)
           const skuIds = (oitems || []).map(function (o) { return o.sku_id }).filter(Boolean)
           {
             const kitsRes = skuIds.length ? await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds) : { data: [] }
@@ -315,8 +315,9 @@ function DispatchModal({ order, onClose, onSaved }) {
                 // raw inventory-item line — deduct the item directly
                 if (units > 0) rows.push({ item_id: o.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -units, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note })
               } else {
-                // kit/supply SKU line — expand its bill of materials
-                kits.filter(function (k) { return k.sku_id === o.sku_id }).forEach(function (k) {
+                // kit/supply SKU line — expand its bill of materials, skipping components the biller marked not-sent
+                const excluded = o.excluded_kit_items || []
+                kits.filter(function (k) { return k.sku_id === o.sku_id && !excluded.includes(k.item_id) }).forEach(function (k) {
                   const qn = units * Number(k.quantity || 1)
                   if (qn > 0) rows.push({ item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -qn, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note })
                 })
@@ -472,6 +473,39 @@ function rateForSku(sku, tier) {
   return sku.uf_rate || 0
 }
 
+// Load kit bill-of-materials for a set of SKU ids → { sku_id: [{ item_id, name, quantity }] }
+async function loadKitMap(skuIds) {
+  const ids = (skuIds || []).filter(Boolean)
+  if (ids.length === 0) return {}
+  const { data } = await sb.from('kit_items').select('sku_id, item_id, quantity, inventory_items(name)').in('sku_id', ids)
+  const map = {}
+  ;(data || []).forEach(function (k) {
+    if (!map[k.sku_id]) map[k.sku_id] = []
+    map[k.sku_id].push({ item_id: k.item_id, name: k.inventory_items?.name || '—', quantity: k.quantity })
+  })
+  return map
+}
+
+// Small reusable kit checklist — pre-checked components; unchecking marks an item not-sent
+function KitChecklist({ components, excluded, onToggle }) {
+  if (!components || components.length === 0) return null
+  const ex = excluded || []
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', padding: '6px 10px', background: 'var(--purple-bg, #F1EEFB)', borderRadius: 8, marginTop: 6 }}>
+      <span style={{ font: '700 9px var(--mono)', color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '.05em', alignSelf: 'center', marginRight: 2 }}>Kit contents</span>
+      {components.map(function (c) {
+        const checked = !ex.includes(c.item_id)
+        return (
+          <label key={c.item_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', font: '500 11px var(--font)', color: checked ? 'var(--text)' : 'var(--text3)', textDecoration: checked ? 'none' : 'line-through' }}>
+            <input type="checkbox" checked={checked} onChange={function () { onToggle(c.item_id) }} style={{ cursor: 'pointer', accentColor: 'var(--purple)' }} />
+            {c.name}{c.quantity > 1 ? ' ×' + c.quantity : ''}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // InvoiceEditModal — admin edits items (add/delete/change), sent_qty, rate, courier
 // ---------------------------------------------------------------------------
@@ -479,6 +513,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const [items, setItems] = useState([])
   const [allSkus, setAllSkus] = useState([])
   const [allItems, setAllItems] = useState([])
+  const [kitMap, setKitMap] = useState({})   // sku_id -> [{ item_id, name, quantity }]
   const [deletedIds, setDeletedIds] = useState([])
   const [courierCharges, setCourierCharges] = useState(order.courier_charges || 0)
   const [loading, setLoading] = useState(true)
@@ -499,6 +534,12 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     else setItems(itemsRes.data || [])
     setAllSkus(skusRes.data || [])
     setAllItems(invRes.data || [])
+    // Kit compositions for both existing lines and the full SKU catalog (for newly-added lines)
+    const skuIds = [].concat(
+      (itemsRes.data || []).map(function (it) { return it.sku_id }),
+      (skusRes.data || []).map(function (s) { return s.id })
+    )
+    setKitMap(await loadKitMap(skuIds))
     // Make sure we have the current coupon on the order
     const { data: ord } = await sb.from('orders').select('coupon_id, coupon_code, discount_amount').eq('id', order.id).single()
     if (ord && ord.coupon_id) setCoupon({ coupon_id: ord.coupon_id, code: ord.coupon_code, discount: ord.discount_amount || 0 })
@@ -514,6 +555,17 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     })
   }
 
+  function toggleKitItem(idx, itemId) {
+    setItems(function (prev) {
+      return prev.map(function (it, i) {
+        if (i !== idx) return it
+        const ex = it.excluded_kit_items || []
+        const next = ex.includes(itemId) ? ex.filter(function (x) { return x !== itemId }) : [...ex, itemId]
+        return { ...it, excluded_kit_items: next }
+      })
+    })
+  }
+
   // value is "sku:<id>" (kit/supply) or "item:<id>" (raw inventory item)
   function updateNewItemSku(idx, value) {
     const tier = order.placer_tier || 'UF'
@@ -523,11 +575,11 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
         if (value && value.indexOf('item:') === 0) {
           const id = value.slice(5)
           const inv = allItems.find(function (x) { return x.id === id })
-          return { ...it, item_id: id, sku_id: null, skus: null, inventory_items: inv ? { name: inv.name, unit: inv.unit } : null, rate: inv ? (inv.sell_price || 0) : 0, ordered_qty: it.ordered_qty || 1 }
+          return { ...it, item_id: id, sku_id: null, skus: null, inventory_items: inv ? { name: inv.name, unit: inv.unit } : null, rate: inv ? (inv.sell_price || 0) : 0, ordered_qty: it.ordered_qty || 1, excluded_kit_items: [] }
         }
         const id = value && value.indexOf('sku:') === 0 ? value.slice(4) : value
         const sku = allSkus.find(function (s) { return s.id === id })
-        return { ...it, sku_id: id, item_id: null, skus: sku || null, inventory_items: null, rate: sku ? rateForSku(sku, tier) : 0, ordered_qty: it.ordered_qty || 1 }
+        return { ...it, sku_id: id, item_id: null, skus: sku || null, inventory_items: null, rate: sku ? rateForSku(sku, tier) : 0, ordered_qty: it.ordered_qty || 1, excluded_kit_items: [] }
       })
     })
   }
@@ -568,7 +620,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       if (item.id) {
         const { error } = await sb
           .from('order_items')
-          .update({ sent_qty: item.sent_qty, rate: item.rate, ordered_qty: item.ordered_qty })
+          .update({ sent_qty: item.sent_qty, rate: item.rate, ordered_qty: item.ordered_qty, excluded_kit_items: item.sku_id ? (item.excluded_kit_items || []) : [] })
           .eq('id', item.id)
         if (error) { showToast('Error saving item: ' + error.message); setSaving(false); return }
       } else {
@@ -580,6 +632,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
           ordered_qty: item.ordered_qty || 1,
           sent_qty: item.sent_qty || 0,
           rate: item.rate || 0,
+          excluded_kit_items: item.sku_id ? (item.excluded_kit_items || []) : [],
         })
         if (error) { showToast('Error adding item: ' + error.message); setSaving(false); return }
       }
@@ -636,8 +689,10 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                   {items.map(function (item, idx) {
                     const defaultRate = item.skus ? rateForSku(item.skus, order.placer_tier) : 0
                     const isNew = !item.id
-                    return (
-                      <tr key={item.id || ('new-' + idx)} style={isNew ? { background: 'var(--bg3)' } : {}}>
+                    const rowKey = item.id || ('new-' + idx)
+                    const kitComps = item.sku_id ? kitMap[item.sku_id] : null
+                    return [
+                      <tr key={rowKey} style={isNew ? { background: 'var(--bg3)' } : {}}>
                         <td>
                           {isNew ? (
                             <select
@@ -722,8 +777,15 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                             </button>
                           </td>
                         )}
-                      </tr>
-                    )
+                      </tr>,
+                      kitComps && kitComps.length > 0 ? (
+                        <tr key={rowKey + '-kit'}>
+                          <td colSpan={isAdmin ? 6 : 5} style={{ paddingTop: 0, borderTop: 'none' }}>
+                            <KitChecklist components={kitComps} excluded={item.excluded_kit_items} onToggle={function (id) { toggleKitItem(idx, id) }} />
+                          </td>
+                        </tr>
+                      ) : null,
+                    ]
                   })}
                 </tbody>
               </table>
@@ -797,12 +859,13 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   const [franchisees, setFranchisees] = useState([])
   const [allSkus, setAllSkus] = useState([])
   const [allItems, setAllItems] = useState([])   // HO inventory items (admin only)
+  const [kitMap, setKitMap] = useState({})       // sku_id -> [{ item_id, name, quantity }]
   const [visibleSkus, setVisibleSkus] = useState([])
   const [placerId, setPlacerId] = useState(showFrDropdown ? (isAdmin ? '' : currentFranchiseeId) : currentFranchiseeId)
   const [placerTier, setPlacerTier] = useState('')
   const [deliverTo, setDeliverTo] = useState('')
-  // Each line: { sku_id, qty, rate }  — rate is editable per line
-  const [lines, setLines] = useState([{ sku_id: '', qty: 1, rate: 0 }])
+  // Each line: { sku_id, qty, rate, excluded }  — excluded = kit item_ids not being sent
+  const [lines, setLines] = useState([{ sku_id: '', qty: 1, rate: 0, excluded: [] }])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [coupon, setCoupon] = useState(null)   // { coupon_id, code, discount, _base }
@@ -820,6 +883,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         .order('sort_order')
       const allS = sRes.data || []
       setAllSkus(allS)
+      setKitMap(await loadKitMap(allS.map(function (s) { return s.id })))
       // HO can also bill raw inventory items individually
       if (isAdmin) {
         const ivRes = await sb.from('inventory_items').select('id, name, unit, sell_price').eq('is_active', true).order('name')
@@ -884,7 +948,18 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   }, [])
 
   function addLine() {
-    setLines(function (prev) { return [...prev, { sku_id: '', qty: 1, rate: 0 }] })
+    setLines(function (prev) { return [...prev, { sku_id: '', qty: 1, rate: 0, excluded: [] }] })
+  }
+
+  function toggleKitItem(idx, itemId) {
+    setLines(function (prev) {
+      return prev.map(function (line, i) {
+        if (i !== idx) return line
+        const ex = line.excluded || []
+        const next = ex.includes(itemId) ? ex.filter(function (x) { return x !== itemId }) : [...ex, itemId]
+        return { ...line, excluded: next }
+      })
+    })
   }
 
   function removeLine(idx) {
@@ -898,6 +973,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         const updated = { ...line, [field]: val }
         // The line picker passes "sku:<id>" or "item:<id>"; set rate accordingly
         if (field === 'sku_id') {
+          updated.excluded = []   // new selection → all kit components checked
           if (val && val.indexOf('item:') === 0) {
             const id = val.slice(5)
             const inv = allItems.find(function (x) { return x.id === id })
@@ -1010,6 +1086,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         ordered_qty: parseInt(line.qty, 10),
         sent_qty: 0,
         rate: parseInt(line.rate, 10) || 0,
+        excluded_kit_items: line.sku_id ? (line.excluded || []) : [],
       }
     })
 
@@ -1080,8 +1157,10 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                   const lineRate = parseInt(line.rate, 10) || 0
                   const lineAmt = lineRate * (parseInt(line.qty, 10) || 0)
                   const isOverridden = sku && lineRate !== defaultRate
+                  const kitComps = line.sku_id ? kitMap[line.sku_id] : null
                   return (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 64px 96px 92px 30px', gap: 8, padding: '8px 12px', alignItems: 'center', background: idx % 2 ? 'var(--bg2, #FAFAF8)' : '#fff', borderBottom: '1px solid var(--bg4, #F1F0EC)' }}>
+                    <div key={idx} style={{ background: idx % 2 ? 'var(--bg2, #FAFAF8)' : '#fff', borderBottom: '1px solid var(--bg4, #F1F0EC)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 64px 96px 92px 30px', gap: 8, padding: '8px 12px', alignItems: 'center' }}>
                       <select value={line.item_id ? 'item:' + line.item_id : (line.sku_id ? 'sku:' + line.sku_id : '')} onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }} style={fldSm}>
                         <option value="">{isAdmin ? '— Select SKU or item —' : '— Select SKU —'}</option>
                         {Object.entries(
@@ -1108,6 +1187,12 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                       <span style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color: lineAmt > 0 ? 'var(--text)' : 'var(--text3)' }}>{fmtAmt(lineAmt)}</span>
                       <button onClick={function () { removeLine(idx) }} disabled={lines.length === 1}
                         style={{ background: 'none', border: 'none', cursor: lines.length === 1 ? 'default' : 'pointer', color: 'var(--text3)', fontSize: 16, padding: 0, opacity: lines.length === 1 ? .3 : 1 }} title="Remove">✕</button>
+                    </div>
+                    {kitComps && kitComps.length > 0 && (
+                      <div style={{ padding: '0 12px 8px' }}>
+                        <KitChecklist components={kitComps} excluded={line.excluded} onToggle={function (itemId) { toggleKitItem(idx, itemId) }} />
+                      </div>
+                    )}
                     </div>
                   )
                 })}
