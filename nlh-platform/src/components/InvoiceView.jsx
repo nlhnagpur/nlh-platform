@@ -503,7 +503,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       ) : (
 
         /* ══════════ PDF VIEW ══════════ */
-        <div id="inv-sheet" style={{ width:'210mm', minHeight:'297mm', background:'#fff', boxShadow:'0 8px 28px rgba(0,0,0,.10)', display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:'"DM Sans",system-ui,sans-serif', WebkitPrintColorAdjust:'exact', printColorAdjust:'exact' }}>
+        <div id="inv-sheet" style={{ width:'210mm', minHeight:'297mm', background:'#fff', boxShadow:'0 8px 28px rgba(0,0,0,.10)', display:'flex', flexDirection:'column', overflow:'visible', fontFamily:'"DM Sans",system-ui,sans-serif', WebkitPrintColorAdjust:'exact', printColorAdjust:'exact' }}>
 
           {/* ── COMPACT HEADER ── */}
           <div style={{ background:'linear-gradient(115deg,#FFF6D9 0%,#FFE89B 45%,#FFD234 80%,#FFB347 100%)', padding:'10px 20px 0', position:'relative', overflow:'hidden', flexShrink:0 }}>
@@ -568,7 +568,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           <div style={{ padding:'10px 20px 14px', flex:1, display:'flex', flexDirection:'column', gap:8 }}>
 
             {/* parties */}
-            <div style={{ display:'grid', gridTemplateColumns:shipFr?'1fr 1fr 1fr':'1fr 1fr', gap:8 }}>
+            <div style={{ display:'grid', gridTemplateColumns:shipFr?'1fr 1fr 1fr':'1fr 1fr', gap:8, breakInside:'avoid' }}>
               {[
                 { lbl:'From', bg:'#EEEDFE', border:'#534AB7', nameColor:'#534AB7',
                   name:'New Learning Horizons',
@@ -601,13 +601,13 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               })}
             </div>
 
-            {/* items table — stretches to fill the page */}
-            <div style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'hidden', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
+            {/* items table — stretches to fill the page; flows to next page when long */}
+            <div style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'visible', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
               {/* mascot watermark — centered in the items area */}
               <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:0 }}>
                 <img src="/NLH%20Mascot.png" alt="" style={{ width:'45%', maxWidth:280, opacity:0.06, objectFit:'contain' }} />
               </div>
-              <div style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'7px 12px', display:'grid', gridTemplateColumns:'26px 1fr 44px 44px 70px 90px', gap:8, font:'700 8px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
+              <div style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'9px 14px', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, font:'700 10px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
                 <div>#</div><div>SKU / Item</div>
                 <div style={{textAlign:'right'}}>Ord</div>
                 <div style={{textAlign:'right'}}>Sent</div>
@@ -621,36 +621,36 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 const lineAmt = (item.rate||0)*(item.ordered_qty||0)
                 const sent    = item.sent_qty||0
                 return (
-                  <div key={item.id} style={{ position:'relative', zIndex:1, display:'grid', gridTemplateColumns:'26px 1fr 44px 44px 70px 90px', gap:8, padding:'6px 12px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:i%2===1?'#FAFAFE':'#fff', alignItems:'center' }}>
-                    <div style={{ font:'600 8px "DM Mono",monospace', color:'#9C9A92' }}>{String(i+1).padStart(2,'0')}</div>
+                  <div key={item.id} style={{ position:'relative', zIndex:1, breakInside:'avoid', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, padding:'9px 14px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:i%2===1?'#FAFAFE':'#fff', alignItems:'center' }}>
+                    <div style={{ font:'600 10px "DM Mono",monospace', color:'#9C9A92' }}>{String(i+1).padStart(2,'0')}</div>
                     <div>
-                      <div style={{ font:'600 10.5px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.2 }}>{name}</div>
+                      <div style={{ font:'600 13px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.25 }}>{name}</div>
                       {item.sku_id && kitMap[item.sku_id] && kitMap[item.sku_id].length > 0 && (
-                        <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 5px', marginTop:3 }}>
-                          <span style={{ font:'700 7px "DM Mono",monospace', color:'#9C8BD9', textTransform:'uppercase', letterSpacing:'.06em', alignSelf:'center' }}>Kit:</span>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 6px', marginTop:4 }}>
+                          <span style={{ font:'700 9px "DM Mono",monospace', color:'#9C8BD9', textTransform:'uppercase', letterSpacing:'.06em', alignSelf:'center' }}>Kit:</span>
                           {kitMap[item.sku_id].map(function(k, ki) {
                             const notSent = (item.excluded_kit_items || []).includes(k.item_id)
                             return (
-                              <span key={ki} style={{ font:'600 8px "DM Mono",monospace', color:notSent?'#B0ADA4':'#534AB7', background:notSent?'#F0EFEC':'#EEEDFE', borderRadius:4, padding:'1px 6px', whiteSpace:'nowrap', textDecoration:notSent?'line-through':'none' }}>
+                              <span key={ki} style={{ font:'600 10px "DM Mono",monospace', color:notSent?'#B0ADA4':'#534AB7', background:notSent?'#F0EFEC':'#EEEDFE', borderRadius:4, padding:'2px 7px', whiteSpace:'nowrap', textDecoration:notSent?'line-through':'none' }}>
                                 {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}{notSent ? ' · not sent' : ''}
                               </span>
                             )
                           })}
                         </div>
                       )}
-                      {item.sku_id && <div style={{ font:'500 8px "DM Mono",monospace', color:'#C0BDB4', marginTop:2, textTransform:'uppercase' }}>{item.sku_id.slice(0,8).toUpperCase()}</div>}
+                      {item.sku_id && <div style={{ font:'500 9px "DM Mono",monospace', color:'#C0BDB4', marginTop:3, textTransform:'uppercase' }}>{item.sku_id.slice(0,8).toUpperCase()}</div>}
                     </div>
-                    <div style={{ textAlign:'right', font:'500 10px "DM Mono",monospace', color:'#5C5A54' }}>{item.ordered_qty||0}</div>
-                    <div style={{ textAlign:'right', font:'500 10px "DM Mono",monospace', color:sent===item.ordered_qty?'#16A34A':'#5C5A54', fontWeight:sent===item.ordered_qty?700:500 }}>{sent}</div>
-                    <div style={{ textAlign:'right', font:'500 10px "DM Mono",monospace', color:'#5C5A54' }}>₹{fmtAmt(item.rate||0)}</div>
-                    <div style={{ textAlign:'right', font:'700 11px "DM Mono",monospace', color:'#1A1916' }}>₹{fmtAmt(lineAmt)}</div>
+                    <div style={{ textAlign:'right', font:'500 12.5px "DM Mono",monospace', color:'#5C5A54' }}>{item.ordered_qty||0}</div>
+                    <div style={{ textAlign:'right', font:'500 12.5px "DM Mono",monospace', color:sent===item.ordered_qty?'#16A34A':'#5C5A54', fontWeight:sent===item.ordered_qty?700:500 }}>{sent}</div>
+                    <div style={{ textAlign:'right', font:'500 12.5px "DM Mono",monospace', color:'#5C5A54' }}>₹{fmtAmt(item.rate||0)}</div>
+                    <div style={{ textAlign:'right', font:'700 13.5px "DM Mono",monospace', color:'#1A1916' }}>₹{fmtAmt(lineAmt)}</div>
                   </div>
                 )
               })}
             </div>
 
             {/* payment + totals */}
-            <div style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8, breakInside:'avoid' }}>
               {/* payment */}
               <div style={{ background:'linear-gradient(135deg,#FFF7DA,#FFE89B)', borderRadius:10, padding:'10px 12px', position:'relative', overflow:'hidden', display:'flex', flexDirection:'column' }}>
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#F59E0B' }} />
