@@ -204,7 +204,6 @@ export default function InventoryPage() {
   const [kitCounts, setKitCounts] = useState({})  // sku_id -> item count
   const [loading, setLoad]  = useState(true)
   const [search, setSearch] = useState('')
-  const [skuFilter, setSkuFilter] = useState('course_kit')  // course_kit | supply
 
   const [itemModal, setItemModal] = useState(null)   // 'new' | item
   const [supplyModal, setSupplyModal] = useState(false)
@@ -260,7 +259,8 @@ export default function InventoryPage() {
   const filteredItems = items.filter(function (i) {
     return !q || (i.name || '').toLowerCase().includes(q) || (i.item_code || '').toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q)
   })
-  const filteredSkus = skus.filter(function (s) { return (s.sku_type || 'course_kit') === skuFilter })
+  const courseKits = skus.filter(function (s) { return (s.sku_type || 'course_kit') === 'course_kit' })
+  const supplies   = skus.filter(function (s) { return s.sku_type === 'supply' })
   const lowStock = items.filter(function (i) { return (i.reorder_level || 0) > 0 && (balance[i.id] || 0) <= (i.reorder_level || 0) }).length
 
   return (
@@ -269,8 +269,8 @@ export default function InventoryPage() {
         <div className="crumb">Settings <span className="sep">›</span> <b>Inventory & Kits</b></div>
         <div className="tb-r">
           <input className="search tb-search" placeholder="Search items…" value={search} onChange={function (e) { setSearch(e.target.value) }} />
+          {canManage && tab === 'items' && <button className="btn-s" onClick={function () { setSupplyModal(true) }}>+ Supply</button>}
           {canManage && tab === 'items' && <button className="btn-p" onClick={function () { setItemModal('new') }}>+ New item</button>}
-          {canManage && tab === 'kits' && skuFilter === 'supply' && <button className="btn-p" onClick={function () { setSupplyModal(true) }}>+ Supply SKU</button>}
           {canManage && tab === 'stock' && <button className="btn-p" onClick={function () { setReceiptModal(true) }}>📥 Record receipt</button>}
         </div>
       </header>
@@ -288,7 +288,7 @@ export default function InventoryPage() {
         </div>
 
         <div className="status-pills" style={{ marginBottom: 14 }}>
-          {[['items', '📦 Items & stock'], ['kits', '🧰 Kits & supplies'], ['stock', '📜 Stock ledger']].map(function (t) {
+          {[['items', '📦 Item stock & Supplies'], ['kits', '🧰 Course kits'], ['stock', '📜 Stock ledger']].map(function (t) {
             return <button key={t[0]} className={'sp' + (tab === t[0] ? ' on on-pend' : '')} onClick={function () { setTab(t[0]) }}>{t[1]}</button>
           })}
         </div>
@@ -296,7 +296,8 @@ export default function InventoryPage() {
         {loading ? (
           <div className="loading"><span className="spinner" />Loading inventory…</div>
         ) : tab === 'items' ? (
-          filteredItems.length === 0 ? <div className="empty">No items yet. Add your kit components (books, tools, bags…).</div> : (
+          <>
+            {filteredItems.length === 0 ? <div className="empty">No items yet. Add your kit components (books, tools, bags…).</div> : (
             <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
               <table className="big-tbl">
                 <thead><tr><th>Item</th><th className="hide-mobile">Category</th><th className="hide-mobile" style={{ textAlign: 'right' }}>Sell ₹</th><th style={{ textAlign: 'right' }}>In stock (HO)</th><th className="hide-mobile" style={{ textAlign: 'right' }}>Reorder</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
@@ -325,38 +326,26 @@ export default function InventoryPage() {
                 </tbody>
               </table>
             </div>
-          )
-        ) : tab === 'kits' ? (
-          <>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-              <button className={'sp' + (skuFilter === 'course_kit' ? ' on on-pend' : '')} onClick={function () { setSkuFilter('course_kit') }}>Course kits</button>
-              <button className={'sp' + (skuFilter === 'supply' ? ' on on-pend' : '')} onClick={function () { setSkuFilter('supply') }}>Supplies</button>
+            )}
+
+            {/* ── Supplies: priced services & documents (no stock) ── */}
+            <div style={{ marginTop: 22, marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <h3 style={{ font: '700 14px var(--font)', color: 'var(--text)', margin: 0 }}>Supplies</h3>
+              <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>priced services &amp; documents — banners, certificates, agreements</span>
             </div>
-            {filteredSkus.length === 0 ? <div className="empty">{skuFilter === 'supply' ? 'No supply SKUs yet. Add one with “+ Supply SKU”.' : 'No course kits.'}</div> : (
+            {supplies.length === 0 ? (
+              <div className="empty" style={{ padding: 18 }}>No supplies yet.{canManage ? ' Add one with “+ Supply”.' : ''}</div>
+            ) : (
               <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
                 <table className="big-tbl">
-                  <thead><tr><th>SKU</th><th className="hide-mobile">{skuFilter === 'supply' ? 'Category' : 'Course'}</th>{skuFilter === 'course_kit' && <th style={{ textAlign: 'center' }}>Kit items</th>}{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
+                  <thead><tr><th>Supply</th><th className="hide-mobile">Category</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
                   <tbody>
-                    {filteredSkus.map(function (s) {
-                      const n = kitCounts[s.id] || 0
-                      const label = (s.courses?.group_name ? s.courses.group_name + ' — ' : '') + s.level_name
+                    {supplies.map(function (s) {
                       return (
                         <tr key={s.id}>
                           <td><div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{s.level_name}</div></td>
-                          <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text2)' }}>{skuFilter === 'supply' ? (s.supply_category || '—') : (s.courses?.group_name || '—')}</td>
-                          {skuFilter === 'course_kit' && (
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{ font: '700 12px var(--mono)', color: n > 0 ? 'var(--green,#1D7A4F)' : 'var(--text3)' }}>{n}</span>
-                              <span style={{ color: 'var(--text3)', fontSize: 11 }}> item{n !== 1 ? 's' : ''}</span>
-                            </td>
-                          )}
-                          {canManage && (
-                            <td style={{ textAlign: 'right' }}>
-                              {skuFilter === 'course_kit'
-                                ? <button className="btn-s" style={{ padding: '4px 10px' }} onClick={function () { setKitSku({ id: s.id, label: label }) }}>🧰 Edit kit</button>
-                                : <button className="btn-s" style={{ padding: '4px 10px', color: 'var(--red,#dc2626)' }} onClick={function () { deleteSupply(s) }}>Delete</button>}
-                            </td>
-                          )}
+                          <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text2)' }}>{s.supply_category || '—'}</td>
+                          {canManage && <td style={{ textAlign: 'right' }}><button className="btn-s" style={{ padding: '4px 10px', color: 'var(--red,#dc2626)' }} onClick={function () { deleteSupply(s) }}>Delete</button></td>}
                         </tr>
                       )
                     })}
@@ -365,6 +354,35 @@ export default function InventoryPage() {
               </div>
             )}
           </>
+        ) : tab === 'kits' ? (
+          courseKits.length === 0 ? <div className="empty">No course kits.</div> : (
+            <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+              <table className="big-tbl">
+                <thead><tr><th>SKU</th><th className="hide-mobile">Course</th><th style={{ textAlign: 'center' }}>Kit items</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
+                <tbody>
+                  {courseKits.map(function (s) {
+                    const n = kitCounts[s.id] || 0
+                    const label = (s.courses?.group_name ? s.courses.group_name + ' — ' : '') + s.level_name
+                    return (
+                      <tr key={s.id}>
+                        <td><div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{s.level_name}</div></td>
+                        <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text2)' }}>{s.courses?.group_name || '—'}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{ font: '700 12px var(--mono)', color: n > 0 ? 'var(--green,#1D7A4F)' : 'var(--text3)' }}>{n}</span>
+                          <span style={{ color: 'var(--text3)', fontSize: 11 }}> item{n !== 1 ? 's' : ''}</span>
+                        </td>
+                        {canManage && (
+                          <td style={{ textAlign: 'right' }}>
+                            <button className="btn-s" style={{ padding: '4px 10px' }} onClick={function () { setKitSku({ id: s.id, label: label }) }}>🧰 Edit kit</button>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         ) : (
           ledger.length === 0 ? <div className="empty">No stock movements yet. Record a receipt to start.</div> : (
             <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
