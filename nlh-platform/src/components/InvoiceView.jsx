@@ -633,7 +633,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             <div id="inv-items" style={{ border:'1px solid #E2E0D8', borderRadius:10, overflow:'visible', flex:1, display:'flex', flexDirection:'column', position:'relative' }}>
               {/* mascot watermark — centered in the items area */}
               <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:0 }}>
-                <img src="/NLH%20Mascot.png" alt="" style={{ width:'45%', maxWidth:280, opacity:0.06, objectFit:'contain' }} />
+                <img src="/NLH%20Mascot.png" alt="" style={{ width:'42%', maxWidth:260, opacity:0.16, objectFit:'contain' }} />
               </div>
               <div style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'9px 14px', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, font:'700 10px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
                 <div>#</div><div>SKU / Item</div>
