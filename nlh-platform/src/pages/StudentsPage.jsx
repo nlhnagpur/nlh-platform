@@ -213,6 +213,24 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
     showToast('Payment of ₹' + fmtAmt(amt) + ' recorded ✓')
 
+    // ── Lock (redeem) the admission coupon on the FIRST payment received ──
+    if (payments.length === 0) {
+      const { data: sd } = await sb.from('students')
+        .select('coupon_code, franchisee_id, fee_total, discount_amount').eq('id', student.id).single()
+      if (sd && sd.coupon_code) {
+        const base = (Number(sd.fee_total) || 0) + (Number(sd.discount_amount) || 0)   // gross fee the coupon applied to
+        try {
+          const r = await sb.rpc('redeem_coupon', {
+            p_code: sd.coupon_code, p_context: 'student', p_amount: base,
+            p_franchisee: sd.franchisee_id, p_ref: student.id,
+          })
+          if (r && r.data && r.data.valid === false) {
+            showToast('Payment saved · coupon could not be locked: ' + (r.data.message || 'limit reached'), 'warn')
+          }
+        } catch (cErr) { console.warn('Coupon lock skipped:', cErr.message) }
+      }
+    }
+
     // WhatsApp receipt to the parent
     if (sendReceipt && receiptPhone) {
       const newPaid = next.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
@@ -552,10 +570,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       payment_status: deriveStatus(newTotal, form.fee_paid),
     }).eq('id', student.id)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    await sb.rpc('redeem_coupon', {
-      p_code: c.code, p_context: 'student', p_amount: base,
-      p_franchisee: student.franchisee_id, p_ref: student.id,
-    })
+    // Coupon is applied to the fee but NOT locked yet — it redeems only when the
+    // first fee payment is received (see recordPayment).
     setForm(function (f) { return { ...f, fee_total: newTotal } })
     showToast('Discount applied — ₹' + fmtAmt(disc) + ' off')
   }
@@ -630,12 +646,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       await sb.from('students').update({ fee_total: newFeeTotal, payment_status: deriveStatus(newFeeTotal, form.fee_paid) }).eq('id', student.id)
       setForm(function (f) { return { ...f, fee_total: newFeeTotal } })
     }
-    if (addCoupon && discount > 0) {
-      await sb.rpc('redeem_coupon', {
-        p_code: addCoupon.code, p_context: 'student', p_amount: addedFee,
-        p_franchisee: student.franchisee_id, p_ref: student.id,
-      })
-    }
+    // Coupon applied to the added fee but not locked here — it redeems when the
+    // first fee payment is received (see recordPayment).
 
     // 4) Reflect batch assignments for the new courses immediately
     const newEnrIds = added.map(function (e) { return e.id })
@@ -890,7 +902,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Give discount</span>
                   <CouponField context="student" amount={Number(form.fee_total) || 0} franchiseeId={student.franchisee_id}
-                    applied={null} onApply={applyFeeDiscount} compact />
+                    applied={null} onApply={applyFeeDiscount} excludeRef={student.id} compact />
                   <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>— or just lower the Agreed Fee above and Save</span>
                 </div>
               )}
@@ -1322,7 +1334,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                   <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Coupon</span>
                                   <CouponField context="student" amount={addedFee} franchiseeId={student.franchisee_id}
-                                    applied={addCoupon} onApply={setAddCoupon} onClear={function () { setAddCoupon(null) }} compact />
+                                    applied={addCoupon} onApply={setAddCoupon} onClear={function () { setAddCoupon(null) }} excludeRef={student.id} compact />
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
                                   <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>New course fees</div>
@@ -1843,13 +1855,9 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
       if (stErr) { showToast('Failed to create student: ' + stErr.message, 'err'); setSaving(false); return }
 
-      // Record coupon redemption against this student (server validates + logs)
-      if (coupon && couponDiscount > 0) {
-        await sb.rpc('redeem_coupon', {
-          p_code: coupon.code, p_context: 'student', p_amount: feeTotal,
-          p_franchisee: form.franchisee_id, p_ref: st.id,
-        })
-      }
+      // NOTE: the coupon is applied to the admission (stored on the student) but
+      // not redeemed/locked here — it locks when the first fee payment is
+      // received (see recordPayment), mirroring 'lock on dispatch' for orders.
 
       // Insert enrollments and capture IDs for batch assignment
       let enrData = []
