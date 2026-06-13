@@ -351,7 +351,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       const cont = !isLastItemsPage ? '<div class="cont">⟶ Continued on page ' + (p + 2) + ' of ' + totalPages + '…</div>' : ''
       pagesHTML += pageHTML(box + summary + cont)
     })
-    if (!summaryOnLast) pagesHTML += pageHTML('<div class="after" style="margin-top:6px">' + afterHTML + '</div>')
+    if (!summaryOnLast) pagesHTML += pageHTML('<div class="after">' + afterHTML + '</div>')
 
     const win = window.open('','_blank','width=900,height=800')
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${order.invoice_no||order.id}</title>
@@ -366,7 +366,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:0}
       .wm img{width:46%;max-width:300px;opacity:.16;object-fit:contain}
       .ibox{position:relative;z-index:1;border:1px solid #E2E0D8;border-radius:10px;overflow:hidden}
-      .after{position:relative;z-index:1;margin-top:8px}
+      .after{position:relative;z-index:1;margin-top:auto;padding-top:10px}
       .cont{position:relative;z-index:1;margin-top:auto;padding-top:10px;text-align:center;font:700 11px 'DM Mono',monospace;color:#534AB7;letter-spacing:.05em;text-transform:uppercase}
       @media print{@page{size:A4;margin:0}.np{display:none}}
       </style></head><body>
