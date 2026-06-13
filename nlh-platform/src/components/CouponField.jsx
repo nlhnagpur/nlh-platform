@@ -11,7 +11,7 @@ import { showToast } from '../utils'
 //   onApply(obj) called with the validated coupon
 //   onClear()    remove the applied coupon
 //   disabled     disable input
-export default function CouponField({ context, amount, franchiseeId, applied, onApply, onClear, disabled, compact }) {
+export default function CouponField({ context, amount, franchiseeId, applied, onApply, onClear, disabled, compact, excludeRef }) {
   const [code, setCode]         = useState('')
   const [checking, setChecking] = useState(false)
 
@@ -24,6 +24,7 @@ export default function CouponField({ context, amount, franchiseeId, applied, on
       p_context: context,
       p_amount: Math.max(0, Math.round(amount || 0)),
       p_franchisee: franchiseeId || null,
+      p_exclude_ref: excludeRef || null,
     })
     setChecking(false)
     if (error) { showToast('Coupon check failed: ' + error.message, 'err'); return }

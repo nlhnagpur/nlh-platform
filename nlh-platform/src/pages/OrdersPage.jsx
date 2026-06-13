@@ -601,6 +601,35 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   function itemsSubtotal() {
     return items.reduce(function (s, it) { return s + lineTotal(it) }, 0)
   }
+  const liveSubtotal = items.reduce(function (s, it) { return s + (it.ordered_qty || 0) * (it.rate || 0) }, 0)
+
+  // Re-validate the applied coupon whenever the order total changes, so the
+  // discount tracks the new amount (e.g. 15% recomputed) instead of staying
+  // frozen at the value from when it was first applied. Drops it if the new
+  // total no longer qualifies (e.g. below the minimum).
+  useEffect(function () {
+    if (loading || items.length === 0) return   // wait until the order's items have loaded
+    if (!coupon || !coupon.code) return
+    let cancelled = false
+    async function reval() {
+      const { data } = await sb.rpc('validate_coupon', {
+        p_code: coupon.code, p_context: 'order',
+        p_amount: Math.max(0, Math.round(liveSubtotal)),
+        p_franchisee: order.placer_id || null,
+        p_exclude_ref: order.id,
+      })
+      if (cancelled) return
+      if (!data || !data.valid || !data.discount) {
+        setCoupon(null)
+        showToast(data && data.message ? 'Coupon removed — ' + data.message : 'Coupon removed (no longer applies to this total)', 'warn')
+      } else if (data.discount !== coupon.discount) {
+        setCoupon(function (prev) { return prev ? { ...prev, discount: data.discount } : prev })
+      }
+    }
+    reval()
+    return function () { cancelled = true }
+  }, [liveSubtotal])  // eslint-disable-line react-hooks/exhaustive-deps
+
   function couponDisc() {
     return coupon ? Math.min(coupon.discount || 0, itemsSubtotal()) : 0
   }
@@ -814,7 +843,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                     <div className="fr" style={{ margin: 0 }}>
                       <label>🎟️ Discount coupon</label>
                       <CouponField context="order" amount={itemsSubtotal()} franchiseeId={order.placer_id}
-                        applied={coupon}
+                        applied={coupon} excludeRef={order.id}
                         onApply={function (c) { setCoupon(c) }}
                         onClear={function () { setCoupon(null) }}
                         disabled={itemsSubtotal() <= 0} compact />
