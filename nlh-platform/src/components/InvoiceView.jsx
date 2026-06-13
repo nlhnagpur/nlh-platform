@@ -737,31 +737,31 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             </div>
 
             {/* payment + totals */}
-            <div id="inv-summary" style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8, breakInside:'avoid' }}>
+            <div id="inv-summary" style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8, alignItems:'start', breakInside:'avoid' }}>
               {/* payment */}
               <div style={{ background:'linear-gradient(135deg,#FFF7DA,#FFE89B)', borderRadius:10, padding:'10px 12px', position:'relative', overflow:'hidden', display:'flex', flexDirection:'column' }}>
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#F59E0B' }} />
                 <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:3 }}>Payment Details</div>
                 <div style={{ font:'500 9px "DM Mono",monospace', color:'#5C5A54', marginBottom:8, letterSpacing:'.02em' }}>NEFT / IMPS / UPI accepted</div>
-                <div style={{ background:'#fff', borderRadius:8, padding:'14px 16px', display:'grid', gridTemplateColumns:'1fr 130px', gap:14, boxShadow:'0 1px 3px rgba(0,0,0,.06)', alignItems:'center' }}>
+                <div style={{ background:'#fff', borderRadius:8, padding:'10px 12px', display:'grid', gridTemplateColumns:'1fr 100px', gap:12, boxShadow:'0 1px 3px rgba(0,0,0,.06)', alignItems:'center' }}>
                   <div>
-                    <div style={{ font:'700 12.5px "DM Sans",sans-serif', color:'#1E40AF', marginBottom:10 }}>🏦 IDFC First Bank</div>
-                    <div style={{ font:'500 10px "DM Mono",monospace', color:'#5C5A54', marginBottom:10 }}>Byramji Town Branch, Nagpur</div>
-                    <div style={{ display:'grid', gridTemplateColumns:'42px 1fr', gap:'9px 10px', alignItems:'center' }}>
+                    <div style={{ font:'700 12px "DM Sans",sans-serif', color:'#1E40AF', marginBottom:2 }}>🏦 IDFC First Bank</div>
+                    <div style={{ font:'500 9.5px "DM Mono",monospace', color:'#5C5A54', marginBottom:7 }}>Byramji Town Branch, Nagpur</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'38px 1fr', gap:'5px 10px', alignItems:'center' }}>
                       <span style={{ color:'#9C9A92', textTransform:'uppercase', font:'600 9px "DM Mono",monospace' }}>A/C</span>
-                      <span style={{ color:'#1A1916', font:'700 15px "DM Mono",monospace', letterSpacing:'.03em' }}>10278096847</span>
+                      <span style={{ color:'#1A1916', font:'700 14px "DM Mono",monospace', letterSpacing:'.03em' }}>10278096847</span>
                       <span style={{ color:'#9C9A92', textTransform:'uppercase', font:'600 9px "DM Mono",monospace' }}>IFSC</span>
-                      <span style={{ color:'#1A1916', font:'700 15px "DM Mono",monospace', letterSpacing:'.03em' }}>IDFB0042504</span>
+                      <span style={{ color:'#1A1916', font:'700 14px "DM Mono",monospace', letterSpacing:'.03em' }}>IDFB0042504</span>
                     </div>
                   </div>
-                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
                     <div style={{ font:'700 8px "DM Mono",monospace', color:'#1E40AF', textTransform:'uppercase', letterSpacing:'.08em', textAlign:'center' }}>Scan &amp; Pay</div>
-                    <img src="/nlh-upi-qr.png" alt="QR" style={{ width:124, height:124, background:'#fff', borderRadius:6, padding:4, border:'2px solid #1E40AF', objectFit:'contain' }} />
+                    <img src="/nlh-upi-qr.png" alt="QR" style={{ width:98, height:98, background:'#fff', borderRadius:6, padding:3, border:'2px solid #1E40AF', objectFit:'contain' }} />
                   </div>
                 </div>
-                {/* UPI — full-width strip at the bottom of the payment box */}
-                <div style={{ marginTop:'auto', paddingTop:8 }}>
-                  <div style={{ background:'#EEEDFE', borderRadius:7, padding:'8px 12px', font:'700 11px "DM Mono",monospace', color:'#534AB7', textAlign:'center', letterSpacing:'.01em' }}>📱 UPI: newlearninghorizons@idfcbank</div>
+                {/* UPI — full-width strip directly under the bank card */}
+                <div style={{ paddingTop:7 }}>
+                  <div style={{ background:'#EEEDFE', borderRadius:7, padding:'7px 12px', font:'700 11px "DM Mono",monospace', color:'#534AB7', textAlign:'center', letterSpacing:'.01em' }}>📱 UPI: newlearninghorizons@idfcbank</div>
                 </div>
               </div>
 
@@ -776,26 +776,26 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                   { l:'Amount paid',     v:amtPaid>0?'₹'+fmtAmt(amtPaid):'—', muted:amtPaid===0 },
                 ].map(function(row,i) {
                   return (
-                    <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px dashed rgba(83,74,183,.2)' }}>
+                    <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 0', borderBottom:'1px dashed rgba(83,74,183,.2)' }}>
                       <span style={{ font:'500 12px "DM Sans",sans-serif', color:'#5C5A54' }}>{row.l}</span>
                       <span style={{ font:'600 12px "DM Mono",monospace', color:row.green?'#1D7A4F':(row.muted?'#9C9A92':'#1A1916'), fontWeight:row.muted?400:600 }}>{row.v}</span>
                     </div>
                   )
                 })}
                 {balance > 0 && (
-                  <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px dashed rgba(83,74,183,.2)' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px dashed rgba(83,74,183,.2)' }}>
                     <span style={{ font:'500 12px "DM Sans",sans-serif', color:'#5C5A54' }}>Balance due</span>
                     <span style={{ font:'600 12px "DM Mono",monospace', color:balance>0?'#A32D2D':'#1D7A4F' }}>₹{fmtAmt(balance)}</span>
                   </div>
                 )}
-                <div style={{ marginTop:'auto', paddingTop:12 }}>
-                  <div style={{ background:'linear-gradient(135deg,#534AB7,#6F66CC)', borderRadius:8, padding:'14px 16px', display:'flex', justifyContent:'space-between', alignItems:'baseline', color:'#fff', boxShadow:'0 4px 14px rgba(83,74,183,.2)' }}>
+                <div style={{ paddingTop:8 }}>
+                  <div style={{ background:'linear-gradient(135deg,#534AB7,#6F66CC)', borderRadius:8, padding:'11px 14px', display:'flex', justifyContent:'space-between', alignItems:'baseline', color:'#fff', boxShadow:'0 4px 14px rgba(83,74,183,.2)' }}>
                     <div style={{ font:'700 10px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.12em' }}>Grand Total</div>
-                    <div style={{ font:'800 26px "DM Sans",sans-serif', letterSpacing:'-.01em', lineHeight:1 }}>
-                      <span style={{ font:'700 13px "DM Sans",sans-serif', marginRight:3, opacity:.85 }}>₹</span>{fmtAmt(liveGrandTotal)}
+                    <div style={{ font:'800 23px "DM Sans",sans-serif', letterSpacing:'-.01em', lineHeight:1 }}>
+                      <span style={{ font:'700 12px "DM Sans",sans-serif', marginRight:3, opacity:.85 }}>₹</span>{fmtAmt(liveGrandTotal)}
                     </div>
                   </div>
-                  <div style={{ marginTop:8, font:'500 9px "DM Mono",monospace', color:'#7A75A0', lineHeight:1.5, textTransform:'uppercase', letterSpacing:'.03em' }}>
+                  <div style={{ marginTop:6, font:'500 9px "DM Mono",monospace', color:'#7A75A0', lineHeight:1.5, textTransform:'uppercase', letterSpacing:'.03em' }}>
                     In words: <b style={{ color:'#534AB7' }}>{numToWords(liveGrandTotal)}</b>
                   </div>
                 </div>
