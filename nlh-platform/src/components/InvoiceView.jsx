@@ -277,53 +277,101 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   }
 
   // ── print ──────────────────────────────────────────────────────────────────
-  // Repeating header/footer on every printed page is achieved with a <table>:
-  // browsers reprint <thead>/<tfoot> on each page, while the <tbody> content
-  // (parties + items + totals) paginates and flows onto further A4 pages.
+  // Manual A4 pagination: every page is a fixed 210×297mm box with a FIXED
+  // header (masthead + From/Bill-to) and FIXED footer (thank-you strip). The
+  // middle is a fixed-height items area; rows are measured on screen and packed
+  // so they never overflow. When the list spills over, a "Continued on page N…"
+  // line is stamped at the bottom of the items area and the rest carry to the
+  // next page. The payment + totals block prints after the last item.
   function handlePrint() {
     function html(id) { const n = document.getElementById(id); return n ? n.outerHTML : '' }
     function h(id) { const n = document.getElementById(id); return n ? n.offsetHeight : 0 }
     const bodyEl = document.getElementById('inv-body')
-    if (!bodyEl) return
-    // Clone the body and lift the parties block up into the repeating header,
-    // so From / Bill-to print at the top of every page alongside the masthead.
-    const bodyClone = bodyEl.cloneNode(true)
-    const partiesNode = bodyClone.querySelector('#inv-parties')
-    const partiesHTML = partiesNode ? '<div style="padding:8px 20px 2px">' + partiesNode.outerHTML + '</div>' : ''
-    if (partiesNode) partiesNode.remove()
+    const itemsEl = document.getElementById('inv-items')
+    if (!bodyEl || !itemsEl) return
+
+    const PXMM = 96 / 25.4
+    const PAGE_H = Math.round(297 * PXMM)        // ~1123px
+
+    // Repeating header = masthead band + tagline + meta + parties
+    const partiesNode = document.getElementById('inv-parties')
+    const partiesHTML = partiesNode ? '<div style="padding:8px 20px 4px">' + partiesNode.outerHTML + '</div>' : ''
     const headHTML = html('inv-hd-band') + html('inv-hd-tag') + html('inv-hd-meta') + partiesHTML
-    const bodyInner = bodyClone.innerHTML
     const footHTML = html('inv-foot')
-    // Reserve full-page body height so a short invoice still fills A4 (footer at bottom)
-    const reserved = h('inv-hd-band') + h('inv-hd-tag') + h('inv-hd-meta') + h('inv-parties') + 12 + h('inv-foot')
+    const colHeadHTML = html('inv-itemshead')
+
+    // "After items" = everything in the body except the parties and the items
+    // table (i.e. payment + totals + dispatch + notes), in order.
+    let afterHTML = ''
+    let afterH = 0
+    Array.prototype.forEach.call(bodyEl.children, function (c) {
+      if (c.id === 'inv-parties' || c.id === 'inv-items') return
+      afterHTML += c.outerHTML
+      afterH += c.offsetHeight + 8
+    })
+
+    // Measured heights (on-screen == print, sheet is a fixed 210mm wide)
+    const headH = h('inv-hd-band') + h('inv-hd-tag') + h('inv-hd-meta') + h('inv-parties') + 14
+    const footH = h('inv-foot')
+    const colH  = h('inv-itemshead')
+    const PAD   = 20            // top+bottom padding of the items area
+    const CONT  = 26           // space reserved for the "continued…" line
+    const avail = PAGE_H - headH - footH - PAD   // usable items-area height per page
+
+    // Pack rows into pages by their measured heights
+    const rowEls = Array.prototype.slice.call(itemsEl.querySelectorAll('.inv-row'))
+    const rowHTML = rowEls.map(function (r) { return r.outerHTML })
+    const rowH = rowEls.map(function (r) { return r.offsetHeight })
+    const pages = []
+    let cur = [], used = colH
+    for (let i = 0; i < rowEls.length; i++) {
+      if (cur.length > 0 && used + rowH[i] > avail - CONT) { pages.push(cur); cur = []; used = colH }
+      cur.push(i); used += rowH[i]
+    }
+    pages.push(cur)
+    if (pages.length === 0) pages.push([])
+
+    // Does the payment/totals block fit under the last items page?
+    const summaryOnLast = (used + afterH) <= avail
+    const totalPages = pages.length + (summaryOnLast ? 0 : 1)
+
+    const wm = '<div class="wm"><img src="/NLH%20Mascot.png" alt=""></div>'
+    function pageHTML(inner) {
+      return '<div class="page"><div class="phdr">' + headHTML + '</div>'
+        + '<div class="pbody">' + wm + inner + '</div>'
+        + '<div class="pftr">' + footHTML + '</div></div>'
+    }
+
+    let pagesHTML = ''
+    pages.forEach(function (idxs, p) {
+      const isLastItemsPage = (p === pages.length - 1)
+      const rows = idxs.map(function (i) { return rowHTML[i] }).join('')
+      const box = '<div class="ibox">' + colHeadHTML + rows + '</div>'
+      const summary = (isLastItemsPage && summaryOnLast) ? '<div class="after">' + afterHTML + '</div>' : ''
+      const cont = !isLastItemsPage ? '<div class="cont">⟶ Continued on page ' + (p + 2) + ' of ' + totalPages + '…</div>' : ''
+      pagesHTML += pageHTML(box + summary + cont)
+    })
+    if (!summaryOnLast) pagesHTML += pageHTML('<div class="after" style="margin-top:6px">' + afterHTML + '</div>')
+
     const win = window.open('','_blank','width=900,height=800')
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${order.invoice_no||order.id}</title>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:'DM Sans',system-ui,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .sheet{width:210mm;margin:0 auto}
-      table.inv{width:100%;border-collapse:collapse}
-      table.inv thead{display:table-header-group}   /* repeats at top of every page */
-      table.inv tfoot{display:table-footer-group}    /* repeats at bottom of every page */
-      table.inv td{padding:0;vertical-align:top}
-      /* body padding lives on the tbody cell so it applies on every page;
-         min-height keeps a short invoice filling the A4 page (footer pinned low) */
-      .inv-bodycell{padding:10px 20px 14px;min-height:calc(297mm - ${reserved}px)}
-      /* replicate the flex column gap between body sections */
-      .inv-bodycell>*{margin-bottom:8px}
-      /* force the items column to block so the list paginates cleanly */
-      #inv-items{display:block !important}
+      .page{width:210mm;height:297mm;margin:0 auto;background:#fff;display:flex;flex-direction:column;overflow:hidden;page-break-after:always;position:relative}
+      .page:last-child{page-break-after:auto}
+      .phdr,.pftr{flex-shrink:0}
+      .pbody{flex:1;position:relative;display:flex;flex-direction:column;padding:10px 20px;overflow:hidden}
+      .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:0}
+      .wm img{width:46%;max-width:300px;opacity:.16;object-fit:contain}
+      .ibox{position:relative;z-index:1;border:1px solid #E2E0D8;border-radius:10px;overflow:hidden}
+      .after{position:relative;z-index:1;margin-top:8px}
+      .cont{position:relative;z-index:1;margin-top:auto;padding-top:10px;text-align:center;font:700 11px 'DM Mono',monospace;color:#534AB7;letter-spacing:.05em;text-transform:uppercase}
       @media print{@page{size:A4;margin:0}.np{display:none}}
       </style></head><body>
       <div class="np" style="text-align:right;padding:10px 20px;background:#f0f0f0"><button onclick="window.print()" style="background:#534AB7;color:#fff;border:none;padding:8px 18px;border-radius:7px;font:600 13px sans-serif;cursor:pointer">Print / Save PDF</button></div>
-      <div class="sheet">
-        <table class="inv">
-          <thead><tr><td>${headHTML}</td></tr></thead>
-          <tfoot><tr><td>${footHTML}</td></tr></tfoot>
-          <tbody><tr><td class="inv-bodycell">${bodyInner}</td></tr></tbody>
-        </table>
-      </div></body></html>`)
+      ${pagesHTML}</body></html>`)
     win.document.close()
   }
 
@@ -647,7 +695,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'flex-end', justifyContent:'center', paddingBottom:30, pointerEvents:'none', zIndex:0 }}>
                 <img src="/NLH%20Mascot.png" alt="" style={{ width:'46%', maxWidth:300, opacity:0.18, objectFit:'contain' }} />
               </div>
-              <div style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'9px 14px', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, font:'700 10px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
+              <div id="inv-itemshead" style={{ position:'relative', zIndex:1, background:'linear-gradient(90deg,#534AB7,#6F66CC)', color:'#fff', padding:'9px 14px', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, font:'700 10px "DM Mono",monospace', textTransform:'uppercase', letterSpacing:'.07em' }}>
                 <div>#</div><div>SKU / Item</div>
                 <div style={{textAlign:'right'}}>Ord</div>
                 <div style={{textAlign:'right'}}>Sent</div>
@@ -661,7 +709,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 const lineAmt = (item.rate||0)*(item.ordered_qty||0)
                 const sent    = item.sent_qty||0
                 return (
-                  <div key={item.id} style={{ position:'relative', zIndex:1, breakInside:'avoid', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, padding:'9px 14px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:'transparent', alignItems:'center' }}>
+                  <div key={item.id} className="inv-row" style={{ position:'relative', zIndex:1, breakInside:'avoid', display:'grid', gridTemplateColumns:'30px 1fr 52px 52px 80px 100px', gap:10, padding:'9px 14px', borderBottom:i<items.length-1?'1px solid #E2E0D8':'none', background:'transparent', alignItems:'center' }}>
                     <div style={{ font:'600 10px "DM Mono",monospace', color:'#9C9A92' }}>{String(i+1).padStart(2,'0')}</div>
                     <div>
                       <div style={{ font:'600 13px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.25 }}>{name}</div>
@@ -689,7 +737,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             </div>
 
             {/* payment + totals */}
-            <div style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8, breakInside:'avoid' }}>
+            <div id="inv-summary" style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8, breakInside:'avoid' }}>
               {/* payment */}
               <div style={{ background:'linear-gradient(135deg,#FFF7DA,#FFE89B)', borderRadius:10, padding:'10px 12px', position:'relative', overflow:'hidden', display:'flex', flexDirection:'column' }}>
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#F59E0B' }} />
