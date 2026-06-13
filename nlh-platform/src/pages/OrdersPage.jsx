@@ -330,6 +330,19 @@ function DispatchModal({ order, onClose, onSaved }) {
           }
         }
       } catch (stkErr) { console.warn('Stock deduction skipped:', stkErr.message) }
+
+      // ── Lock (redeem) the coupon now that the order is dispatched ──
+      if (order.coupon_code) {
+        try {
+          const r = await sb.rpc('redeem_coupon', {
+            p_code: order.coupon_code, p_context: 'order',
+            p_amount: order.subtotal || 0, p_franchisee: order.placer_id, p_ref: order.id,
+          })
+          if (r && r.data && r.data.valid === false) {
+            showToast('Dispatched · coupon could not be locked: ' + (r.data.message || 'limit reached'), 'warn')
+          }
+        } catch (cErr) { console.warn('Coupon lock skipped:', cErr.message) }
+      }
       onSaved()
     }
     setSaving(false)
@@ -678,10 +691,12 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       coupon_code:     coupon?.code || null,
     }).eq('id', order.id)
 
-    // Sync the redemption ledger: clear any previous redemption for this order,
-    // then re-record the current coupon (handles add / change / remove).
+    // The coupon only locks (redeems) once the order is dispatched. Clear any
+    // stale redemption for this order, and only re-record it if the order has
+    // already been dispatched (so editing a dispatched order keeps the lock in
+    // sync); otherwise leave it unlocked until dispatch.
     await sb.rpc('clear_coupon_redemption', { p_context: 'order', p_ref: order.id })
-    if (coupon && discount > 0) {
+    if (order.dispatched_at && coupon && discount > 0) {
       await sb.rpc('redeem_coupon', {
         p_code: coupon.code, p_context: 'order', p_amount: subTotal,
         p_franchisee: order.placer_id, p_ref: order.id,
@@ -1099,13 +1114,8 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
       return
     }
 
-    // Record coupon redemption against this order (server validates + logs)
-    if (coupon && discount > 0) {
-      await sb.rpc('redeem_coupon', {
-        p_code: coupon.code, p_context: 'order', p_amount: total,
-        p_franchisee: fid, p_ref: orderData.id,
-      })
-    }
+    // NOTE: the coupon is only *applied* here (stored on the order). It is not
+    // redeemed/locked until the order is marked dispatched — see DispatchModal.
 
     const itemRows = validLines.map(function (line) {
       return {
