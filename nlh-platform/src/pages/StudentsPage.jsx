@@ -629,7 +629,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       enrolled_at:   enrolledAt,
     } })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
@@ -1007,7 +1007,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
               <p className="hint" style={{ textAlign: 'center', padding: 24 }}>No courses enrolled yet.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {localEnrollments.map(function (en) {
+                {localEnrollments.slice().sort(function (a, b) {
+                  // Completed courses sink to the bottom; within each group, latest on top.
+                  const ac = a.completed_at ? 1 : 0
+                  const bc = b.completed_at ? 1 : 0
+                  if (ac !== bc) return ac - bc
+                  const ad = a.enrolled_at || a.completed_at || ''
+                  const bd = b.enrolled_at || b.completed_at || ''
+                  if (ad !== bd) return ad < bd ? 1 : -1   // newer first
+                  return 0
+                }).map(function (en) {
                   const bs          = batchAssignments[en.id]
                   const isOpen      = batchPanelEnrId === en.id
                   const courseName  = en.skus?.courses?.group_name || '—'
