@@ -148,15 +148,26 @@ function openWin(html) {
 }
 
 // ── Fee Invoice ──────────────────────────────────────────────────────────────
-// lines: [{ name, fee }]  ·  summary: { gross, discount, couponCode, total, paid, balance }
+// ctx.items: [{ kind:'course'|'kit', sku_id, name, qty, amount }]  (stored invoice format)
+//   — fallback ctx.lines: [{ name, fee, sku_id }] for the simpler caller.
+// ctx.summary: { discount, couponCode, total, paid, balance }
 export function printStudentInvoice(student, ctx) {
-  const lines = ctx.lines || []
+  let items = ctx.items
+  if (!items && ctx.lines) {
+    items = ctx.lines.map(function (l) { return { kind: 'course', sku_id: l.sku_id, name: l.name, qty: 1, amount: l.fee || 0 } })
+  }
+  items = items || []
   const s = ctx.summary || {}
-  const rows = lines.length
-    ? lines.map(function (l) {
-        return `<tr><td>${esc(l.name)}<div class="mut">Course fee · kit included</div></td><td class="r">₹${fmtAmt(l.fee || 0)}</td></tr>`
+  const courses = items.filter(function (i) { return i.kind === 'course' })
+  const rows = courses.length
+    ? courses.map(function (c) {
+        const kits = items.filter(function (i) { return i.kind === 'kit' && i.sku_id === c.sku_id })
+        const kitTxt = kits.length
+          ? 'Kit: ' + kits.map(function (k) { return esc(k.name) + (k.qty > 1 ? ' ×' + k.qty : '') }).join(' · ')
+          : 'Course fee · kit included'
+        return `<tr><td>${esc(c.name)}<div class="mut">${kitTxt}</div></td><td class="r">₹${fmtAmt(c.amount || 0)}</td></tr>`
       }).join('')
-    : `<tr><td colspan="2" style="color:#9C9A92">No courses enrolled.</td></tr>`
+    : `<tr><td colspan="2" style="color:#9C9A92">No courses on this invoice.</td></tr>`
 
   const totRows =
     (s.discount > 0 ? `<div class="trow"><span>Discount${s.couponCode ? ' (' + esc(s.couponCode) + ')' : ''}</span><span class="v" style="color:#1D7A4F">− ₹${fmtAmt(s.discount)}</span></div>` : '') +

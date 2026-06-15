@@ -70,6 +70,41 @@ async function issueStudentKits(enrollments, student) {
   return rows.length
 }
 
+// Build invoice line items for a set of courses (course fee line + its kit items).
+// courses: [{ sku_id, name, fee }]
+async function buildInvoiceLines(courses) {
+  const list = (courses || []).filter(function (c) { return c.sku_id })
+  if (list.length === 0) return []
+  const skuIds = list.map(function (c) { return c.sku_id })
+  const { data: kits } = await sb.from('kit_items')
+    .select('sku_id, quantity, inventory_items(name)').in('sku_id', skuIds)
+  const lines = []
+  list.forEach(function (c) {
+    lines.push({ kind: 'course', sku_id: c.sku_id, name: c.name, qty: 1, rate: c.fee || 0, amount: c.fee || 0 })
+    ;(kits || []).filter(function (k) { return k.sku_id === c.sku_id }).forEach(function (k) {
+      lines.push({ kind: 'kit', sku_id: c.sku_id, name: k.inventory_items?.name || 'Kit item', qty: Number(k.quantity || 1), rate: 0, amount: 0 })
+    })
+  })
+  return lines
+}
+
+// Create a student invoice (sequential invoice_no assigned by DB trigger).
+async function createStudentInvoice(student, opts) {
+  const lines = opts.lines || []
+  const subtotal = lines.filter(function (l) { return l.kind === 'course' }).reduce(function (s, l) { return s + (l.amount || 0) }, 0)
+  const discount = opts.discount || 0
+  const total = Math.max(0, subtotal - discount)
+  const { data, error } = await sb.from('student_invoices').insert({
+    student_id: student.id, franchisee_id: student.franchisee_id || null,
+    invoice_date: opts.date || new Date().toISOString().slice(0, 10),
+    items: lines, subtotal: subtotal, discount: discount, coupon_code: opts.couponCode || null,
+    total: total, amount_paid: 0, status: total > 0 ? 'unpaid' : 'paid',
+    created_by: opts.createdBy || null, notes: opts.notes || null,
+  }).select().single()
+  if (error) { console.warn('Invoice create failed:', error.message); return null }
+  return data
+}
+
 function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
@@ -79,7 +114,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
 export function StudentDetailModal({ student, onClose, onSaved, inline }) {
-  const { currentRole, currentFranchiseeId } = useAuth()
+  const { currentRole, currentFranchiseeId, currentUser } = useAuth()
   const admin = isAdminRole(currentRole)
   const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
   // Fees / discounts / payments: any admin, or any franchisee who can see this
@@ -119,6 +154,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
+  const [invoices,        setInvoices]        = useState([])   // student_invoices rows
+  const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
+  const [editInv,         setEditInv]         = useState({})   // { invoice_date, amount_paid, status, notes }
   const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [skuBilling,      setSkuBilling]      = useState({})   // { [sku_id]: billing_type }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
@@ -301,25 +339,52 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
-  // ── Printable branded fee invoice ──
-  function handlePrintInvoice() {
-    const lines = localEnrollments.map(function (en) {
-      return {
-        name: (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || ''),
-        fee: skuFee[en.sku_id] || 0,
-      }
-    })
-    const total = Number(form.fee_total) || 0
-    const paid  = Number(form.fee_paid) || 0
+  // ── Print a stored invoice ──
+  function handlePrintInvoice(inv) {
     printStudentInvoice(student, {
       centre: student.franchisees?.business_name || '',
-      date: new Date(),
-      lines: lines,
+      date: inv.invoice_date, refVal: inv.invoice_no,
+      items: inv.items || [],
       summary: {
-        discount: Number(student.discount_amount) || 0, couponCode: student.coupon_code,
-        total: total, paid: paid, balance: Math.max(0, total - paid),
+        discount: inv.discount || 0, couponCode: inv.coupon_code,
+        total: inv.total || 0, paid: inv.amount_paid || 0,
+        balance: Math.max(0, (inv.total || 0) - (inv.amount_paid || 0)),
       },
     })
+  }
+
+  // ── Generate an invoice for the student's current enrolled courses ──
+  async function generateInvoiceForCurrent() {
+    const courses = localEnrollments.filter(function (e) { return e.sku_id }).map(function (e) {
+      return { sku_id: e.sku_id, name: (e.skus?.courses?.group_name ? e.skus.courses.group_name + ' — ' : '') + (e.skus?.level_name || ''), fee: skuFee[e.sku_id] || 0 }
+    })
+    if (courses.length === 0) { showToast('No courses to invoice', 'warn'); return }
+    const lines = await buildInvoiceLines(courses)
+    const inv = await createStudentInvoice(student, {
+      lines: lines, discount: Number(student.discount_amount) || 0, couponCode: student.coupon_code,
+      createdBy: currentUser?.email || currentRole || null,
+    })
+    if (inv) { setInvoices(function (prev) { return [inv, ...prev] }); showToast('🧾 Invoice ' + (inv.invoice_no || '') + ' generated') }
+  }
+
+  function startEditInvoice(inv) {
+    setEditInvId(inv.id)
+    setEditInv({ invoice_date: inv.invoice_date, amount_paid: inv.amount_paid || 0, status: inv.status || 'unpaid', notes: inv.notes || '' })
+  }
+  async function saveInvoiceEdit() {
+    const { data, error } = await sb.from('student_invoices').update({
+      invoice_date: editInv.invoice_date, amount_paid: parseInt(editInv.amount_paid, 10) || 0,
+      status: editInv.status, notes: editInv.notes || null,
+    }).eq('id', editInvId).select().single()
+    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
+    setInvoices(function (prev) { return prev.map(function (i) { return i.id === editInvId ? data : i }) })
+    setEditInvId(null); showToast('Invoice updated ✓')
+  }
+  async function deleteInvoice(id) {
+    const { error } = await sb.from('student_invoices').delete().eq('id', id)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    setInvoices(function (prev) { return prev.filter(function (i) { return i.id !== id }) })
+    showToast('Invoice deleted')
   }
 
   // ── Printable branded payment receipt for one payment ──
@@ -442,6 +507,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const fees = {}
     ;(allSkuRows || []).forEach(function (s) { fees[s.id] = s.student_fee || 0 })
     setSkuFee(fees)
+
+    // Invoice history
+    const { data: invRows } = await sb.from('student_invoices')
+      .select('*').eq('student_id', student.id).order('created_at', { ascending: false })
+    setInvoices(invRows || [])
   }
 
   // ── Open batch assignment panel for one enrollment ──
@@ -748,6 +818,20 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // Coupon applied to the added fee but not locked here — it redeems when the
     // first fee payment is received (see recordPayment).
 
+    // 3b) Raise a fee invoice for the courses just added (sequential SINV no.)
+    const invCourses = selectedNewSkus.map(function (sku) {
+      return { sku_id: sku.id, name: (sku.courses?.group_name ? sku.courses.group_name + ' — ' : '') + sku.level_name, fee: sku.student_fee || 0 }
+    })
+    const invLines = await buildInvoiceLines(invCourses)
+    const newInv = await createStudentInvoice(student, {
+      lines: invLines, discount: discount, couponCode: addCoupon?.code || null,
+      date: addEnrollDate || new Date().toISOString().slice(0, 10), createdBy: currentUser?.email || currentRole || null,
+    })
+    if (newInv) {
+      setInvoices(function (prev) { return [newInv, ...prev] })
+      showToast('🧾 Invoice ' + (newInv.invoice_no || '') + ' generated')
+    }
+
     // 4) Reflect batch assignments for the new courses immediately
     const newEnrIds = added.map(function (e) { return e.id })
     if (newEnrIds.length) {
@@ -970,23 +1054,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <strong>Fee Tracking</strong>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {canManageFees && (
-                    <button className="btn-s" style={{ fontSize: 12, padding: '5px 12px' }}
-                      onClick={handlePrintInvoice} title="Print / save the fee invoice">
-                      🧾 Invoice
-                    </button>
-                  )}
-                  {canManageFees && (
-                    <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
-                      onClick={function () {
-                        setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
-                        setShowPayModal(true)
-                      }}>
-                      + Record Payment
-                    </button>
-                  )}
-                </div>
+                {canManageFees && (
+                  <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
+                    onClick={function () {
+                      setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
+                      setShowPayModal(true)
+                    }}>
+                    + Record Payment
+                  </button>
+                )}
               </div>
               <div className="form-grid" style={{ marginTop: 8 }}>
                 <label>Agreed Fee (₹)
@@ -1098,6 +1174,53 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   </div>
                 )}
               </div>
+
+              {/* Invoice history */}
+              <div style={{ marginTop: 14 }}>
+                <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
+                  Invoice history
+                </div>
+                {invoices.length === 0 ? (
+                  <p className="hint" style={{ margin: 0 }}>No invoices yet — generate one from the Courses &amp; Batches tab or when adding a course.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {invoices.map(function (inv) {
+                      const bal = Math.max(0, (inv.total || 0) - (inv.amount_paid || 0))
+                      if (admin && editInvId === inv.id) {
+                        return (
+                          <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'var(--bg)', border: '1.5px solid var(--purple)' }}>
+                            <span style={{ font: '700 11px var(--mono)', color: 'var(--purple)' }}>{inv.invoice_no}</span>
+                            <input type="date" value={editInv.invoice_date || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, invoice_date: e.target.value } }) }} style={{ fontSize: 12 }} />
+                            <input type="number" value={editInv.amount_paid} onChange={function (e) { setEditInv(function (f) { return { ...f, amount_paid: e.target.value } }) }} placeholder="Paid" style={{ width: 80, fontSize: 12 }} />
+                            <select value={editInv.status} onChange={function (e) { setEditInv(function (f) { return { ...f, status: e.target.value } }) }} style={{ fontSize: 12 }}>
+                              {['unpaid', 'part', 'paid'].map(function (s) { return <option key={s} value={s}>{s}</option> })}
+                            </select>
+                            <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }} onClick={saveInvoiceEdit}>Save</button>
+                            <button className="btn-s" style={{ fontSize: 10, padding: '3px 10px' }} onClick={function () { setEditInvId(null) }}>Cancel</button>
+                          </div>
+                        )
+                      }
+                      return (
+                        <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)' }}>
+                          <div style={{ font: '700 12px var(--mono)', color: 'var(--purple)', minWidth: 120 }}>{inv.invoice_no}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ font: '500 12px var(--font)', color: 'var(--text)' }}>
+                              {fmtDate(inv.invoice_date)} · ₹{fmtAmt(inv.total)}
+                              <span style={{ color: bal > 0 ? 'var(--red)' : 'var(--green)', marginLeft: 6 }}>{bal > 0 ? '₹' + fmtAmt(bal) + ' due' : 'paid ✓'}</span>
+                            </div>
+                            <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>
+                              {(inv.items || []).filter(function (i) { return i.kind === 'course' }).map(function (i) { return i.name }).join(', ')}
+                            </div>
+                          </div>
+                          <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }} title="Print / save invoice" onClick={function () { handlePrintInvoice(inv) }}>🧾 Print</button>
+                          {admin && <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }} title="Edit date / paid / status" onClick={function () { startEditInvoice(inv) }}>✎ Edit</button>}
+                          {admin && <button className="btn" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red, #dc2626)', borderColor: 'var(--red, #dc2626)' }} onClick={function () { if (window.confirm('Delete invoice ' + inv.invoice_no + '?')) deleteInvoice(inv.id) }}>🗑</button>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1105,6 +1228,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {/* ── COURSES & BATCHES TAB ── */}
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
+            {canEdit && localEnrollments.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                <button className="btn-s" style={{ fontSize: 12, padding: '5px 12px' }}
+                  onClick={generateInvoiceForCurrent} title="Raise a fee invoice for the current courses">
+                  🧾 Generate Invoice
+                </button>
+              </div>
+            )}
             {localEnrollments.length === 0 && !showAddEnrollment ? (
               <p className="hint" style={{ textAlign: 'center', padding: 24 }}>No courses enrolled yet.</p>
             ) : (
@@ -2024,6 +2155,18 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
       // Issue each enrolled level's kit and deduct HO stock (kit cost is in the fee)
       await issueStudentKits(enrData, { franchisee_id: form.franchisee_id, full_name: form.full_name.trim() })
+
+      // Raise a fee invoice for the admission's courses (sequential SINV no.)
+      if (selectedSkus.length > 0) {
+        const invCourses = selectedSkus.map(function (sku) {
+          return { sku_id: sku.id, name: (sku.courses?.group_name ? sku.courses.group_name + ' — ' : '') + sku.level_name, fee: sku.student_fee || 0 }
+        })
+        const invLines = await buildInvoiceLines(invCourses)
+        await createStudentInvoice({ id: st.id, franchisee_id: form.franchisee_id }, {
+          lines: invLines, discount: couponDiscount, couponCode: coupon?.code || null,
+          date: form.registered_at || new Date().toISOString().slice(0, 10),
+        })
+      }
 
       // Assign batches (or create new ones) for each selected SKU
       for (let i = 0; i < selectedSkus.length; i++) {
