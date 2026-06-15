@@ -1046,8 +1046,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               {levelName}
                             </span>
                             {isCompleted && (
-                              <span style={{ font: '600 10px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 7px' }}>
-                                ✓ Completed
+                              <span style={{ font: '600 10px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                                ✓ Completed{en.completed_at ? ' · ' + fmtDate(String(en.completed_at).slice(0, 10)) : ''}
                               </span>
                             )}
                             <span style={{ font: '600 10px var(--mono)', color: sessionsDone ? '#B45309' : 'var(--purple)', background: sessionsDone ? '#FEF3C7' : 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
