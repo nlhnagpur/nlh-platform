@@ -7,6 +7,7 @@ import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
+import { printStudentInvoice, printStudentReceipt } from '../components/studentDocs'
 import ModalHeader from '../components/ModalHeader'
 import StudentCertModal from '../components/StudentCertModal'
 
@@ -117,6 +118,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
+  const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [skuBilling,      setSkuBilling]      = useState({})   // { [sku_id]: billing_type }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
@@ -299,6 +301,39 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
+  // ── Printable branded fee invoice ──
+  function handlePrintInvoice() {
+    const lines = localEnrollments.map(function (en) {
+      return {
+        name: (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || ''),
+        fee: skuFee[en.sku_id] || 0,
+      }
+    })
+    const total = Number(form.fee_total) || 0
+    const paid  = Number(form.fee_paid) || 0
+    printStudentInvoice(student, {
+      centre: student.franchisees?.business_name || '',
+      date: new Date(),
+      lines: lines,
+      summary: {
+        discount: Number(student.discount_amount) || 0, couponCode: student.coupon_code,
+        total: total, paid: paid, balance: Math.max(0, total - paid),
+      },
+    })
+  }
+
+  // ── Printable branded payment receipt for one payment ──
+  function handlePrintReceipt(p) {
+    const total = Number(form.fee_total) || 0
+    const paidToDate = payments
+      .filter(function (x) { return (x.paid_at || '') <= (p.paid_at || '') })
+      .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+    printStudentReceipt(student, p, {
+      centre: student.franchisees?.business_name || '',
+      summary: { total: total, paid: paidToDate, balance: Math.max(0, total - paidToDate) },
+    })
+  }
+
   async function deletePayment(id) {
     const { error } = await sb.from('student_payments').delete().eq('id', id)
     if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
@@ -404,6 +439,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }
     setAllCentreSkus(candidates)
     setAvailableSkus(candidates.filter(function (s) { return !enrolledSkuIds.includes(s.id) }))
+    const fees = {}
+    ;(allSkuRows || []).forEach(function (s) { fees[s.id] = s.student_fee || 0 })
+    setSkuFee(fees)
   }
 
   // ── Open batch assignment panel for one enrollment ──
@@ -932,15 +970,23 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <strong>Fee Tracking</strong>
-                {canManageFees && (
-                  <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
-                    onClick={function () {
-                      setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
-                      setShowPayModal(true)
-                    }}>
-                    + Record Payment
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {canManageFees && (
+                    <button className="btn-s" style={{ fontSize: 12, padding: '5px 12px' }}
+                      onClick={handlePrintInvoice} title="Print / save the fee invoice">
+                      🧾 Invoice
+                    </button>
+                  )}
+                  {canManageFees && (
+                    <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
+                      onClick={function () {
+                        setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
+                        setShowPayModal(true)
+                      }}>
+                      + Record Payment
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="form-grid" style={{ marginTop: 8 }}>
                 <label>Agreed Fee (₹)
@@ -1021,6 +1067,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               {(p.reference || p.note) ? (p.receipt_no ? ' · ' : '') + (p.reference || p.note) : ''}
                             </div>
                           </div>
+                          {canManageFees && (
+                            <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}
+                              title="Print / save receipt"
+                              onClick={function () { handlePrintReceipt(p) }}>
+                              🧾 Print
+                            </button>
+                          )}
                           {canManageFees && (
                             <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}
                               title="Resend WhatsApp receipt to parent"
