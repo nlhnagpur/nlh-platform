@@ -1797,18 +1797,20 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   useEffect(() => {
     async function loadCentres() {
       if (admin) {
-        // Admin sees all active centres across every tier
+        // HO enrols only at its own Head Office centre — never on behalf of another centre.
         const { data } = await sb.from('franchisees')
-          .select(FR_FIELDS)
-          .in('tier', CENTRE_TIERS)
-          .eq('status', 'active')
-          .order('tier').order('business_name')
-        setCentreList(data || [])
+          .select('id,business_name,tier,registered_courses,registered_skus')
+          .eq('tier', 'NLH').limit(1).maybeSingle()
+        if (data) {
+          setCentreList([data])
+          setForm(function (f) { return { ...f, franchisee_id: data.id } })
+          setRegFilter(deriveFilter(data))
+        }
       } else {
         // UF / CF / SMF: fixed to their own centre — registration is by the centre holder only
         const { data } = await sb.from('franchisees')
           .select('id,business_name,tier,registered_courses,registered_skus').eq('id', currentFranchiseeId).single()
-        if (data) setCentreList([data])
+        if (data) { setCentreList([data]); setForm(function (f) { return { ...f, franchisee_id: data.id } }) }
         setRegFilter(deriveFilter(data))
       }
     }
@@ -2197,52 +2199,14 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:8 }}>
               Enrolment Centre *
             </div>
-            {admin ? (() => {
-              const nlhCentre = centreList.find(c => c.tier === 'NLH')
-              const others    = centreList.filter(c => c.tier !== 'NLH')
-              const tierOrder = { SMF: 1, CF: 2, UF: 3 }
-              // Group by city, sort cities A→Z, sort within each city by tier hierarchy
-              const cityMap = {}
-              others.forEach(function (c) {
-                const city = c.city || '(No City)'
-                if (!cityMap[city]) cityMap[city] = []
-                cityMap[city].push(c)
-              })
-              const sortedCities = Object.keys(cityMap).sort((a, b) => a.localeCompare(b))
-              sortedCities.forEach(function (city) {
-                cityMap[city].sort((a, b) => (tierOrder[a.tier] || 9) - (tierOrder[b.tier] || 9))
-              })
-              return (
-                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                  <select
-                    value={form.franchisee_id}
-                    onChange={e => handleCentreChange(e.target.value)}
-                    style={{ fontSize:13 }}
-                  >
-                    <option value="">— Select centre —</option>
-                    {nlhCentre && (
-                      <option value={nlhCentre.id}>🏛️ NLH Own Centre</option>
-                    )}
-                    {sortedCities.map(function (city) {
-                      return (
-                        <optgroup key={city} label={city}>
-                          {cityMap[city].map(c => (
-                            <option key={c.id} value={c.id}>
-                              [{c.tier}] {c.business_name}{c.area ? ` — ${c.area}` : ''}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )
-                    })}
-                  </select>
-                </div>
-              )
-            })() : (
-              <div style={{ padding:'8px 12px', borderRadius:8, background:'var(--purple-bg)',
-                border:'1.5px solid var(--purple)', font:'600 12.5px var(--font)', color:'var(--text)' }}>
-                {centreList[0]?.business_name || 'Your centre'}
-              </div>
-            )}
+            {/* Enrolment is always at the logged-in user's own centre (HO included) */}
+            <div style={{ padding:'8px 12px', borderRadius:8, background:'var(--purple-bg)',
+              border:'1.5px solid var(--purple)', font:'600 12.5px var(--font)', color:'var(--text)',
+              display:'flex', alignItems:'center', gap:6 }}>
+              <span>{centreList[0]?.tier === 'NLH' ? '🏛️' : '🏢'}</span>
+              {centreList[0]?.business_name || 'Your centre'}
+              {centreList[0]?.tier ? <span style={{ font:'600 10px var(--mono)', color:'var(--text3)' }}>· {centreList[0].tier}</span> : null}
+            </div>
           </div>
 
           {/* ── Section 3: Course enrolment ── */}
