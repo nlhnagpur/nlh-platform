@@ -1712,6 +1712,12 @@ export default function BatchesPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {sorted.map(function (batch) {
             const activeStudents = dedupeByEnrollment((batch.batch_students || []).filter(function (bs) { return !bs.removed_at }))
+              .slice().sort(function (a, b) {
+                // Completed students sink to the bottom of the roster
+                const ac = a.enrollments?.completed_at ? 1 : 0
+                const bc = b.enrollments?.completed_at ? 1 : 0
+                return ac - bc
+              })
             const sessLabel      = String(batch.sessions_done || 0)
             const courses        = batchCourses(batch)
             const coursesLabel   = courses.length > 0 ? courses.join(', ') : '—'
