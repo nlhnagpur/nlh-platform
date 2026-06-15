@@ -368,7 +368,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   async function openBatchPanel(enrollment) {
     if (batchPanelEnrId === enrollment.id) { setBatchPanelEnrId(null); return }
     setBatchPanelEnrId(enrollment.id)
-    setAssignJoinDate(student.registered_at || new Date().toISOString().slice(0, 10))
+    // Default the joining-date field to the current batch's date (if assigned), else the registration date
+    const curBs = batchAssignments[enrollment.id]
+    const curDate = curBs && curBs.assigned_at ? String(curBs.assigned_at).slice(0, 10) : null
+    setAssignJoinDate(curDate || student.registered_at || new Date().toISOString().slice(0, 10))
     setPanelData({ batches: [], loading: true })
 
     // Get the course_id for this enrollment's SKU
@@ -431,6 +434,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setBatchAssignments(function (prev) { return { ...prev, [enrollmentId]: data } })
     setBatchPanelEnrId(null)
     showToast('Assigned to batch ✓')
+  }
+
+  // ── Update only the joining date of the current batch (no batch change) ──
+  async function updateJoinDate(enrollmentId) {
+    const existing = batchAssignments[enrollmentId]
+    if (!existing) { showToast('Assign a batch first to set a joining date', 'warn'); return }
+    setPanelSaving(true)
+    const assignedAt = assignJoinDate + 'T00:00:00+00:00'
+    const selectFields = 'id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))'
+    const { data, error } = await sb.from('batch_students')
+      .update({ assigned_at: assignedAt }).eq('id', existing.id).select(selectFields).single()
+    setPanelSaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    setBatchAssignments(function (prev) { return { ...prev, [enrollmentId]: data } })
+    setBatchPanelEnrId(null)
+    showToast('Joining date updated ✓')
   }
 
   // ── Remove student from current batch ──
@@ -1184,7 +1203,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                               {b.is_individual ? ' · Individual' : ' · Group'}
                                             </div>
                                           </div>
-                                          {!isCurrent && (
+                                          {!isCurrent ? (
                                             <button
                                               className="btn-s"
                                               style={{ fontSize: 11, padding: '3px 12px', flexShrink: 0 }}
@@ -1192,6 +1211,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                               onClick={function () { assignToBatch(b.id, en.id) }}
                                             >
                                               Assign
+                                            </button>
+                                          ) : (
+                                            <button
+                                              className="btn-s"
+                                              style={{ fontSize: 11, padding: '3px 12px', flexShrink: 0 }}
+                                              disabled={panelSaving}
+                                              onClick={function () { updateJoinDate(en.id) }}
+                                              title="Save the joining date above for this batch"
+                                            >
+                                              📅 Save date
                                             </button>
                                           )}
                                         </div>
