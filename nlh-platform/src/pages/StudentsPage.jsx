@@ -35,6 +35,40 @@ function StatusBadge({ status }) {
   return <span className={`badge ${map[s] || 'br'}`}>{status || '—'}</span>
 }
 
+// Issue each enrolled level's kit to the student and deduct HO stock once per
+// enrollment (kit cost is included in the course fee, so no extra charge here).
+// `enrollments` = [{ id, sku_id }]. Returns the number of stock lines written.
+async function issueStudentKits(enrollments, student) {
+  const withSku = (enrollments || []).filter(function (e) { return e.id && e.sku_id })
+  if (withSku.length === 0) return 0
+  const enrIds = withSku.map(function (e) { return e.id })
+  // Skip enrollments whose kit was already issued (guard against double-deduction)
+  const { data: existing } = await sb.from('stock_ledger')
+    .select('ref_id').eq('ref_type', 'enrollment').in('ref_id', enrIds)
+  const issued = {}
+  ;(existing || []).forEach(function (r) { issued[r.ref_id] = true })
+  const toIssue = withSku.filter(function (e) { return !issued[e.id] })
+  if (toIssue.length === 0) return 0
+  const skuIds = toIssue.map(function (e) { return e.sku_id }).filter(function (v, i, a) { return a.indexOf(v) === i })
+  const { data: kits } = await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds)
+  const rows = []
+  toIssue.forEach(function (e) {
+    ;(kits || []).filter(function (k) { return k.sku_id === e.sku_id }).forEach(function (k) {
+      const qn = Number(k.quantity || 1)
+      if (qn > 0) rows.push({
+        item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student',
+        qty: -qn, ref_type: 'enrollment', ref_id: e.id,
+        franchisee_id: student.franchisee_id || null,
+        note: 'Kit · ' + (student.full_name || 'student'),
+      })
+    })
+  })
+  if (rows.length === 0) return 0
+  const { error } = await sb.from('stock_ledger').insert(rows)
+  if (error) { console.warn('Kit issuance / stock deduction skipped:', error.message); return 0 }
+  return rows.length
+}
+
 function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
@@ -82,6 +116,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [localEnrollments, setLocalEnrollments] = useState(student.enrollments || [])
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
+  const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
   const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [skuBilling,      setSkuBilling]      = useState({})   // { [sku_id]: billing_type }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
@@ -316,6 +351,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       const map = {}
       ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
       setBatchAssignments(map)
+
+      // Which enrollments have had their kit issued (HO stock deducted)
+      const { data: kitLedger } = await sb.from('stock_ledger')
+        .select('ref_id').eq('ref_type', 'enrollment').in('ref_id', enrIds)
+      const ki = {}
+      ;(kitLedger || []).forEach(function (r) { ki[r.ref_id] = true })
+      setKitIssued(ki)
 
       // Attended-session count per enrollment (for the "X / Y sessions" badge)
       const { data: attRows } = await sb.from('session_attendance')
@@ -690,6 +732,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }
     setSessionCounts(function (prev) { const n = { ...prev }; added.forEach(function (e) { if (n[e.id] == null) n[e.id] = 0 }); return n })
 
+    // 4c) Issue each new level's kit and deduct HO stock (once per enrollment)
+    const kitLines = await issueStudentKits(added, student)
+    if (kitLines > 0) {
+      setKitIssued(function (prev) { const n = { ...prev }; added.forEach(function (e) { n[e.id] = true }); return n })
+      showToast('🧰 Kit issued · HO stock adjusted (' + kitLines + ' item' + (kitLines !== 1 ? 's' : '') + ')')
+    }
+
     // 5) Local state + cleanup
     setLocalEnrollments(function (prev) { return [...prev, ...added] })
     const addedSkuIds = added.map(function (e) { return e.sku_id })
@@ -1053,6 +1102,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             <span style={{ font: '600 10px var(--mono)', color: sessionsDone ? '#B45309' : 'var(--purple)', background: sessionsDone ? '#FEF3C7' : 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                               {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
                             </span>
+                            {kitIssued[en.id] && (
+                              <span title="Kit issued — HO stock deducted"
+                                style={{ font: '600 10px var(--font)', color: '#0E7490', background: '#CFFAFE', border: '1px solid #67E8F9', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                🧰 Kit issued
+                              </span>
+                            )}
                             {sessionsDone && (
                               <span title="All sessions attended but course not marked complete — follow up"
                                 style={{ font: '600 10px var(--font)', color: '#B45309', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
@@ -1357,9 +1412,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               {/* Enrollment date for the new courses */}
                               <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
                                 <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>
-                                  📅 Enrollment date
+                                  📅 Start date
                                   <span style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
-                                    (start date for these levels &amp; batch joining date)
+                                    (course start &amp; batch joining date — one date for both)
                                   </span>
                                   <input type="date" value={addEnrollDate}
                                     onChange={function (e) { setAddEnrollDate(e.target.value) }}
@@ -1897,17 +1952,23 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       // not redeemed/locked here — it locks when the first fee payment is
       // received (see recordPayment), mirroring 'lock on dispatch' for orders.
 
-      // Insert enrollments and capture IDs for batch assignment
+      // Insert enrollments and capture IDs for batch assignment.
+      // Start date = the registration date (one date threads enrolment + batch joining).
+      const startAt = (form.registered_at || new Date().toISOString().slice(0, 10)) + 'T00:00:00+00:00'
       let enrData = []
       if (selectedSkus.length > 0) {
         const enrollRows = selectedSkus.map(function (sku) { return {
           student_id: st.id,
           sku_id: sku.id,
           franchisee_id: form.franchisee_id,
+          enrolled_at: startAt,
         } })
         const { data: inserted } = await sb.from('enrollments').insert(enrollRows).select('id, sku_id')
         enrData = inserted || []
       }
+
+      // Issue each enrolled level's kit and deduct HO stock (kit cost is in the fee)
+      await issueStudentKits(enrData, { franchisee_id: form.franchisee_id, full_name: form.full_name.trim() })
 
       // Assign batches (or create new ones) for each selected SKU
       for (let i = 0; i < selectedSkus.length; i++) {
@@ -1935,7 +1996,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           batchId = newBatch.id
         }
 
-        await sb.from('batch_students').insert({ batch_id: batchId, enrollment_id: enrollment.id })
+        await sb.from('batch_students').insert({ batch_id: batchId, enrollment_id: enrollment.id, assigned_at: startAt })
       }
 
       // Admin session restore hack for auth account creation
