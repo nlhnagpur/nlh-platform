@@ -36,75 +36,6 @@ function StatusBadge({ status }) {
   return <span className={`badge ${map[s] || 'br'}`}>{status || '—'}</span>
 }
 
-// Issue each enrolled level's kit to the student and deduct HO stock once per
-// enrollment (kit cost is included in the course fee, so no extra charge here).
-// `enrollments` = [{ id, sku_id }]. Returns the number of stock lines written.
-async function issueStudentKits(enrollments, student) {
-  const withSku = (enrollments || []).filter(function (e) { return e.id && e.sku_id })
-  if (withSku.length === 0) return 0
-  const enrIds = withSku.map(function (e) { return e.id })
-  // Skip enrollments whose kit was already issued (guard against double-deduction)
-  const { data: existing } = await sb.from('stock_ledger')
-    .select('ref_id').eq('ref_type', 'enrollment').in('ref_id', enrIds)
-  const issued = {}
-  ;(existing || []).forEach(function (r) { issued[r.ref_id] = true })
-  const toIssue = withSku.filter(function (e) { return !issued[e.id] })
-  if (toIssue.length === 0) return 0
-  const skuIds = toIssue.map(function (e) { return e.sku_id }).filter(function (v, i, a) { return a.indexOf(v) === i })
-  const { data: kits } = await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds)
-  const rows = []
-  toIssue.forEach(function (e) {
-    ;(kits || []).filter(function (k) { return k.sku_id === e.sku_id }).forEach(function (k) {
-      const qn = Number(k.quantity || 1)
-      if (qn > 0) rows.push({
-        item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student',
-        qty: -qn, ref_type: 'enrollment', ref_id: e.id,
-        franchisee_id: student.franchisee_id || null,
-        note: 'Kit · ' + (student.full_name || 'student'),
-      })
-    })
-  })
-  if (rows.length === 0) return 0
-  const { error } = await sb.from('stock_ledger').insert(rows)
-  if (error) { console.warn('Kit issuance / stock deduction skipped:', error.message); return 0 }
-  return rows.length
-}
-
-// Build invoice line items for a set of courses (course fee line + its kit items).
-// courses: [{ sku_id, name, fee }]
-async function buildInvoiceLines(courses) {
-  const list = (courses || []).filter(function (c) { return c.sku_id })
-  if (list.length === 0) return []
-  const skuIds = list.map(function (c) { return c.sku_id })
-  const { data: kits } = await sb.from('kit_items')
-    .select('sku_id, quantity, inventory_items(name)').in('sku_id', skuIds)
-  const lines = []
-  list.forEach(function (c) {
-    lines.push({ kind: 'course', sku_id: c.sku_id, name: c.name, qty: 1, rate: c.fee || 0, amount: c.fee || 0 })
-    ;(kits || []).filter(function (k) { return k.sku_id === c.sku_id }).forEach(function (k) {
-      lines.push({ kind: 'kit', sku_id: c.sku_id, name: k.inventory_items?.name || 'Kit item', qty: Number(k.quantity || 1), rate: 0, amount: 0 })
-    })
-  })
-  return lines
-}
-
-// Create a student invoice (sequential invoice_no assigned by DB trigger).
-async function createStudentInvoice(student, opts) {
-  const lines = opts.lines || []
-  const subtotal = lines.filter(function (l) { return l.kind === 'course' }).reduce(function (s, l) { return s + (l.amount || 0) }, 0)
-  const discount = opts.discount || 0
-  const total = Math.max(0, subtotal - discount)
-  const { data, error } = await sb.from('student_invoices').insert({
-    student_id: student.id, franchisee_id: student.franchisee_id || null,
-    invoice_date: opts.date || new Date().toISOString().slice(0, 10),
-    items: lines, subtotal: subtotal, discount: discount, coupon_code: opts.couponCode || null,
-    total: total, amount_paid: 0, status: total > 0 ? 'unpaid' : 'paid',
-    created_by: opts.createdBy || null, notes: opts.notes || null,
-  }).select().single()
-  if (error) { console.warn('Invoice create failed:', error.message); return null }
-  return data
-}
-
 function genTempPass() {
   return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
 }
@@ -157,6 +88,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
   const [editInv,         setEditInv]         = useState({})   // { invoice_date, amount_paid, status, notes }
+  const [invGenEn,        setInvGenEn]        = useState(null) // enrollment being invoiced
+  const [invGenKits,      setInvGenKits]      = useState(null) // kit items for it (null = loading)
+  const [invGenExcluded,  setInvGenExcluded]  = useState({})   // { item_id: true } unchecked
+  const [invGenSaving,    setInvGenSaving]    = useState(false)
   const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [skuBilling,      setSkuBilling]      = useState({})   // { [sku_id]: billing_type }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
@@ -353,18 +288,52 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
   }
 
-  // ── Generate an invoice for the student's current enrolled courses ──
-  async function generateInvoiceForCurrent() {
-    const courses = localEnrollments.filter(function (e) { return e.sku_id }).map(function (e) {
-      return { sku_id: e.sku_id, name: (e.skus?.courses?.group_name ? e.skus.courses.group_name + ' — ' : '') + (e.skus?.level_name || ''), fee: skuFee[e.sku_id] || 0 }
-    })
-    if (courses.length === 0) { showToast('No courses to invoice', 'warn'); return }
-    const lines = await buildInvoiceLines(courses)
-    const inv = await createStudentInvoice(student, {
-      lines: lines, discount: Number(student.discount_amount) || 0, couponCode: student.coupon_code,
-      createdBy: currentUser?.email || currentRole || null,
-    })
-    if (inv) { setInvoices(function (prev) { return [inv, ...prev] }); showToast('🧾 Invoice ' + (inv.invoice_no || '') + ' generated') }
+  // ── Per-enrollment invoice generation with kit-item selection ──
+  async function openInvoiceGen(en) {
+    setInvGenEn(en)
+    setInvGenExcluded({})
+    setInvGenKits(null)   // loading
+    const { data } = await sb.from('kit_items')
+      .select('item_id, quantity, inventory_items(name)').eq('sku_id', en.sku_id)
+    setInvGenKits((data || []).map(function (k) { return { item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', quantity: Number(k.quantity || 1) } }))
+  }
+  function toggleInvGenKit(itemId) {
+    setInvGenExcluded(function (prev) { const n = { ...prev }; if (n[itemId]) delete n[itemId]; else n[itemId] = true; return n })
+  }
+  async function confirmInvoiceGen() {
+    const en = invGenEn
+    if (!en) return
+    setInvGenSaving(true)
+    const fee = skuFee[en.sku_id] || 0
+    const courseName = (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || '')
+    const selected = (invGenKits || []).filter(function (k) { return !invGenExcluded[k.item_id] })
+    const lines = [{ kind: 'course', sku_id: en.sku_id, name: courseName, qty: 1, rate: fee, amount: fee }]
+      .concat(selected.map(function (k) { return { kind: 'kit', sku_id: en.sku_id, item_id: k.item_id, name: k.name, qty: k.quantity, rate: 0, amount: 0 } }))
+
+    // Create the invoice (tied to this enrollment)
+    const { data: inv, error } = await sb.from('student_invoices').insert({
+      student_id: student.id, franchisee_id: student.franchisee_id || null, enrollment_id: en.id,
+      invoice_date: new Date().toISOString().slice(0, 10), items: lines,
+      subtotal: fee, discount: 0, total: fee, amount_paid: 0, status: fee > 0 ? 'unpaid' : 'paid',
+      created_by: currentUser?.email || currentRole || null,
+    }).select().single()
+    if (error) { showToast('Invoice failed: ' + error.message, 'err'); setInvGenSaving(false); return }
+
+    // Deduct HO stock for the SELECTED kit items (once per enrollment)
+    const { data: already } = await sb.from('stock_ledger').select('id').eq('ref_type', 'enrollment').eq('ref_id', en.id).limit(1)
+    if ((!already || already.length === 0) && selected.length > 0) {
+      const rows = selected.filter(function (k) { return k.quantity > 0 }).map(function (k) {
+        return { item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student', qty: -k.quantity, ref_type: 'enrollment', ref_id: en.id, franchisee_id: student.franchisee_id || null, note: 'Kit · ' + (student.full_name || 'student') + ' · ' + courseName }
+      })
+      if (rows.length) {
+        const { error: stkErr } = await sb.from('stock_ledger').insert(rows)
+        if (!stkErr) setKitIssued(function (prev) { return { ...prev, [en.id]: true } })
+      }
+    }
+
+    setInvoices(function (prev) { return [inv, ...prev] })
+    setInvGenEn(null); setInvGenSaving(false)
+    showToast('🧾 Invoice ' + (inv.invoice_no || '') + ' generated · ' + selected.length + ' kit item' + (selected.length !== 1 ? 's' : '') + ' issued')
   }
 
   function startEditInvoice(inv) {
@@ -818,20 +787,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // Coupon applied to the added fee but not locked here — it redeems when the
     // first fee payment is received (see recordPayment).
 
-    // 3b) Raise a fee invoice for the courses just added (sequential SINV no.)
-    const invCourses = selectedNewSkus.map(function (sku) {
-      return { sku_id: sku.id, name: (sku.courses?.group_name ? sku.courses.group_name + ' — ' : '') + sku.level_name, fee: sku.student_fee || 0 }
-    })
-    const invLines = await buildInvoiceLines(invCourses)
-    const newInv = await createStudentInvoice(student, {
-      lines: invLines, discount: discount, couponCode: addCoupon?.code || null,
-      date: addEnrollDate || new Date().toISOString().slice(0, 10), createdBy: currentUser?.email || currentRole || null,
-    })
-    if (newInv) {
-      setInvoices(function (prev) { return [newInv, ...prev] })
-      showToast('🧾 Invoice ' + (newInv.invoice_no || '') + ' generated')
-    }
-
     // 4) Reflect batch assignments for the new courses immediately
     const newEnrIds = added.map(function (e) { return e.id })
     if (newEnrIds.length) {
@@ -854,12 +809,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }
     setSessionCounts(function (prev) { const n = { ...prev }; added.forEach(function (e) { if (n[e.id] == null) n[e.id] = 0 }); return n })
 
-    // 4c) Issue each new level's kit and deduct HO stock (once per enrollment)
-    const kitLines = await issueStudentKits(added, student)
-    if (kitLines > 0) {
-      setKitIssued(function (prev) { const n = { ...prev }; added.forEach(function (e) { n[e.id] = true }); return n })
-      showToast('🧰 Kit issued · HO stock adjusted (' + kitLines + ' item' + (kitLines !== 1 ? 's' : '') + ')')
-    }
+    // Kit issuance + invoice happen per-enrollment via the 🧾 Invoice button on
+    // each course row (with kit-item selection) — not automatically here.
 
     // 5) Local state + cleanup
     setLocalEnrollments(function (prev) { return [...prev, ...added] })
@@ -1228,14 +1179,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {/* ── COURSES & BATCHES TAB ── */}
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
-            {canEdit && localEnrollments.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-                <button className="btn-s" style={{ fontSize: 12, padding: '5px 12px' }}
-                  onClick={generateInvoiceForCurrent} title="Raise a fee invoice for the current courses">
-                  🧾 Generate Invoice
-                </button>
-              </div>
-            )}
             {localEnrollments.length === 0 && !showAddEnrollment ? (
               <p className="hint" style={{ textAlign: 'center', padding: 24 }}>No courses enrolled yet.</p>
             ) : (
@@ -1362,6 +1305,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         >
                           {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
                         </button>
+
+                        {/* Per-course invoice (with kit selection) */}
+                        {canManageFees && (
+                          <button className="btn-s" style={{ fontSize: 11, padding: '4px 10px', flexShrink: 0 }}
+                            onClick={function () { openInvoiceGen(en) }} title="Generate a fee invoice for this course (choose kit items)">
+                            🧾 Invoice
+                          </button>
+                        )}
 
                         {/* Assign batch toggle */}
                         {canEdit && (
@@ -1729,6 +1680,53 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             centre={certModal.centre}
             onClose={function () { setCertModal(null) }}
           />
+        )}
+
+        {/* Per-enrollment invoice generation (with kit-item selection) */}
+        {invGenEn && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget && !invGenSaving) setInvGenEn(null) }}>
+            <div className="modal" style={{ maxWidth: 460 }}>
+              <ModalHeader flush title="Generate Fee Invoice"
+                subtitle={(invGenEn.skus?.courses?.group_name || 'Course') + (invGenEn.skus?.level_name ? ' · ' + invGenEn.skus.level_name : '')}
+                onClose={function () { if (!invGenSaving) setInvGenEn(null) }} />
+              <div style={{ padding: '6px 20px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>Course fee</span>
+                  <span style={{ font: '700 15px var(--mono)', color: 'var(--purple)' }}>₹{fmtAmt(skuFee[invGenEn.sku_id] || 0)}</span>
+                </div>
+                <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', margin: '12px 0 6px' }}>
+                  Kit items given <span style={{ textTransform: 'none', fontWeight: 400 }}>— uncheck any not handed over</span>
+                </div>
+                {invGenKits === null ? (
+                  <p className="hint" style={{ margin: 0 }}>Loading kit…</p>
+                ) : invGenKits.length === 0 ? (
+                  <p className="hint" style={{ margin: 0 }}>This course has no kit defined.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {invGenKits.map(function (k) {
+                      const checked = !invGenExcluded[k.item_id]
+                      return (
+                        <label key={k.item_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: checked ? 'var(--purple-bg)' : 'var(--bg)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={checked} onChange={function () { toggleInvGenKit(k.item_id) }} style={{ accentColor: 'var(--purple)' }} />
+                          <span style={{ font: '500 13px var(--font)', color: checked ? 'var(--text)' : 'var(--text3)', textDecoration: checked ? 'none' : 'line-through', flex: 1 }}>{k.name}</span>
+                          {k.quantity > 1 && <span style={{ font: '600 11px var(--mono)', color: 'var(--text3)' }}>×{k.quantity}</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+                <p className="hint" style={{ marginTop: 10 }}>
+                  Selected kit items are listed on the invoice and deducted from HO stock (once per course).
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button className="btn" disabled={invGenSaving} onClick={function () { setInvGenEn(null) }}>Cancel</button>
+                <button className="btn-p" disabled={invGenSaving || invGenKits === null} onClick={confirmInvoiceGen}>
+                  {invGenSaving ? 'Generating…' : '🧾 Generate Invoice'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Course completion date modal */}
@@ -2153,20 +2151,8 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         enrData = inserted || []
       }
 
-      // Issue each enrolled level's kit and deduct HO stock (kit cost is in the fee)
-      await issueStudentKits(enrData, { franchisee_id: form.franchisee_id, full_name: form.full_name.trim() })
-
-      // Raise a fee invoice for the admission's courses (sequential SINV no.)
-      if (selectedSkus.length > 0) {
-        const invCourses = selectedSkus.map(function (sku) {
-          return { sku_id: sku.id, name: (sku.courses?.group_name ? sku.courses.group_name + ' — ' : '') + sku.level_name, fee: sku.student_fee || 0 }
-        })
-        const invLines = await buildInvoiceLines(invCourses)
-        await createStudentInvoice({ id: st.id, franchisee_id: form.franchisee_id }, {
-          lines: invLines, discount: couponDiscount, couponCode: coupon?.code || null,
-          date: form.registered_at || new Date().toISOString().slice(0, 10),
-        })
-      }
+      // Kit issuance + fee invoice are raised per-enrollment (with kit-item
+      // selection) from the student's Courses tab — not automatically here.
 
       // Assign batches (or create new ones) for each selected SKU
       for (let i = 0; i < selectedSkus.length; i++) {
