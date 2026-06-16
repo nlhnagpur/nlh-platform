@@ -88,10 +88,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
   const [editInv,         setEditInv]         = useState({})   // { invoice_date, amount_paid, status, notes }
-  const [invGenEn,        setInvGenEn]        = useState(null) // enrollment being invoiced
-  const [invGenKits,      setInvGenKits]      = useState(null) // kit items for it (null = loading)
-  const [invGenExcluded,  setInvGenExcluded]  = useState({})   // { item_id: true } unchecked
-  const [invGenSaving,    setInvGenSaving]    = useState(false)
   const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [skuBilling,      setSkuBilling]      = useState({})   // { [sku_id]: billing_type }
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
@@ -128,6 +124,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [addBatchSel,       setAddBatchSel]       = useState({})     // { skuId: batchId | '__new__' }
   const [addNewBatch,       setAddNewBatch]       = useState({})     // { skuId: { ci, name, days, time, is_individual } }
   const [addEnrollDate,     setAddEnrollDate]     = useState(new Date().toISOString().slice(0, 10))
+  const [addFeeOverride,    setAddFeeOverride]    = useState({})     // { skuId: editable fee }
+  const [addKitData,        setAddKitData]        = useState({})     // { skuId: [{ item_id, name, quantity }] }
+  const [addKitExcluded,    setAddKitExcluded]    = useState({})     // { skuId: { item_id: true } } unchecked kit items
 
   // ── Delete state ──
   const [deleting, setDeleting] = useState(false)
@@ -288,53 +287,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
   }
 
-  // ── Per-enrollment invoice generation with kit-item selection ──
-  async function openInvoiceGen(en) {
-    setInvGenEn(en)
-    setInvGenExcluded({})
-    setInvGenKits(null)   // loading
-    const { data } = await sb.from('kit_items')
-      .select('item_id, quantity, inventory_items(name)').eq('sku_id', en.sku_id)
-    setInvGenKits((data || []).map(function (k) { return { item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', quantity: Number(k.quantity || 1) } }))
-  }
-  function toggleInvGenKit(itemId) {
-    setInvGenExcluded(function (prev) { const n = { ...prev }; if (n[itemId]) delete n[itemId]; else n[itemId] = true; return n })
-  }
-  async function confirmInvoiceGen() {
-    const en = invGenEn
-    if (!en) return
-    setInvGenSaving(true)
-    const fee = skuFee[en.sku_id] || 0
-    const courseName = (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || '')
-    const selected = (invGenKits || []).filter(function (k) { return !invGenExcluded[k.item_id] })
-    const lines = [{ kind: 'course', sku_id: en.sku_id, name: courseName, qty: 1, rate: fee, amount: fee }]
-      .concat(selected.map(function (k) { return { kind: 'kit', sku_id: en.sku_id, item_id: k.item_id, name: k.name, qty: k.quantity, rate: 0, amount: 0 } }))
-
-    // Create the invoice (tied to this enrollment)
-    const { data: inv, error } = await sb.from('student_invoices').insert({
-      student_id: student.id, franchisee_id: student.franchisee_id || null, enrollment_id: en.id,
-      invoice_date: new Date().toISOString().slice(0, 10), items: lines,
-      subtotal: fee, discount: 0, total: fee, amount_paid: 0, status: fee > 0 ? 'unpaid' : 'paid',
-      created_by: currentUser?.email || currentRole || null,
-    }).select().single()
-    if (error) { showToast('Invoice failed: ' + error.message, 'err'); setInvGenSaving(false); return }
-
-    // Deduct HO stock for the SELECTED kit items (once per enrollment)
-    const { data: already } = await sb.from('stock_ledger').select('id').eq('ref_type', 'enrollment').eq('ref_id', en.id).limit(1)
-    if ((!already || already.length === 0) && selected.length > 0) {
-      const rows = selected.filter(function (k) { return k.quantity > 0 }).map(function (k) {
-        return { item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student', qty: -k.quantity, ref_type: 'enrollment', ref_id: en.id, franchisee_id: student.franchisee_id || null, note: 'Kit · ' + (student.full_name || 'student') + ' · ' + courseName }
-      })
-      if (rows.length) {
-        const { error: stkErr } = await sb.from('stock_ledger').insert(rows)
-        if (!stkErr) setKitIssued(function (prev) { return { ...prev, [en.id]: true } })
-      }
-    }
-
-    setInvoices(function (prev) { return [inv, ...prev] })
-    setInvGenEn(null); setInvGenSaving(false)
-    showToast('🧾 Invoice ' + (inv.invoice_no || '') + ' generated · ' + selected.length + ' kit item' + (selected.length !== 1 ? 's' : '') + ' issued')
-  }
 
   function startEditInvoice(inv) {
     setEditInvId(inv.id)
@@ -734,6 +686,26 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddBatchData(function (prev) { return { ...prev, [skuId]: { batches: batches || [], eligibleCIs: eligibleCIs, loading: false } } })
   }
 
+  // ── Load a course's kit items + seed its editable fee when it is selected ──
+  async function loadAddKit(sku) {
+    setAddFeeOverride(function (prev) { return prev[sku.id] != null ? prev : { ...prev, [sku.id]: sku.student_fee || 0 } })
+    if (addKitData[sku.id]) return
+    const { data } = await sb.from('kit_items')
+      .select('item_id, quantity, inventory_items(name)').eq('sku_id', sku.id)
+    setAddKitData(function (prev) { return { ...prev, [sku.id]: (data || []).map(function (k) { return { item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', quantity: Number(k.quantity || 1) } }) } })
+  }
+  function toggleAddKit(skuId, itemId) {
+    setAddKitExcluded(function (prev) {
+      const cur = { ...(prev[skuId] || {}) }
+      if (cur[itemId]) delete cur[itemId]; else cur[itemId] = true
+      return { ...prev, [skuId]: cur }
+    })
+  }
+  function feeFor(sku) {
+    const o = addFeeOverride[sku.id]
+    return o != null ? (parseInt(o, 10) || 0) : (sku.student_fee || 0)
+  }
+
   // ── Add new enrollments — records fees (with optional coupon) and assigns batches ──
   async function addEnrollments() {
     if (!selectedNewSkus.length) { showToast('Select at least one course', 'warn'); return }
@@ -776,7 +748,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }
 
     // 3) Fees — add the new courses' fee (net of any coupon) to the Fee Total
-    const addedFee = selectedNewSkus.reduce(function (s, sk) { return s + (sk.student_fee || 0) }, 0)
+    const addedFee = selectedNewSkus.reduce(function (s, sk) { return s + feeFor(sk) }, 0)
     const discount = addCoupon ? Math.min(addCoupon.discount, addedFee) : 0
     const netAdded = Math.max(0, addedFee - discount)
     const newFeeTotal = (Number(form.fee_total) || 0) + netAdded
@@ -786,6 +758,43 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }
     // Coupon applied to the added fee but not locked here — it redeems when the
     // first fee payment is received (see recordPayment).
+
+    // 3b) Raise ONE invoice for this enrolment (courses w/ edited fees + selected kit items)
+    const invLines = []
+    selectedNewSkus.forEach(function (sku) {
+      const enr = added.find(function (e) { return e.sku_id === sku.id })
+      const cname = (sku.courses?.group_name ? sku.courses.group_name + ' — ' : '') + sku.level_name
+      invLines.push({ kind: 'course', sku_id: sku.id, enrollment_id: enr?.id || null, name: cname, qty: 1, rate: feeFor(sku), amount: feeFor(sku) })
+      const ex = addKitExcluded[sku.id] || {}
+      ;(addKitData[sku.id] || []).filter(function (k) { return !ex[k.item_id] }).forEach(function (k) {
+        invLines.push({ kind: 'kit', sku_id: sku.id, item_id: k.item_id, name: k.name, qty: k.quantity, rate: 0, amount: 0 })
+      })
+    })
+    const { data: newInv } = await sb.from('student_invoices').insert({
+      student_id: student.id, franchisee_id: student.franchisee_id || null,
+      enrollment_id: added.length === 1 ? added[0].id : null,
+      invoice_date: addEnrollDate || new Date().toISOString().slice(0, 10), items: invLines,
+      subtotal: addedFee, discount: discount, coupon_code: addCoupon?.code || null,
+      total: netAdded, amount_paid: 0, status: netAdded > 0 ? 'unpaid' : 'paid',
+      created_by: currentUser?.email || currentRole || null,
+    }).select().single()
+    if (newInv) setInvoices(function (prev) { return [newInv, ...prev] })
+
+    // 3c) Deduct HO stock for the SELECTED kit items, per enrollment (guarded once)
+    const stockRows = []
+    selectedNewSkus.forEach(function (sku) {
+      const enr = added.find(function (e) { return e.sku_id === sku.id })
+      if (!enr) return
+      const ex = addKitExcluded[sku.id] || {}
+      ;(addKitData[sku.id] || []).filter(function (k) { return !ex[k.item_id] && k.quantity > 0 }).forEach(function (k) {
+        stockRows.push({ item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student', qty: -k.quantity, ref_type: 'enrollment', ref_id: enr.id, franchisee_id: student.franchisee_id || null, note: 'Kit · ' + (student.full_name || 'student') })
+      })
+    })
+    if (stockRows.length) {
+      const { error: stkErr } = await sb.from('stock_ledger').insert(stockRows)
+      if (!stkErr) setKitIssued(function (prev) { const n = { ...prev }; added.forEach(function (e) { n[e.id] = true }); return n })
+    }
+    if (newInv) showToast('🧾 Invoice ' + (newInv.invoice_no || '') + ' generated')
 
     // 4) Reflect batch assignments for the new courses immediately
     const newEnrIds = added.map(function (e) { return e.id })
@@ -818,6 +827,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAvailableSkus(function (prev) { return prev.filter(function (s) { return !addedSkuIds.includes(s.id) }) })
     setSelectedNewSkus([]); setShowAddEnrollment(false)
     setAddCoupon(null); setAddBatchSel({}); setAddNewBatch({})
+    setAddFeeOverride({}); setAddKitData({}); setAddKitExcluded({})
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
@@ -1306,14 +1316,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
                         </button>
 
-                        {/* Per-course invoice (with kit selection) */}
-                        {canManageFees && (
-                          <button className="btn-s" style={{ fontSize: 11, padding: '4px 10px', flexShrink: 0 }}
-                            onClick={function () { openInvoiceGen(en) }} title="Generate a fee invoice for this course (choose kit items)">
-                            🧾 Invoice
-                          </button>
-                        )}
-
                         {/* Assign batch toggle */}
                         {canEdit && (
                           <button
@@ -1514,7 +1516,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                               checked={checked}
                                               onChange={function () {
                                                 setAddCoupon(null)  // fee changed — re-apply against new total
-                                                if (!checked) loadAddBatchData(sku.id)
+                                                if (!checked) { loadAddBatchData(sku.id); loadAddKit(sku) }
                                                 setSelectedNewSkus(function (prev) {
                                                   return checked
                                                     ? prev.filter(function (s) { return s.id !== sku.id })
@@ -1538,12 +1540,54 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         })()}
 
                         {selectedNewSkus.length > 0 && (function () {
-                          const addedFee = selectedNewSkus.reduce(function (s, sk) { return s + (sk.student_fee || 0) }, 0)
+                          const addedFee = selectedNewSkus.reduce(function (s, sk) { return s + feeFor(sk) }, 0)
                           const discount = addCoupon ? Math.min(addCoupon.discount, addedFee) : 0
                           const netAdded = Math.max(0, addedFee - discount)
                           const newTotal = (Number(form.fee_total) || 0) + netAdded
                           return (
                             <>
+                              {/* Invoice lines: each selected course — editable fee + kit-item selection */}
+                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
+                                <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>🧾 Invoice — courses, fees &amp; kit</div>
+                                {selectedNewSkus.map(function (sku) {
+                                  const kits = addKitData[sku.id]
+                                  const ex = addKitExcluded[sku.id] || {}
+                                  return (
+                                    <div key={sku.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                        <span style={{ font: '600 12px var(--font)', color: 'var(--text)', flex: 1, minWidth: 120 }}>
+                                          {sku.courses?.group_name || '—'} <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{sku.level_name}</span>
+                                        </span>
+                                        <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>Fee ₹</span>
+                                        <input type="number" min={0} value={addFeeOverride[sku.id] != null ? addFeeOverride[sku.id] : (sku.student_fee || 0)}
+                                          onChange={function (e) { setAddCoupon(null); setAddFeeOverride(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
+                                          style={{ width: 90, fontSize: 13, fontWeight: 600, padding: '5px 8px' }} />
+                                      </div>
+                                      {kits == null ? (
+                                        <div className="hint" style={{ marginTop: 6 }}>Loading kit…</div>
+                                      ) : kits.length === 0 ? (
+                                        <div className="hint" style={{ marginTop: 6 }}>No kit defined for this course.</div>
+                                      ) : (
+                                        <div style={{ marginTop: 8 }}>
+                                          <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Kit items given <span style={{ textTransform: 'none', fontWeight: 400 }}>— uncheck any not handed over</span></div>
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                            {kits.map(function (k) {
+                                              const on = !ex[k.item_id]
+                                              return (
+                                                <label key={k.item_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, cursor: 'pointer', font: '500 11px var(--font)', border: '1px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : 'var(--bg)', color: on ? 'var(--purple)' : 'var(--text3)', textDecoration: on ? 'none' : 'line-through' }}>
+                                                  <input type="checkbox" checked={on} onChange={function () { toggleAddKit(sku.id, k.item_id) }} style={{ accentColor: 'var(--purple)' }} />
+                                                  {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}
+                                                </label>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+
                               {/* Enrollment date for the new courses */}
                               <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
                                 <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>
@@ -1680,53 +1724,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             centre={certModal.centre}
             onClose={function () { setCertModal(null) }}
           />
-        )}
-
-        {/* Per-enrollment invoice generation (with kit-item selection) */}
-        {invGenEn && (
-          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget && !invGenSaving) setInvGenEn(null) }}>
-            <div className="modal" style={{ maxWidth: 460 }}>
-              <ModalHeader flush title="Generate Fee Invoice"
-                subtitle={(invGenEn.skus?.courses?.group_name || 'Course') + (invGenEn.skus?.level_name ? ' · ' + invGenEn.skus.level_name : '')}
-                onClose={function () { if (!invGenSaving) setInvGenEn(null) }} />
-              <div style={{ padding: '6px 20px 16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>Course fee</span>
-                  <span style={{ font: '700 15px var(--mono)', color: 'var(--purple)' }}>₹{fmtAmt(skuFee[invGenEn.sku_id] || 0)}</span>
-                </div>
-                <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', margin: '12px 0 6px' }}>
-                  Kit items given <span style={{ textTransform: 'none', fontWeight: 400 }}>— uncheck any not handed over</span>
-                </div>
-                {invGenKits === null ? (
-                  <p className="hint" style={{ margin: 0 }}>Loading kit…</p>
-                ) : invGenKits.length === 0 ? (
-                  <p className="hint" style={{ margin: 0 }}>This course has no kit defined.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {invGenKits.map(function (k) {
-                      const checked = !invGenExcluded[k.item_id]
-                      return (
-                        <label key={k.item_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: checked ? 'var(--purple-bg)' : 'var(--bg)', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={checked} onChange={function () { toggleInvGenKit(k.item_id) }} style={{ accentColor: 'var(--purple)' }} />
-                          <span style={{ font: '500 13px var(--font)', color: checked ? 'var(--text)' : 'var(--text3)', textDecoration: checked ? 'none' : 'line-through', flex: 1 }}>{k.name}</span>
-                          {k.quantity > 1 && <span style={{ font: '600 11px var(--mono)', color: 'var(--text3)' }}>×{k.quantity}</span>}
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
-                <p className="hint" style={{ marginTop: 10 }}>
-                  Selected kit items are listed on the invoice and deducted from HO stock (once per course).
-                </p>
-              </div>
-              <div className="modal-actions">
-                <button className="btn" disabled={invGenSaving} onClick={function () { setInvGenEn(null) }}>Cancel</button>
-                <button className="btn-p" disabled={invGenSaving || invGenKits === null} onClick={confirmInvoiceGen}>
-                  {invGenSaving ? 'Generating…' : '🧾 Generate Invoice'}
-                </button>
-              </div>
-            </div>
-          </div>
         )}
 
         {/* Course completion date modal */}
@@ -2151,8 +2148,37 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         enrData = inserted || []
       }
 
-      // Kit issuance + fee invoice are raised per-enrollment (with kit-item
-      // selection) from the student's Courses tab — not automatically here.
+      // Raise the admission's fee invoice (courses + their kit items) and deduct
+      // HO stock for the issued kit. (Per-item kit selection is available on the
+      // Courses tab's Add-Course invoicing screen for later add-ons.)
+      if (enrData.length > 0) {
+        const skuIds = enrData.map(function (e) { return e.sku_id })
+        const { data: kits } = await sb.from('kit_items')
+          .select('sku_id, item_id, quantity, inventory_items(name)').in('sku_id', skuIds)
+        const lines = []
+        const stockRows = []
+        enrData.forEach(function (e) {
+          const sku = selectedSkus.find(function (s) { return s.id === e.sku_id })
+          const cname = (sku?.courses?.group_name ? sku.courses.group_name + ' — ' : '') + (sku?.level_name || '')
+          const fee = sku?.student_fee || 0
+          lines.push({ kind: 'course', sku_id: e.sku_id, enrollment_id: e.id, name: cname, qty: 1, rate: fee, amount: fee })
+          ;(kits || []).filter(function (k) { return k.sku_id === e.sku_id }).forEach(function (k) {
+            const qn = Number(k.quantity || 1)
+            lines.push({ kind: 'kit', sku_id: e.sku_id, item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', qty: qn, rate: 0, amount: 0 })
+            if (qn > 0) stockRows.push({ item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student', qty: -qn, ref_type: 'enrollment', ref_id: e.id, franchisee_id: form.franchisee_id || null, note: 'Kit · ' + form.full_name.trim() })
+          })
+        })
+        const subtotal = lines.filter(function (l) { return l.kind === 'course' }).reduce(function (s, l) { return s + l.amount }, 0)
+        const disc = couponDiscount || 0
+        await sb.from('student_invoices').insert({
+          student_id: st.id, franchisee_id: form.franchisee_id || null,
+          enrollment_id: enrData.length === 1 ? enrData[0].id : null,
+          invoice_date: form.registered_at || new Date().toISOString().slice(0, 10), items: lines,
+          subtotal: subtotal, discount: disc, coupon_code: coupon?.code || null,
+          total: Math.max(0, subtotal - disc), amount_paid: 0, status: (subtotal - disc) > 0 ? 'unpaid' : 'paid',
+        })
+        if (stockRows.length) await sb.from('stock_ledger').insert(stockRows)
+      }
 
       // Assign batches (or create new ones) for each selected SKU
       for (let i = 0; i < selectedSkus.length; i++) {
