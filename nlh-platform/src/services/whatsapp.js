@@ -28,19 +28,26 @@ export function toWAPhone(raw) {
 
 // Record an outbound message so it shows in the WhatsApp Inbox thread and can
 // be tracked/audited. Non-fatal: a logging failure never blocks the send.
-export async function logOutbound(to, body, messageType) {
+export async function logOutbound(to, body, messageType, waMessageId) {
   try {
     const num = toWAPhone(to) || String(to || '').replace(/\D/g, '')
     if (!num) return
     await sb.from('whatsapp_messages').insert({
-      direction:    'outbound',
-      from_number:  '917123514575',
-      to_number:    num,
-      message_type: messageType || 'template',
-      message_body: body,
-      status:       'sent',
+      direction:     'outbound',
+      from_number:   '917123514575',
+      to_number:     num,
+      message_type:  messageType || 'template',
+      message_body:  body,
+      status:        'sent',
+      // Store Meta's message id so the webhook can advance status → delivered/read
+      wa_message_id: waMessageId || null,
     })
   } catch (e) { /* ignore */ }
+}
+
+// Pull the WhatsApp message id (wamid) out of a send-API response
+export function waMsgId(resp) {
+  return resp?.data?.messages?.[0]?.id || resp?.messages?.[0]?.id || null
 }
 
 async function sendWA(to, payload, summary) {
@@ -51,7 +58,7 @@ async function sendWA(to, payload, summary) {
     body: JSON.stringify({ to, ...payload }),
   })
   const data = await res.json()
-  if (data && data.success && summary) logOutbound(to, summary, payload?.type === 'text' ? 'text' : 'template')
+  if (data && data.success && summary) logOutbound(to, summary, payload?.type === 'text' ? 'text' : 'template', waMsgId(data))
   return data
 }
 
@@ -136,7 +143,7 @@ export async function sendWAStudentReceipt(to, { name, receiptNo, amount, date, 
     body: JSON.stringify({ to: toWAPhone(to), name, receiptNo, amount, date, balance }),
   })
   const data = await res.json()
-  if (data && data.success) logOutbound(to, '🧾 Receipt ' + (receiptNo || '') + ' · ₹' + amount + (Number(balance) > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'))
+  if (data && data.success) logOutbound(to, '🧾 Receipt ' + (receiptNo || '') + ' · ₹' + amount + (Number(balance) > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'), 'template', waMsgId(data))
   return data
 }
 
@@ -193,7 +200,7 @@ export async function sendWAReviewRequest(to, { parentName, studentName, courseN
     body: JSON.stringify({ to, parentName, studentName, courseName }),
   })
   const data = await res.json()
-  if (data && data.success) logOutbound(to, '⭐ Google review request · ' + (studentName || '') + (courseName ? ' (' + courseName + ')' : ''))
+  if (data && data.success) logOutbound(to, '⭐ Google review request · ' + (studentName || '') + (courseName ? ' (' + courseName + ')' : ''), 'template', waMsgId(data))
   return data
 }
 

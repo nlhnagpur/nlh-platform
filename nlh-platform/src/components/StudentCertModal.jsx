@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react'
 import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendStudentCertEmail } from '../services/email'
-import { toWAPhone, logOutbound } from '../services/whatsapp'
+import { toWAPhone, logOutbound, waMsgId } from '../services/whatsapp'
 import ModalHeader from './ModalHeader'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         const c = e.skus?.courses?.group_name || 'Course'
         return e.skus?.level_name ? c + ' ' + e.skus.level_name : c
       }).join(', ')
-      logOutbound(waTo, '🎓 Certificate sent · ' + (student.full_name || '') + (courseLabel ? ' (' + courseLabel + ')' : ''))
+      logOutbound(waTo, '🎓 Certificate sent · ' + (student.full_name || '') + (courseLabel ? ' (' + courseLabel + ')' : ''), 'template', waMsgId(data))
       setWaSent(true)
       setShowWaInput(false)
       showToast(`Certificate sent via WhatsApp to ${waTo} ✓`)

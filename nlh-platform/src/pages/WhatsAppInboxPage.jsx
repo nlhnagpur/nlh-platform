@@ -94,12 +94,13 @@ export default function WhatsAppInboxPage() {
       const data = await res.json()
       if (!data.success) throw new Error(data.error || 'Send failed')
       await sb.from('whatsapp_messages').insert({
-        direction:    'outbound',
-        from_number:  '917123514575',
-        to_number:    selected,
-        message_type: 'text',
-        message_body: reply.trim(),
-        status:       'sent',
+        direction:     'outbound',
+        from_number:   '917123514575',
+        to_number:     selected,
+        message_type:  'text',
+        message_body:  reply.trim(),
+        status:        'sent',
+        wa_message_id: data?.data?.messages?.[0]?.id || data?.messages?.[0]?.id || null,
       })
       setReply('')
       await load()
