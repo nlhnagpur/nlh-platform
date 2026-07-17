@@ -2718,6 +2718,7 @@ export default function StudentsPage() {
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [centreFilter, setCentreFilter] = useState('')
+  const [centreFilterTouched, setCentreFilterTouched] = useState(false)
   const [sortBy, setSortBy] = useState('activity')   // activity | name | joined | balance
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
@@ -2733,7 +2734,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -2774,10 +2775,21 @@ export default function StudentsPage() {
   const centreOptions = showCentreCol
     ? [...new Map(
         students.filter(function (s) { return s.franchisees }).map(function (s) {
-          return [s.franchisee_id, { id: s.franchisee_id, name: s.franchisees?.business_name, city: s.franchisees?.city }]
+          return [s.franchisee_id, { id: s.franchisee_id, name: s.franchisees?.business_name, city: s.franchisees?.city, tier: s.franchisees?.tier }]
         })
-      ).values()].sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
+      ).values()].sort(function (a, b) {
+        // Head Office first, then A→Z
+        if ((a.tier === 'NLH') !== (b.tier === 'NLH')) return a.tier === 'NLH' ? -1 : 1
+        return (a.name || '').localeCompare(b.name || '')
+      })
     : []
+
+  // For HO/admins, default the list to the Head Office centre so HO and
+  // franchisee students don't mix — switch to another centre (or All) anytime.
+  const hoCentreId = (centreOptions.find(function (c) { return c.tier === 'NLH' }) || {}).id
+  useEffect(function () {
+    if (admin && !centreFilterTouched && !centreFilter && hoCentreId) setCentreFilter(hoCentreId)
+  }, [admin, hoCentreId, centreFilter, centreFilterTouched])
 
   // Most-recent activity = latest of registration, creation, and any enrolment.
   // Re-enrolling a student therefore bumps them to the top of the list.
@@ -2872,12 +2884,13 @@ export default function StudentsPage() {
           {showCentreCol && centreOptions.length > 1 && (
             <select
               value={centreFilter}
-              onChange={function (e) { setCentreFilter(e.target.value) }}
+              onChange={function (e) { setCentreFilterTouched(true); setCentreFilter(e.target.value) }}
               style={{ fontSize: 12 }}
+              title="Filter students by centre"
             >
-              <option value="">All centres</option>
+              <option value="">🏫 All centres</option>
               {centreOptions.map(function (c) {
-                return <option key={c.id} value={c.id}>{c.name}{c.city ? ' — ' + c.city : ''}</option>
+                return <option key={c.id} value={c.id}>{c.tier === 'NLH' ? '🏛️ ' : '[' + (c.tier || '?') + '] '}{c.name}{c.city ? ' — ' + c.city : ''}</option>
               })}
             </select>
           )}
@@ -2918,14 +2931,14 @@ export default function StudentsPage() {
 
         {/* Stats */}
         {(function() {
-          const totalCharged  = students.reduce(function(s, r) { return s + (Number(r.fee_total) || 0) }, 0)
-          const totalReceived = students.reduce(function(s, r) { return s + (Number(r.fee_paid)  || 0) }, 0)
+          const totalCharged  = filtered.reduce(function(s, r) { return s + (Number(r.fee_total) || 0) }, 0)
+          const totalReceived = filtered.reduce(function(s, r) { return s + (Number(r.fee_paid)  || 0) }, 0)
           const totalBalance  = totalCharged - totalReceived
           return (
             <div className="mini-stats">
               <div className="mini">
                 <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🎓</div>
-                <div className="mini-num">{students.length}</div>
+                <div className="mini-num">{filtered.length}</div>
                 <div className="mini-lbl">Total enrolled</div>
               </div>
               <div className="mini">
@@ -2967,6 +2980,7 @@ export default function StudentsPage() {
               <thead>
                 <tr>
                   <th>Student</th>
+                  {showCentreCol && <th className="hide-mobile">Centre</th>}
                   <th className="hide-mobile">Sessions</th>
                   <th className="hide-mobile">Parent</th>
                   <th>Courses</th>
@@ -2979,7 +2993,7 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={9} className="empty">No students found</td></tr>
+                  <tr><td colSpan={showCentreCol ? 10 : 9} className="empty">No students found</td></tr>
                 )}
                 {filtered.map(function (s) {
                   const balance = (s.fee_total || 0) - (s.fee_paid || 0)
@@ -3002,6 +3016,16 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </td>
+                      {showCentreCol && (
+                        <td className="hide-mobile">
+                          {s.franchisees ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, font: '600 11px var(--font)', color: s.franchisees.tier === 'NLH' ? 'var(--purple)' : 'var(--text2)' }}>
+                              <span>{s.franchisees.tier === 'NLH' ? '🏛️' : '🏢'}</span>
+                              <span>{s.franchisees.business_name}{s.franchisees.tier && s.franchisees.tier !== 'NLH' ? ' · ' + s.franchisees.tier : ''}</span>
+                            </span>
+                          ) : <span style={{ color: 'var(--text3)' }}>—</span>}
+                        </td>
+                      )}
                       <td className="hide-mobile" style={{ fontSize: 11 }}>
                         {(s.enrollments || []).length === 0
                           ? <span style={{ color: 'var(--text3)' }}>—</span>
