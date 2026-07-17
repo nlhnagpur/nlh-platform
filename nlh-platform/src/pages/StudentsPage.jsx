@@ -2784,12 +2784,14 @@ export default function StudentsPage() {
       })
     : []
 
-  // For HO/admins, default the list to the Head Office centre so HO and
-  // franchisee students don't mix — switch to another centre (or All) anytime.
+  // Default the list to the viewer's OWN centre so centres don't mix; they can
+  // then filter down their hierarchy (a CF to its city's units, an SMF to its
+  // state's centres) or pick "All". HO = the Head Office centre; CF/SMF = self.
   const hoCentreId = (centreOptions.find(function (c) { return c.tier === 'NLH' }) || {}).id
+  const ownCentreId = admin ? hoCentreId : currentFranchiseeId
   useEffect(function () {
-    if (admin && !centreFilterTouched && !centreFilter && hoCentreId) setCentreFilter(hoCentreId)
-  }, [admin, hoCentreId, centreFilter, centreFilterTouched])
+    if (showCentreCol && !centreFilterTouched && !centreFilter && ownCentreId) setCentreFilter(ownCentreId)
+  }, [showCentreCol, ownCentreId, centreFilter, centreFilterTouched])
 
   // Most-recent activity = latest of registration, creation, and any enrolment.
   // Re-enrolling a student therefore bumps them to the top of the list.
@@ -2888,7 +2890,7 @@ export default function StudentsPage() {
               style={{ fontSize: 12 }}
               title="Filter students by centre"
             >
-              <option value="">🏫 All centres</option>
+              <option value="">🏫 {admin ? 'All centres' : 'All my centres'}</option>
               {centreOptions.map(function (c) {
                 return <option key={c.id} value={c.id}>{c.tier === 'NLH' ? '🏛️ ' : '[' + (c.tier || '?') + '] '}{c.name}{c.city ? ' — ' + c.city : ''}</option>
               })}
