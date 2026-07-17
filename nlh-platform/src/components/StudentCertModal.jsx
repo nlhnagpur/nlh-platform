@@ -194,9 +194,9 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         throw new Error((detail?.message || data.error || 'Send failed') + code)
       }
 
-      // Mark as sent
+      // Mark as sent (store the WhatsApp message id so delivery/read can be tracked)
       await sb.from('enrollments')
-        .update({ cert_wa_sent_at: new Date().toISOString() })
+        .update({ cert_wa_sent_at: new Date().toISOString(), cert_wa_message_id: waMsgId(data) })
         .in('id', selected.map(function (e) { return e.id }))
       // Log the outbound message so it shows in the WhatsApp Inbox
       const courseLabel = selected.map(function (e) {

@@ -84,6 +84,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
+  const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
@@ -379,6 +380,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       const ki = {}
       ;(kitLedger || []).forEach(function (r) { ki[r.ref_id] = true })
       setKitIssued(ki)
+
+      // WhatsApp delivery status of any certificates sent for these enrollments
+      const { data: certRows } = await sb.from('enrollments')
+        .select('id, cert_wa_message_id').in('id', enrIds).not('cert_wa_message_id', 'is', null)
+      const msgIds = (certRows || []).map(function (r) { return r.cert_wa_message_id })
+      const statusByMsg = {}
+      if (msgIds.length > 0) {
+        const { data: msgs } = await sb.from('whatsapp_messages').select('wa_message_id, status').in('wa_message_id', msgIds)
+        ;(msgs || []).forEach(function (m) { statusByMsg[m.wa_message_id] = m.status })
+      }
+      const cs = {}
+      ;(certRows || []).forEach(function (r) { cs[r.id] = statusByMsg[r.cert_wa_message_id] || 'sent' })
+      setCertWaStatus(cs)
 
       // Attended-session count per enrollment (for the "X / Y sessions" badge)
       const { data: attRows } = await sb.from('session_attendance')
@@ -1245,6 +1259,20 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 🧰 Kit issued
                               </span>
                             )}
+                            {(en.cert_wa_sent_at || certWaStatus[en.id]) && (function () {
+                              const st = certWaStatus[en.id] || 'sent'
+                              const map = {
+                                read:      { t: '🎓 Cert read',      c: '#1D4ED8', bg: '#DBEAFE', bd: '#93C5FD', tick: '✓✓' },
+                                delivered: { t: '🎓 Cert delivered', c: '#0E7490', bg: '#CFFAFE', bd: '#67E8F9', tick: '✓✓' },
+                                failed:    { t: '🎓 Cert failed',    c: '#B91C1C', bg: '#FEE2E2', bd: '#FCA5A5', tick: '✕' },
+                              }
+                              const m = map[st] || { t: '🎓 Cert sent', c: '#6B7280', bg: '#F3F4F6', bd: '#D1D5DB', tick: '✓' }
+                              return (
+                                <span title={'Certificate WhatsApp: ' + st} style={{ font: '600 10px var(--font)', color: m.c, background: m.bg, border: '1px solid ' + m.bd, borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                  {m.tick} {m.t.replace('🎓 ', '🎓 ')}
+                                </span>
+                              )
+                            })()}
                             {sessionsDone && (
                               <span title="All sessions attended but course not marked complete — follow up"
                                 style={{ font: '600 10px var(--font)', color: '#B45309', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
