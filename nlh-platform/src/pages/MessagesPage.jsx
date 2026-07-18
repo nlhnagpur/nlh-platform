@@ -177,7 +177,15 @@ function ChatThread({ franchiseeId, messages, peerName, peerSub, onSend, sending
                   )}
                   {m.body && <div style={{ font: '500 13px var(--font)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4 }}>{m.body}</div>}
                   <AttachmentView m={m} mine={m._mine} />
-                  <div style={{ font: '500 9px var(--font)', textAlign: 'right', marginTop: 3, opacity: 0.6 }}>{fmtTime(m.created_at)}</div>
+                  <div style={{ font: '500 9px var(--font)', textAlign: 'right', marginTop: 3, display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    <span style={{ opacity: 0.6 }}>{fmtTime(m.created_at)}</span>
+                    {m._mine && (
+                      <span title={m._read ? 'Read' : 'Sent — not read yet'}
+                        style={{ color: m._read ? '#7DD3FC' : 'inherit', opacity: m._read ? 1 : 0.6, fontWeight: 700 }}>
+                        {m._read ? '✓✓' : '✓'}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -453,10 +461,17 @@ export default function MessagesPage() {
     showToast('📢 Broadcast sent to ' + ids.length + ' franchisee' + (ids.length > 1 ? 's' : ''), 'ok')
   }
 
-  // messages for the active thread, tagged with _mine for bubble alignment
+  // messages for the active thread, tagged with _mine for bubble alignment and
+  // _read = has the OTHER side opened it (drives the ✓ / ✓✓ read receipt)
   const threadMsgs = messages
     .filter(function (m) { return m.franchisee_id === activeId })
-    .map(function (m) { return Object.assign({}, m, { _mine: isHO ? m.from_ho : !m.from_ho }) })
+    .map(function (m) {
+      const mine = isHO ? m.from_ho : !m.from_ho
+      return Object.assign({}, m, {
+        _mine: mine,
+        _read: mine ? (isHO ? !!m.read_by_franchisee : !!m.read_by_ho) : true,
+      })
+    })
 
   // ── Franchisee (single-thread) view ──
   if (!isHO) {
