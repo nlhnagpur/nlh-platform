@@ -38,6 +38,12 @@ function TierBadge({ tier }) {
   return <span className={'tier ' + cls}>{tier}</span>
 }
 
+// Max line items on one invoice. The invoice is a fixed A4 page and is also sent
+// to the franchisee as a single WhatsApp image, so it must not spill onto a
+// second page. Rows carrying kit chips are the tallest, so this is the safe
+// worst-case count. Extra items go on a separate order/invoice.
+const MAX_INVOICE_ITEMS = 10
+
 const FILTER_LABELS = {
   all: 'All', pending: 'Pending', invoiced: 'Invoiced',
   payment_submitted: 'Pmt Submitted', closed: 'Closed',
@@ -833,6 +839,13 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                   })}
                 </tbody>
               </table>
+
+              {items.length > MAX_INVOICE_ITEMS && (
+                <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8, background: '#FEF3C7', border: '1px solid #FCD34D', font: '600 12px var(--font)', color: '#8A5200' }}>
+                  ⚠ {items.length} items — an invoice fits {MAX_INVOICE_ITEMS} on one A4 page.
+                  Remove {items.length - MAX_INVOICE_ITEMS} and raise them on a separate order, otherwise this order can't be invoiced.
+                </div>
+              )}
 
               {isAdmin && (
                 <button
@@ -1707,6 +1720,17 @@ export default function OrdersPage() {
     // Compute grand_total from items before invoicing
     const { data: itemRows } = await sb
       .from('order_items').select('ordered_qty, rate').eq('order_id', order.id)
+
+    // An invoice must fit a single A4 page (it is also sent as one WhatsApp
+    // image). Anything beyond that has to go on a separate invoice.
+    if ((itemRows || []).length > MAX_INVOICE_ITEMS) {
+      showToast(
+        'This order has ' + itemRows.length + ' items — an invoice holds ' + MAX_INVOICE_ITEMS +
+        '. Use Edit to remove the extra items and raise them on a separate order.', 'warn')
+      setActionLoading(null)
+      return
+    }
+
     const itemsTotal = (itemRows || []).reduce(function (sum, it) {
       return sum + (it.ordered_qty || 0) * (it.rate || 0)
     }, 0)
