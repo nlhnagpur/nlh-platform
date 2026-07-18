@@ -155,7 +155,6 @@ export default async function handler(req, res) {
         'apikey':        SUPABASE_ANON,
         'Authorization': `Bearer ${callerToken}`,
         'Content-Type':  'image/png',
-        'x-upsert':      'true',
       },
       body: pngBuffer,
     })
