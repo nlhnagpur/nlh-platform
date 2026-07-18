@@ -6,7 +6,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
-import { sendWAOrderInvoiced, sendWAOrderDispatched } from '../services/whatsapp'
+import { sendWAOrderDispatched } from '../services/whatsapp'
 import InvoiceView from '../components/InvoiceView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
@@ -1734,22 +1734,16 @@ export default function OrdersPage() {
       } catch (emailErr) {
         console.warn('Invoice email failed:', emailErr.message)
       }
+      // The invoice template carries an image header (a PNG of the invoice), so
+      // the invoice has to be on screen to be captured. Open the invoice view —
+      // its 💬 WhatsApp button does the capture, upload and send.
       const wantWA = waOpts ? waOpts.sendWA : !!order.placer?.phone
       const waPhone = waOpts ? waOpts.waPhone : (order.placer?.phone || '')
-      if (wantWA && waPhone) {
-        try {
-          const r = await sendWAOrderInvoiced(waPhone, {
-            name:      order.placer?.business_name || 'Partner',
-            invoiceNo: invoiceNo,
-            amount:    fmtAmt(grandTotal),
-          })
-          if (r && r.success) showToast('Invoice sent on WhatsApp ✓')
-          else showToast('Invoiced · WhatsApp failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
-        } catch (waErr) {
-          showToast('Invoiced · WhatsApp failed: ' + waErr.message, 'warn')
-        }
-      }
       await loadOrders()
+      if (wantWA && waPhone) {
+        setInvoiceViewOrder({ ...order, invoice_no: invoiceNo, grand_total: grandTotal, status: 'invoiced' })
+        showToast('Invoiced ' + invoiceNo + ' · tap 💬 WhatsApp to send it to the franchisee')
+      }
     }
     setActionLoading(null)
   }

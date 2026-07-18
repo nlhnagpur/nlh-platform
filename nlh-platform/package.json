@@ -12,6 +12,7 @@
     "@supabase/supabase-js": "^2.49.4",
     "chart.js": "^4.4.1",
     "html-to-image": "^1.11.13",
+    "html2canvas": "^1.4.1",
     "jspdf": "^2.5.1",
     "puppeteer-core": "^25.1.0",
     "razorpay": "^2.9.6",

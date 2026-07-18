@@ -65,7 +65,7 @@ export function waMsgId(resp) {
   return resp?.data?.messages?.[0]?.id || resp?.messages?.[0]?.id || null
 }
 
-async function sendWA(to, payload, summary) {
+async function sendWA(to, payload, summary, mediaUrl) {
   if (!to) return { success: false, error: 'No phone number' }
   const res = await fetch('/api/send-whatsapp', {
     method: 'POST',
@@ -73,7 +73,9 @@ async function sendWA(to, payload, summary) {
     body: JSON.stringify({ to, ...payload }),
   })
   const data = await res.json()
-  if (data && data.success && summary) logOutbound(to, summary, payload?.type === 'text' ? 'text' : 'template', waMsgId(data))
+  if (data && data.success && summary) {
+    logOutbound(to, summary, mediaUrl ? 'image' : (payload?.type === 'text' ? 'text' : 'template'), waMsgId(data), mediaUrl)
+  }
   return data
 }
 
@@ -85,24 +87,30 @@ export async function sendWATest(to) {
   })
 }
 
-// ── Template: order_confirmed ─────────────────────────────────────────────────
+// ── Template: order_invoiced_v2 ───────────────────────────────────────────────
 // Params: {{1}} franchisee name, {{2}} invoice_no, {{3}} amount
-export async function sendWAOrderInvoiced(to, { name, invoiceNo, amount }) {
+// The template has an IMAGE header, so `imageUrl` (a public PNG of the invoice)
+// is required — Meta rejects the send if the header component is missing.
+export async function sendWAOrderInvoiced(to, { name, invoiceNo, amount, imageUrl }) {
+  const components = []
+  if (imageUrl) {
+    components.push({
+      type: 'header',
+      parameters: [{ type: 'image', image: { link: imageUrl } }],
+    })
+  }
+  components.push({
+    type: 'body',
+    parameters: [
+      { type: 'text', text: name },
+      { type: 'text', text: invoiceNo },
+      { type: 'text', text: '₹' + amount },
+    ],
+  })
   return sendWA(to, {
     type: 'template',
-    template: {
-      name: WA_TEMPLATES.orderInvoiced,
-      language: { code: 'en' },
-      components: [{
-        type: 'body',
-        parameters: [
-          { type: 'text', text: name },
-          { type: 'text', text: invoiceNo },
-          { type: 'text', text: '₹' + amount },
-        ],
-      }],
-    },
-  }, '🧾 Invoice ' + invoiceNo + ' · ₹' + amount)
+    template: { name: WA_TEMPLATES.orderInvoiced, language: { code: 'en' }, components },
+  }, '🧾 Invoice ' + invoiceNo + ' · ₹' + amount, imageUrl)
 }
 
 // ── Template: order_dispatched ────────────────────────────────────────────────

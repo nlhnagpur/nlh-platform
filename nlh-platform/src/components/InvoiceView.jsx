@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { sb } from '../supabase'
-import { fmtAmt } from '../utils'
+import { fmtAmt, showToast } from '../utils'
 import { sendInvoiceEmail } from '../services/email'
+import { sendWAOrderInvoiced } from '../services/whatsapp'
+import { captureInvoicePng } from '../utils/captureInvoice'
 
 const CANCEL_ROLES = ['owner', 'super_admin', 'admin']
 const FR_FIELDS = 'id,business_name,tier,email,city,state,area,country,phone,address,parent_id'
@@ -78,6 +80,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const [hierarchy,    setHierarchy]    = useState([])
   const [loading,      setLoading]      = useState(true)
   const [sending,      setSending]      = useState(false)
+  const [waSending,    setWaSending]    = useState(false)
 
   // Edit — parties
   const [editBillToId,  setEditBillToId]  = useState(order.bill_to_franchisee_id || null)
@@ -375,6 +378,30 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     win.document.close()
   }
 
+  // Send this invoice to the franchisee on WhatsApp. The order_invoiced_v2
+  // template has an image header, so we screenshot the rendered sheet, park the
+  // PNG in the public chat-attachments bucket, and pass its URL as the header.
+  async function handleSendWhatsApp() {
+    const fr2 = billToFr || placer || {}
+    if (!fr2.phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+    setWaSending(true)
+    try {
+      const imageUrl = await captureInvoicePng(order.invoice_no)
+      if (!imageUrl) { showToast('Could not prepare the invoice image', 'err'); setWaSending(false); return }
+      const r = await sendWAOrderInvoiced(fr2.phone, {
+        name:      fr2.business_name || 'Partner',
+        invoiceNo: order.invoice_no || order.order_ref || '',
+        amount:    fmtAmt(liveGrandTotal),
+        imageUrl:  imageUrl,
+      })
+      if (r && r.success) showToast('Invoice sent on WhatsApp ✓')
+      else showToast('WhatsApp send failed' + (r && r.error ? ': ' + r.error : ''), 'err')
+    } catch (err) {
+      showToast('WhatsApp send failed: ' + err.message, 'err')
+    }
+    setWaSending(false)
+  }
+
   async function handleSendEmail() {
     const fr = billToFr || placer || {}
     const email = fr.email
@@ -421,6 +448,11 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           {sending?'Sending…':'📧 Email'}
         </button>
         <button onClick={handlePrint} style={{ ...tbBtn(false), background:'#534AB7', color:'#fff', border:'none' }}>🖨 PDF</button>
+        <button onClick={handleSendWhatsApp} disabled={waSending || !fr.phone}
+          title={fr.phone ? 'Send this invoice to the franchisee on WhatsApp' : 'No phone number on file'}
+          style={{ ...tbBtn(false), background:fr.phone?'#25D366':'#9C9A92', color:'#fff', border:'none', opacity:waSending?.7:1, cursor:fr.phone?'pointer':'not-allowed' }}>
+          {waSending ? 'Sending…' : '💬 WhatsApp'}
+        </button>
         <button onClick={onClose} style={tbBtn(false)}>← Back</button>
       </div>
 
