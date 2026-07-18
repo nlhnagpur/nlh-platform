@@ -115,22 +115,18 @@ export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier 
 
 // ── Template: payment_received ────────────────────────────────────────────────
 // Params: {{1}} franchisee name, {{2}} amount, {{3}} balance
-export async function sendWAPaymentReceived(to, { name, amount, balance }) {
-  return sendWA(to, {
-    type: 'template',
-    template: {
-      name: 'payment_received',
-      language: { code: 'en' },
-      components: [{
-        type: 'body',
-        parameters: [
-          { type: 'text', text: name },
-          { type: 'text', text: '₹' + amount },
-          { type: 'text', text: balance > 0 ? '₹' + balance + ' remaining' : 'Fully paid ✅' },
-        ],
-      }],
-    },
-  }, '💰 Payment received · ₹' + amount + (balance > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'))
+// Franchisee payment confirmation. Routed through the SAME approved Utility
+// template as student receipts (`payment_receipt`); the old `payment_received`
+// template was classified Marketing, so Meta refused delivery to franchisees
+// who hadn't messaged recently (error 131049).
+export async function sendWAPaymentReceived(to, { name, amount, balance, receiptNo, date }) {
+  return sendWAStudentReceipt(to, {
+    name:      name,
+    receiptNo: receiptNo || '—',
+    amount:    amount,
+    date:      date || '',
+    balance:   balance,
+  })
 }
 
 // ── Payment receipt to a parent (franchisee-usable) ──────────────────────────

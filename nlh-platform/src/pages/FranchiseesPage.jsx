@@ -142,9 +142,11 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     if (sendWA && waPhone) {
       try {
         const r = await sendWAPaymentReceived(waPhone, {
-          name:    franchisee.business_name || 'Partner',
-          amount:  fmtAmt(amt),
-          balance: newBalance,
+          name:      franchisee.business_name || 'Partner',
+          amount:    fmtAmt(amt),
+          balance:   newBalance,
+          receiptNo: ref.trim() || mode,
+          date:      fmtDate(date),
         })
         if (r && r.success) showToast('WhatsApp receipt sent ✓')
         else showToast('Payment saved · WhatsApp receipt failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
