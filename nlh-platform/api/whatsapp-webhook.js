@@ -23,6 +23,59 @@ async function saveMessage(payload) {
   })
 }
 
+async function rpc(fn, args) {
+  const key = getKey()
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: {
+      'apikey':        key,
+      'Authorization': 'Bearer ' + key,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify(args),
+  })
+  if (!r.ok) return null
+  try { return await r.json() } catch (e) { return null }
+}
+
+// Broadcast-only number: reply once (per 6h per sender) pointing them to their
+// centre. Inbound messages open a 24h service window, so plain text is allowed.
+const AUTO_REPLY_TEXT =
+  'Thank you for your message. 🙏\n\n' +
+  'This number is used only to send certificates, receipts and course updates — it is not monitored for replies.\n\n' +
+  'For any assistance, please contact your New Learning Horizons centre directly.'
+
+async function autoReply(to) {
+  try {
+    if (!to) return
+    const token   = process.env.WHATSAPP_TOKEN
+    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
+    if (!token || !phoneId) return
+
+    const allowed = await rpc('wa_should_autoreply', { p_number: to })
+    if (allowed !== true) { console.log('[wa-webhook] auto-reply skipped (rate-limited) for', to); return }
+
+    const r = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: AUTO_REPLY_TEXT },
+      }),
+    })
+    const d = await r.json()
+    console.log('[wa-webhook] auto-reply', r.status, JSON.stringify(d))
+    if (r.ok) {
+      await rpc('wa_log_outbound', {
+        p_to: to, p_body: AUTO_REPLY_TEXT, p_type: 'auto_reply',
+        p_wa_message_id: d?.messages?.[0]?.id || null,
+      })
+    }
+  } catch (e) { console.error('[wa-webhook] auto-reply error:', e.message) }
+}
+
 export default async function handler(req, res) {
   // ── GET: Meta webhook verification ──────────────────────────────────────────
   if (req.method === 'GET') {
@@ -63,6 +116,11 @@ export default async function handler(req, res) {
           status:        'received',
           raw:           msg,
         })
+
+        // This is a broadcast-only number, so nobody is watching for replies.
+        // Answer immediately with a generic redirect (rate-limited per sender)
+        // rather than leaving the parent hanging.
+        await autoReply(msg.from)
       }
 
       // Status updates (delivered, read, failed).
