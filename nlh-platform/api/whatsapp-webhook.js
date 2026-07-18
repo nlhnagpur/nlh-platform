@@ -65,19 +65,24 @@ export default async function handler(req, res) {
         })
       }
 
-      // Status updates (delivered, read, failed)
+      // Status updates (delivered, read, failed).
+      // Go through the wa_update_status RPC: a direct PATCH is blocked by RLS
+      // when running with the anon key (anon has no UPDATE policy), which
+      // silently left every outbound message stuck on 'sent'.
       const statuses = changes.statuses || []
       const key = getKey()
       for (const s of statuses) {
-        await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_messages?wa_message_id=eq.${s.id}`, {
-          method: 'PATCH',
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/wa_update_status`, {
+          method: 'POST',
           headers: {
             'apikey':        key,
             'Authorization': 'Bearer ' + key,
             'Content-Type':  'application/json',
           },
-          body: JSON.stringify({ status: s.status }),
+          body: JSON.stringify({ p_wa_message_id: s.id, p_status: s.status }),
         })
+        console.log('[wa-webhook] status', s.status, 'for', s.id, '→', r.status,
+          s.errors ? JSON.stringify(s.errors) : '')
       }
     } catch (err) {
       console.error('Webhook error:', err.message)

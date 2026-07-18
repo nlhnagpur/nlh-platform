@@ -143,15 +143,26 @@ export default async function handler(req, res) {
 
   // Also keep a copy in Supabase Storage so the certificate renders in the
   // platform's WhatsApp chat (Meta's media id can't be shown in an <img>).
+  // Upload with the caller's JWT via the REST endpoint so the request runs as
+  // `authenticated` (the chat_attach_upload policy allows that role). Going
+  // through supabase-js here uploaded as anon and tripped RLS.
   let certImageUrl = null
   try {
     const storagePath = `certificates/${Date.now()}-${filename}`
-    const { error: upErr } = await sb.storage.from('chat-attachments')
-      .upload(storagePath, pngBuffer, { contentType: 'image/png', upsert: true })
-    if (!upErr) {
-      certImageUrl = sb.storage.from('chat-attachments').getPublicUrl(storagePath).data.publicUrl
+    const upRes = await fetch(`${SUPABASE_URL}/storage/v1/object/chat-attachments/${storagePath}`, {
+      method: 'POST',
+      headers: {
+        'apikey':        SUPABASE_ANON,
+        'Authorization': `Bearer ${callerToken}`,
+        'Content-Type':  'image/png',
+        'x-upsert':      'true',
+      },
+      body: pngBuffer,
+    })
+    if (upRes.ok) {
+      certImageUrl = `${SUPABASE_URL}/storage/v1/object/public/chat-attachments/${storagePath}`
     } else {
-      console.warn('[cert] storage upload failed:', upErr.message)
+      console.warn('[cert] storage upload failed:', upRes.status, await upRes.text())
     }
   } catch (e) { console.warn('[cert] storage upload error:', e.message) }
   console.log('[cert] certImageUrl:', certImageUrl)
