@@ -381,17 +381,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       ;(kitLedger || []).forEach(function (r) { ki[r.ref_id] = true })
       setKitIssued(ki)
 
-      // WhatsApp delivery status of any certificates sent for these enrollments
+      // Certificate WhatsApp status — read straight off the enrollment (kept in
+      // sync by the webhook) so franchisees see it without whatsapp_messages access
       const { data: certRows } = await sb.from('enrollments')
-        .select('id, cert_wa_message_id').in('id', enrIds).not('cert_wa_message_id', 'is', null)
-      const msgIds = (certRows || []).map(function (r) { return r.cert_wa_message_id })
-      const statusByMsg = {}
-      if (msgIds.length > 0) {
-        const { data: msgs } = await sb.from('whatsapp_messages').select('wa_message_id, status').in('wa_message_id', msgIds)
-        ;(msgs || []).forEach(function (m) { statusByMsg[m.wa_message_id] = m.status })
-      }
+        .select('id, cert_wa_status').in('id', enrIds).not('cert_wa_message_id', 'is', null)
       const cs = {}
-      ;(certRows || []).forEach(function (r) { cs[r.id] = statusByMsg[r.cert_wa_message_id] || 'sent' })
+      ;(certRows || []).forEach(function (r) { cs[r.id] = r.cert_wa_status || 'sent' })
       setCertWaStatus(cs)
 
       // Attended-session count per enrollment (for the "X / Y sessions" badge)
