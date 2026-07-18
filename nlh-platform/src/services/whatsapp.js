@@ -3,6 +3,19 @@
 
 import { sb } from '../supabase'
 
+// ── Meta template names — single source of truth ─────────────────────────────
+// Meta classifies templates by CONTENT, not by name, and anything it rules
+// "Marketing" is refused delivery to recipients who haven't messaged us in the
+// last 24h (error 131049). These must therefore stay pointed at the approved
+// UTILITY templates. Changing a template in Meta = change the name here only.
+export const WA_TEMPLATES = {
+  orderInvoiced:   'order_invoiced',
+  orderDispatched: 'order_dispatched',
+  studentEnrolled: 'student_enrolled',
+  balanceReminder: 'fee_reminder',
+  reviewRequest:   'review_request',   // legitimately Marketing — leave as is
+}
+
 async function waAuthHeaders() {
   const { data: { session } } = await sb.auth.getSession()
   return {
@@ -78,7 +91,7 @@ export async function sendWAOrderInvoiced(to, { name, invoiceNo, amount }) {
   return sendWA(to, {
     type: 'template',
     template: {
-      name: 'order_invoiced',
+      name: WA_TEMPLATES.orderInvoiced,
       language: { code: 'en' },
       components: [{
         type: 'body',
@@ -98,7 +111,7 @@ export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier 
   return sendWA(to, {
     type: 'template',
     template: {
-      name: 'order_dispatched',
+      name: WA_TEMPLATES.orderDispatched,
       language: { code: 'en' },
       components: [{
         type: 'body',
@@ -151,7 +164,7 @@ export async function sendWAStudentEnrolled(to, { parentName, studentName, cours
   return sendWA(to, {
     type: 'template',
     template: {
-      name: 'student_enrolled',
+      name: WA_TEMPLATES.studentEnrolled,
       language: { code: 'en' },
       components: [{
         type: 'body',
@@ -208,7 +221,7 @@ export async function sendWAFeeReminder(to, { name, balance }) {
   return sendWA(to, {
     type: 'template',
     template: {
-      name: 'fee_reminder',
+      name: WA_TEMPLATES.balanceReminder,
       language: { code: 'en' },
       components: [{
         type: 'body',
