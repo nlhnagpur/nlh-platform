@@ -374,7 +374,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     if (!franchisee.phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
     const bal = (Number(form.enrollment_fee) || 0) - (Number(form.fee_paid) || 0)
     if (bal <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
-    const r = await sendWAFeeReminder(franchisee.phone, { name: franchisee.business_name || 'Partner', balance: fmtAmt(bal) })
+    const r = await sendWAFeeReminder(franchisee.phone, {
+      name:    franchisee.business_name || 'Partner',
+      balance: fmtAmt(bal),
+      towards: 'your franchise enrolment fee',
+    })
     if (r && r.success) showToast('Fee reminder sent on WhatsApp ✓')
     else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }

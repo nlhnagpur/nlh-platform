@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail } from '../services/email'
-import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt } from '../services/whatsapp'
+import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
 import { printStudentInvoice, printStudentReceipt } from '../components/studentDocs'
 import ModalHeader from '../components/ModalHeader'
@@ -85,6 +85,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
   const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
+  const [remindSending,   setRemindSending]   = useState(false)
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
@@ -272,6 +273,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     if (r && r.success) showToast('Receipt resent on WhatsApp ✓')
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
+  }
+
+  // ── WhatsApp balance reminder to the parent ──
+  async function sendFeeReminderWA() {
+    const phone = receiptPhone || student.phone
+    if (!phone) { showToast('No parent phone on file', 'warn'); return }
+    if (balance <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
+    setRemindSending(true)
+    const r = await sendWAFeeReminder(phone, {
+      name:    student.parent_name || student.full_name,
+      balance: fmtAmt(balance),
+      towards: 'course fees for ' + (student.full_name || 'your child'),
+    })
+    setRemindSending(false)
+    if (r && r.success) showToast('Balance reminder sent on WhatsApp ✓')
+    else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
   // ── Print a stored invoice ──
@@ -1024,15 +1041,24 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <strong>Fee Tracking</strong>
-                {canManageFees && (
-                  <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
-                    onClick={function () {
-                      setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
-                      setShowPayModal(true)
-                    }}>
-                    + Record Payment
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {canManageFees && balance > 0 && (
+                    <button className="btn-s" style={{ fontSize: 12, padding: '5px 12px' }}
+                      onClick={sendFeeReminderWA} disabled={remindSending}
+                      title="Send a WhatsApp balance reminder to the parent">
+                      {remindSending ? '…' : '⏰ Remind'}
+                    </button>
+                  )}
+                  {canManageFees && (
+                    <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
+                      onClick={function () {
+                        setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
+                        setShowPayModal(true)
+                      }}>
+                      + Record Payment
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="form-grid" style={{ marginTop: 8 }}>
                 <label>Agreed Fee (₹)

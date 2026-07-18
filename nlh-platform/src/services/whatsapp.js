@@ -9,11 +9,11 @@ import { sb } from '../supabase'
 // last 24h (error 131049). These must therefore stay pointed at the approved
 // UTILITY templates. Changing a template in Meta = change the name here only.
 export const WA_TEMPLATES = {
-  orderInvoiced:   'order_invoiced',
-  orderDispatched: 'order_dispatched',
-  studentEnrolled: 'student_enrolled',
-  balanceReminder: 'fee_reminder',
-  reviewRequest:   'review_request',   // legitimately Marketing — leave as is
+  orderInvoiced:   'order_invoiced_v2',
+  orderDispatched: 'order_dispatched_v2',
+  studentEnrolled: 'student_enrolled_v2',
+  balanceReminder: 'balance_reminder',   // universal: students + franchisees
+  reviewRequest:   'review_request',     // legitimately Marketing — leave as is
 }
 
 async function waAuthHeaders() {
@@ -215,9 +215,11 @@ export async function sendWAReviewRequest(to, { parentName, studentName, courseN
   return data
 }
 
-// ── Template: fee_reminder ────────────────────────────────────────────────────
-// Params: {{1}} franchisee name, {{2}} balance amount
-export async function sendWAFeeReminder(to, { name, balance }) {
+// ── Template: balance_reminder (universal — students AND franchisees) ─────────
+// Params: {{1}} recipient name, {{2}} balance amount, {{3}} what it's owed against
+//   student:    towards = 'course fees for Navyam Choudhary'
+//   franchisee: towards = 'your franchise account' / 'invoice INV-2026-0008'
+export async function sendWAFeeReminder(to, { name, balance, towards }) {
   return sendWA(to, {
     type: 'template',
     template: {
@@ -228,8 +230,9 @@ export async function sendWAFeeReminder(to, { name, balance }) {
         parameters: [
           { type: 'text', text: name },
           { type: 'text', text: '₹' + balance },
+          { type: 'text', text: towards || 'your account' },
         ],
       }],
     },
-  }, '⏰ Fee reminder · ₹' + balance + ' due')
+  }, '⏰ Balance reminder · ₹' + balance + ' due')
 }
