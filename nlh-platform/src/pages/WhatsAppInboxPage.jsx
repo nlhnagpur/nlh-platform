@@ -24,6 +24,7 @@ export default function WhatsAppInboxPage() {
   const [sending,     setSending]    = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [isMobile,    setIsMobile]   = useState(window.innerWidth < 768)
+  const [directory,   setDirectory]  = useState({})   // phone(last10) → { student, parent, centre, tier }
   const bottomRef = useRef(null)
 
   useEffect(function () {
@@ -43,6 +44,35 @@ export default function WhatsAppInboxPage() {
   }
 
   useEffect(function () { load() }, [])
+
+  // Directory: phone (last 10 digits) → who it is, so an incoming reply shows
+  // the parent/student and their centre instead of a bare number.
+  useEffect(function () {
+    async function loadDirectory() {
+      const { data } = await sb.from('students')
+        .select('full_name, parent_name, phone, franchisees(business_name, tier, city)')
+        .not('phone', 'is', null)
+      const dir = {}
+      ;(data || []).forEach(function (s) {
+        const key = String(s.phone || '').replace(/\D/g, '').slice(-10)
+        if (key.length === 10 && !dir[key]) {
+          dir[key] = {
+            student: s.full_name,
+            parent:  s.parent_name,
+            centre:  s.franchisees?.business_name,
+            tier:    s.franchisees?.tier,
+            city:    s.franchisees?.city,
+          }
+        }
+      })
+      setDirectory(dir)
+    }
+    loadDirectory()
+  }, [])
+
+  function identify(num) {
+    return directory[String(num || '').replace(/\D/g, '').slice(-10)] || null
+  }
 
   useEffect(function () {
     if (!autoRefresh) return
@@ -193,12 +223,25 @@ export default function WhatsAppInboxPage() {
                       💬
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-                        <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--text)' }}>
-                          +{c.number}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {(function () {
+                            const who = identify(c.number)
+                            return who ? (who.parent || who.student) : '+' + c.number
+                          })()}
                         </span>
                         <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>{timeAgo(c.lastAt)}</span>
                       </div>
+                      {(function () {
+                        const who = identify(c.number)
+                        if (!who) return null
+                        return (
+                          <div style={{ fontSize: 10.5, color: 'var(--text3)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            🎓 {who.student}
+                            {who.centre ? ' · ' + (who.tier === 'NLH' ? '🏛️ ' : '🏢 ') + who.centre : ''}
+                          </div>
+                        )
+                      })()}
                       <div style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
                         {hasNew && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#25D366', flexShrink: 0, display: 'inline-block' }} />}
                         {c.lastMsg || '—'}
@@ -229,8 +272,21 @@ export default function WhatsAppInboxPage() {
                       💬
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#fff', fontFamily: 'var(--mono)' }}>+{selected}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>{thread.length} messages</div>
+                      {(function () {
+                        const who = identify(selected)
+                        return (
+                          <>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: '#fff' }}>
+                              {who ? (who.parent || who.student) : '+' + selected}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>
+                              {who
+                                ? <>🎓 {who.student}{who.centre ? ' · ' + (who.tier === 'NLH' ? '🏛️ ' : '🏢 ') + who.centre : ''}{who.city ? ' · ' + who.city : ''} · +{selected}</>
+                                : <>{thread.length} messages</>}
+                            </div>
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
                 )}
