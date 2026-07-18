@@ -141,6 +141,21 @@ export default async function handler(req, res) {
   form.append('type', 'image/png')
   form.append('messaging_product', 'whatsapp')
 
+  // Also keep a copy in Supabase Storage so the certificate renders in the
+  // platform's WhatsApp chat (Meta's media id can't be shown in an <img>).
+  let certUrl = null
+  try {
+    const path = `certificates/${Date.now()}-${filename}`
+    const { error: upErr } = await sb.storage.from('chat-attachments')
+      .upload(path, pngBuffer, { contentType: 'image/png', upsert: true })
+    if (!upErr) {
+      certUrl = sb.storage.from('chat-attachments').getPublicUrl(path).data.publicUrl
+    } else {
+      console.warn('[cert] storage upload failed:', upErr.message)
+    }
+  } catch (e) { console.warn('[cert] storage upload error:', e.message) }
+  console.log('[cert] certUrl:', certUrl)
+
   const uploadRes  = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/media`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
@@ -195,7 +210,7 @@ export default async function handler(req, res) {
   const msgData = await msgRes.json()
   console.log('[cert] message status:', msgRes.status, JSON.stringify(msgData))
 
-  if (msgRes.ok) return res.status(200).json({ success: true, data: msgData })
+  if (msgRes.ok) return res.status(200).json({ success: true, data: msgData, certUrl })
 
   const errMsg   = msgData.error?.message || 'Message send failed'
   const errCode  = msgData.error?.code

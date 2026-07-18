@@ -28,7 +28,7 @@ export function toWAPhone(raw) {
 
 // Record an outbound message so it shows in the WhatsApp Inbox thread and can
 // be tracked/audited. Non-fatal: a logging failure never blocks the send.
-export async function logOutbound(to, body, messageType, waMessageId) {
+export async function logOutbound(to, body, messageType, waMessageId, mediaUrl) {
   try {
     const num = toWAPhone(to) || String(to || '').replace(/\D/g, '')
     if (!num) return
@@ -41,6 +41,8 @@ export async function logOutbound(to, body, messageType, waMessageId) {
       status:        'sent',
       // Store Meta's message id so the webhook can advance status → delivered/read
       wa_message_id: waMessageId || null,
+      // Public URL of any image sent (e.g. certificate) so it renders in the chat
+      media_url:     mediaUrl || null,
     })
   } catch (e) { /* ignore */ }
 }

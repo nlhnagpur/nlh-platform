@@ -203,7 +203,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
         const c = e.skus?.courses?.group_name || 'Course'
         return e.skus?.level_name ? c + ' ' + e.skus.level_name : c
       }).join(', ')
-      logOutbound(waTo, '🎓 Certificate sent · ' + (student.full_name || '') + (courseLabel ? ' (' + courseLabel + ')' : ''), 'template', waMsgId(data))
+      logOutbound(waTo, '🎓 Certificate sent · ' + (student.full_name || '') + (courseLabel ? ' (' + courseLabel + ')' : ''), 'image', waMsgId(data), data.certUrl || null)
       setWaSent(true)
       setShowWaInput(false)
       showToast(`Certificate sent via WhatsApp to ${waTo} ✓`)

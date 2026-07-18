@@ -249,6 +249,12 @@ export default function WhatsAppInboxPage() {
                           boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
                           fontSize: 13.5, lineHeight: 1.5,
                         }}>
+                          {m.media_url && (
+                            <a href={m.media_url} target="_blank" rel="noreferrer" style={{ display: 'block', marginBottom: 6 }}>
+                              <img src={m.media_url} alt="attachment"
+                                style={{ maxWidth: '100%', borderRadius: 10, display: 'block', border: '1px solid rgba(0,0,0,.08)' }} />
+                            </a>
+                          )}
                           <div style={{ color: '#1a1a1a' }}>{m.message_body || '[' + m.message_type + ']'}</div>
                           <div style={{ fontSize: 10, color: '#999', marginTop: 4, textAlign: 'right', display: 'flex', gap: 3, justifyContent: 'flex-end', alignItems: 'center' }}>
                             {fmtTime(m.created_at)}
