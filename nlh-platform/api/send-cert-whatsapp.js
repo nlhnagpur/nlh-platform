@@ -197,7 +197,10 @@ export default async function handler(req, res) {
       to:   e164,
       type: 'template',
       template: {
-        name:     'cert_issued',
+        // Utility-category template. The original `cert_issued` was classified
+        // Marketing, so Meta refused delivery to parents who hadn't recently
+        // messaged us (error 131049).
+        name:     'cert_issued_v2_',
         language: { code: 'en' },
         components: [
           {
