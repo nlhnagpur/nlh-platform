@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
-import { invoiceFit } from '../utils/invoiceFit'
+import { invoiceFit, invoiceFull } from '../utils/invoiceFit'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched } from '../services/whatsapp'
 import InvoiceView from '../components/InvoiceView'
@@ -835,28 +835,31 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                 </tbody>
               </table>
 
-              {(function () {
-                const fit = invoiceFit(items.map(function (it) {
+              {isAdmin && (function () {
+                // One invoice = one A4 page. Once it's full, stop accepting items —
+                // the remaining ones belong on the next invoice.
+                const full = invoiceFull(items.map(function (it) {
                   return { kitCount: (kitMap[it.sku_id] || []).length }
                 }))
-                if (fit.overflow === 0) return null
                 return (
-                  <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8, background: '#FEF3C7', border: '1px solid #FCD34D', font: '600 12px var(--font)', color: '#8A5200' }}>
-                    ⚠ Only {fit.fits} of {fit.total} items fit on one A4 page.
-                    Move the remaining {fit.overflow} onto a separate order — this one can't be invoiced until then.
-                  </div>
+                  <>
+                    <button
+                      className="btn-s btn-sm"
+                      onClick={addItem}
+                      disabled={full}
+                      title={full ? 'Invoice is full — create another invoice for more items' : 'Add another product'}
+                      style={{ marginTop: 10, border: '1.5px dashed var(--purple)', color: full ? 'var(--text3)' : 'var(--purple)', background: 'none', opacity: full ? 0.5 : 1, cursor: full ? 'not-allowed' : 'pointer' }}
+                    >
+                      + Add Product
+                    </button>
+                    {full && (
+                      <div style={{ marginTop: 8, padding: '9px 12px', borderRadius: 8, background: '#FEF3C7', border: '1px solid #FCD34D', font: '600 12px var(--font)', color: '#8A5200' }}>
+                        Invoice is full — please create another invoice for the remaining items.
+                      </div>
+                    )}
+                  </>
                 )
               })()}
-
-              {isAdmin && (
-                <button
-                  className="btn-s btn-sm"
-                  onClick={addItem}
-                  style={{ marginTop: 10, border: '1.5px dashed var(--purple)', color: 'var(--purple)', background: 'none' }}
-                >
-                  + Add Product
-                </button>
-              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 16, gap: 16, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1730,9 +1733,7 @@ export default function OrdersPage() {
       return { kitCount: (kmap[r.sku_id] || []).length }
     }))
     if (fit.overflow > 0) {
-      showToast(
-        'This invoice fits ' + fit.fits + ' of ' + fit.total + ' items on one A4 page. ' +
-        'Use Edit to move the remaining ' + fit.overflow + ' onto a separate order.', 'warn')
+      showToast('Invoice is full — please create another invoice for the remaining items.', 'warn')
       setActionLoading(null)
       return
     }

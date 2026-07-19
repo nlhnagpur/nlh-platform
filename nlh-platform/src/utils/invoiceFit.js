@@ -46,6 +46,18 @@ export function rowHeight(kitCount) {
 }
 
 /**
+ * Is the page full — i.e. is there no room for another item?
+ * Uses a typical kit row as the yardstick, since the next item's kit isn't
+ * known until it's picked.
+ * @param {Array<{kitCount:number}>} items already on the invoice
+ */
+export function invoiceFull(items) {
+  let used = 0
+  ;(items || []).forEach(function (it) { used += rowHeight(it && it.kitCount) })
+  return used + rowHeight(CHIPS_PER_LINE) > ROWS_AREA_H
+}
+
+/**
  * How many of these items fit on one page.
  * @param {Array<{kitCount:number}>} items in invoice order
  * @returns {{ fits:number, total:number, overflow:number }}
