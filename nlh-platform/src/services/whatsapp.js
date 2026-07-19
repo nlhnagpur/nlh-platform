@@ -9,7 +9,7 @@ import { sb } from '../supabase'
 // last 24h (error 131049). These must therefore stay pointed at the approved
 // UTILITY templates. Changing a template in Meta = change the name here only.
 export const WA_TEMPLATES = {
-  orderInvoiced:   'order_invoiced_v2',
+  orderInvoiced:   'order_invoiced_v3',   // v2 was an Order Details (WhatsApp Pay) type
   orderDispatched: 'order_dispatched_v2',
   studentEnrolled: 'student_enrolled_v2',
   balanceReminder: 'balance_reminder',   // universal: students + franchisees
