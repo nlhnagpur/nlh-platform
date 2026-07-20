@@ -117,6 +117,9 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
   const [amountPaid, setAmountPaid] = useState(remaining > 0 ? String(remaining) : '')
   const [mode, setMode]             = useState(order.payment_mode || 'upi')
   const [ref,  setRef]              = useState(order.payment_ref  || '')
+  const [paidOn, setPaidOn]         = useState(
+    order.paid_at ? String(order.paid_at).slice(0, 10) : new Date().toISOString().slice(0, 10)
+  )
   const [saving, setSaving]         = useState(false)
 
   const amt    = parseInt(amountPaid, 10) || 0
@@ -140,6 +143,8 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
       amount_paid:         (order.amount_paid || 0) + amt,
       payment_mode:        mode,
       payment_ref:         ref.trim() || null,
+      // Date the money was actually received (back-datable), not when it was keyed in
+      paid_at:             (paidOn || new Date().toISOString().slice(0, 10)) + 'T00:00:00+00:00',
       payment_verified_at: isFull ? new Date().toISOString() : null,
       status:              newStatus,
     }).eq('id', order.id)
@@ -204,7 +209,16 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
                   style={{ fontWeight:700, fontSize:16 }}
                 />
               </label>
-              <label className="col-span-2">UTR / Reference Number
+              <label>Payment Date
+                <input
+                  type="date"
+                  value={paidOn}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={function (e) { setPaidOn(e.target.value) }}
+                  title="Date the payment was actually received — back-date it if you're entering it later"
+                />
+              </label>
+              <label>UTR / Reference Number
                 <input
                   type="text" placeholder="Transaction ID / cheque no. / cash ref"
                   value={ref}
@@ -1996,6 +2010,12 @@ export default function OrdersPage() {
         </div>
 
         {/* ── metadata, muted, on their own lines below ── */}
+        {order.paid_at && order.amount_paid > 0 && (
+          <span style={{ fontSize: 10, color: 'var(--green)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
+            💰 ₹{fmtAmt(order.amount_paid)} on {fmtDate(String(order.paid_at).slice(0, 10))}
+            {order.payment_mode ? ' · ' + order.payment_mode : ''}
+          </span>
+        )}
         {order.last_reminded_at && (
           <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
             Reminded {fmtDate(order.last_reminded_at.slice(0, 10))}
