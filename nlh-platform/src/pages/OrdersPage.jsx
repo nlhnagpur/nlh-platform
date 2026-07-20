@@ -7,7 +7,7 @@ import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { invoiceFit, invoiceFull } from '../utils/invoiceFit'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
-import { sendWAOrderDispatched } from '../services/whatsapp'
+import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
 import InvoiceView from '../components/InvoiceView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
@@ -121,10 +121,14 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
     order.paid_at ? String(order.paid_at).slice(0, 10) : new Date().toISOString().slice(0, 10)
   )
   const [saving, setSaving]         = useState(false)
+  const [sendWA,  setSendWA]        = useState(true)
+  const [waPhone, setWaPhone]       = useState(order.placer?.phone || '')
 
   const amt    = parseInt(amountPaid, 10) || 0
   const isFull = (order.amount_paid || 0) + amt >= total && total > 0
   const isPart = amt > 0 && !isFull
+  // Balance AFTER this payment — must account for what was already recorded
+  const balanceAfter = Math.max(0, total - (order.amount_paid || 0) - amt)
 
   // Close a zero-value order directly (free / gifted / already noted)
   async function handleCloseZero() {
@@ -150,10 +154,31 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
     }).eq('id', order.id)
     if (error) {
       showToast('Failed to record payment: ' + error.message, 'err')
-    } else {
-      showToast(isFull ? '✓ Full payment recorded — order closed.' : `Part payment of ₹${fmtAmt(amt)} recorded.`)
-      onSaved()
+      setSaving(false)
+      return
     }
+
+    showToast(isFull ? '✓ Full payment recorded — order closed.' : `Part payment of ₹${fmtAmt(amt)} recorded.`)
+
+    // Acknowledge the payment on WhatsApp. Non-fatal: the payment is already
+    // saved, so a messaging failure must never look like a failed payment.
+    if (sendWA && waPhone) {
+      try {
+        const r = await sendWAPaymentReceived(waPhone, {
+          name:      order.placer?.business_name || 'Partner',
+          amount:    fmtAmt(amt),
+          balance:   fmtAmt(balanceAfter),
+          receiptNo: order.invoice_no || order.order_ref || '—',
+          date:      fmtDate(paidOn),
+        })
+        if (r && r.success) showToast('💬 Payment acknowledgement sent on WhatsApp.')
+        else showToast('Payment saved, but WhatsApp failed: ' + ((r && r.error) || 'unknown error'), 'warn')
+      } catch (e) {
+        showToast('Payment saved, but WhatsApp failed: ' + e.message, 'warn')
+      }
+    }
+
+    onSaved()
     setSaving(false)
   }
 
@@ -225,6 +250,43 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
                   onChange={function (e) { setRef(e.target.value) }}
                 />
               </label>
+
+              {/* One-tap amounts — full settlement or a common part payment */}
+              <div className="col-span-2" style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:-4 }}>
+                <span style={{ fontSize:11, color:'var(--text3)', alignSelf:'center', marginRight:2 }}>Quick fill:</span>
+                <button type="button" className="btn-s" style={{ fontSize:11, padding:'3px 10px' }}
+                  onClick={function () { setAmountPaid(String(remaining)) }}>
+                  Full ₹{fmtAmt(remaining)}
+                </button>
+                <button type="button" className="btn-s" style={{ fontSize:11, padding:'3px 10px' }}
+                  onClick={function () { setAmountPaid(String(Math.round(remaining / 2))) }}>
+                  Half ₹{fmtAmt(Math.round(remaining / 2))}
+                </button>
+                <button type="button" className="btn-s" style={{ fontSize:11, padding:'3px 10px' }}
+                  onClick={function () { setAmountPaid('') }}>
+                  Clear
+                </button>
+              </div>
+
+              {/* WhatsApp acknowledgement */}
+              <div className="col-span-2" style={{ padding:'10px 12px', borderRadius:10, background:'var(--green-bg, #f0fdf4)', border:'1px solid var(--green, #1D7A4F)' }}>
+                <label style={{ display:'flex', alignItems:'center', gap:8, font:'600 12px var(--font)', color:'var(--green, #1D7A4F)', cursor:'pointer' }}>
+                  <input type="checkbox" checked={sendWA} onChange={function (e) { setSendWA(e.target.checked) }} />
+                  💬 Send WhatsApp payment acknowledgement to franchisee
+                </label>
+                {sendWA && (
+                  <>
+                    <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
+                      placeholder="Franchisee WhatsApp number" style={{ marginTop:8, fontSize:13, width:'100%' }} />
+                    {amt > 0 && (
+                      <div style={{ marginTop:6, fontSize:11, color:'var(--green, #1D7A4F)' }}>
+                        Will confirm ₹{fmtAmt(amt)} received
+                        {balanceAfter > 0 ? ` · ₹${fmtAmt(balanceAfter)} still due` : ' · fully paid'}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 
@@ -236,7 +298,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
               border: '1px solid ' + (isFull ? 'var(--green)' : '#fbbf24') }}>
               {isFull
                 ? <span style={{ color:'var(--green)', fontWeight:700, fontSize:13 }}>✓ Full payment — order will be marked <b>Closed</b></span>
-                : <span style={{ color:'#92400e', fontWeight:600, fontSize:13 }}>Part payment — balance: <b>₹{fmtAmt(total - amt)}</b> — order marked <b>Part Paid</b></span>
+                : <span style={{ color:'#92400e', fontWeight:600, fontSize:13 }}>Part payment — balance: <b>₹{fmtAmt(balanceAfter)}</b> — order marked <b>Part Paid</b></span>
               }
             </div>
           )}
