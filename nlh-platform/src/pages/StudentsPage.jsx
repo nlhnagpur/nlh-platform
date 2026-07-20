@@ -8,6 +8,7 @@ import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
 import { printStudentInvoice, printStudentReceipt } from '../components/studentDocs'
+import { captureDocPng } from '../utils/captureReceipt'
 import ModalHeader from '../components/ModalHeader'
 import StudentCertModal from '../components/StudentCertModal'
 
@@ -266,6 +267,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         amount: fmtAmt(amt),
         date: fmtDate(data.paid_at),
         balance: newBalance,
+        imageUrl: await receiptPng(data, next),
       })
       if (r && r.success) showToast('Receipt ' + (data.receipt_no || '') + ' sent on WhatsApp ✓')
       else showToast('Payment saved · WhatsApp receipt failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
@@ -284,6 +286,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       amount: fmtAmt(p.amount),
       date: fmtDate(p.paid_at),
       balance: bal,
+      imageUrl: await receiptPng(p),
     })
     if (r && r.success) showToast('Receipt resent on WhatsApp ✓')
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
@@ -341,15 +344,30 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   }
 
   // ── Printable branded payment receipt for one payment ──
-  function handlePrintReceipt(p) {
+  // Figures as at THAT payment, so a reprint or a resent image shows what the
+  // receipt showed when it was issued — not today's running total.
+  function receiptCtx(p, list) {
     const total = Number(form.fee_total) || 0
-    const paidToDate = payments
+    const paidToDate = (list || payments)
       .filter(function (x) { return (x.paid_at || '') <= (p.paid_at || '') })
       .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
-    printStudentReceipt(student, p, {
+    return {
       centre: student.franchisees?.business_name || '',
       summary: { total: total, paid: paidToDate, balance: Math.max(0, total - paidToDate) },
-    })
+    }
+  }
+
+  function handlePrintReceipt(p) {
+    printStudentReceipt(student, p, receiptCtx(p))
+  }
+
+  // PNG of the receipt for the WhatsApp image header. Best-effort: on failure
+  // the send falls back to the text template rather than not going at all.
+  async function receiptPng(p, list) {
+    try {
+      const html = printStudentReceipt(student, p, { ...receiptCtx(p, list), asHtml: true })
+      return await captureDocPng(html, p.receipt_no || 'receipt')
+    } catch (e) { return null }
   }
 
   async function deletePayment(id) {

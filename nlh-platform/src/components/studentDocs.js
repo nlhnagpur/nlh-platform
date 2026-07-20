@@ -166,6 +166,9 @@ function shell(opts) {
      On A5 the summary spans the full width and the three figures read across
      as a row, which balances the page instead of hugging the right edge. */
   .sheet.a5 .pt{grid-template-columns:1fr 1fr;align-items:stretch}
+  /* no fee on record — nothing to summarise, so the one box spans the width
+     rather than sitting stranded in the right-hand column */
+  .sheet.a5 .pt.solo{grid-template-columns:1fr}
   /* The figures and the amount received sit side by side, so the closing block
      is half as tall and the mascot gets the height back. */
   .sheet.a5 .tot{padding:9px 12px 10px 14px}
@@ -438,10 +441,10 @@ function receiptTotals(rows, amount) {
 
   return `
     <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
-    <div class="pt">
+    <div class="pt${trows ? '' : ' solo'}">
       ${trows ? `<div class="tot"><div class="bl"></div>
         <div class="h">Receipt Summary</div>${trows}
-      </div>` : '<div></div>'}
+      </div>` : ''}
       <div class="tot rcv"><div class="bl"></div>
         <div class="h">Amount Received</div>
         <div class="grand"><div class="gl">Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(amount || 0)}</div></div>

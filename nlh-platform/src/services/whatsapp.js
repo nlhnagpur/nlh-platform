@@ -13,10 +13,10 @@ export const WA_TEMPLATES = {
   orderDispatched: 'order_dispatched_v2',
   studentEnrolled: 'student_enrolled_v2',
   balanceReminder: 'balance_reminder',   // universal: students + franchisees
-  // Image-header variant of `payment_receipt`, for attaching a PNG of the
-  // receipt. Set this to the template name once it is approved in Meta;
-  // until then receipts send as text only. See docs/whatsapp-templates.md.
-  paymentReceiptImage: null,
+  // Image-header variant of `payment_receipt`, carrying a PNG of the receipt.
+  // Same five body variables in the same order, so the text template remains a
+  // working fallback whenever no image could be captured.
+  paymentReceiptImage: 'payment_receipt_v2',
   reviewRequest:   'review_request',     // legitimately Marketing — leave as is
 }
 

@@ -9,6 +9,7 @@ import { sendWAPaymentReceived, sendWAFeeReminder } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 import { printFranchiseeReceipt } from '../components/studentDocs'
+import { captureDocPng } from '../utils/captureReceipt'
 import { StudentDetailModal } from './StudentsPage'
 
 // ── Location data ──────────────────────────────────────────────────────────────
@@ -142,10 +143,24 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     showToast('Payment of ₹' + fmtAmt(amt) + ' recorded')
     if (sendWA && waPhone) {
       try {
+        // PNG of the receipt for the image header. Best-effort: on failure the
+        // send falls back to the text template rather than not going at all.
+        let imageUrl = null
+        try {
+          const html = printFranchiseeReceipt(
+            franchisee,
+            { receipt_no: inserted && inserted.receipt_no, amount: amt, payment_date: date,
+              payment_mode: mode, reference_no: ref.trim() || null, notes: notes.trim() || null },
+            { total: Number(franchisee.enrollment_fee) || 0, paidToDate: newFeePaid, asHtml: true }
+          )
+          imageUrl = await captureDocPng(html, (inserted && inserted.receipt_no) || 'receipt')
+        } catch (capErr) { /* non-fatal */ }
+
         const r = await sendWAPaymentReceived(waPhone, {
           name:      franchisee.business_name || 'Partner',
           amount:    fmtAmt(amt),
           balance:   newBalance,
+          imageUrl:  imageUrl,
           // The real receipt number, not the bank reference — the franchisee
           // needs to be able to quote this against the printed receipt.
           receiptNo: (inserted && inserted.receipt_no) || ref.trim() || mode,
