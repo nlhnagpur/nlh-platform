@@ -1919,9 +1919,11 @@ export default function OrdersPage() {
           // Payment successful — mark as payment_submitted (webhook will close it)
           var now = new Date().toISOString()
           await sb.from('orders').update({
+            status:               'payment_submitted',
             payment_mode:         'razorpay',
             payment_ref:          response.razorpay_payment_id,
             amount_paid:          balance,
+            paid_at:              now,
             payment_submitted_at: now,
           }).eq('id', order.id)
           setOrders(function (prev) {
