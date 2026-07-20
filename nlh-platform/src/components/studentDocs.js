@@ -150,9 +150,9 @@ function shell(opts) {
      of their own, so it shows through them as well as through the gap. */
   .sheet.a5 .body{position:relative}
   /* Spans the item rows down to just above the summary — measured: items start
-     at 23% of the body and the summary box begins at 63.5%, and that box is
+     at 23.4% of the body and the two totals boxes begin at 69.5%, and those are
      opaque, so anything lower gets its feet cut off. */
-  .sheet.a5 .mascot{position:absolute;left:0;right:0;top:26%;bottom:38.5%;
+  .sheet.a5 .mascot{position:absolute;left:0;right:0;top:24%;bottom:32%;
     flex:none;height:auto;margin:0;z-index:0}
   .sheet.a5 .mascot img{height:100%;width:auto;max-width:none;opacity:.16}
   .sheet.a5 .party,.sheet.a5 .items,.sheet.a5 .pt{position:relative;z-index:1}
@@ -165,21 +165,13 @@ function shell(opts) {
   /* A receipt has no bank/QR box beside the summary, so the left half sat empty.
      On A5 the summary spans the full width and the three figures read across
      as a row, which balances the page instead of hugging the right edge. */
-  .sheet.a5 .pt{grid-template-columns:1fr}
-  .sheet.a5 .pt>div:first-child{display:none}
-  /* max-content columns keep the three figures as a tight group instead of
-     spreading them across the full width; the trailing 1fr absorbs the slack
-     while the header, grand-total bar and words still span edge to edge. */
-  .sheet.a5 .tot{display:grid;grid-template-columns:repeat(3,max-content) 1fr;
-    column-gap:26px;align-items:center;padding:10px 14px 11px 16px}
-  .sheet.a5 .tot .h{grid-column:1/-1;margin-bottom:5px}
-  .sheet.a5 .trow{flex-direction:column;align-items:flex-start;gap:2px;
-    padding:2px 0;border-bottom:none}
-  .sheet.a5 .trow+.trow{border-left:1px dashed rgba(83,74,183,.25);padding-left:16px}
-  .sheet.a5 .trow .l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#7A75A0}
-  .sheet.a5 .trow .v{font-size:14px}
-  .sheet.a5 .grand{grid-column:1/-1}
-  .sheet.a5 .words{grid-column:1/-1}
+  .sheet.a5 .pt{grid-template-columns:1fr 1fr;align-items:stretch}
+  /* The figures and the amount received sit side by side, so the closing block
+     is half as tall and the mascot gets the height back. */
+  .sheet.a5 .tot{padding:9px 12px 10px 14px}
+  .sheet.a5 .trow{padding:4px 0}
+  .sheet.a5 .rcv{justify-content:space-between}
+  .sheet.a5 .rcv .grand{margin-top:auto}
   @media print{@page{size:A4;margin:0}.np{display:none}.sheet{box-shadow:none}}
   ${opts.size === 'A5' ? '@media print{@page{size:210mm 148mm;margin:0}}' : ''}
   </style></head><body>
@@ -315,17 +307,11 @@ export function printStudentReceipt(student, payment, ctx) {
     <div class="items"><div class="ih"><div>#</div><div>Received with thanks — fee payment</div><div class="r">Amount (₹)</div></div>
       <div class="ir"><div class="num">01</div><div><div class="nm">Fee payment${payment.mode ? ' · ' + esc(String(payment.mode).replace(/_/g, ' ')) : ''}</div>${payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''}</div><div class="amt r">₹${fmtAmt(payment.amount || 0)}</div></div>
     </div>
-    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
-    <div class="pt"><div></div>
-      <div class="tot"><div class="bl"></div>
-        <div class="h">Receipt Summary</div>
-        <div class="trow"><span class="l">Total fee</span><span class="v">₹${fmtAmt(s.total || 0)}</span></div>
-        <div class="trow"><span class="l">Paid to date</span><span class="v" style="color:#1D7A4F">₹${fmtAmt(s.paid || 0)}</span></div>
-        <div class="trow" style="border:none"><span class="l">Balance</span><span class="v" style="color:${bal > 0 ? '#A32D2D' : '#1D7A4F'}">${bal > 0 ? '₹' + fmtAmt(bal) : 'Cleared ✓'}</span></div>
-        <div class="grand"><div class="gl">Amount Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">₹</span>${fmtAmt(payment.amount || 0)}</div></div>
-        <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(payment.amount || 0))}</b></div>
-      </div>
-    </div>`
+${receiptTotals([
+      { l: 'Total fee',    v: '&#8377;' + fmtAmt(s.total || 0) },
+      { l: 'Paid to date', v: '&#8377;' + fmtAmt(s.paid  || 0), c: '#1D7A4F' },
+      { l: 'Balance',      v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
+    ], payment.amount)}`
 
   openWin(shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
@@ -358,17 +344,11 @@ export function printOrderReceipt(order, payment, ctx) {
         againstT ? `<div class="kit"><span class="k1">Against:</span><span class="k2">${esc(againstT)}</span></div>` : ''
       }${payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
     </div>
-    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
-    <div class="pt"><div></div>
-      <div class="tot"><div class="bl"></div>
-        <div class="h">Receipt Summary</div>
-        <div class="trow"><span class="l">Invoice total</span><span class="v">&#8377;${fmtAmt(total)}</span></div>
-        <div class="trow"><span class="l">Paid to date</span><span class="v" style="color:#1D7A4F">&#8377;${fmtAmt(paid)}</span></div>
-        <div class="trow" style="border:none"><span class="l">Balance</span><span class="v" style="color:${bal > 0 ? '#A32D2D' : '#1D7A4F'}">${bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;'}</span></div>
-        <div class="grand"><div class="gl">Amount Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(payment.amount || 0)}</div></div>
-        <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(payment.amount || 0))}</b></div>
-      </div>
-    </div>`
+${receiptTotals([
+      { l: 'Invoice total', v: '&#8377;' + fmtAmt(total) },
+      { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid),  c: '#1D7A4F' },
+      { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
+    ], payment.amount)}`
 
   openWin(shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
@@ -409,17 +389,11 @@ export function printFranchiseeReceipt(franchisee, payment, ctx) {
         ref ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(ref)}</span></div>` : ''
       }${payment.notes ? `<div class="kit"><span class="k1">Note:</span><span class="k2">${esc(payment.notes)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
     </div>
-    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
-    <div class="pt"><div></div>
-      <div class="tot"><div class="bl"></div>
-        <div class="h">Receipt Summary</div>
-        ${total > 0 ? `<div class="trow"><span class="l">Franchise fee</span><span class="v">&#8377;${fmtAmt(total)}</span></div>
-        <div class="trow"><span class="l">Paid to date</span><span class="v" style="color:#1D7A4F">&#8377;${fmtAmt(paid)}</span></div>
-        <div class="trow" style="border:none"><span class="l">Balance</span><span class="v" style="color:${bal > 0 ? '#A32D2D' : '#1D7A4F'}">${bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;'}</span></div>` : ''}
-        <div class="grand"><div class="gl">Amount Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(payment.amount || 0)}</div></div>
-        <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(payment.amount || 0))}</b></div>
-      </div>
-    </div>`
+${receiptTotals(total > 0 ? [
+      { l: 'Franchise fee', v: '&#8377;' + fmtAmt(total) },
+      { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid),  c: '#1D7A4F' },
+      { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
+    ] : [], payment.amount)}`
 
   openWin(shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
@@ -438,4 +412,31 @@ export function printFranchiseeReceipt(franchisee, payment, ctx) {
     }),
     bodyHTML: body,
   }))
+}
+
+// The two boxes that close a receipt: the running figures on the left, the
+// amount received on the right. Side by side they come to roughly half the
+// height of one stacked box, which is what leaves room for the mascot between
+// the item line and the footer.
+// rows: [{ l, v, c }] — v is pre-formatted HTML, c an optional colour.
+function receiptTotals(rows, amount) {
+  const list  = rows || []
+  const trows = list.map(function (r, i) {
+    return '<div class="trow"' + (i === list.length - 1 ? ' style="border:none"' : '') + '>' +
+      '<span class="l">' + esc(r.l) + '</span>' +
+      '<span class="v"' + (r.c ? ' style="color:' + r.c + '"' : '') + '>' + r.v + '</span></div>'
+  }).join('')
+
+  return `
+    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
+    <div class="pt">
+      ${trows ? `<div class="tot"><div class="bl"></div>
+        <div class="h">Receipt Summary</div>${trows}
+      </div>` : '<div></div>'}
+      <div class="tot rcv"><div class="bl"></div>
+        <div class="h">Amount Received</div>
+        <div class="grand"><div class="gl">Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(amount || 0)}</div></div>
+        <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(amount || 0))}</b></div>
+      </div>
+    </div>`
 }
