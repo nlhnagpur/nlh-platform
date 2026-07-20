@@ -145,11 +145,18 @@ function shell(opts) {
   .sheet.a5 .ti .t{font-size:31px}
   .sheet.a5 .meta{padding:6px 20px}
   .sheet.a5 .ft{padding:6px 20px}
-  /* Mascot sized to sit inside the gap the footer-anchoring leaves. An explicit
-     height is required: a percentage max-height cannot resolve against an
-     auto-height flex parent, so it grew and pushed the sheet past 148mm. */
-  .sheet.a5 .mascot{flex:0 0 auto;height:42px;margin:2px 0}
-  .sheet.a5 .mascot img{height:100%;width:auto;max-width:none;opacity:.15}
+  /* Mascot as a true watermark: taken out of flow so it cannot affect the
+     148mm height, sitting behind everything. The item rows have no background
+     of their own, so it shows through them as well as through the gap. */
+  .sheet.a5 .body{position:relative}
+  /* Spans the item rows down to just above the summary — measured: items start
+     at 23% of the body and the summary box begins at 63.5%, and that box is
+     opaque, so anything lower gets its feet cut off. */
+  .sheet.a5 .mascot{position:absolute;left:0;right:0;top:26%;bottom:38.5%;
+    flex:none;height:auto;margin:0;z-index:0}
+  .sheet.a5 .mascot img{height:100%;width:auto;max-width:none;opacity:.16}
+  .sheet.a5 .party,.sheet.a5 .items,.sheet.a5 .pt{position:relative;z-index:1}
+  .sheet.a5 .ir{background:transparent}
   .sheet.a5 .ih{padding:7px 14px}
   .sheet.a5 .ir{padding:6px 14px}
   .sheet.a5 .grand{margin-top:6px;padding:8px 14px}
@@ -160,8 +167,11 @@ function shell(opts) {
      as a row, which balances the page instead of hugging the right edge. */
   .sheet.a5 .pt{grid-template-columns:1fr}
   .sheet.a5 .pt>div:first-child{display:none}
-  .sheet.a5 .tot{display:grid;grid-template-columns:repeat(3,1fr);column-gap:16px;
-    align-items:center;padding:10px 14px 11px 16px}
+  /* max-content columns keep the three figures as a tight group instead of
+     spreading them across the full width; the trailing 1fr absorbs the slack
+     while the header, grand-total bar and words still span edge to edge. */
+  .sheet.a5 .tot{display:grid;grid-template-columns:repeat(3,max-content) 1fr;
+    column-gap:26px;align-items:center;padding:10px 14px 11px 16px}
   .sheet.a5 .tot .h{grid-column:1/-1;margin-bottom:5px}
   .sheet.a5 .trow{flex-direction:column;align-items:flex-start;gap:2px;
     padding:2px 0;border-bottom:none}
