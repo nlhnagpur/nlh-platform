@@ -112,7 +112,10 @@ function PaySubmitModal({ order, onClose, onSaved }) {
 // ---------------------------------------------------------------------------
 // RecordPaymentModal — admin records payment with mode, UTR, part/full logic
 // ---------------------------------------------------------------------------
-function RecordPaymentModal({ order, onClose, onSaved }) {
+// viewOnly: opened from the Receipts button to read the ledger and print
+// receipts, with no entry form — the only way into the history for an order
+// that is already closed.
+function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   const total = order.grand_total || 0
   const remaining = Math.max(0, total - (order.amount_paid || 0))
   const [amountPaid, setAmountPaid] = useState(remaining > 0 ? String(remaining) : '')
@@ -188,14 +191,14 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
     setSaving(true)
     // One row per instalment. A DB trigger rolls the ledger up into
     // orders.amount_paid / paid_at / status, so the total can never drift.
-    const { error } = await sb.from('order_payments').insert({
+    const { data: inserted, error } = await sb.from('order_payments').insert({
       order_id:  order.id,
       amount:    amt,
       // Date the money was actually received (back-datable), not when it was keyed in
       paid_on:   paidOn || new Date().toISOString().slice(0, 10),
       mode:      mode,
       reference: ref.trim() || null,
-    })
+    }).select('receipt_no').single()
     if (error) {
       showToast('Failed to record payment: ' + error.message, 'err')
       setSaving(false)
@@ -212,7 +215,9 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
           name:      order.placer?.business_name || 'Partner',
           amount:    fmtAmt(amt),
           balance:   fmtAmt(balanceAfter),
-          receiptNo: order.invoice_no || order.order_ref || '—',
+          // The receipt number, so it matches the printed receipt the
+          // franchisee is handed — not the invoice it was paid against.
+          receiptNo: (inserted && inserted.receipt_no) || order.invoice_no || '—',
           date:      fmtDate(paidOn),
         })
         if (r && r.success) showToast('💬 Payment acknowledgement sent on WhatsApp.')
@@ -229,7 +234,10 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <ModalHeader flush title="Record Payment" subtitle="New Learning Horizons · Payment" onClose={onClose} />
+        <ModalHeader flush
+          title={viewOnly ? 'Payments & Receipts' : 'Record Payment'}
+          subtitle={'New Learning Horizons · ' + (order.invoice_no || order.order_ref || 'Payment')}
+          onClose={onClose} />
         <div>
           {/* Order total summary */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
@@ -258,7 +266,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
           </div>
 
           {/* Nothing left to collect — the amount field only ever ADDS, so warn loudly */}
-          {total > 0 && remaining === 0 && (
+          {!viewOnly && total > 0 && remaining === 0 && (
             <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8,
               padding:'10px 14px', marginBottom:12, fontSize:12, color:'#166534' }}>
               ✓ <b>Already fully paid.</b> ₹{fmtAmt(order.amount_paid)} of ₹{fmtAmt(total)} is recorded —
@@ -266,7 +274,7 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
             </div>
           )}
 
-          {total === 0 ? (
+          {viewOnly ? null : total === 0 ? (
             /* ── Zero-value order — no payment needed ── */
             <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8, padding:'14px 16px', marginTop:4, textAlign:'center' }}>
               <div style={{ fontSize:22, marginBottom:6 }}>🎁</div>
@@ -404,11 +412,11 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
           )}
         </div>
         <div className="modal-actions">
-          <button className="btn-s" onClick={onClose}>Cancel</button>
-          {total === 0
+          <button className="btn-s" onClick={onClose}>{viewOnly ? 'Close' : 'Cancel'}</button>
+          {!viewOnly && (total === 0
             ? <button className="btn-p" onClick={handleCloseZero} disabled={saving}>{saving ? 'Closing…' : 'Close Order (₹0)'}</button>
             : <button className="btn-p" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : isFull ? 'Record Full Payment' : isPart ? 'Record Part Payment' : 'Save'}</button>
-          }
+          )}
         </div>
       </div>
     </div>
@@ -1844,6 +1852,7 @@ export default function OrdersPage() {
   // Modal state
   const [paySubmitOrder, setPaySubmitOrder] = useState(null)
   const [recordPayOrder, setRecordPayOrder] = useState(null)
+  const [viewPayOrder,   setViewPayOrder]   = useState(null)
   const [dispatchOrder, setDispatchOrder] = useState(null)
   const [editInvoiceOrder, setEditInvoiceOrder] = useState(null)
   const [showNewOrder, setShowNewOrder] = useState(false)
@@ -2140,10 +2149,12 @@ export default function OrdersPage() {
               {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
             </button>
           )}
-          {order.status === 'invoiced' && !isAdmin && (
+          {['invoiced', 'part_paid'].includes(order.status) && !isAdmin && (
             <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
           )}
-          {order.status === 'invoiced' && isAdmin && (
+          {/* part_paid must offer these too — a part-paid order still needs the
+              balance recorded, chasing and editing. */}
+          {['invoiced', 'part_paid'].includes(order.status) && isAdmin && (
             <>
               <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
               <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
@@ -2162,7 +2173,13 @@ export default function OrdersPage() {
               {isActing(order.id, 'reopen') ? '…' : 'Reopen'}
             </button>
           )}
-          {['invoiced', 'payment_submitted', 'closed'].includes(order.status) && (
+          {/* Receipts live in the payment history, which used to be reachable
+              only through Record Pmt — so a closed order had no way in. */}
+          {order.amount_paid > 0 && (
+            <button className="row-action" title="View payments and print receipts"
+              onClick={function () { setViewPayOrder(order) }}>Receipts</button>
+          )}
+          {['invoiced', 'part_paid', 'payment_submitted', 'closed'].includes(order.status) && (
             <button className="row-action" onClick={function () { setInvoiceViewOrder(order) }}>PDF</button>
           )}
           <button className="row-action" onClick={function () { setDispatchOrder(order) }}>
@@ -2334,6 +2351,15 @@ export default function OrdersPage() {
           order={recordPayOrder}
           onClose={function () { setRecordPayOrder(null) }}
           onSaved={async function () { setRecordPayOrder(null); await loadOrders() }}
+        />
+      )}
+
+      {viewPayOrder && (
+        <RecordPaymentModal
+          viewOnly
+          order={viewPayOrder}
+          onClose={function () { setViewPayOrder(null) }}
+          onSaved={async function () { await loadOrders() }}
         />
       )}
 
