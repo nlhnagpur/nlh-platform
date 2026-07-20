@@ -8,6 +8,7 @@ import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail 
 import { sendWAPaymentReceived, sendWAFeeReminder } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
+import { printFranchiseeReceipt } from '../components/studentDocs'
 import { StudentDetailModal } from './StudentsPage'
 
 // ── Location data ──────────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     const amt = Number(amount)
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
     setSaving(true)
-    const { error: insErr } = await sb.from('franchisee_payments').insert({
+    const { data: inserted, error: insErr } = await sb.from('franchisee_payments').insert({
       franchisee_id: franchisee.id,
       amount:        amt,
       payment_date:  date,
@@ -130,7 +131,7 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
       reference_no:  ref.trim() || null,
       notes:         notes.trim() || null,
       recorded_by:   currentUser || null,
-    })
+    }).select('receipt_no').single()
     if (insErr) { showToast('Failed: ' + insErr.message, 'err'); setSaving(false); return }
 
     const newFeePaid = (franchisee.fee_paid || 0) + amt
@@ -145,7 +146,9 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
           name:      franchisee.business_name || 'Partner',
           amount:    fmtAmt(amt),
           balance:   newBalance,
-          receiptNo: ref.trim() || mode,
+          // The real receipt number, not the bank reference — the franchisee
+          // needs to be able to quote this against the printed receipt.
+          receiptNo: (inserted && inserted.receipt_no) || ref.trim() || mode,
           date:      fmtDate(date),
         })
         if (r && r.success) showToast('WhatsApp receipt sent ✓')
@@ -310,7 +313,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
 
   useEffect(function () {
     sb.from('franchisee_payments')
-      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at')
+      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
       .eq('franchisee_id', franchisee.id)
       .order('payment_date', { ascending: false })
       .then(function ({ data }) { setPayments(data || []) })
@@ -325,7 +328,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   // Reload the ledger and recompute fee_paid from the sum of payments
   async function reloadPaymentsAndFee() {
     const { data } = await sb.from('franchisee_payments')
-      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at')
+      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
       .eq('franchisee_id', franchisee.id)
       .order('payment_date', { ascending: false })
     const list = data || []
@@ -359,6 +362,22 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     setEditPayId(null)
     await reloadPaymentsAndFee()
     showToast('Payment updated ✓')
+  }
+
+  // Print one payment's receipt. "Paid to date" is the running total as at THAT
+  // payment, not today's, so reprinting an old receipt shows the figures as
+  // they stood when it was issued.
+  function printPaymentReceipt(p) {
+    const asAt = payments
+      .filter(function (x) {
+        return x.payment_date < p.payment_date ||
+               (x.payment_date === p.payment_date && x.id === p.id)
+      })
+      .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+    printFranchiseeReceipt(franchisee, p, {
+      total:      Number(form.enrollment_fee) || 0,
+      paidToDate: asAt,
+    })
   }
 
   async function deletePaymentEntry(p) {
@@ -713,6 +732,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                           <span style={{ background: '#ede9fc', color: 'var(--purple)', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600 }}>
                             {p.payment_mode || '—'}
                           </span>
+                          {p.receipt_no && (
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--purple)', fontWeight: 600 }}>
+                              {p.receipt_no}
+                            </span>
+                          )}
                           {p.reference_no && (
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)' }}>
                               {p.reference_no}
@@ -725,6 +749,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                           )}
                           {admin && (
                             <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                              <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} title="Print this receipt"
+                                onClick={function () { printPaymentReceipt(p) }}>🧾 Receipt</button>
                               <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} title="Edit date / method / amount"
                                 onClick={function () { startEditPay(p) }}>✎ Edit</button>
                               <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }} title="Delete entry"
@@ -1094,7 +1120,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
           setForm(f => ({ ...f, fee_paid: String(newFeePaid) }))
           setShowPayModal(false)
           sb.from('franchisee_payments')
-            .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at')
+            .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
             .eq('franchisee_id', franchisee.id)
             .order('payment_date', { ascending: false })
             .then(function ({ data }) { setPayments(data || []) })

@@ -332,3 +332,53 @@ export function printOrderReceipt(order, payment, ctx) {
     bodyHTML: body,
   }))
 }
+
+// ── Payment Receipt for a franchisee's enrolment / franchise fee ──────────────
+// Same chrome again — only the bill-to party and the wording change.
+// franchisee: { business_name, owner_name, tier, city, phone, email, centre_code }
+// payment: a franchisee_payments row
+// ctx: { total, paidToDate }  — the franchise fee and the running total as at
+//      this payment, so a reprint shows the figures as they stood.
+export function printFranchiseeReceipt(franchisee, payment, ctx) {
+  const c     = ctx || {}
+  const total = c.total || 0
+  const paid  = c.paidToDate != null ? c.paidToDate : 0
+  const bal   = Math.max(0, total - paid)
+  const mode  = payment.payment_mode || payment.mode
+  const ref   = payment.reference_no || payment.reference
+
+  const body = `
+    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — franchise fee</div><div class="r">Amount (Rs)</div></div>
+      <div class="ir"><div class="num">01</div><div><div class="nm">Franchise fee payment${mode ? ' &middot; ' + esc(String(mode).replace(/_/g, ' ')) : ''}</div>${
+        ref ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(ref)}</span></div>` : ''
+      }${payment.notes ? `<div class="kit"><span class="k1">Note:</span><span class="k2">${esc(payment.notes)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
+    </div>
+    <div class="pt"><div></div>
+      <div class="tot"><div class="bl"></div>
+        <div class="h">Receipt Summary</div>
+        ${total > 0 ? `<div class="trow"><span class="l">Franchise fee</span><span class="v">&#8377;${fmtAmt(total)}</span></div>
+        <div class="trow"><span class="l">Paid to date</span><span class="v" style="color:#1D7A4F">&#8377;${fmtAmt(paid)}</span></div>
+        <div class="trow" style="border:none"><span class="l">Balance</span><span class="v" style="color:${bal > 0 ? '#A32D2D' : '#1D7A4F'}">${bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;'}</span></div>` : ''}
+        <div class="grand"><div class="gl">Amount Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(payment.amount || 0)}</div></div>
+        <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(payment.amount || 0))}</b></div>
+      </div>
+    </div>`
+
+  openWin(shell({
+    title: 'PAYMENT RECEIPT', sub: 'Official Receipt',
+    meta: [
+      { l: 'Receipt no.', v: payment.receipt_no || '-' },
+      { l: 'Date', v: fmtLong(payment.payment_date || payment.paid_on || new Date()) },
+      { l: 'Mode', v: mode ? String(mode).replace(/_/g, ' ') : '-', sans: true },
+      { l: 'Centre', v: franchisee.centre_code || '-' },
+    ],
+    party: partyCards({
+      badge: franchisee.tier || 'Franchisee',
+      name:  franchisee.business_name,
+      sub:   [franchisee.owner_name, franchisee.city].filter(Boolean).join(' · '),
+      phone: franchisee.phone,
+      email: franchisee.email,
+    }),
+    bodyHTML: body,
+  }))
+}
