@@ -141,6 +141,18 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
 
   async function handleSave() {
     if (isNaN(amt) || amt <= 0) { showToast('Enter a valid amount greater than zero.', 'warn'); return }
+    // Each entry ADDS to what's already recorded, so re-keying a payment that
+    // was entered earlier silently doubles it. An order can never be paid more
+    // than its total — block it rather than store an impossible figure.
+    if (total > 0 && (order.amount_paid || 0) + amt > total) {
+      showToast(
+        remaining === 0
+          ? `This order is already fully paid (₹${fmtAmt(total)}). Nothing more to record.`
+          : `That's more than the balance. Only ₹${fmtAmt(remaining)} is outstanding on this order.`,
+        'warn'
+      )
+      return
+    }
     setSaving(true)
     const newStatus = isFull ? 'closed' : 'part_paid'
     const { error } = await sb.from('orders').update({
@@ -195,14 +207,32 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
               <div style={{ fontSize:18, fontWeight:700, fontFamily:'var(--mono)' }}>₹{fmtAmt(total)}</div>
             </div>
             {order.amount_paid > 0 && (
-              <div style={{ textAlign:'right' }}>
-                <div style={{ fontSize:11, color:'var(--text3)' }}>Previously recorded</div>
-                <div style={{ fontSize:14, fontWeight:600, color:'var(--text2)', fontFamily:'var(--mono)' }}>
-                  ₹{fmtAmt(order.amount_paid)}
+              <>
+                <div style={{ textAlign:'right' }}>
+                  <div style={{ fontSize:11, color:'var(--text3)' }}>Already recorded</div>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text2)', fontFamily:'var(--mono)' }}>
+                    ₹{fmtAmt(order.amount_paid)}
+                  </div>
                 </div>
-              </div>
+                <div style={{ textAlign:'right' }}>
+                  <div style={{ fontSize:11, color:'var(--text3)' }}>Balance</div>
+                  <div style={{ fontSize:14, fontWeight:700, fontFamily:'var(--mono)',
+                    color: remaining > 0 ? '#92400e' : 'var(--green)' }}>
+                    ₹{fmtAmt(remaining)}
+                  </div>
+                </div>
+              </>
             )}
           </div>
+
+          {/* Nothing left to collect — the amount field only ever ADDS, so warn loudly */}
+          {total > 0 && remaining === 0 && (
+            <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8,
+              padding:'10px 14px', marginBottom:12, fontSize:12, color:'#166534' }}>
+              ✓ <b>Already fully paid.</b> ₹{fmtAmt(order.amount_paid)} of ₹{fmtAmt(total)} is recorded —
+              don't re-enter a payment that's already here, it would be counted twice.
+            </div>
+          )}
 
           {total === 0 ? (
             /* ── Zero-value order — no payment needed ── */
@@ -226,9 +256,10 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
                   <option value="other">Other</option>
                 </select>
               </label>
-              <label>Amount Paid (₹)
+              <label>Amount Received Now (₹)
                 <input
-                  type="number" placeholder={`Up to ₹${fmtAmt(total)}`}
+                  type="number" placeholder={`Up to ₹${fmtAmt(remaining)}`}
+                  max={remaining}
                   value={amountPaid}
                   onChange={function (e) { setAmountPaid(e.target.value) }}
                   style={{ fontWeight:700, fontSize:16 }}
