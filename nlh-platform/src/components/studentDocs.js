@@ -151,7 +151,21 @@ function shell(opts) {
   .sheet.a5 .grand{margin-top:6px;padding:8px 14px}
   .sheet.a5 .grand .gv{font-size:21px}
   .sheet.a5 .words{margin-top:4px}
-  .sheet.a5 .tot{padding:9px 12px}
+  /* A receipt has no bank/QR box beside the summary, so the left half sat empty.
+     On A5 the summary spans the full width and the three figures read across
+     as a row, which balances the page instead of hugging the right edge. */
+  .sheet.a5 .pt{grid-template-columns:1fr}
+  .sheet.a5 .pt>div:first-child{display:none}
+  .sheet.a5 .tot{display:grid;grid-template-columns:repeat(3,1fr);column-gap:16px;
+    align-items:center;padding:10px 14px 11px 16px}
+  .sheet.a5 .tot .h{grid-column:1/-1;margin-bottom:5px}
+  .sheet.a5 .trow{flex-direction:column;align-items:flex-start;gap:2px;
+    padding:2px 0;border-bottom:none}
+  .sheet.a5 .trow+.trow{border-left:1px dashed rgba(83,74,183,.25);padding-left:16px}
+  .sheet.a5 .trow .l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#7A75A0}
+  .sheet.a5 .trow .v{font-size:14px}
+  .sheet.a5 .grand{grid-column:1/-1}
+  .sheet.a5 .words{grid-column:1/-1}
   @media print{@page{size:A4;margin:0}.np{display:none}.sheet{box-shadow:none}}
   ${opts.size === 'A5' ? '@media print{@page{size:210mm 148mm;margin:0}}' : ''}
   </style></head><body>
