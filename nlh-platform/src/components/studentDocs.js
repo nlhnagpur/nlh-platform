@@ -145,7 +145,11 @@ function shell(opts) {
   .sheet.a5 .ti .t{font-size:31px}
   .sheet.a5 .meta{padding:6px 20px}
   .sheet.a5 .ft{padding:6px 20px}
-  .sheet.a5 .mascot{display:none}
+  /* Mascot sized to sit inside the gap the footer-anchoring leaves. An explicit
+     height is required: a percentage max-height cannot resolve against an
+     auto-height flex parent, so it grew and pushed the sheet past 148mm. */
+  .sheet.a5 .mascot{flex:0 0 auto;height:42px;margin:2px 0}
+  .sheet.a5 .mascot img{height:100%;width:auto;max-width:none;opacity:.15}
   .sheet.a5 .ih{padding:7px 14px}
   .sheet.a5 .ir{padding:6px 14px}
   .sheet.a5 .grand{margin-top:6px;padding:8px 14px}
