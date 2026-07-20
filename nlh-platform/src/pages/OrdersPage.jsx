@@ -8,6 +8,7 @@ import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { invoiceFit, invoiceFull } from '../utils/invoiceFit'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
+import { printOrderReceipt } from '../components/studentDocs'
 import InvoiceView from '../components/InvoiceView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
@@ -127,12 +128,22 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
 
   async function loadHistory() {
     const { data } = await sb.from('order_payments')
-      .select('id, amount, paid_on, mode, reference, note')
+      .select('id, amount, paid_on, mode, reference, note, receipt_no')
       .eq('order_id', order.id)
       .order('paid_on', { ascending: false })
     setHistory(data || [])
   }
   useEffect(function () { loadHistory() }, [order.id])
+
+  // Print the receipt for one instalment. "Paid to date" is the running total
+  // as at THAT payment, not today's — a receipt must reflect the moment it was
+  // issued, or reprinting an old one would show a figure that never existed.
+  function printReceipt(p) {
+    const asAt = history
+      .filter(function (x) { return x.paid_on < p.paid_on || (x.paid_on === p.paid_on && x.id === p.id) })
+      .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+    printOrderReceipt(order, p, { paidToDate: asAt })
+  }
 
   // Remove a wrongly-keyed instalment. The trigger recomputes the order total,
   // so deleting here is the supported way to undo a mistake.
@@ -356,9 +367,19 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
                       <span style={{ fontFamily:'var(--mono)', fontWeight:700, minWidth:76 }}>₹{fmtAmt(p.amount)}</span>
                       <span style={{ color:'var(--text2)' }}>{fmtDate(p.paid_on)}</span>
                       <span style={{ color:'var(--text3)', textTransform:'uppercase', fontSize:10 }}>{p.mode}</span>
+                      {p.receipt_no && (
+                        <span style={{ color:'var(--purple)', fontFamily:'var(--mono)', fontSize:10, fontWeight:600 }}>
+                          {p.receipt_no}
+                        </span>
+                      )}
                       {p.reference && <span style={{ color:'var(--text3)', fontFamily:'var(--mono)', fontSize:10 }}>{p.reference}</span>}
+                      <button type="button" className="btn-s" title="Print this receipt"
+                        style={{ marginLeft:'auto', fontSize:11, padding:'2px 8px' }}
+                        onClick={function () { printReceipt(p) }}>
+                        Receipt
+                      </button>
                       <button type="button" className="btn-s" title="Remove this payment"
-                        style={{ marginLeft:'auto', fontSize:11, padding:'2px 8px', color:'var(--red,#b91c1c)' }}
+                        style={{ fontSize:11, padding:'2px 8px', color:'var(--red,#b91c1c)' }}
                         onClick={function () { handleDeletePayment(p) }}>
                         Remove
                       </button>

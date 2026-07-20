@@ -154,7 +154,8 @@ function shell(opts) {
   </body></html>`
 }
 
-function partyCards(student) {
+// { badge, name, sub, phone, email } — whoever the document is billed to.
+function partyCards(party) {
   return `<div class="party">
     <div class="pcard" style="background:#EEEDFE"><div class="bl" style="background:#534AB7"></div>
       <div class="top"><span class="lbl" style="color:#534AB7">From</span><span class="ph">☎ 9373 111 311</span></div>
@@ -163,12 +164,23 @@ function partyCards(student) {
       <div class="em">✉ dhiral@nlhnagpur.info</div>
     </div>
     <div class="pcard" style="background:linear-gradient(135deg,#FFF7DA,#FFEAA0)"><div class="bl" style="background:#F59E0B"></div>
-      <div class="top"><span class="lbl" style="color:#F59E0B">Bill To</span>${student.phone ? `<span class="ph">☎ ${esc(student.phone)}</span>` : ''}</div>
-      <div class="nmrow"><span class="bdg" style="color:#D97706">Student</span><span class="nm">${esc(student.full_name || '—')}</span></div>
-      <div class="ad2">${esc(student.parent_name ? 'Parent: ' + student.parent_name : '')}${student.address ? (student.parent_name ? ' · ' : '') + esc(student.address) : ''}</div>
-      ${student.email ? `<div class="em">✉ ${esc(student.email)}</div>` : ''}
+      <div class="top"><span class="lbl" style="color:#F59E0B">Bill To</span>${party.phone ? `<span class="ph">☎ ${esc(party.phone)}</span>` : ''}</div>
+      <div class="nmrow"><span class="bdg" style="color:#D97706">${esc(party.badge || 'Bill To')}</span><span class="nm">${esc(party.name || '—')}</span></div>
+      <div class="ad2">${esc(party.sub || '')}</div>
+      ${party.email ? `<div class="em">✉ ${esc(party.email)}</div>` : ''}
     </div>
   </div>`
+}
+
+function studentParty(student) {
+  return {
+    badge: 'Student',
+    name:  student.full_name,
+    sub:   (student.parent_name ? 'Parent: ' + student.parent_name : '') +
+           (student.address ? (student.parent_name ? ' · ' : '') + student.address : ''),
+    phone: student.phone,
+    email: student.email,
+  }
 }
 
 const PAY_BOX = `<div class="pt"><div class="pay"><div class="bl"></div>
@@ -237,7 +249,7 @@ export function printStudentInvoice(student, ctx) {
       { l: 'Status', v: balance > 0 ? ((s.paid || 0) > 0 ? 'Part paid' : 'Unpaid') : 'Paid', status: balance > 0 ? ((s.paid || 0) > 0 ? 'part' : 'unpaid') : 'paid' },
       { l: 'Centre', v: ctx.centre || '—', sans: true },
     ],
-    party: partyCards(student), bodyHTML: body,
+    party: partyCards(studentParty(student)), bodyHTML: body,
   }))
 }
 
@@ -268,6 +280,55 @@ export function printStudentReceipt(student, payment, ctx) {
       { l: 'Mode', v: payment.mode ? String(payment.mode).replace(/_/g, ' ') : '—', sans: true },
       { l: 'Centre', v: ctx.centre || '—', sans: true },
     ],
-    party: partyCards(student), bodyHTML: body,
+    party: partyCards(studentParty(student)), bodyHTML: body,
+  }))
+}
+
+// ── Payment Receipt for a franchisee's payment against an order invoice ───────
+// Identical chrome to the student receipt — only the bill-to party and the
+// wording differ, so both receipts are recognisably the same document.
+// order: { invoice_no, order_ref, grand_total, amount_paid, placer }
+// payment: a single order_payments row
+export function printOrderReceipt(order, payment, ctx) {
+  const c        = ctx || {}
+  const total    = order.grand_total || 0
+  const paid     = c.paidToDate != null ? c.paidToDate : (order.amount_paid || 0)
+  const bal      = Math.max(0, total - paid)
+  const fr       = order.placer || {}
+  const againstT = order.invoice_no || order.order_ref || ''
+
+  const body = `
+    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — payment against invoice</div><div class="r">Amount (Rs)</div></div>
+      <div class="ir"><div class="num">01</div><div><div class="nm">Payment${payment.mode ? ' &middot; ' + esc(String(payment.mode).replace(/_/g, ' ')) : ''}</div>${
+        againstT ? `<div class="kit"><span class="k1">Against:</span><span class="k2">${esc(againstT)}</span></div>` : ''
+      }${payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
+    </div>
+    <div class="pt"><div></div>
+      <div class="tot"><div class="bl"></div>
+        <div class="h">Receipt Summary</div>
+        <div class="trow"><span class="l">Invoice total</span><span class="v">&#8377;${fmtAmt(total)}</span></div>
+        <div class="trow"><span class="l">Paid to date</span><span class="v" style="color:#1D7A4F">&#8377;${fmtAmt(paid)}</span></div>
+        <div class="trow" style="border:none"><span class="l">Balance</span><span class="v" style="color:${bal > 0 ? '#A32D2D' : '#1D7A4F'}">${bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;'}</span></div>
+        <div class="grand"><div class="gl">Amount Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(payment.amount || 0)}</div></div>
+        <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(payment.amount || 0))}</b></div>
+      </div>
+    </div>`
+
+  openWin(shell({
+    title: 'PAYMENT RECEIPT', sub: 'Official Receipt',
+    meta: [
+      { l: 'Receipt no.', v: payment.receipt_no || '-' },
+      { l: 'Date', v: fmtLong(payment.paid_on || payment.paid_at || new Date()) },
+      { l: 'Mode', v: payment.mode ? String(payment.mode).replace(/_/g, ' ') : '-', sans: true },
+      { l: 'Against', v: againstT || '-' },
+    ],
+    party: partyCards({
+      badge: fr.tier || 'Franchisee',
+      name:  fr.business_name,
+      sub:   [fr.owner_name, fr.city].filter(Boolean).join(' · '),
+      phone: fr.phone,
+      email: fr.email,
+    }),
+    bodyHTML: body,
   }))
 }
