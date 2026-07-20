@@ -129,6 +129,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   const [sendWA,  setSendWA]        = useState(true)
   const [waPhone, setWaPhone]       = useState(order.placer?.phone || '')
   const [history, setHistory]       = useState([])
+  const [waSendingId, setWaSendingId] = useState(null)
 
   async function loadHistory() {
     const { data } = await sb.from('order_payments')
@@ -139,14 +140,46 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   }
   useEffect(function () { loadHistory() }, [order.id])
 
-  // Print the receipt for one instalment. "Paid to date" is the running total
-  // as at THAT payment, not today's — a receipt must reflect the moment it was
-  // issued, or reprinting an old one would show a figure that never existed.
-  function printReceipt(p) {
-    const asAt = history
+  // "Paid to date" is the running total as at THAT payment, not today's — a
+  // receipt must reflect the moment it was issued, or reprinting an old one
+  // would show a figure that never existed.
+  function paidAsAt(p) {
+    return history
       .filter(function (x) { return x.paid_on < p.paid_on || (x.paid_on === p.paid_on && x.id === p.id) })
       .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
-    printOrderReceipt(order, p, { paidToDate: asAt })
+  }
+
+  function printReceipt(p) {
+    printOrderReceipt(order, p, { paidToDate: paidAsAt(p) })
+  }
+
+  // Send (or re-send) one receipt on WhatsApp, with a PNG of the document.
+  async function sendReceiptWA(p) {
+    const phone = waPhone || order.placer?.phone
+    if (!phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+    setWaSendingId(p.id)
+    try {
+      const asAt = paidAsAt(p)
+      let imageUrl = null
+      try {
+        const html = printOrderReceipt(order, p, { paidToDate: asAt, asHtml: true })
+        imageUrl = await captureDocPng(html, p.receipt_no || 'receipt')
+      } catch (capErr) { /* falls back to the text receipt */ }
+
+      const r = await sendWAPaymentReceived(phone, {
+        name:      order.placer?.business_name || 'Partner',
+        amount:    fmtAmt(p.amount),
+        balance:   fmtAmt(Math.max(0, total - asAt)),
+        receiptNo: p.receipt_no || order.invoice_no || '—',
+        date:      fmtDate(p.paid_on),
+        imageUrl:  imageUrl,
+      })
+      if (r && r.success) showToast('💬 Receipt ' + (p.receipt_no || '') + ' sent on WhatsApp.')
+      else showToast('WhatsApp failed: ' + ((r && r.error) || 'unknown error'), 'warn')
+    } catch (e) {
+      showToast('WhatsApp failed: ' + e.message, 'warn')
+    }
+    setWaSendingId(null)
   }
 
   // Remove a wrongly-keyed instalment. The trigger recomputes the order total,
@@ -399,6 +432,12 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
                         style={{ marginLeft:'auto', fontSize:11, padding:'2px 8px' }}
                         onClick={function () { printReceipt(p) }}>
                         Receipt
+                      </button>
+                      <button type="button" className="btn-s" title="Send this receipt on WhatsApp"
+                        disabled={waSendingId === p.id}
+                        style={{ fontSize:11, padding:'2px 8px', color:'var(--green,#1D7A4F)' }}
+                        onClick={function () { sendReceiptWA(p) }}>
+                        {waSendingId === p.id ? 'Sending…' : '💬 WhatsApp'}
                       </button>
                       <button type="button" className="btn-s" title="Remove this payment"
                         style={{ fontSize:11, padding:'2px 8px', color:'var(--red,#b91c1c)' }}

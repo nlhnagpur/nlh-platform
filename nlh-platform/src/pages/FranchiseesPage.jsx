@@ -322,6 +322,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [payments, setPayments] = useState([])
   const [showPayModal, setShowPayModal] = useState(false)
   const [editPayId, setEditPayId] = useState(null)
+  const [waSendingId, setWaSendingId] = useState(null)
   const [editPay, setEditPay] = useState({ amount: '', payment_date: '', payment_mode: '', reference_no: '' })
   const [studentCount, setStudentCount] = useState(null)
   const [selectedStudent, setSelectedStudent] = useState(null)
@@ -382,17 +383,51 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   // Print one payment's receipt. "Paid to date" is the running total as at THAT
   // payment, not today's, so reprinting an old receipt shows the figures as
   // they stood when it was issued.
-  function printPaymentReceipt(p) {
-    const asAt = payments
+  // Running total as at THAT payment, so a reprint or resend shows the figures
+  // as they stood when the receipt was issued.
+  function paidAsAt(p) {
+    return payments
       .filter(function (x) {
         return x.payment_date < p.payment_date ||
                (x.payment_date === p.payment_date && x.id === p.id)
       })
       .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+  }
+
+  function printPaymentReceipt(p) {
     printFranchiseeReceipt(franchisee, p, {
       total:      Number(form.enrollment_fee) || 0,
-      paidToDate: asAt,
+      paidToDate: paidAsAt(p),
     })
+  }
+
+  // Send (or re-send) one receipt on WhatsApp, with a PNG of the document.
+  async function sendPaymentReceiptWA(p) {
+    if (!franchisee.phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+    setWaSendingId(p.id)
+    try {
+      const total = Number(form.enrollment_fee) || 0
+      const asAt  = paidAsAt(p)
+      let imageUrl = null
+      try {
+        const html = printFranchiseeReceipt(franchisee, p, { total: total, paidToDate: asAt, asHtml: true })
+        imageUrl = await captureDocPng(html, p.receipt_no || 'receipt')
+      } catch (capErr) { /* falls back to the text receipt */ }
+
+      const r = await sendWAPaymentReceived(franchisee.phone, {
+        name:      franchisee.business_name || 'Partner',
+        amount:    fmtAmt(p.amount),
+        balance:   Math.max(0, total - asAt),
+        receiptNo: p.receipt_no || '—',
+        date:      fmtDate(p.payment_date),
+        imageUrl:  imageUrl,
+      })
+      if (r && r.success) showToast('💬 Receipt ' + (p.receipt_no || '') + ' sent on WhatsApp.')
+      else showToast('WhatsApp failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+    } catch (e) {
+      showToast('WhatsApp failed: ' + e.message, 'warn')
+    }
+    setWaSendingId(null)
   }
 
   async function deletePaymentEntry(p) {
@@ -766,6 +801,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                             <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                               <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} title="Print this receipt"
                                 onClick={function () { printPaymentReceipt(p) }}>🧾 Receipt</button>
+                              <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', color: 'var(--green,#1D7A4F)' }}
+                                title="Send this receipt on WhatsApp" disabled={waSendingId === p.id}
+                                onClick={function () { sendPaymentReceiptWA(p) }}>
+                                {waSendingId === p.id ? '…' : '💬'}</button>
                               <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} title="Edit date / method / amount"
                                 onClick={function () { startEditPay(p) }}>✎ Edit</button>
                               <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }} title="Delete entry"
