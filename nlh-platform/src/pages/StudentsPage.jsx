@@ -87,6 +87,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
   const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
   const [remindSending,   setRemindSending]   = useState(false)
+  const [enrolWaSending,  setEnrolWaSending]  = useState(false)
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
@@ -290,6 +291,38 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     if (r && r.success) showToast('Receipt resent on WhatsApp ✓')
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
+  }
+
+  // ── WhatsApp enrolment confirmation to the parent ──
+  // Lists whatever the student is currently enrolled in, so it works equally as
+  // a first confirmation, after a course is added later, or as a re-send.
+  async function sendEnrolmentWA() {
+    const phone = receiptPhone || student.phone
+    if (!phone) { showToast('No parent phone on file', 'warn'); return }
+    const active = localEnrollments.filter(function (e) { return !e.completed_at })
+    const list   = (active.length ? active : localEnrollments)
+      .map(function (e) {
+        const c = e.skus?.courses?.group_name
+        const l = e.skus?.level_name
+        return c ? (l ? c + ' — ' + l : c) : l
+      })
+      .filter(Boolean)
+    if (list.length === 0) { showToast('No courses to confirm', 'warn'); return }
+
+    setEnrolWaSending(true)
+    try {
+      const r = await sendWAStudentEnrolled(phone, {
+        parentName:  student.parent_name || 'Parent',
+        studentName: student.full_name,
+        courses:     list.join(', '),
+        centre:      student.franchisees?.business_name || 'New Learning Horizons',
+      })
+      if (r && r.success) showToast('Enrollment confirmation sent on WhatsApp ✓')
+      else showToast('WhatsApp failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+    } catch (e) {
+      showToast('WhatsApp failed: ' + e.message, 'warn')
+    }
+    setEnrolWaSending(false)
   }
 
   // ── WhatsApp balance reminder to the parent ──
@@ -1256,6 +1289,24 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {/* ── COURSES & BATCHES TAB ── */}
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
+            {/* The enrolment confirmation is otherwise only offered on Add
+                Student — there was no way to send it after a course is added
+                later, or to re-send one the parent missed. */}
+            {localEnrollments.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 10, marginBottom: 12, padding: '9px 12px', borderRadius: 10,
+                background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
+                <span style={{ font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)' }}>
+                  💬 Enrollment confirmation to parent
+                  {(receiptPhone || student.phone) ? ' · ' + (receiptPhone || student.phone) : ' — no mobile number on file'}
+                </span>
+                <button className="btn-s" style={{ fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  disabled={enrolWaSending || !(receiptPhone || student.phone)}
+                  onClick={sendEnrolmentWA}>
+                  {enrolWaSending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            )}
             {localEnrollments.length === 0 && !showAddEnrollment ? (
               <p className="hint" style={{ textAlign: 'center', padding: 24 }}>No courses enrolled yet.</p>
             ) : (
@@ -2336,7 +2387,11 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             parentName:  form.parent_name || 'Parent',
             studentName: form.full_name,
             courses:     courseNames,
-            centre:      'New Learning Horizons',
+            // The centre the student actually enrolled at — the parent is told
+            // to contact their centre, so naming Head Office to a UF's parent
+            // sends them to the wrong place.
+            centre:      (centreList.find(function (c) { return c.id === form.franchisee_id }) || {}).business_name
+                         || 'New Learning Horizons',
           })
           if (r && r.success) showToast('Enrollment confirmation sent on WhatsApp ✓')
           else showToast('Student added · WhatsApp confirmation failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
