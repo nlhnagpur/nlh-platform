@@ -123,6 +123,27 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
   const [saving, setSaving]         = useState(false)
   const [sendWA,  setSendWA]        = useState(true)
   const [waPhone, setWaPhone]       = useState(order.placer?.phone || '')
+  const [history, setHistory]       = useState([])
+
+  async function loadHistory() {
+    const { data } = await sb.from('order_payments')
+      .select('id, amount, paid_on, mode, reference, note')
+      .eq('order_id', order.id)
+      .order('paid_on', { ascending: false })
+    setHistory(data || [])
+  }
+  useEffect(function () { loadHistory() }, [order.id])
+
+  // Remove a wrongly-keyed instalment. The trigger recomputes the order total,
+  // so deleting here is the supported way to undo a mistake.
+  async function handleDeletePayment(p) {
+    if (!window.confirm(`Remove the ₹${fmtAmt(p.amount)} payment dated ${fmtDate(p.paid_on)}?\n\nThe order total will be recalculated.`)) return
+    const { error } = await sb.from('order_payments').delete().eq('id', p.id)
+    if (error) { showToast('Could not remove it: ' + error.message, 'err'); return }
+    showToast('Payment removed — order total recalculated.')
+    await loadHistory()
+    onSaved()
+  }
 
   const amt    = parseInt(amountPaid, 10) || 0
   const isFull = (order.amount_paid || 0) + amt >= total && total > 0
@@ -154,16 +175,16 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
       return
     }
     setSaving(true)
-    const newStatus = isFull ? 'closed' : 'part_paid'
-    const { error } = await sb.from('orders').update({
-      amount_paid:         (order.amount_paid || 0) + amt,
-      payment_mode:        mode,
-      payment_ref:         ref.trim() || null,
+    // One row per instalment. A DB trigger rolls the ledger up into
+    // orders.amount_paid / paid_at / status, so the total can never drift.
+    const { error } = await sb.from('order_payments').insert({
+      order_id:  order.id,
+      amount:    amt,
       // Date the money was actually received (back-datable), not when it was keyed in
-      paid_at:             (paidOn || new Date().toISOString().slice(0, 10)) + 'T00:00:00+00:00',
-      payment_verified_at: isFull ? new Date().toISOString() : null,
-      status:              newStatus,
-    }).eq('id', order.id)
+      paid_on:   paidOn || new Date().toISOString().slice(0, 10),
+      mode:      mode,
+      reference: ref.trim() || null,
+    })
     if (error) {
       showToast('Failed to record payment: ' + error.message, 'err')
       setSaving(false)
@@ -317,6 +338,33 @@ function RecordPaymentModal({ order, onClose, onSaved }) {
                     )}
                   </>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Payment history — every instalment, individually removable ── */}
+          {history.length > 0 && (
+            <div style={{ marginTop:14 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, marginBottom:6 }}>
+                Payment History
+              </div>
+              <div style={{ border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
+                {history.map(function (p, i) {
+                  return (
+                    <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px',
+                      borderTop: i === 0 ? 'none' : '1px solid var(--border)', fontSize:12 }}>
+                      <span style={{ fontFamily:'var(--mono)', fontWeight:700, minWidth:76 }}>₹{fmtAmt(p.amount)}</span>
+                      <span style={{ color:'var(--text2)' }}>{fmtDate(p.paid_on)}</span>
+                      <span style={{ color:'var(--text3)', textTransform:'uppercase', fontSize:10 }}>{p.mode}</span>
+                      {p.reference && <span style={{ color:'var(--text3)', fontFamily:'var(--mono)', fontSize:10 }}>{p.reference}</span>}
+                      <button type="button" className="btn-s" title="Remove this payment"
+                        style={{ marginLeft:'auto', fontSize:11, padding:'2px 8px', color:'var(--red,#b91c1c)' }}
+                        onClick={function () { handleDeletePayment(p) }}>
+                        Remove
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
