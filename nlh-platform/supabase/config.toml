@@ -1,0 +1,3 @@
+# Supabase project config. The migration history lives in supabase/migrations
+# and is fetched from the hosted project — see supabase/README.md.
+project_id = "frnnoxudtlvhyyoqdqzx"

@@ -8,3 +8,7 @@ dist/
 # Claude Code local settings (may contain API keys)
 ../.claude/
 .claude/
+
+# Supabase CLI local state — contains project credentials, never commit
+supabase/.temp/
+supabase/.branches/
