@@ -96,7 +96,13 @@ function shell(opts) {
   .kit .k1{font:700 9px 'DM Mono';color:#9C8BD9;text-transform:uppercase;letter-spacing:.06em;align-self:center}
   .kit .k2{font:600 10px 'DM Mono';color:#534AB7;background:#EEEDFE;border-radius:4px;padding:2px 7px;white-space:nowrap}
   /* payment + totals */
-  .pt{display:grid;grid-template-columns:1.1fr 1fr;gap:8px;align-items:start}
+  /* margin-top:auto pushes the totals/bank block down so it sits against the
+     footer however few items there are — a receipt has only one line, and
+     without this it floated directly under it leaving the page bottom-heavy. */
+  .pt{display:grid;grid-template-columns:1.1fr 1fr;gap:8px;align-items:start;margin-top:auto}
+  /* mascot fills the gap the anchoring opens up */
+  .mascot{flex:1;display:flex;align-items:center;justify-content:center;pointer-events:none;min-height:0}
+  .mascot img{width:44%;max-width:290px;opacity:.16;object-fit:contain}
   .pay{background:linear-gradient(135deg,#FFF7DA,#FFE89B);border-radius:10px;padding:10px 12px;position:relative;overflow:hidden;display:flex;flex-direction:column}
   .pay .bl{position:absolute;top:0;bottom:0;left:0;width:3px;background:#F59E0B}
   .pay .h{font:700 7.5px 'DM Mono';color:#D97706;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}
@@ -261,6 +267,7 @@ export function printStudentReceipt(student, payment, ctx) {
     <div class="items"><div class="ih"><div>#</div><div>Received with thanks — fee payment</div><div class="r">Amount (₹)</div></div>
       <div class="ir"><div class="num">01</div><div><div class="nm">Fee payment${payment.mode ? ' · ' + esc(String(payment.mode).replace(/_/g, ' ')) : ''}</div>${payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''}</div><div class="amt r">₹${fmtAmt(payment.amount || 0)}</div></div>
     </div>
+    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
     <div class="pt"><div></div>
       <div class="tot"><div class="bl"></div>
         <div class="h">Receipt Summary</div>
@@ -303,6 +310,7 @@ export function printOrderReceipt(order, payment, ctx) {
         againstT ? `<div class="kit"><span class="k1">Against:</span><span class="k2">${esc(againstT)}</span></div>` : ''
       }${payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
     </div>
+    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
     <div class="pt"><div></div>
       <div class="tot"><div class="bl"></div>
         <div class="h">Receipt Summary</div>
@@ -353,6 +361,7 @@ export function printFranchiseeReceipt(franchisee, payment, ctx) {
         ref ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(ref)}</span></div>` : ''
       }${payment.notes ? `<div class="kit"><span class="k1">Note:</span><span class="k2">${esc(payment.notes)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
     </div>
+    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
     <div class="pt"><div></div>
       <div class="tot"><div class="bl"></div>
         <div class="h">Receipt Summary</div>
