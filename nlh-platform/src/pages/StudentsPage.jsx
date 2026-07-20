@@ -206,6 +206,20 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   async function recordPayment() {
     const amt = Number(payForm.amount)
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    // Every entry ADDS to the ledger, so re-keying a receipt that's already
+    // there silently doubles it. A student can never pay more than the fee.
+    const feeTotal   = Number(form.fee_total) || 0
+    const alreadyGot = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+    const feeBalance = Math.max(0, feeTotal - alreadyGot)
+    if (feeTotal > 0 && alreadyGot + amt > feeTotal) {
+      showToast(
+        feeBalance === 0
+          ? `Fees are already fully paid (₹${fmtAmt(feeTotal)}). Nothing more to record.`
+          : `That's more than the balance. Only ₹${fmtAmt(feeBalance)} is outstanding.`,
+        'warn'
+      )
+      return
+    }
     setPaySaving(true)
     const { data, error } = await sb.from('student_payments').insert({
       student_id:    student.id,
@@ -1882,9 +1896,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 subtitle={'Balance due: ' + (balance > 0 ? '₹' + fmtAmt(balance) : 'Cleared')}
                 onClose={function () { setShowPayModal(false) }} />
               <div style={{ padding: '4px 20px 16px' }}>
+                {/* The amount only ever ADDS to the ledger — warn before it doubles */}
+                {(Number(form.fee_total) || 0) > 0 && balance === 0 && (
+                  <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8,
+                    padding:'10px 14px', margin:'8px 0 12px', fontSize:12, color:'#166534' }}>
+                    ✓ <b>Fees already fully paid.</b> Don't re-enter a receipt that's already
+                    listed below — it would be counted twice.
+                  </div>
+                )}
                 <div className="form-grid">
                   <label>Amount received (₹) *
                     <input type="number" autoFocus value={payForm.amount}
+                      max={balance > 0 ? balance : undefined}
                       onChange={function (e) { setPayForm(function (f) { return { ...f, amount: e.target.value } }) }}
                       placeholder="e.g. 1500" />
                   </label>
