@@ -133,10 +133,30 @@ function shell(opts) {
   .ft .cg{font:600 7.5px 'DM Mono';color:#5B3A00;text-transform:uppercase;letter-spacing:.06em;text-align:right}
   .np{text-align:right;padding:10px 20px;background:#f0f0f0}
   .np button{background:#534AB7;color:#fff;border:none;padding:8px 18px;border-radius:7px;font:600 13px sans-serif;cursor:pointer}
+  /* ── A5: literally half an A4 (210 x 148mm), so the full-width design carries
+     over unchanged and two receipts fit on one A4 sheet. A receipt is a single
+     line, so the chrome tightens to earn back the vertical space. ── */
+  .sheet.a5{min-height:148mm}
+  .sheet.a5 .body{padding:7px 20px 8px;gap:6px}
+  .sheet.a5 .pcard{min-height:0;padding:7px 12px 21px}
+  .sheet.a5 .hd{padding:6px 20px 0}
+  .sheet.a5 .logo{width:54px;height:54px}
+  .sheet.a5 .hdg{grid-template-columns:54px 1fr auto}
+  .sheet.a5 .ti .t{font-size:31px}
+  .sheet.a5 .meta{padding:6px 20px}
+  .sheet.a5 .ft{padding:6px 20px}
+  .sheet.a5 .mascot{display:none}
+  .sheet.a5 .ih{padding:7px 14px}
+  .sheet.a5 .ir{padding:6px 14px}
+  .sheet.a5 .grand{margin-top:6px;padding:8px 14px}
+  .sheet.a5 .grand .gv{font-size:21px}
+  .sheet.a5 .words{margin-top:4px}
+  .sheet.a5 .tot{padding:9px 12px}
   @media print{@page{size:A4;margin:0}.np{display:none}.sheet{box-shadow:none}}
+  ${opts.size === 'A5' ? '@media print{@page{size:210mm 148mm;margin:0}}' : ''}
   </style></head><body>
   <div class="np"><button onclick="window.print()">Print / Save PDF</button></div>
-  <div class="sheet">
+  <div class="sheet${opts.size === 'A5' ? ' a5' : ''}">
     <div class="hd">
       <svg viewBox="0 0 800 20" preserveAspectRatio="none"><path d="M0 20 L0 12 Q100 2,200 11 T400 11 T600 11 T800 12 L800 20 Z" fill="#fff"/></svg>
       <div class="hdg">
@@ -280,7 +300,7 @@ export function printStudentReceipt(student, payment, ctx) {
     </div>`
 
   openWin(shell({
-    title: 'PAYMENT RECEIPT', sub: 'Official Receipt',
+    title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '—' },
       { l: 'Date', v: fmtLong(payment.paid_at || new Date()) },
@@ -323,7 +343,7 @@ export function printOrderReceipt(order, payment, ctx) {
     </div>`
 
   openWin(shell({
-    title: 'PAYMENT RECEIPT', sub: 'Official Receipt',
+    title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '-' },
       { l: 'Date', v: fmtLong(payment.paid_on || payment.paid_at || new Date()) },
@@ -374,7 +394,7 @@ export function printFranchiseeReceipt(franchisee, payment, ctx) {
     </div>`
 
   openWin(shell({
-    title: 'PAYMENT RECEIPT', sub: 'Official Receipt',
+    title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '-' },
       { l: 'Date', v: fmtLong(payment.payment_date || payment.paid_on || new Date()) },
