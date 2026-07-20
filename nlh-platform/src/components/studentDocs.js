@@ -249,6 +249,15 @@ function openWin(html) {
   w.document.write(html); w.document.close()
 }
 
+// Every document ends here. By default it opens a print window; pass
+// ctx.asHtml to get the markup back instead, so the same document can be
+// rendered off-screen and captured as a PNG for WhatsApp.
+function emit(ctx, html) {
+  if (ctx && ctx.asHtml) return html
+  openWin(html)
+  return html
+}
+
 // ── Fee Invoice (same design as the franchisee invoice) ───────────────────────
 // ctx.items: [{kind:'course'|'kit', sku_id, name, qty, amount}]  (fallback ctx.lines:[{name,fee,sku_id}])
 // ctx.summary: { discount, couponCode, total, paid, balance }
@@ -287,7 +296,7 @@ export function printStudentInvoice(student, ctx) {
       </div>
     </div>`
 
-  openWin(shell({
+  return emit(ctx, shell({
     title: 'FEE INVOICE', sub: 'Tax Invoice · Original Copy',
     meta: [
       { l: 'Invoice no.', v: ctx.refVal || '—' },
@@ -313,7 +322,7 @@ ${receiptTotals([
       { l: 'Balance',      v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
     ], payment.amount)}`
 
-  openWin(shell({
+  return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '—' },
@@ -350,7 +359,7 @@ ${receiptTotals([
       { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
     ], payment.amount)}`
 
-  openWin(shell({
+  return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '-' },
@@ -395,7 +404,7 @@ ${receiptTotals(total > 0 ? [
       { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
     ] : [], payment.amount)}`
 
-  openWin(shell({
+  return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '-' },

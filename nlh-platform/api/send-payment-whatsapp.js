@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
   if (!token || !phoneId) return res.status(500).json({ error: 'WhatsApp not configured' })
 
-  const { to, name, receiptNo, amount, date, balance } = req.body
+  const { to, name, receiptNo, amount, date, balance, imageUrl, imageTemplate } = req.body
   if (!to) return res.status(400).json({ error: 'Missing recipient number (to)' })
 
   const digits = String(to).replace(/\D/g, '')
@@ -29,23 +29,37 @@ export default async function handler(req, res) {
 
   const balanceText = Number(balance) > 0 ? '₹' + balance + ' remaining' : 'Fully paid'
 
+  // `payment_receipt` is body-only. A PNG of the receipt can only be attached to
+  // a template that declares an IMAGE header, so the image variant is a
+  // separate approved template — sending a header component to a template that
+  // has none is rejected by Meta. Falls back to text when no image is supplied.
+  const useImage = !!imageUrl && !!imageTemplate
+  const components = []
+  if (useImage) {
+    components.push({
+      type: 'header',
+      parameters: [{ type: 'image', image: { link: imageUrl } }],
+    })
+  }
+  components.push({
+    type: 'body',
+    parameters: [
+      { type: 'text', text: name || 'Parent' },
+      { type: 'text', text: receiptNo || '—' },
+      { type: 'text', text: '₹' + (amount != null ? amount : '') },
+      { type: 'text', text: date || '' },
+      { type: 'text', text: balanceText },
+    ],
+  })
+
   const payload = {
     messaging_product: 'whatsapp',
     to:   e164,
     type: 'template',
     template: {
-      name:     'payment_receipt',
+      name:     useImage ? imageTemplate : 'payment_receipt',
       language: { code: 'en' },
-      components: [{
-        type: 'body',
-        parameters: [
-          { type: 'text', text: name || 'Parent' },
-          { type: 'text', text: receiptNo || '—' },
-          { type: 'text', text: '₹' + (amount != null ? amount : '') },
-          { type: 'text', text: date || '' },
-          { type: 'text', text: balanceText },
-        ],
-      }],
+      components,
     },
   }
 

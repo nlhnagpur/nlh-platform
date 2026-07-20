@@ -9,6 +9,7 @@ import { invoiceFit, invoiceFull } from '../utils/invoiceFit'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
 import { printOrderReceipt } from '../components/studentDocs'
+import { captureDocPng } from '../utils/captureReceipt'
 import InvoiceView from '../components/InvoiceView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
@@ -211,7 +212,20 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
     // saved, so a messaging failure must never look like a failed payment.
     if (sendWA && waPhone) {
       try {
+        // A PNG of the receipt, so the franchisee gets the document itself and
+        // not just the figures. Best-effort: a capture failure still sends text.
+        let imageUrl = null
+        try {
+          const html = printOrderReceipt(
+            order,
+            { receipt_no: inserted && inserted.receipt_no, amount: amt, paid_on: paidOn, mode: mode, reference: ref.trim() || null },
+            { paidToDate: (order.amount_paid || 0) + amt, asHtml: true }
+          )
+          imageUrl = await captureDocPng(html, (inserted && inserted.receipt_no) || 'receipt')
+        } catch (capErr) { /* non-fatal */ }
+
         const r = await sendWAPaymentReceived(waPhone, {
+          imageUrl:  imageUrl,
           name:      order.placer?.business_name || 'Partner',
           amount:    fmtAmt(amt),
           balance:   fmtAmt(balanceAfter),

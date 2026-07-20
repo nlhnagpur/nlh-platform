@@ -13,6 +13,10 @@ export const WA_TEMPLATES = {
   orderDispatched: 'order_dispatched_v2',
   studentEnrolled: 'student_enrolled_v2',
   balanceReminder: 'balance_reminder',   // universal: students + franchisees
+  // Image-header variant of `payment_receipt`, for attaching a PNG of the
+  // receipt. Set this to the template name once it is approved in Meta;
+  // until then receipts send as text only. See docs/whatsapp-templates.md.
+  paymentReceiptImage: null,
   reviewRequest:   'review_request',     // legitimately Marketing — leave as is
 }
 
@@ -140,8 +144,9 @@ export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier 
 // template as student receipts (`payment_receipt`); the old `payment_received`
 // template was classified Marketing, so Meta refused delivery to franchisees
 // who hadn't messaged recently (error 131049).
-export async function sendWAPaymentReceived(to, { name, amount, balance, receiptNo, date }) {
+export async function sendWAPaymentReceived(to, { name, amount, balance, receiptNo, date, imageUrl }) {
   return sendWAStudentReceipt(to, {
+    imageUrl:  imageUrl,
     name:      name,
     receiptNo: receiptNo || '—',
     amount:    amount,
@@ -154,15 +159,23 @@ export async function sendWAPaymentReceived(to, { name, amount, balance, receipt
 // Sends the `payment_receipt` template via a requireAuth endpoint so a
 // franchisee can send a receipt for their own student's payment.
 // { name, receiptNo, amount (formatted), date (formatted), balance (number) }
-export async function sendWAStudentReceipt(to, { name, receiptNo, amount, date, balance }) {
+// imageUrl: public PNG of the receipt. Only attached once an image-header
+// template exists (WA_TEMPLATES.paymentReceiptImage); otherwise ignored so the
+// text receipt still goes out rather than failing.
+export async function sendWAStudentReceipt(to, { name, receiptNo, amount, date, balance, imageUrl }) {
   if (!toWAPhone(to)) return { success: false, error: 'No valid phone number on file' }
+  const withImage = !!(imageUrl && WA_TEMPLATES.paymentReceiptImage)
   const res = await fetch('/api/send-payment-whatsapp', {
     method: 'POST',
     headers: await waAuthHeaders(),
-    body: JSON.stringify({ to: toWAPhone(to), name, receiptNo, amount, date, balance }),
+    body: JSON.stringify({
+      to: toWAPhone(to), name, receiptNo, amount, date, balance,
+      imageUrl:      withImage ? imageUrl : null,
+      imageTemplate: withImage ? WA_TEMPLATES.paymentReceiptImage : null,
+    }),
   })
   const data = await res.json()
-  if (data && data.success) logOutbound(to, '🧾 Receipt ' + (receiptNo || '') + ' · ₹' + amount + (Number(balance) > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'), 'template', waMsgId(data))
+  if (data && data.success) logOutbound(to, '🧾 Receipt ' + (receiptNo || '') + ' · ₹' + amount + (Number(balance) > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'), 'template', waMsgId(data), withImage ? imageUrl : null)
   return data
 }
 
