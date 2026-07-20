@@ -2190,7 +2190,7 @@ export default function OrdersPage() {
                   <th className="hide-mobile">Date</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Total</th>
-                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Paid</th>
+                  <th className="hide-mobile" style={{ textAlign: 'right' }}>Balance</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
@@ -2226,10 +2226,20 @@ export default function OrdersPage() {
                       <td className="mono hide-mobile">{fmtDate(order.created_at)}</td>
                       <td><StatusBadge status={order.status} /></td>
                       <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(order.grand_total || 0)}</div></td>
+                      {/* What's still owed — the figure that actually needs chasing.
+                          The amount received shows on the 💰 line under the actions. */}
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
-                        <div className="amt" style={{ color: order.amount_paid > 0 ? 'var(--green)' : 'var(--text3)' }}>
-                          ₹{fmtAmt(order.amount_paid || 0)}
-                        </div>
+                        {(function () {
+                          const bal = Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
+                          return (
+                            <div className="amt" style={{
+                              color: bal > 0 ? '#92400e' : 'var(--green)',
+                              fontWeight: bal > 0 ? 700 : 500,
+                            }}>
+                              {bal > 0 ? '₹' + fmtAmt(bal) : '₹0'}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{renderActions(order)}</td>
                     </tr>
