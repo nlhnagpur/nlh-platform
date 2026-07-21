@@ -89,6 +89,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
   const [remindSending,   setRemindSending]   = useState(false)
   const [enrolWaSending,  setEnrolWaSending]  = useState(false)
+  const [enrolWaPhone,    setEnrolWaPhone]    = useState(student.phone || '')
+  // Only holds explicit overrides; anything absent falls back to "is this
+  // course still running", so newly added courses are ticked without an effect
+  // having to keep this in sync with the enrolment list.
+  const [enrolWaSel,      setEnrolWaSel]      = useState({})
+  function enrolWaChecked(en) {
+    return enrolWaSel[en.id] !== undefined ? enrolWaSel[en.id] : !en.completed_at
+  }
   const [feeEditId,       setFeeEditId]       = useState(null)
   const [feeEditVal,      setFeeEditVal]      = useState('')
   const [otherEdit,       setOtherEdit]       = useState(false)
@@ -385,17 +393,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // Lists whatever the student is currently enrolled in, so it works equally as
   // a first confirmation, after a course is added later, or as a re-send.
   async function sendEnrolmentWA() {
-    const phone = receiptPhone || student.phone
-    if (!phone) { showToast('No parent phone on file', 'warn'); return }
-    const active = localEnrollments.filter(function (e) { return !e.completed_at })
-    const list   = (active.length ? active : localEnrollments)
+    const phone = (enrolWaPhone || '').trim()
+    if (!phone) { showToast('Enter a mobile number to send to', 'warn'); return }
+    const list = localEnrollments
+      .filter(enrolWaChecked)
       .map(function (e) {
         const c = e.skus?.courses?.group_name
         const l = e.skus?.level_name
         return c ? (l ? c + ' — ' + l : c) : l
       })
       .filter(Boolean)
-    if (list.length === 0) { showToast('No courses to confirm', 'warn'); return }
+    if (list.length === 0) { showToast('Tick at least one course to confirm', 'warn'); return }
 
     setEnrolWaSending(true)
     try {
@@ -1387,18 +1395,48 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 Student — there was no way to send it after a course is added
                 later, or to re-send one the parent missed. */}
             {localEnrollments.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                gap: 10, marginBottom: 12, padding: '9px 12px', borderRadius: 10,
+              <div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 10,
                 background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
-                <span style={{ font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)' }}>
-                  💬 Enrollment confirmation to parent
-                  {(receiptPhone || student.phone) ? ' · ' + (receiptPhone || student.phone) : ' — no mobile number on file'}
-                </span>
-                <button className="btn-s" style={{ fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap' }}
-                  disabled={enrolWaSending || !(receiptPhone || student.phone)}
-                  onClick={sendEnrolmentWA}>
-                  {enrolWaSending ? 'Sending…' : 'Send'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)' }}>
+                    💬 Enrollment confirmation to parent
+                  </span>
+                  <input
+                    value={enrolWaPhone}
+                    onChange={function (e) { setEnrolWaPhone(e.target.value) }}
+                    placeholder="Mobile number"
+                    title="Send to a different number — a second parent, or a corrected one"
+                    style={{ width: 140, fontSize: 12, padding: '3px 8px' }} />
+                  <button className="btn-s" style={{ fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap', marginLeft: 'auto' }}
+                    disabled={enrolWaSending || !enrolWaPhone.trim()}
+                    onClick={sendEnrolmentWA}>
+                    {enrolWaSending ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+                {/* Confirmations usually cover the course just added, not the
+                    student's whole history — running courses start ticked and
+                    completed ones do not. */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 8 }}>
+                  {localEnrollments.map(function (en) {
+                    const c = en.skus?.courses?.group_name
+                    const l = en.skus?.level_name
+                    const label = c ? (l ? c + ' — ' + l : c) : (l || 'Course')
+                    return (
+                      <label key={en.id} style={{ display: 'flex', alignItems: 'center', gap: 5,
+                        font: '500 11px var(--font)', color: 'var(--text2)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={enrolWaChecked(en)}
+                          onChange={function (e) {
+                            const v = e.target.checked
+                            setEnrolWaSel(function (prev) { return { ...prev, [en.id]: v } })
+                          }} />
+                        {label}
+                        {en.completed_at && (
+                          <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>· completed</span>
+                        )}
+                      </label>
+                    )
+                  })}
+                </div>
               </div>
             )}
             {/* Course prices are catalogue rates; say plainly why they add up to
