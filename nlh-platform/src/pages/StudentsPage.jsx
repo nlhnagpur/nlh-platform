@@ -319,9 +319,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const out = {}
     ordered.forEach(function (en) {
       const fee     = Number(en.fee_amount) || 0
+      const list    = Number(en.list_price) || 0
       const covered = Math.min(left, fee)
       left -= covered
-      out[en.id] = { fee: fee, paid: covered, due: Math.max(0, fee - covered) }
+      out[en.id] = {
+        fee: fee, paid: covered, due: Math.max(0, fee - covered),
+        list: list,
+        // What this course was actually discounted by, from two stored figures
+        off: Math.max(0, list - fee),
+      }
     })
     out.__discount = discount
     return out
@@ -333,13 +339,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // re-bill the parent.
   async function saveCourseFee(en) {
     const val = Math.max(0, parseInt(feeEditVal, 10) || 0)
-    const { error } = await sb.from('enrollments').update({ fee_amount: val }).eq('id', en.id)
+    // Preserve the list price if it was never captured, so the discount this
+    // edit creates has something to be measured against later.
+    const list = Number(en.list_price) || Number(en.fee_amount) || 0
+    const { error } = await sb.from('enrollments')
+      .update({ fee_amount: val, list_price: list }).eq('id', en.id)
     if (error) { showToast('Could not save the fee: ' + error.message, 'err'); return }
     setLocalEnrollments(function (prev) {
-      return prev.map(function (x) { return x.id === en.id ? { ...x, fee_amount: val } : x })
+      return prev.map(function (x) {
+        return x.id === en.id ? { ...x, fee_amount: val, list_price: list } : x
+      })
     })
     setFeeEditId(null)
-    showToast('Course fee updated')
+    const off = list - val
+    showToast(off > 0
+      ? 'Course fee ₹' + fmtAmt(val) + ' · discount of ₹' + fmtAmt(off) + ' recorded'
+      : 'Course fee updated')
   }
 
   // ── WhatsApp enrolment confirmation to the parent ──
@@ -771,7 +786,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -860,7 +875,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       enrolled_at:   enrolledAt,
     } })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
@@ -971,7 +986,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1364,15 +1379,42 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             )}
             {/* Course prices are catalogue rates; say plainly why they add up to
                 more than the parent was asked for, or the figures look wrong. */}
-            {feeCoverage.__discount > 0 && (
-              <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 10,
-                background: 'var(--purple-bg)', border: '1px solid var(--purple)',
-                font: '500 11px var(--font)', color: 'var(--purple)' }}>
-                Course prices below total ₹{fmtAmt(localEnrollments.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0))} —
-                a discount of <b>₹{fmtAmt(feeCoverage.__discount)}</b> brings the agreed fee to <b>₹{fmtAmt(Number(form.fee_total) || 0)}</b>,
-                and is credited to the earliest courses first.
-              </div>
-            )}
+            {(function () {
+              // Two kinds of discount can be in play: recorded per course (list
+              // price vs charged) and a package discount that predates this and
+              // was never attributed to any one course. Show both, separately.
+              const perCourse = localEnrollments.reduce(function (s, e) {
+                return s + Math.max(0, (Number(e.list_price) || 0) - (Number(e.fee_amount) || 0))
+              }, 0)
+              const pkg = feeCoverage.__discount || 0
+              const charged = localEnrollments.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0)
+              // The agreed fee can also sit ABOVE the course prices — a
+              // registration or admission charge. Say so, or it looks like the
+              // courses simply fail to add up to the balance.
+              const extra = Math.max(0, (Number(form.fee_total) || 0) - charged)
+              if (perCourse === 0 && pkg === 0 && extra === 0) return null
+              return (
+                <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 10,
+                  background: 'var(--purple-bg)', border: '1px solid var(--purple)',
+                  font: '500 11px var(--font)', color: 'var(--purple)' }}>
+                  {perCourse > 0 && (
+                    <div>Course discounts total <b>₹{fmtAmt(perCourse)}</b> against list price.</div>
+                  )}
+                  {pkg > 0 && (
+                    <div>
+                      Courses charge ₹{fmtAmt(charged)} — a further package discount of <b>₹{fmtAmt(pkg)}</b> brings
+                      the agreed fee to <b>₹{fmtAmt(Number(form.fee_total) || 0)}</b>, credited to the earliest courses first.
+                    </div>
+                  )}
+                  {extra > 0 && (
+                    <div>
+                      Courses charge ₹{fmtAmt(charged)}; the agreed fee of <b>₹{fmtAmt(Number(form.fee_total) || 0)}</b> includes
+                      a further <b>₹{fmtAmt(extra)}</b> not tied to a course — registration or other charges.
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
             {localEnrollments.length === 0 && !showAddEnrollment ? (
               <p className="hint" style={{ textAlign: 'center', padding: 24 }}>No courses enrolled yet.</p>
             ) : (
@@ -1493,6 +1535,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                     <input type="number" value={feeEditVal} autoFocus
                                       onChange={function (e) { setFeeEditVal(e.target.value) }}
                                       style={{ width: 90, fontSize: 12, padding: '2px 6px' }} />
+                                    {/* Charge less than list and the difference is the
+                                        discount — shown as it is typed, so the person
+                                        giving it sees exactly what they are giving. */}
+                                    {cov.list > 0 && (function () {
+                                      const typed = parseInt(feeEditVal, 10)
+                                      const off   = isNaN(typed) ? 0 : cov.list - typed
+                                      return (
+                                        <span style={{ font: '500 11px var(--mono)', color: off > 0 ? 'var(--purple)' : 'var(--text3)' }}>
+                                          list ₹{fmtAmt(cov.list)}
+                                          {off > 0 ? ' · discount ₹' + fmtAmt(off) : off < 0 ? ' · ₹' + fmtAmt(-off) + ' above list' : ''}
+                                        </span>
+                                      )
+                                    })()}
                                     <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }}
                                       onClick={function () { saveCourseFee(en) }}>Save</button>
                                     <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }}
@@ -1503,6 +1558,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                     <span style={{ font: '700 12px var(--mono)', color: 'var(--text)' }}>
                                       ₹{fmtAmt(cov.fee)}
                                     </span>
+                                    {cov.off > 0 && (
+                                      <span title={'List price ₹' + fmtAmt(cov.list) + ' · discount ₹' + fmtAmt(cov.off)}
+                                        style={{ font: '600 10px var(--font)', color: 'var(--purple)', background: 'var(--purple-bg)', border: '1px solid var(--purple)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                        <s style={{ opacity: .7 }}>₹{fmtAmt(cov.list)}</s> · ₹{fmtAmt(cov.off)} off
+                                      </span>
+                                    )}
                                     {cov.due > 0 ? (
                                       <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
                                         ₹{fmtAmt(cov.due)} due
@@ -2521,7 +2582,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -2999,7 +3060,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
