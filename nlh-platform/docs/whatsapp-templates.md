@@ -21,6 +21,29 @@ Utility.
 
 `payment_receipt` serves student fees, franchisee fees and order payments alike.
 
+## Header types available
+
+Meta's builder offers **None · Text · Image · Video · Document · Location** for
+the header. What we use today, and what is worth knowing for later:
+
+| Header | Used by | Notes |
+|---|---|---|
+| None | `student_enrolled_v3`, `balance_reminder`, `order_dispatched_v2` | |
+| Image | `order_invoiced_v3`, `payment_receipt_v2`, `cert_issued_v2_` | PNG via a public URL; what we render with html2canvas |
+| Document | — | Would let a receipt or invoice go as a **PDF** rather than a PNG — better for a parent to file or forward, and no legibility limit on a phone. Needs a public URL and a filename. |
+| Location | — | Could carry a centre's address on an enrolment message |
+| Video | — | No use case |
+
+Two rules learned the hard way:
+
+- **A header component may only be sent to a template that declares one.**
+  Sending an image header to a body-only template fails with `131008`
+  (`'action' cannot be null`), which is why the image receipt needed its own
+  template rather than an extra parameter on `payment_receipt`.
+- **The reverse also fails.** `student_enrolled_v2` was built with an Order
+  Status header; the code sends only a body, so every send would have failed.
+  If a template does not need a header, set it to **None**.
+
 ## Pending: `payment_receipt_v2` (image header)
 
 Receipts are rendered to a PNG (`src/utils/captureReceipt.js`) so the document
