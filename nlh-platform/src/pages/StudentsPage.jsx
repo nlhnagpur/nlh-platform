@@ -74,6 +74,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     payment_status: student.payment_status || '',
     payment_mode: student.payment_mode || '',
     fee_total: student.fee_total ?? '',
+    other_charges: student.other_charges ?? 0,
     fee_paid: student.fee_paid ?? '',
   })
   const [certModal,   setCertModal]   = useState(null)
@@ -90,6 +91,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [enrolWaSending,  setEnrolWaSending]  = useState(false)
   const [feeEditId,       setFeeEditId]       = useState(null)
   const [feeEditVal,      setFeeEditVal]      = useState('')
+  const [otherEdit,       setOtherEdit]       = useState(false)
+  const [otherVal,        setOtherVal]        = useState('')
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
@@ -307,7 +310,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // Courses are priced at catalogue rate; whatever the student was agreed
     // below that is a discount, and it settles courses just as money does.
     // Without it a fully-paid student on a discounted package would show dues.
-    const discount  = Math.max(0, courseSum - (Number(form.fee_total) || 0))
+    const other     = Number(form.other_charges) || 0
+    const discount  = Math.max(0, courseSum + other - (Number(form.fee_total) || 0))
 
     const ordered = localEnrollments.slice().sort(function (a, b) {
       const ad = a.enrolled_at || a.created_at || ''
@@ -329,9 +333,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         off: Math.max(0, list - fee),
       }
     })
+    // Other charges settle last, after every course — they are the least
+    // urgent thing to chase and this keeps course dues the headline figure.
     out.__discount = discount
+    out.__other    = { fee: other, paid: Math.min(left, other), due: Math.max(0, other - Math.min(left, other)) }
     return out
-  }, [localEnrollments, payments, form.fee_total])
+  }, [localEnrollments, payments, form.fee_total, form.other_charges])
 
   // Change one course's list price. The student's agreed total is deliberately
   // left alone — it is what was settled with the parent, and the gap between
@@ -355,6 +362,23 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     showToast(off > 0
       ? 'Course fee ₹' + fmtAmt(val) + ' · discount of ₹' + fmtAmt(off) + ' recorded'
       : 'Course fee updated')
+  }
+
+  // Other charges change what the student owes, so unlike a course list price
+  // this DOES move the agreed total — it is a charge, not a re-pricing.
+  async function saveOtherCharges() {
+    const val = Math.max(0, parseInt(otherVal, 10) || 0)
+    const prev = Number(form.other_charges) || 0
+    const newTotal = Math.max(0, (Number(form.fee_total) || 0) - prev + val)
+    const { error } = await sb.from('students')
+      .update({ other_charges: val, fee_total: newTotal,
+                payment_status: deriveStatus(newTotal, Number(form.fee_paid) || 0) })
+      .eq('id', student.id)
+    if (error) { showToast('Could not save: ' + error.message, 'err'); return }
+    setForm(function (f) { return { ...f, other_charges: val, fee_total: newTotal } })
+    setOtherEdit(false)
+    onSaved({ ...student, other_charges: val, fee_total: newTotal })
+    showToast('Other charges ₹' + fmtAmt(val) + ' · agreed fee now ₹' + fmtAmt(newTotal))
   }
 
   // ── WhatsApp enrolment confirmation to the parent ──
@@ -1388,11 +1412,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
               }, 0)
               const pkg = feeCoverage.__discount || 0
               const charged = localEnrollments.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0)
-              // The agreed fee can also sit ABOVE the course prices — a
-              // registration or admission charge. Say so, or it looks like the
-              // courses simply fail to add up to the balance.
-              const extra = Math.max(0, (Number(form.fee_total) || 0) - charged)
-              if (perCourse === 0 && pkg === 0 && extra === 0) return null
+              // Anything above the course prices is now carried as an explicit
+              // Other charges line below, so nothing needs explaining here.
+              if (perCourse === 0 && pkg === 0) return null
               return (
                 <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 10,
                   background: 'var(--purple-bg)', border: '1px solid var(--purple)',
@@ -1404,12 +1426,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     <div>
                       Courses charge ₹{fmtAmt(charged)} — a further package discount of <b>₹{fmtAmt(pkg)}</b> brings
                       the agreed fee to <b>₹{fmtAmt(Number(form.fee_total) || 0)}</b>, credited to the earliest courses first.
-                    </div>
-                  )}
-                  {extra > 0 && (
-                    <div>
-                      Courses charge ₹{fmtAmt(charged)}; the agreed fee of <b>₹{fmtAmt(Number(form.fee_total) || 0)}</b> includes
-                      a further <b>₹{fmtAmt(extra)}</b> not tied to a course — registration or other charges.
                     </div>
                   )}
                 </div>
@@ -1751,6 +1767,55 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     </div>
                   )
                 })}
+
+                {/* ── Other charges — belong to the account, not a course ── */}
+                {(feeCoverage.__other?.fee > 0 || otherEdit) && (
+                  <div style={{ border: '1px dashed var(--border)', borderRadius: 10, padding: '10px 16px',
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'var(--bg2)' }}>
+                    <span style={{ font: '600 13px var(--font)', color: 'var(--text2)', flex: 1 }}>
+                      Other charges
+                      <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)', marginLeft: 6 }}>
+                        registration / admission — not tied to a course
+                      </span>
+                    </span>
+                    {otherEdit ? (
+                      <>
+                        <input type="number" value={otherVal} autoFocus
+                          onChange={function (e) { setOtherVal(e.target.value) }}
+                          style={{ width: 100, fontSize: 12, padding: '2px 6px' }} />
+                        <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }}
+                          onClick={saveOtherCharges}>Save</button>
+                        <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }}
+                          onClick={function () { setOtherEdit(false) }}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ font: '700 12px var(--mono)', color: 'var(--text)' }}>
+                          ₹{fmtAmt(feeCoverage.__other.fee)}
+                        </span>
+                        {feeCoverage.__other.due > 0 ? (
+                          <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
+                            ₹{fmtAmt(feeCoverage.__other.due)} due
+                          </span>
+                        ) : (
+                          <span style={{ font: '600 11px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 8px' }}>
+                            ✓ Paid
+                          </span>
+                        )}
+                        {canManageFees && (
+                          <button className="btn-s" style={{ fontSize: 10, padding: '1px 7px' }}
+                            onClick={function () { setOtherEdit(true); setOtherVal(String(feeCoverage.__other.fee)) }}>✎</button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+                {canManageFees && !(feeCoverage.__other?.fee > 0) && !otherEdit && (
+                  <button className="btn-s" style={{ fontSize: 11, alignSelf: 'flex-start', padding: '3px 10px' }}
+                    onClick={function () { setOtherEdit(true); setOtherVal('') }}>
+                    + Add other charges
+                  </button>
+                )}
 
                 {/* ── Add Course panel ── */}
                 {canEdit && (
