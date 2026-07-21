@@ -303,45 +303,43 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // course by course. Keyed by enrolment id.
   const feeCoverage = React.useMemo(function () {
     const paidTotal = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+    const courseSum = localEnrollments.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0)
+    // Courses are priced at catalogue rate; whatever the student was agreed
+    // below that is a discount, and it settles courses just as money does.
+    // Without it a fully-paid student on a discounted package would show dues.
+    const discount  = Math.max(0, courseSum - (Number(form.fee_total) || 0))
+
     const ordered = localEnrollments.slice().sort(function (a, b) {
       const ad = a.enrolled_at || a.created_at || ''
       const bd = b.enrolled_at || b.created_at || ''
       if (ad !== bd) return ad < bd ? -1 : 1     // oldest first
       return String(a.id) < String(b.id) ? -1 : 1
     })
-    let left = paidTotal
+    let left = paidTotal + discount
     const out = {}
     ordered.forEach(function (en) {
-      const fee  = Number(en.fee_amount) || 0
-      const paid = Math.min(left, fee)
-      left -= paid
-      out[en.id] = { fee: fee, paid: paid, due: Math.max(0, fee - paid) }
+      const fee     = Number(en.fee_amount) || 0
+      const covered = Math.min(left, fee)
+      left -= covered
+      out[en.id] = { fee: fee, paid: covered, due: Math.max(0, fee - covered) }
     })
+    out.__discount = discount
     return out
-  }, [localEnrollments, payments])
+  }, [localEnrollments, payments, form.fee_total])
 
-  // Change one course's fee. The student's agreed total is the sum of their
-  // courses, so it moves with the edit — otherwise the two silently diverge and
-  // the balance on the profile stops matching the courses below it.
+  // Change one course's list price. The student's agreed total is deliberately
+  // left alone — it is what was settled with the parent, and the gap between
+  // the two is the discount. Editing a course price here must not quietly
+  // re-bill the parent.
   async function saveCourseFee(en) {
     const val = Math.max(0, parseInt(feeEditVal, 10) || 0)
     const { error } = await sb.from('enrollments').update({ fee_amount: val }).eq('id', en.id)
     if (error) { showToast('Could not save the fee: ' + error.message, 'err'); return }
-
-    const next = localEnrollments.map(function (x) {
-      return x.id === en.id ? { ...x, fee_amount: val } : x
+    setLocalEnrollments(function (prev) {
+      return prev.map(function (x) { return x.id === en.id ? { ...x, fee_amount: val } : x })
     })
-    const newTotal = next.reduce(function (s, x) { return s + (Number(x.fee_amount) || 0) }, 0)
-    await sb.from('students').update({
-      fee_total: newTotal,
-      payment_status: deriveStatus(newTotal, Number(form.fee_paid) || 0),
-    }).eq('id', student.id)
-
-    setLocalEnrollments(next)
-    setForm(function (f) { return { ...f, fee_total: newTotal } })
     setFeeEditId(null)
-    onSaved({ ...student, fee_total: newTotal })
-    showToast('Course fee updated · student total now ₹' + fmtAmt(newTotal))
+    showToast('Course fee updated')
   }
 
   // ── WhatsApp enrolment confirmation to the parent ──
@@ -1159,7 +1157,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 <strong>Fee Tracking
                   {localEnrollments.length > 1 && (
                     <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginLeft: 8 }}>
-                      · total across {localEnrollments.length} courses — see Courses &amp; Batches for each
+                      · agreed total across {localEnrollments.length} courses — see Courses &amp; Batches for each
                     </span>
                   )}
                 </strong>
@@ -1362,6 +1360,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   onClick={sendEnrolmentWA}>
                   {enrolWaSending ? 'Sending…' : 'Send'}
                 </button>
+              </div>
+            )}
+            {/* Course prices are catalogue rates; say plainly why they add up to
+                more than the parent was asked for, or the figures look wrong. */}
+            {feeCoverage.__discount > 0 && (
+              <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 10,
+                background: 'var(--purple-bg)', border: '1px solid var(--purple)',
+                font: '500 11px var(--font)', color: 'var(--purple)' }}>
+                Course prices below total ₹{fmtAmt(localEnrollments.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0))} —
+                a discount of <b>₹{fmtAmt(feeCoverage.__discount)}</b> brings the agreed fee to <b>₹{fmtAmt(Number(form.fee_total) || 0)}</b>,
+                and is credited to the earliest courses first.
               </div>
             )}
             {localEnrollments.length === 0 && !showAddEnrollment ? (
