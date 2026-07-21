@@ -264,6 +264,9 @@ function emit(ctx, html) {
 // ── Fee Invoice (same design as the franchisee invoice) ───────────────────────
 // ctx.items: [{kind:'course'|'kit', sku_id, name, qty, amount}]  (fallback ctx.lines:[{name,fee,sku_id}])
 // ctx.summary: { discount, couponCode, total, paid, balance }
+//   `total` is the agreed fee and is what the parent sees. `discount` is used
+//   only to net down the line amounts when no total is supplied — it is never
+//   printed, and neither is the coupon code.
 export function printStudentInvoice(student, ctx) {
   let items = ctx.items
   if (!items && ctx.lines) items = ctx.lines.map(function (l) { return { kind: 'course', sku_id: l.sku_id, name: l.name, amount: l.fee || 0 } })
@@ -273,17 +276,34 @@ export function printStudentInvoice(student, ctx) {
   const subtotal = courses.reduce(function (a, c) { return a + (c.amount || 0) }, 0)
   const balance = s.balance != null ? s.balance : Math.max(0, (s.total || 0) - (s.paid || 0))
 
+  // The parent is quoted ONE agreed fee. Discounts, list prices and internal
+  // adjustments are our business, not theirs — so rather than declaring a
+  // discount line, the reduction is folded into the course amounts. The lines
+  // then add up to the agreed total, which is what the parent was told.
+  const netTotal = (s.total != null) ? s.total : Math.max(0, subtotal - (s.discount || 0))
+  const netAmount = (function () {
+    if (!courses.length || subtotal <= 0 || netTotal === subtotal) {
+      return function (c) { return c.amount || 0 }
+    }
+    let allocated = 0
+    const shares = courses.map(function (c, i) {
+      if (i === courses.length - 1) return netTotal - allocated   // last line takes the remainder
+      const share = Math.round((c.amount || 0) * netTotal / subtotal)
+      allocated += share
+      return share
+    })
+    return function (c, i) { return shares[i] }
+  })()
+
   const rows = courses.length ? courses.map(function (c, i) {
     const kits = items.filter(function (k) { return k.kind === 'kit' && k.sku_id === c.sku_id })
     const kitHtml = kits.length
       ? `<div class="kit"><span class="k1">Kit:</span>${kits.map(function (k) { return `<span class="k2">${esc(k.name)}${k.qty > 1 ? ' ×' + k.qty : ''}</span>` }).join('')}</div>`
       : ''
-    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(c.name)}</div>${kitHtml}</div><div class="amt r">₹${fmtAmt(c.amount || 0)}</div></div>`
+    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(c.name)}</div>${kitHtml}</div><div class="amt r">₹${fmtAmt(netAmount(c, i))}</div></div>`
   }).join('') : `<div class="ir"><div></div><div class="nm" style="color:#9C9A92">No courses on this invoice.</div><div></div></div>`
 
   const trows =
-    `<div class="trow"><span class="l">Subtotal</span><span class="v">₹${fmtAmt(subtotal)}</span></div>` +
-    (s.discount > 0 ? `<div class="trow"><span class="l">Discount${s.couponCode ? ' (' + esc(s.couponCode) + ')' : ''}</span><span class="v" style="color:#1D7A4F">− ₹${fmtAmt(s.discount)}</span></div>` : '') +
     `<div class="trow"><span class="l">Amount paid</span><span class="v" style="color:${(s.paid || 0) > 0 ? '#1D7A4F' : '#9C9A92'}">${(s.paid || 0) > 0 ? '₹' + fmtAmt(s.paid) : '—'}</span></div>` +
     `<div class="trow" style="border:none"><span class="l">Balance due</span><span class="v" style="color:${balance > 0 ? '#A32D2D' : '#1D7A4F'}">₹${fmtAmt(balance)}</span></div>`
 
