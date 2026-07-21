@@ -23,6 +23,42 @@ export const WA_TEMPLATES = {
   reviewRequest:   'review_request',     // legitimately Marketing — leave as is
 }
 
+// ── What the recipient actually reads ────────────────────────────────────────
+// Meta renders the template server-side, so nothing comes back that we can log.
+// These mirror the approved bodies so the Inbox shows the real message instead
+// of a one-line label. They are a COPY: reword a template in Meta and the
+// matching function here must be reworded too, or the log quietly drifts from
+// what was sent. Footer text is omitted — it is identical on every template.
+const WA_FOOTER = '\n\nAutomated message · do not reply · www.nlhnagpur.info'
+
+export const WA_BODIES = {
+  orderInvoiced: function (p) {
+    return `Hi ${p.name}, your order has been invoiced.\n\n` +
+           `Invoice: ${p.invoiceNo}\nAmount: ₹${p.amount}\n\n` +
+           `The invoice is attached above.` + WA_FOOTER
+  },
+  orderDispatched: function (p) {
+    return `Hi ${p.name}, your order ${p.invoiceNo} has been dispatched.\n\n` +
+           `AWB: ${p.awb}\nCourier: ${p.courier}\nCourier charges: ${p.freight}\n\n` +
+           `Track it with the courier using the AWB number above.` + WA_FOOTER
+  },
+  studentEnrolled: function (p) {
+    return `Hi ${p.parentName}, ${p.studentName} has been enrolled for ${p.courses} ` +
+           `at ${p.centre}, New Learning Horizons.\n\n` +
+           `Your centre will share the batch schedule with you shortly.\n\n` +
+           `For any queries, please contact your centre.` + WA_FOOTER
+  },
+  paymentReceipt: function (p) {
+    return `Dear ${p.name}, we have received your payment.\n\n` +
+           `Receipt no: ${p.receiptNo}\nAmount: ₹${p.amount}\nDate: ${p.date}\nStatus: ${p.status}\n\n` +
+           `The receipt is attached above. Thank you.` + WA_FOOTER
+  },
+  balanceReminder: function (p) {
+    return `Dear ${p.name}, this is a reminder that ₹${p.balance} is outstanding ` +
+           `against ${p.towards}.\n\nPlease arrange payment at your convenience.` + WA_FOOTER
+  },
+}
+
 async function waAuthHeaders() {
   const { data: { session } } = await sb.auth.getSession()
   return {
@@ -117,7 +153,7 @@ export async function sendWAOrderInvoiced(to, { name, invoiceNo, amount, imageUr
   return sendWA(to, {
     type: 'template',
     template: { name: WA_TEMPLATES.orderInvoiced, language: { code: 'en' }, components },
-  }, '🧾 Invoice ' + invoiceNo + ' · ₹' + amount, imageUrl)
+  }, WA_BODIES.orderInvoiced({ name: name, invoiceNo: invoiceNo, amount: amount }), imageUrl)
 }
 
 // ── Template: order_dispatched ────────────────────────────────────────────────
@@ -144,7 +180,8 @@ export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier,
         ],
       }],
     },
-  }, '📦 Dispatched ' + invoiceNo + ' · AWB ' + (awb || '—') + ' (' + (courier || 'courier') + ') · freight ' + freightText)
+  }, WA_BODIES.orderDispatched({ name: name, invoiceNo: invoiceNo, awb: awb || '—',
+       courier: courier || 'courier', freight: freightText }))
 }
 
 // ── Template: payment_received ────────────────────────────────────────────────
@@ -184,7 +221,10 @@ export async function sendWAStudentReceipt(to, { name, receiptNo, amount, date, 
     }),
   })
   const data = await res.json()
-  if (data && data.success) logOutbound(to, '🧾 Receipt ' + (receiptNo || '') + ' · ₹' + amount + (Number(balance) > 0 ? ' · ₹' + balance + ' due' : ' · fully paid'), 'template', waMsgId(data), withImage ? imageUrl : null)
+  if (data && data.success) logOutbound(to, WA_BODIES.paymentReceipt({
+    name: name, receiptNo: receiptNo || '—', amount: amount, date: date || '',
+    status: Number(balance) > 0 ? '₹' + balance + ' remaining' : 'Fully paid',
+  }), 'template', waMsgId(data), withImage ? imageUrl : null)
   return data
 }
 
@@ -206,7 +246,8 @@ export async function sendWAStudentEnrolled(to, { parentName, studentName, cours
         ],
       }],
     },
-  }, '🎓 Enrolled ' + studentName + ' · ' + courses)
+  }, WA_BODIES.studentEnrolled({ parentName: parentName || 'Parent', studentName: studentName,
+       courses: courses, centre: centre }))
 }
 
 
@@ -264,5 +305,5 @@ export async function sendWAFeeReminder(to, { name, balance, towards }) {
         ],
       }],
     },
-  }, '⏰ Balance reminder · ₹' + balance + ' due')
+  }, WA_BODIES.balanceReminder({ name: name, balance: balance, towards: towards || 'your account' }))
 }

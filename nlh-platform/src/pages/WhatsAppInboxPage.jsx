@@ -244,7 +244,8 @@ export default function WhatsAppInboxPage() {
                       })()}
                       <div style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
                         {hasNew && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#25D366', flexShrink: 0, display: 'inline-block' }} />}
-                        {c.lastMsg || '—'}
+                        {/* One-line preview of a multi-line message */}
+                        {(c.lastMsg || '—').replace(/\s*\n+\s*/g, ' · ')}
                       </div>
                     </div>
                     <div style={{ fontSize: 16, color: 'var(--text3)', flexShrink: 0 }}>›</div>
@@ -311,7 +312,11 @@ export default function WhatsAppInboxPage() {
                                 style={{ maxWidth: '100%', borderRadius: 10, display: 'block', border: '1px solid rgba(0,0,0,.08)' }} />
                             </a>
                           )}
-                          <div style={{ color: '#1a1a1a' }}>{m.message_body || '[' + m.message_type + ']'}</div>
+                          {/* Templates are multi-line; without this the whole
+                              message collapses onto one run-on line. */}
+                          <div style={{ color: '#1a1a1a', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {m.message_body || '[' + m.message_type + ']'}
+                          </div>
                           <div style={{ fontSize: 10, color: '#999', marginTop: 4, textAlign: 'right', display: 'flex', gap: 3, justifyContent: 'flex-end', alignItems: 'center' }}>
                             {fmtTime(m.created_at)}
                             {isOut && (
