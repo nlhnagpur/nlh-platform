@@ -88,6 +88,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
   const [remindSending,   setRemindSending]   = useState(false)
   const [enrolWaSending,  setEnrolWaSending]  = useState(false)
+  const [feeEditId,       setFeeEditId]       = useState(null)
+  const [feeEditVal,      setFeeEditVal]      = useState('')
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
@@ -291,6 +293,55 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     if (r && r.success) showToast('Receipt resent on WhatsApp ✓')
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
+  }
+
+  // ── Course-wise fee coverage ───────────────────────────────────────────────
+  // Payments are recorded against the STUDENT, not a course, so there is no
+  // recorded answer to "which course did this money pay for". We apply the
+  // total received to courses oldest-first — a settlement order, not an
+  // allocation of specific receipts — so staff can see what is still owed
+  // course by course. Keyed by enrolment id.
+  const feeCoverage = React.useMemo(function () {
+    const paidTotal = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+    const ordered = localEnrollments.slice().sort(function (a, b) {
+      const ad = a.enrolled_at || a.created_at || ''
+      const bd = b.enrolled_at || b.created_at || ''
+      if (ad !== bd) return ad < bd ? -1 : 1     // oldest first
+      return String(a.id) < String(b.id) ? -1 : 1
+    })
+    let left = paidTotal
+    const out = {}
+    ordered.forEach(function (en) {
+      const fee  = Number(en.fee_amount) || 0
+      const paid = Math.min(left, fee)
+      left -= paid
+      out[en.id] = { fee: fee, paid: paid, due: Math.max(0, fee - paid) }
+    })
+    return out
+  }, [localEnrollments, payments])
+
+  // Change one course's fee. The student's agreed total is the sum of their
+  // courses, so it moves with the edit — otherwise the two silently diverge and
+  // the balance on the profile stops matching the courses below it.
+  async function saveCourseFee(en) {
+    const val = Math.max(0, parseInt(feeEditVal, 10) || 0)
+    const { error } = await sb.from('enrollments').update({ fee_amount: val }).eq('id', en.id)
+    if (error) { showToast('Could not save the fee: ' + error.message, 'err'); return }
+
+    const next = localEnrollments.map(function (x) {
+      return x.id === en.id ? { ...x, fee_amount: val } : x
+    })
+    const newTotal = next.reduce(function (s, x) { return s + (Number(x.fee_amount) || 0) }, 0)
+    await sb.from('students').update({
+      fee_total: newTotal,
+      payment_status: deriveStatus(newTotal, Number(form.fee_paid) || 0),
+    }).eq('id', student.id)
+
+    setLocalEnrollments(next)
+    setForm(function (f) { return { ...f, fee_total: newTotal } })
+    setFeeEditId(null)
+    onSaved({ ...student, fee_total: newTotal })
+    showToast('Course fee updated · student total now ₹' + fmtAmt(newTotal))
   }
 
   // ── WhatsApp enrolment confirmation to the parent ──
@@ -722,7 +773,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -922,7 +973,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1105,7 +1156,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <strong>Fee Tracking</strong>
+                <strong>Fee Tracking
+                  {localEnrollments.length > 1 && (
+                    <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginLeft: 8 }}>
+                      · total across {localEnrollments.length} courses — see Courses &amp; Batches for each
+                    </span>
+                  )}
+                </strong>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {canManageFees && balance > 0 && (
                     <button className="btn-s" style={{ fontSize: 12, padding: '5px 12px' }}
@@ -1409,6 +1466,60 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               Not assigned to a batch
                             </div>
                           )}
+
+                          {/* Fee for THIS course, and how far the money received
+                              reaches. Payments are held against the student, not
+                              a course, so coverage is applied oldest course first
+                              — an indication of what is settled, not an
+                              allocation of specific receipts. */}
+                          {(function () {
+                            const cov = feeCoverage[en.id]
+                            if (!cov) return null
+                            const editing = feeEditId === en.id
+                            return (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                                <span style={{ font: '600 11px var(--mono)', color: 'var(--text3)' }}>FEE</span>
+                                {editing ? (
+                                  <>
+                                    <input type="number" value={feeEditVal} autoFocus
+                                      onChange={function (e) { setFeeEditVal(e.target.value) }}
+                                      style={{ width: 90, fontSize: 12, padding: '2px 6px' }} />
+                                    <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }}
+                                      onClick={function () { saveCourseFee(en) }}>Save</button>
+                                    <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }}
+                                      onClick={function () { setFeeEditId(null) }}>Cancel</button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span style={{ font: '700 12px var(--mono)', color: 'var(--text)' }}>
+                                      ₹{fmtAmt(cov.fee)}
+                                    </span>
+                                    {cov.due > 0 ? (
+                                      <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
+                                        ₹{fmtAmt(cov.due)} due
+                                      </span>
+                                    ) : (
+                                      <span style={{ font: '600 11px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 8px' }}>
+                                        ✓ Paid
+                                      </span>
+                                    )}
+                                    {cov.paid > 0 && cov.due > 0 && (
+                                      <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)' }}>
+                                        ₹{fmtAmt(cov.paid)} received
+                                      </span>
+                                    )}
+                                    {canManageFees && (
+                                      <button className="btn-s" style={{ fontSize: 10, padding: '1px 7px' }}
+                                        title="Change this course's fee"
+                                        onClick={function () { setFeeEditId(en.id); setFeeEditVal(String(cov.fee)) }}>
+                                        ✎
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })()}
                         </div>
 
                         {/* Complete / WhatsApp / Certificate buttons */}
@@ -2401,7 +2512,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -2879,7 +2990,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
