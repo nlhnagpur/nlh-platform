@@ -14,7 +14,7 @@ Utility.
 |---|---|---|---|
 | `orderInvoiced` | `order_invoiced_v3` | Utility | Image (invoice PNG) |
 | `orderDispatched` | `order_dispatched_v2` | Utility | — |
-| `studentEnrolled` | `student_enrolled_v2` | Utility | — |
+| `studentEnrolled` | `student_enrolled_v3` | Utility | — |
 | `balanceReminder` | `balance_reminder` | Utility | — |
 | `reviewRequest` | `review_request` | Marketing | — |
 | — | `payment_receipt` | Utility | — |

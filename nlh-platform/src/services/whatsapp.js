@@ -11,7 +11,9 @@ import { sb } from '../supabase'
 export const WA_TEMPLATES = {
   orderInvoiced:   'order_invoiced_v3',   // v2 was an Order Details (WhatsApp Pay) type
   orderDispatched: 'order_dispatched_v2',
-  studentEnrolled: 'student_enrolled_v2',
+  // v2 declared an Order Status header the code never sent, so every send
+  // failed with 131008. v3 is the same four body variables, header None.
+  studentEnrolled: 'student_enrolled_v3',
   balanceReminder: 'balance_reminder',   // universal: students + franchisees
   // Image-header variant of `payment_receipt`, carrying a PNG of the receipt.
   // Same five body variables in the same order, so the text template remains a
