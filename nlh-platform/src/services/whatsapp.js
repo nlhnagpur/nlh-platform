@@ -57,6 +57,20 @@ export const WA_BODIES = {
     return `Dear ${p.name}, this is a reminder that ₹${p.balance} is outstanding ` +
            `against ${p.towards}.\n\nPlease arrange payment at your convenience.` + WA_FOOTER
   },
+  // The review link is static inside the approved template, so it is repeated
+  // here rather than passed in.
+  reviewRequest: function (p) {
+    return `Dear ${p.parentName}, congratulations to ${p.studentName} on completing ` +
+           `${p.courseName} at New Learning Horizons.\n\n` +
+           `If you are happy with your experience, a short Google review would mean a lot to us:\n` +
+           `https://g.page/r/nlhnagpur/review\n\nThank you!` + WA_FOOTER
+  },
+  certIssued: function (p) {
+    return `Congratulations ${p.studentName}!\n\n` +
+           `Dear ${p.parentName}, we are delighted to share ${p.studentName}'s ` +
+           `Certificate of Accomplishment for successfully completing ${p.courseName} ` +
+           `at New Learning Horizons.\n\nThe certificate is attached above.` + WA_FOOTER
+  },
 }
 
 async function waAuthHeaders() {
@@ -282,7 +296,10 @@ export async function sendWAReviewRequest(to, { parentName, studentName, courseN
     body: JSON.stringify({ to, parentName, studentName, courseName }),
   })
   const data = await res.json()
-  if (data && data.success) logOutbound(to, '⭐ Google review request · ' + (studentName || '') + (courseName ? ' (' + courseName + ')' : ''), 'template', waMsgId(data))
+  if (data && data.success) logOutbound(to, WA_BODIES.reviewRequest({
+    parentName: parentName || 'Parent', studentName: studentName || 'your child',
+    courseName: courseName || 'the course',
+  }), 'template', waMsgId(data))
   return data
 }
 
