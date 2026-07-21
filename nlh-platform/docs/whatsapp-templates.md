@@ -13,7 +13,7 @@ Utility.
 | Key | Template | Category | Header |
 |---|---|---|---|
 | `orderInvoiced` | `order_invoiced_v3` | Utility | Image (invoice PNG) |
-| `orderDispatched` | `order_dispatched_v2` | Utility | — |
+| `orderDispatched` | `order_dispatched_v3` | Utility | — |
 | `studentEnrolled` | `student_enrolled_v3` | Utility | — |
 | `balanceReminder` | `balance_reminder` | Utility | — |
 | `reviewRequest` | `review_request` | Marketing | — |
@@ -28,7 +28,7 @@ the header. What we use today, and what is worth knowing for later:
 
 | Header | Used by | Notes |
 |---|---|---|
-| None | `student_enrolled_v3`, `balance_reminder`, `order_dispatched_v2` | |
+| None | `student_enrolled_v3`, `balance_reminder`, `order_dispatched_v3` | |
 | Image | `order_invoiced_v3`, `payment_receipt_v2`, `cert_issued_v2_` | PNG via a public URL; what we render with html2canvas |
 | Document | — | Would let a receipt or invoice go as a **PDF** rather than a PNG — better for a parent to file or forward, and no legibility limit on a phone. Needs a public URL and a filename. |
 | Location | — | Could carry a centre's address on an enrolment message |

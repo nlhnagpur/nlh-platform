@@ -2,6 +2,7 @@
 // All messages go through the NLH landline +91 712 351 4575 (Meta Cloud API)
 
 import { sb } from '../supabase'
+import { fmtAmt } from '../utils'
 
 // ── Meta template names — single source of truth ─────────────────────────────
 // Meta classifies templates by CONTENT, not by name, and anything it rules
@@ -10,7 +11,7 @@ import { sb } from '../supabase'
 // UTILITY templates. Changing a template in Meta = change the name here only.
 export const WA_TEMPLATES = {
   orderInvoiced:   'order_invoiced_v3',   // v2 was an Order Details (WhatsApp Pay) type
-  orderDispatched: 'order_dispatched_v2',
+  orderDispatched: 'order_dispatched_v3',   // v2 had no courier-charges variable
   // v2 declared an Order Status header the code never sent, so every send
   // failed with 131008. v3 is the same four body variables, header None.
   studentEnrolled: 'student_enrolled_v3',
@@ -121,7 +122,12 @@ export async function sendWAOrderInvoiced(to, { name, invoiceNo, amount, imageUr
 
 // ── Template: order_dispatched ────────────────────────────────────────────────
 // Params: {{1}} franchisee name, {{2}} invoice_no, {{3}} AWB number, {{4}} courier
-export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier }) {
+// {{5}} freight: what the franchisee will be charged for carriage. Left blank
+// or zero it reads "As per actuals" — dispatch often happens before the courier
+// bills us, and a bare "₹0" would be read as free delivery.
+export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier, freight }) {
+  const amt = Number(freight)
+  const freightText = amt > 0 ? '₹' + fmtAmt(amt) : 'As per actuals'
   return sendWA(to, {
     type: 'template',
     template: {
@@ -134,10 +140,11 @@ export async function sendWAOrderDispatched(to, { name, invoiceNo, awb, courier 
           { type: 'text', text: invoiceNo },
           { type: 'text', text: awb || '—' },
           { type: 'text', text: courier || 'courier' },
+          { type: 'text', text: freightText },
         ],
       }],
     },
-  }, '📦 Dispatched ' + invoiceNo + ' · AWB ' + (awb || '—') + ' (' + (courier || 'courier') + ')')
+  }, '📦 Dispatched ' + invoiceNo + ' · AWB ' + (awb || '—') + ' (' + (courier || 'courier') + ') · freight ' + freightText)
 }
 
 // ── Template: payment_received ────────────────────────────────────────────────

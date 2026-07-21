@@ -529,6 +529,9 @@ function DispatchModal({ order, onClose, onSaved }) {
             invoiceNo: order.invoice_no || order.id,
             awb:       awb.trim(),
             courier:   courier.trim() || 'courier',
+            // Blank here is meaningful: the courier often bills us after
+            // dispatch, and the template then reads "As per actuals".
+            freight:   freight !== '' ? parseInt(freight, 10) || 0 : 0,
           })
           if (r && r.success) showToast('Dispatch update sent on WhatsApp ✓')
           else showToast('Dispatched · WhatsApp update failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
