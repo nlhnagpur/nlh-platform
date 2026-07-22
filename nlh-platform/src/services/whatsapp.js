@@ -57,19 +57,22 @@ export const WA_BODIES = {
     return `Dear ${p.name}, this is a reminder that ₹${p.balance} is outstanding ` +
            `against ${p.towards}.\n\nPlease arrange payment at your convenience.` + WA_FOOTER
   },
-  // The review link is static inside the approved template, so it is repeated
-  // here rather than passed in.
+  // The Google review link is static inside the approved template, so it is
+  // repeated here. Note this template carries its OWN footer, not WA_FOOTER.
   reviewRequest: function (p) {
-    return `Dear ${p.parentName}, congratulations to ${p.studentName} on completing ` +
-           `${p.courseName} at New Learning Horizons.\n\n` +
-           `If you are happy with your experience, a short Google review would mean a lot to us:\n` +
-           `https://g.page/r/nlhnagpur/review\n\nThank you!` + WA_FOOTER
+    return `Dear ${p.parentName},\n\n` +
+           `Congratulations! ${p.studentName} has successfully completed ${p.courseName} ` +
+           `at New Learning Horizons. 🎉\n\n` +
+           `We'd love your feedback — a quick Google review means a lot to us:\n` +
+           `https://g.page/r/CQW0Giwe5ILEEBM/review\n\n` +
+           `Thank you for being part of the NLH family! 🌟\n\nnlhnagpur.info`
   },
   certIssued: function (p) {
-    return `Congratulations ${p.studentName}!\n\n` +
-           `Dear ${p.parentName}, we are delighted to share ${p.studentName}'s ` +
-           `Certificate of Accomplishment for successfully completing ${p.courseName} ` +
-           `at New Learning Horizons.\n\nThe certificate is attached above.` + WA_FOOTER
+    return `Congratulations ${p.studentName}! 🎓\n\n` +
+           `Dear ${p.parentName},\n\n` +
+           `Your child has successfully completed ${p.courseName} at New Learning Horizons.\n\n` +
+           `The certificate is attached above.\n\n` +
+           `For any queries, please contact your centre.` + WA_FOOTER
   },
 }
 
