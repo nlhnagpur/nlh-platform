@@ -21,8 +21,17 @@ npx supabase migration list          # compare local vs remote
 npx supabase migration fetch         # write remote migrations into ./migrations
 ```
 
-`fetch` writes one file per migration as `<timestamp>_<name>.sql`, with
-checksums the CLI recognises, so `supabase db push` continues to work.
+`fetch` writes one file per migration as `<timestamp>_<name>.sql`. The CLI
+reconciles local and remote by the version prefix in the filename, so keep
+those exact.
+
+> The 87 files present as of 21 Jul 2026 were pulled directly out of
+> `supabase_migrations.schema_migrations` rather than by `migration fetch`,
+> because the CLI was not logged in. The content is byte-identical to what was
+> applied and the version prefixes match, so `migration list` should line them
+> up. Run `migration list` once after logging in to confirm; if any row shows
+> as local-only, `supabase migration repair --status applied <version>` fixes
+> the bookkeeping without re-running the SQL.
 
 ## Applying a new migration
 
