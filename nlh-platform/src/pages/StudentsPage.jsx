@@ -152,14 +152,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [deleting, setDeleting] = useState(false)
   const [closing,  setClosing]  = useState(false)
 
-  const balance = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
+  // A waiver is a permanent credit, not a payment — so it settles fees like
+  // money without inflating "paid". This is what lets a re-joined student's
+  // balance reflect only the new course, with the written-off past staying gone.
+  const waivedCredit  = Number(form.waived_amount) || 0
+  const effectivePaid = (Number(form.fee_paid) || 0) + waivedCredit
+  const balance = Math.max(0, (Number(form.fee_total) || 0) - effectivePaid)
 
   function field(k) {
     return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
   }
 
   // deriveStatus is defined at module level — shared with AddStudentModal
-  const derivedStatus = deriveStatus(form.fee_total, form.fee_paid)
+  const derivedStatus = deriveStatus(form.fee_total, effectivePaid)
 
   async function save() {
     setSaving(true)
@@ -946,9 +951,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const discount = addCoupon ? Math.min(addCoupon.discount, addedFee) : 0
     const netAdded = Math.max(0, addedFee - discount)
     const newFeeTotal = (Number(form.fee_total) || 0) + netAdded
-    if (addedFee > 0) {
-      await sb.from('students').update({ fee_total: newFeeTotal, payment_status: deriveStatus(newFeeTotal, form.fee_paid) }).eq('id', student.id)
-      setForm(function (f) { return { ...f, fee_total: newFeeTotal } })
+    // Re-joining a closed student: adding a course reactivates the account, but
+    // the past stays settled — dropped courses stay dropped, the waiver stays a
+    // credit. So the new course starts fresh and the written-off balance never
+    // returns. deriveStatus counts fee_paid + waiver as covered, leaving only
+    // the new course due.
+    const rejoining   = form.is_active === false
+    const effPaid     = (Number(form.fee_paid) || 0) + (Number(form.waived_amount) || 0)
+    if (addedFee > 0 || rejoining) {
+      const patch = { fee_total: newFeeTotal, payment_status: deriveStatus(newFeeTotal, effPaid) }
+      if (rejoining) { patch.is_active = true; patch.closed_at = null; patch.close_reason = null }
+      await sb.from('students').update(patch).eq('id', student.id)
+      setForm(function (f) { return { ...f, fee_total: newFeeTotal, ...(rejoining ? { is_active: true } : {}) } })
+      if (rejoining) { onSaved({ ...student, is_active: true, fee_total: newFeeTotal }); showToast('Welcome back — account reactivated for the new course') }
     }
     // Coupon applied to the added fee but not locked here — it redeems when the
     // first fee payment is received (see recordPayment).
@@ -1468,7 +1483,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 ⊘ Account closed{student.closed_at ? ' · ' + fmtDate(String(student.closed_at).slice(0, 10)) : ''}
                 {(Number(form.waived_amount) || 0) > 0 && ' · ₹' + fmtAmt(form.waived_amount) + ' waived'}
                 {student.close_reason ? ' · ' + student.close_reason : ''}
-                <span style={{ fontWeight: 500, color: '#7f1d1d' }}> — reopen from the footer to make changes.</span>
+                <div style={{ fontWeight: 500, color: '#7f1d1d', marginTop: 4 }}>
+                  Use <b>+ Add Course</b> below to re-join for a fresh course — the past stays closed and the waived balance does not return.
+                  To undo this closure entirely, <b>Reopen</b> from the footer.
+                </div>
               </div>
             )}
             {/* The enrolment confirmation is otherwise only offered on Add
