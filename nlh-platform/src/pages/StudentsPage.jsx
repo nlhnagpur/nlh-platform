@@ -31,6 +31,16 @@ function deriveStatus(total, paid) {
   return 'partial'
 }
 
+// The stored phone must be a bare 10-digit mobile — that is what links to
+// WhatsApp (toWAPhone prepends 91 on send). Strip anything else, drop a leading
+// country code (91) or trunk 0 if the extra digits push past 10, and cap at 10.
+function to10Digit(raw) {
+  let d = String(raw || '').replace(/\D/g, '')
+  if (d.length > 10 && d.startsWith('91')) d = d.slice(2)   // +91 / 91 prefix
+  if (d.length > 10 && d.startsWith('0'))  d = d.slice(1)   // trunk 0
+  return d.slice(0, 10)
+}
+
 function StatusBadge({ status }) {
   const s = (status || '').toLowerCase()
   const map = { active: 'ba', inactive: 'bd', pending: 'bp' }
@@ -167,6 +177,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const derivedStatus = deriveStatus(form.fee_total, effectivePaid)
 
   async function save() {
+    if (to10Digit(form.phone).length !== 10) { showToast('Enter a valid 10-digit mobile number (no country code)', 'warn'); return }
     setSaving(true)
     const feeTotal = form.fee_total === '' ? null : Number(form.fee_total)
     // fee_paid is NOT written here — it is maintained by the payment ledger
@@ -178,7 +189,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       camp_name:      form.camp_name.trim() || null,
       dob:            form.dob || null,
       registered_at:  form.registered_at || null,
-      phone:          form.phone.trim(),
+      phone:          to10Digit(form.phone),
       email:          form.email.trim() || null,
       pincode:        form.pincode.trim() || null,
       country:        form.country.trim(),
@@ -1223,7 +1234,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!canEdit} />
               </label>
               <label>Phone
-                <input value={form.phone} onChange={field('phone')} disabled={!canEdit} />
+                <input value={form.phone}
+                  onChange={function (e) { setForm(function (f) { return { ...f, phone: to10Digit(e.target.value) } }) }}
+                  inputMode="numeric" maxLength={10}
+                  placeholder="10-digit mobile — no country code"
+                  disabled={!canEdit} />
               </label>
               <label>Parent Email
                 <input type="email" value={form.email} onChange={field('email')} disabled={!canEdit} placeholder="parent@email.com" />
@@ -2636,7 +2651,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
   async function save() {
     if (!form.full_name.trim()) { showToast('Student name is required', 'warn'); return }
-    if (!form.phone.trim()) { showToast('Parent mobile number is required', 'warn'); return }
+    if (to10Digit(form.phone).length !== 10) { showToast('Enter a valid 10-digit mobile number (no country code)', 'warn'); return }
     if (!form.email.trim() || !form.email.includes('@')) { showToast('Parent email address is required', 'warn'); return }
     if (!form.franchisee_id) { showToast('Please select a centre', 'warn'); return }
 
@@ -2652,7 +2667,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         camp_name: form.camp_name.trim() || null,
         dob: form.dob || null,
         registered_at: form.registered_at || new Date().toISOString().slice(0, 10),
-        phone: form.phone.trim(),
+        phone: to10Digit(form.phone),
         email: form.email.trim() || null,
         pincode: form.pincode.trim() || null,
         city: form.city.trim(),
@@ -2833,8 +2848,10 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             </label>
             <input
               value={form.phone}
-              onChange={field('phone')}
-              placeholder="10-digit parent / guardian mobile"
+              onChange={function (e) { setForm(function (f) { return { ...f, phone: to10Digit(e.target.value) } }) }}
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="10-digit mobile — no country code"
               autoFocus
               style={{ fontSize: 15, letterSpacing: '0.5px', fontWeight: 600 }}
             />
