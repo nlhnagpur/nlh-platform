@@ -2545,9 +2545,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
     setPhoneConfirmed(false)
     if (!form.phone || form.phone.replace(/\D/g, '').length < 10) { setPhoneMatches([]); return }
     const timer = setTimeout(async function () {
+      // Match on the digit string, not the exact text — a stored "+91 96232…"
+      // must still match a typed "96232…", or a duplicate gets created for a
+      // student who is already on file (the whole point of this lookup).
+      const digits = form.phone.replace(/\D/g, '').slice(-10)
       const { data } = await sb.from('students')
-        .select('id, full_name, parent_name, franchisee_id, franchisees(business_name, city), enrollments(id, sku_id, skus(level_name, courses(group_name)))')
-        .eq('phone', form.phone.trim())
+        .select('id, full_name, parent_name, franchisee_id, is_active, payment_status, closed_at, franchisees(business_name, city), enrollments(id, sku_id, status, skus(level_name, courses(group_name)))')
+        .ilike('phone', '%' + digits + '%')
       setPhoneMatches(data || [])
     }, 500)
     return function () { clearTimeout(timer) }
@@ -2845,7 +2849,10 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           {phoneMatches.length > 0 && !phoneConfirmed && (
             <div>
               <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
-                {phoneMatches.length} student{phoneMatches.length > 1 ? 's' : ''} found with this number:
+                Already on file — {phoneMatches.length} student{phoneMatches.length > 1 ? 's' : ''} with this number.
+                {phoneMatches.some(function (s) { return s.is_active === false }) && (
+                  <span style={{ fontWeight: 500, color: 'var(--text3)' }}> Open a closed one to re-join them for a new course — no re-entry needed.</span>
+                )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                 {phoneMatches.map(function (st) {
@@ -2873,7 +2880,14 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                         alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                       }}>{initials}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ font: '700 13px var(--font)', color: 'var(--text)' }}>{st.full_name}</div>
+                        <div style={{ font: '700 13px var(--font)', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {st.full_name}
+                          {st.is_active === false && (
+                            <span style={{ font: '600 9px var(--font)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '1px 7px' }}>
+                              ⊘ Closed — re-join
+                            </span>
+                          )}
+                        </div>
                         {st.parent_name && (
                           <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
                             Parent: {st.parent_name}
@@ -3381,9 +3395,17 @@ export default function StudentsPage() {
     setShowAdd(false)
   }
 
-  function handleOpenExisting(st) {
+  async function handleOpenExisting(st) {
     setShowAdd(false)
-    setSelected(st)
+    // The lookup card carries only a few fields; the profile needs the whole
+    // row (fees, waiver, all enrolments). Prefer the already-loaded copy, else
+    // fetch it — a closed student from another centre may not be in the list.
+    const loaded = students.find(function (s) { return s.id === st.id })
+    if (loaded) { setSelected(loaded); return }
+    const { data } = await sb.from('students')
+      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+      .eq('id', st.id).single()
+    setSelected(data || st)
   }
 
   // Tone index per course name (cycle through 8 tones)
