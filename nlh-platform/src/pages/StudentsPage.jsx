@@ -76,6 +76,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     fee_total: student.fee_total ?? '',
     other_charges: student.other_charges ?? 0,
     fee_paid: student.fee_paid ?? '',
+    is_active: student.is_active !== false,
+    waived_amount: student.waived_amount ?? 0,
+    payment_status: student.payment_status || 'pending',
   })
   const [certModal,   setCertModal]   = useState(null)
   const [centreCache, setCentreCache] = useState(null)
@@ -147,6 +150,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
   // ── Delete state ──
   const [deleting, setDeleting] = useState(false)
+  const [closing,  setClosing]  = useState(false)
 
   const balance = (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0)
 
@@ -320,6 +324,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // Without it a fully-paid student on a discounted package would show dues.
     const other     = Number(form.other_charges) || 0
     const discount  = Math.max(0, courseSum + other - (Number(form.fee_total) || 0))
+    // A waiver settles courses exactly as money does, so a closed student's
+    // course cards read Paid/settled rather than still showing dues.
+    const waived    = Number(form.waived_amount) || 0
 
     const ordered = localEnrollments.slice().sort(function (a, b) {
       const ad = a.enrolled_at || a.created_at || ''
@@ -327,7 +334,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       if (ad !== bd) return ad < bd ? -1 : 1     // oldest first
       return String(a.id) < String(b.id) ? -1 : 1
     })
-    let left = paidTotal + discount
+    let left = paidTotal + discount + waived
     const out = {}
     ordered.forEach(function (en) {
       const fee     = Number(en.fee_amount) || 0
@@ -346,7 +353,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     out.__discount = discount
     out.__other    = { fee: other, paid: Math.min(left, other), due: Math.max(0, other - Math.min(left, other)) }
     return out
-  }, [localEnrollments, payments, form.fee_total, form.other_charges])
+  }, [localEnrollments, payments, form.fee_total, form.other_charges, form.waived_amount])
 
   // Change one course's list price. The student's agreed total is deliberately
   // left alone — it is what was settled with the parent, and the gap between
@@ -1024,6 +1031,69 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   }
 
   // ── Delete student (admin only) ──
+  // Close a student who left mid-course: discontinue any unfinished courses (no
+  // certificate), waive the outstanding balance (recorded, never a payment) and
+  // deactivate them. Reversible — nothing is deleted.
+  async function closeStudentAccount() {
+    const bal = Math.max(0, (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0))
+    const msg = 'Close ' + student.full_name + "'s account?\n\n" +
+      '• Unfinished courses will be marked Discontinued (no certificate)\n' +
+      (bal > 0 ? '• The outstanding ₹' + fmtAmt(bal) + ' will be WAIVED (written off, not collected)\n' : '') +
+      '• The student will be moved to Inactive\n\nThis can be reopened later.'
+    if (!window.confirm(msg)) return
+    const reason = window.prompt('Reason for closing (optional) — e.g. discontinued, relocated:', '')
+    if (reason === null) return   // cancelled the second dialog
+
+    setClosing(true)
+    const openEnr = localEnrollments.filter(function (e) { return !e.completed_at })
+    if (openEnr.length > 0) {
+      await sb.from('enrollments').update({ status: 'dropped' })
+        .in('id', openEnr.map(function (e) { return e.id }))
+    }
+    const { error } = await sb.from('students').update({
+      is_active:      false,
+      payment_status: bal > 0 ? 'waived' : form.payment_status,
+      waived_amount:  bal,
+      closed_at:      new Date().toISOString(),
+      close_reason:   reason.trim() || null,
+    }).eq('id', student.id)
+    setClosing(false)
+    if (error) { showToast('Could not close the account: ' + error.message, 'err'); return }
+
+    setLocalEnrollments(function (prev) {
+      return prev.map(function (e) { return e.completed_at ? e : { ...e, status: 'dropped' } })
+    })
+    setForm(function (f) { return { ...f, is_active: false, waived_amount: bal,
+      payment_status: bal > 0 ? 'waived' : f.payment_status } })
+    showToast(bal > 0
+      ? 'Account closed · ₹' + fmtAmt(bal) + ' waived'
+      : 'Account closed')
+    onSaved({ ...student, is_active: false, payment_status: bal > 0 ? 'waived' : student.payment_status, closed_at: new Date().toISOString() })
+  }
+
+  async function reopenStudentAccount() {
+    if (!window.confirm('Reopen ' + student.full_name + "'s account? They return to Active. Waived fees become due again, and discontinued courses become active.")) return
+    setClosing(true)
+    const discEnr = localEnrollments.filter(function (e) { return e.status === 'dropped' })
+    if (discEnr.length > 0) {
+      await sb.from('enrollments').update({ status: 'active' })
+        .in('id', discEnr.map(function (e) { return e.id }))
+    }
+    const restored = deriveStatus(Number(form.fee_total) || 0, Number(form.fee_paid) || 0)
+    const { error } = await sb.from('students').update({
+      is_active: true, payment_status: restored, waived_amount: 0,
+      closed_at: null, close_reason: null,
+    }).eq('id', student.id)
+    setClosing(false)
+    if (error) { showToast('Could not reopen: ' + error.message, 'err'); return }
+    setLocalEnrollments(function (prev) {
+      return prev.map(function (e) { return e.status === 'dropped' ? { ...e, status: 'active' } : e })
+    })
+    setForm(function (f) { return { ...f, is_active: true, waived_amount: 0, payment_status: restored } })
+    showToast('Account reopened')
+    onSaved({ ...student, is_active: true, payment_status: restored, closed_at: null })
+  }
+
   async function deleteStudent() {
     if (!window.confirm('Permanently delete ' + student.full_name + ' and ALL their records (enrollments, batch assignments)?\n\nThis CANNOT be undone.')) return
     setDeleting(true)
@@ -1391,6 +1461,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {/* ── COURSES & BATCHES TAB ── */}
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
+            {form.is_active === false && (
+              <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10,
+                background: '#fef2f2', border: '1px solid #fca5a5',
+                font: '600 12px var(--font)', color: '#991b1b' }}>
+                ⊘ Account closed{student.closed_at ? ' · ' + fmtDate(String(student.closed_at).slice(0, 10)) : ''}
+                {(Number(form.waived_amount) || 0) > 0 && ' · ₹' + fmtAmt(form.waived_amount) + ' waived'}
+                {student.close_reason ? ' · ' + student.close_reason : ''}
+                <span style={{ fontWeight: 500, color: '#7f1d1d' }}> — reopen from the footer to make changes.</span>
+              </div>
+            )}
             {/* The enrolment confirmation is otherwise only offered on Add
                 Student — there was no way to send it after a course is added
                 later, or to re-send one the parent missed. */}
@@ -1488,7 +1568,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   const courseName  = en.skus?.courses?.group_name || '—'
                   const levelName   = en.skus?.level_name || '—'
 
-                  const isCompleted  = !!en.completed_at
+                  const isCompleted     = !!en.completed_at
+                  const isDiscontinued  = en.status === 'dropped'
                   const attended     = sessionCounts[en.id] || 0
                   const totalSess    = skuTotals[en.sku_id] || 0
                   const billingType  = skuBilling[en.sku_id] || null
@@ -1514,6 +1595,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             {isCompleted && (
                               <span style={{ font: '600 10px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 7px', whiteSpace: 'nowrap' }}>
                                 ✓ Completed{en.completed_at ? ' · ' + fmtDate(String(en.completed_at).slice(0, 10)) : ''}
+                              </span>
+                            )}
+                            {isDiscontinued && !isCompleted && (
+                              <span style={{ font: '600 10px var(--font)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                                ⊘ Discontinued
                               </span>
                             )}
                             <span style={{ font: '600 10px var(--mono)', color: sessionsDone ? '#B45309' : 'var(--purple)', background: sessionsDone ? '#FEF3C7' : 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
@@ -2327,6 +2413,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             >
               {deleting ? 'Deleting…' : '🗑 Delete Student'}
             </button>
+          )}
+          {/* Close / reopen — the correct way to end a mid-course leaver's
+              account, as opposed to Delete which erases the record entirely. */}
+          {canEdit && (form.is_active === false
+            ? <button className="btn" onClick={reopenStudentAccount} disabled={closing}>
+                {closing ? '…' : '↩ Reopen Account'}
+              </button>
+            : <button className="btn" style={{ color: '#92400e', borderColor: '#fbbf24' }}
+                onClick={closeStudentAccount} disabled={closing}>
+                {closing ? '…' : '⊘ Close / Withdraw'}
+              </button>
           )}
           <button className="btn" onClick={onClose}>Close</button>
           {canEdit && tab === 'profile' && (
@@ -3149,6 +3246,7 @@ export default function StudentsPage() {
   const [centreFilter, setCentreFilter] = useState('')
   const [centreFilterTouched, setCentreFilterTouched] = useState(false)
   const [sortBy, setSortBy] = useState('activity')   // activity | name | joined | balance
+  const [showClosed, setShowClosed] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -3232,11 +3330,16 @@ export default function StudentsPage() {
     return t
   }
 
+  const closedCount = students.filter(function (s) { return s.is_active === false }).length
   const filtered = students.filter(function (s) {
     const q = search.toLowerCase()
     const matchesSearch = !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
     const matchesCentre = !centreFilter || s.franchisee_id === centreFilter
-    return matchesSearch && matchesCentre
+    // Closed students are hidden unless explicitly shown, so the roster and its
+    // totals reflect who is actually studying. A search match reveals them
+    // regardless, so a closed student is never truly lost.
+    const matchesActive = showClosed || s.is_active !== false || (q && matchesSearch)
+    return matchesSearch && matchesCentre && matchesActive
   }).sort(function (a, b) {
     if (sortBy === 'name')    return (a.full_name || '').localeCompare(b.full_name || '')
     if (sortBy === 'joined')  return new Date(b.registered_at || b.created_at || 0) - new Date(a.registered_at || a.created_at || 0)
@@ -3332,6 +3435,13 @@ export default function StudentsPage() {
             <option value="name">Name (A–Z)</option>
             <option value="balance">Balance due</option>
           </select>
+          {closedCount > 0 && (
+            <button className="btn btn-s" onClick={function () { setShowClosed(function (v) { return !v }) }}
+              title={showClosed ? 'Hide closed accounts' : 'Show closed accounts'}
+              style={showClosed ? { background: '#fef2f2', borderColor: '#fca5a5', color: '#991b1b' } : null}>
+              {showClosed ? '⊘ Hiding' : '⊘ Closed'} ({closedCount})
+            </button>
+          )}
           <input
             className="search tb-search"
             placeholder="Search students by name or parent…"
