@@ -3621,7 +3621,10 @@ export default function StudentsPage() {
         {(function() {
           const totalCharged  = filtered.reduce(function(s, r) { return s + (Number(r.fee_total) || 0) }, 0)
           const totalReceived = filtered.reduce(function(s, r) { return s + (Number(r.fee_paid)  || 0) }, 0)
-          const totalBalance  = totalCharged - totalReceived
+          // Written-off fees are not collectible, so they leave the balance due:
+          // billed − collected − waived, the standard receivables view.
+          const totalWaived   = filtered.reduce(function(s, r) { return s + (Number(r.waived_amount) || 0) }, 0)
+          const totalBalance  = Math.max(0, totalCharged - totalReceived - totalWaived)
           return (
             <div className="mini-stats">
               <div className="mini">
