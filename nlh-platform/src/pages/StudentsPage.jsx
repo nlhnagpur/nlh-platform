@@ -3479,7 +3479,10 @@ export default function StudentsPage() {
   }).sort(function (a, b) {
     if (sortBy === 'name')    return (a.full_name || '').localeCompare(b.full_name || '')
     if (sortBy === 'joined')  return new Date(b.registered_at || b.created_at || 0) - new Date(a.registered_at || a.created_at || 0)
-    if (sortBy === 'balance') return ((b.fee_total || 0) - (b.fee_paid || 0)) - ((a.fee_total || 0) - (a.fee_paid || 0))
+    if (sortBy === 'balance') {
+      const bal = function (s) { return Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0) - (s.waived_amount || 0)) }
+      return bal(b) - bal(a)
+    }
     return lastActivity(b) - lastActivity(a)   // 'activity' (default)
   })
 
@@ -3681,7 +3684,10 @@ export default function StudentsPage() {
                   <tr><td colSpan={showCentreCol ? 10 : 9} className="empty">No students found</td></tr>
                 )}
                 {filtered.map(function (s) {
-                  const balance = (s.fee_total || 0) - (s.fee_paid || 0)
+                  // Waived amounts are settled, not owed — the profile subtracts
+                  // them, so the list must too or a written-off student reads as
+                  // still owing.
+                  const balance = Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0) - (s.waived_amount || 0))
                   const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean))]
                   const monthEnd = daysLeftInMonth() <= 5
                   return (
