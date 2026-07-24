@@ -31,6 +31,58 @@ function deriveStatus(total, paid) {
   return 'partial'
 }
 
+// Course-wise fee settlement. Payments are held against the STUDENT, not a
+// course, so we settle courses oldest-first from a pool of real credits
+// (payments + the package discount). A DROPPED (discontinued) course waives
+// only its OWN unpaid remainder — it never lends that waiver to another course,
+// which is the whole point of being able to drop one course while others stay
+// due. Other charges settle last. Returns { perId, discount, waivedTotal,
+// activeOutstanding, other }.
+function computeCoverage(enrollments, payments, feeTotalRaw, otherRaw) {
+  const list      = enrollments || []
+  const paidTotal = (payments || []).reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+  const courseSum = list.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0)
+  const other     = Number(otherRaw) || 0
+  const feeTotal  = Number(feeTotalRaw) || 0
+  // Charged below list = a discount, which settles courses like money does.
+  const discount  = Math.max(0, courseSum + other - feeTotal)
+
+  const ordered = list.slice().sort(function (a, b) {
+    const ad = a.enrolled_at || a.created_at || ''
+    const bd = b.enrolled_at || b.created_at || ''
+    if (ad !== bd) return ad < bd ? -1 : 1     // oldest first
+    return String(a.id) < String(b.id) ? -1 : 1
+  })
+
+  let pool = paidTotal + discount
+  let waivedTotal = 0
+  let activeDue   = 0
+  const perId = {}
+  ordered.forEach(function (en) {
+    const fee     = Number(en.fee_amount) || 0
+    const listP   = Number(en.list_price) || 0
+    const covered = Math.min(pool, fee)
+    pool -= covered
+    const remaining = Math.max(0, fee - covered)
+    const dropped   = en.status === 'dropped'
+    if (dropped) waivedTotal += remaining
+    else         activeDue   += remaining
+    perId[en.id] = {
+      fee: fee, list: listP, off: Math.max(0, listP - fee),
+      paid: covered, due: remaining, dropped: dropped,
+    }
+  })
+
+  const otherCovered = Math.min(pool, other)
+  const otherDue     = Math.max(0, other - otherCovered)
+
+  return {
+    perId: perId, discount: discount, waivedTotal: waivedTotal,
+    activeOutstanding: activeDue + otherDue,
+    other: { fee: other, paid: otherCovered, due: otherDue },
+  }
+}
+
 // The stored phone must be a bare 10-digit mobile — that is what links to
 // WhatsApp (toWAPhone prepends 91 on send). Strip anything else, drop a leading
 // country code (91) or trunk 0 if the extra digits push past 10, and cap at 10.
@@ -114,6 +166,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [feeEditVal,      setFeeEditVal]      = useState('')
   const [otherEdit,       setOtherEdit]       = useState(false)
   const [otherVal,        setOtherVal]        = useState('')
+  const [courseBusy,      setCourseBusy]      = useState(null)
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
@@ -162,19 +215,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [deleting, setDeleting] = useState(false)
   const [closing,  setClosing]  = useState(false)
 
-  // A waiver is a permanent credit, not a payment — so it settles fees like
-  // money without inflating "paid". This is what lets a re-joined student's
-  // balance reflect only the new course, with the written-off past staying gone.
-  const waivedCredit  = Number(form.waived_amount) || 0
-  const effectivePaid = (Number(form.fee_paid) || 0) + waivedCredit
-  const balance = Math.max(0, (Number(form.fee_total) || 0) - effectivePaid)
+  // Balance and per-course dues both come from one settlement pass, so a
+  // discontinued course's waiver can never leak into an active course's due.
+  const coverage = computeCoverage(localEnrollments, payments, form.fee_total, form.other_charges)
+  const balance  = coverage.activeOutstanding
 
   function field(k) {
     return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
   }
 
-  // deriveStatus is defined at module level — shared with AddStudentModal
-  const derivedStatus = deriveStatus(form.fee_total, effectivePaid)
+  // Status follows the genuinely-owed (active) balance, not the raw fee.
+  const derivedStatus = deriveStatus(form.fee_total, (Number(form.fee_total) || 0) - balance)
 
   async function save() {
     if (to10Digit(form.phone).length !== 10) { showToast('Enter a valid 10-digit mobile number (no country code)', 'warn'); return }
@@ -326,50 +377,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
-  // ── Course-wise fee coverage ───────────────────────────────────────────────
-  // Payments are recorded against the STUDENT, not a course, so there is no
-  // recorded answer to "which course did this money pay for". We apply the
-  // total received to courses oldest-first — a settlement order, not an
-  // allocation of specific receipts — so staff can see what is still owed
-  // course by course. Keyed by enrolment id.
-  const feeCoverage = React.useMemo(function () {
-    const paidTotal = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
-    const courseSum = localEnrollments.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0)
-    // Courses are priced at catalogue rate; whatever the student was agreed
-    // below that is a discount, and it settles courses just as money does.
-    // Without it a fully-paid student on a discounted package would show dues.
-    const other     = Number(form.other_charges) || 0
-    const discount  = Math.max(0, courseSum + other - (Number(form.fee_total) || 0))
-    // A waiver settles courses exactly as money does, so a closed student's
-    // course cards read Paid/settled rather than still showing dues.
-    const waived    = Number(form.waived_amount) || 0
-
-    const ordered = localEnrollments.slice().sort(function (a, b) {
-      const ad = a.enrolled_at || a.created_at || ''
-      const bd = b.enrolled_at || b.created_at || ''
-      if (ad !== bd) return ad < bd ? -1 : 1     // oldest first
-      return String(a.id) < String(b.id) ? -1 : 1
-    })
-    let left = paidTotal + discount + waived
-    const out = {}
-    ordered.forEach(function (en) {
-      const fee     = Number(en.fee_amount) || 0
-      const list    = Number(en.list_price) || 0
-      const covered = Math.min(left, fee)
-      left -= covered
-      out[en.id] = {
-        fee: fee, paid: covered, due: Math.max(0, fee - covered),
-        list: list,
-        // What this course was actually discounted by, from two stored figures
-        off: Math.max(0, list - fee),
-      }
-    })
-    // Other charges settle last, after every course — they are the least
-    // urgent thing to chase and this keeps course dues the headline figure.
-    out.__discount = discount
-    out.__other    = { fee: other, paid: Math.min(left, other), due: Math.max(0, other - Math.min(left, other)) }
-    return out
-  }, [localEnrollments, payments, form.fee_total, form.other_charges, form.waived_amount])
+  // Per-course view over the single settlement pass above.
+  const feeCoverage = coverage.perId
 
   // Change one course's list price. The student's agreed total is deliberately
   // left alone — it is what was settled with the parent, and the gap between
@@ -967,10 +976,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // credit. So the new course starts fresh and the written-off balance never
     // returns. deriveStatus counts fee_paid + waiver as covered, leaving only
     // the new course due.
-    const rejoining   = form.is_active === false
-    const effPaid     = (Number(form.fee_paid) || 0) + (Number(form.waived_amount) || 0)
+    const rejoining = form.is_active === false
     if (addedFee > 0 || rejoining) {
-      const patch = { fee_total: newFeeTotal, payment_status: deriveStatus(newFeeTotal, effPaid) }
+      // Status from the settlement pass over the combined set: dropped courses
+      // stay waived, the new active course carries its own due — the written-off
+      // past never returns.
+      const nextSet = localEnrollments.concat(added || [])
+      const cov2 = computeCoverage(nextSet, payments, newFeeTotal, form.other_charges)
+      const paidTotal = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+      const status = cov2.activeOutstanding > 0 ? (paidTotal > 0 ? 'partial' : 'pending')
+                   : (cov2.waivedTotal > 0 ? 'waived' : (newFeeTotal > 0 ? 'paid' : 'none'))
+      const patch = { fee_total: newFeeTotal, payment_status: status }
       if (rejoining) { patch.is_active = true; patch.closed_at = null; patch.close_reason = null }
       await sb.from('students').update(patch).eq('id', student.id)
       setForm(function (f) { return { ...f, fee_total: newFeeTotal, ...(rejoining ? { is_active: true } : {}) } })
@@ -1056,12 +1072,64 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (updated) onSaved(updated)
   }
 
+  // Payment status for a candidate enrolment set: owed → partial/pending;
+  // fully settled with a waiver in play → waived; otherwise paid/none.
+  function statusForSet(nextEnr) {
+    const cov = computeCoverage(nextEnr, payments, form.fee_total, form.other_charges)
+    const paidTotal = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
+    let status
+    if (cov.activeOutstanding > 0) status = paidTotal > 0 ? 'partial' : 'pending'
+    else if (cov.waivedTotal > 0)  status = 'waived'
+    else status = (Number(form.fee_total) || 0) > 0 ? 'paid' : 'none'
+    return { cov: cov, status: status }
+  }
+
+  // Discontinue ONE course: mark it dropped (no certificate) and waive only its
+  // own unpaid remainder. The student stays active; other courses are untouched.
+  async function discontinueCourse(en) {
+    const cov = feeCoverage[en.id] || {}
+    const label = (en.skus?.courses?.group_name || '') + (en.skus?.level_name ? ' — ' + en.skus.level_name : '')
+    const msg = 'Discontinue ' + (label || 'this course') + '?\n\n' +
+      '• Marked Discontinued — no certificate\n' +
+      (cov.due > 0 ? '• Its unpaid ₹' + fmtAmt(cov.due) + ' will be WAIVED (written off)\n' : '') +
+      '\nThe student stays active. This can be undone.'
+    if (!window.confirm(msg)) return
+    setCourseBusy(en.id)
+    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'dropped' } : e })
+    const { status } = statusForSet(next)
+    const w = computeCoverage(next, payments, form.fee_total, form.other_charges).waivedTotal
+    const { error } = await sb.from('enrollments').update({ status: 'dropped' }).eq('id', en.id)
+    if (!error) await sb.from('students').update({ waived_amount: w, payment_status: status }).eq('id', student.id)
+    setCourseBusy(null)
+    if (error) { showToast('Could not discontinue: ' + error.message, 'err'); return }
+    setLocalEnrollments(next)
+    setForm(function (f) { return { ...f, waived_amount: w, payment_status: status } })
+    showToast(cov.due > 0 ? 'Course discontinued · ₹' + fmtAmt(cov.due) + ' waived' : 'Course discontinued')
+    onSaved({ ...student, waived_amount: w, payment_status: status })
+  }
+
+  // Undo a discontinuation — the course becomes active and its fee due again.
+  async function restoreCourse(en) {
+    setCourseBusy(en.id)
+    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'active' } : e })
+    const { status } = statusForSet(next)
+    const w = computeCoverage(next, payments, form.fee_total, form.other_charges).waivedTotal
+    const { error } = await sb.from('enrollments').update({ status: 'active' }).eq('id', en.id)
+    if (!error) await sb.from('students').update({ waived_amount: w, payment_status: status }).eq('id', student.id)
+    setCourseBusy(null)
+    if (error) { showToast('Could not restore: ' + error.message, 'err'); return }
+    setLocalEnrollments(next)
+    setForm(function (f) { return { ...f, waived_amount: w, payment_status: status } })
+    showToast('Course restored')
+    onSaved({ ...student, waived_amount: w, payment_status: status })
+  }
+
   // ── Delete student (admin only) ──
-  // Close a student who left mid-course: discontinue any unfinished courses (no
+  // Close a student who left mid-course: discontinue every unfinished course (no
   // certificate), waive the outstanding balance (recorded, never a payment) and
   // deactivate them. Reversible — nothing is deleted.
   async function closeStudentAccount() {
-    const bal = Math.max(0, (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0))
+    const bal = balance
     const msg = 'Close ' + student.full_name + "'s account?\n\n" +
       '• Unfinished courses will be marked Discontinued (no certificate)\n' +
       (bal > 0 ? '• The outstanding ₹' + fmtAmt(bal) + ' will be WAIVED (written off, not collected)\n' : '') +
@@ -1071,30 +1139,25 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (reason === null) return   // cancelled the second dialog
 
     setClosing(true)
-    const openEnr = localEnrollments.filter(function (e) { return !e.completed_at })
+    const openEnr = localEnrollments.filter(function (e) { return !e.completed_at && e.status !== 'dropped' })
     if (openEnr.length > 0) {
       await sb.from('enrollments').update({ status: 'dropped' })
         .in('id', openEnr.map(function (e) { return e.id }))
     }
+    const next = localEnrollments.map(function (e) { return e.completed_at ? e : { ...e, status: 'dropped' } })
+    const w = computeCoverage(next, payments, form.fee_total, form.other_charges).waivedTotal
+    const status = w > 0 ? 'waived' : form.payment_status
     const { error } = await sb.from('students').update({
-      is_active:      false,
-      payment_status: bal > 0 ? 'waived' : form.payment_status,
-      waived_amount:  bal,
-      closed_at:      new Date().toISOString(),
-      close_reason:   reason.trim() || null,
+      is_active: false, payment_status: status, waived_amount: w,
+      closed_at: new Date().toISOString(), close_reason: reason.trim() || null,
     }).eq('id', student.id)
     setClosing(false)
     if (error) { showToast('Could not close the account: ' + error.message, 'err'); return }
 
-    setLocalEnrollments(function (prev) {
-      return prev.map(function (e) { return e.completed_at ? e : { ...e, status: 'dropped' } })
-    })
-    setForm(function (f) { return { ...f, is_active: false, waived_amount: bal,
-      payment_status: bal > 0 ? 'waived' : f.payment_status } })
-    showToast(bal > 0
-      ? 'Account closed · ₹' + fmtAmt(bal) + ' waived'
-      : 'Account closed')
-    onSaved({ ...student, is_active: false, payment_status: bal > 0 ? 'waived' : student.payment_status, closed_at: new Date().toISOString() })
+    setLocalEnrollments(next)
+    setForm(function (f) { return { ...f, is_active: false, waived_amount: w, payment_status: status } })
+    showToast(w > 0 ? 'Account closed · ₹' + fmtAmt(w) + ' waived' : 'Account closed')
+    onSaved({ ...student, is_active: false, payment_status: status, closed_at: new Date().toISOString() })
   }
 
   async function reopenStudentAccount() {
@@ -1105,19 +1168,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       await sb.from('enrollments').update({ status: 'active' })
         .in('id', discEnr.map(function (e) { return e.id }))
     }
-    const restored = deriveStatus(Number(form.fee_total) || 0, Number(form.fee_paid) || 0)
+    const next = localEnrollments.map(function (e) { return e.status === 'dropped' ? { ...e, status: 'active' } : e })
+    const { status } = statusForSet(next)
     const { error } = await sb.from('students').update({
-      is_active: true, payment_status: restored, waived_amount: 0,
+      is_active: true, payment_status: status, waived_amount: 0,
       closed_at: null, close_reason: null,
     }).eq('id', student.id)
     setClosing(false)
     if (error) { showToast('Could not reopen: ' + error.message, 'err'); return }
-    setLocalEnrollments(function (prev) {
-      return prev.map(function (e) { return e.status === 'dropped' ? { ...e, status: 'active' } : e })
-    })
-    setForm(function (f) { return { ...f, is_active: true, waived_amount: 0, payment_status: restored } })
+    setLocalEnrollments(next)
+    setForm(function (f) { return { ...f, is_active: true, waived_amount: 0, payment_status: status } })
     showToast('Account reopened')
-    onSaved({ ...student, is_active: true, payment_status: restored, closed_at: null })
+    onSaved({ ...student, is_active: true, payment_status: status, closed_at: null })
   }
 
   async function deleteStudent() {
@@ -1561,7 +1623,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
               const perCourse = localEnrollments.reduce(function (s, e) {
                 return s + Math.max(0, (Number(e.list_price) || 0) - (Number(e.fee_amount) || 0))
               }, 0)
-              const pkg = feeCoverage.__discount || 0
+              const pkg = coverage.discount || 0
               const charged = localEnrollments.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0)
               // Anything above the course prices is now carried as an explicit
               // Other charges line below, so nothing needs explaining here.
@@ -1737,7 +1799,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                         <s style={{ opacity: .7 }}>₹{fmtAmt(cov.list)}</s> · ₹{fmtAmt(cov.off)} off
                                       </span>
                                     )}
-                                    {cov.due > 0 ? (
+                                    {cov.dropped ? (
+                                      <span style={{ font: '600 11px var(--font)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '1px 8px' }}>
+                                        {cov.due > 0 ? '₹' + fmtAmt(cov.due) + ' waived' : 'Settled'}
+                                      </span>
+                                    ) : cov.due > 0 ? (
                                       <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
                                         ₹{fmtAmt(cov.due)} due
                                       </span>
@@ -1766,7 +1832,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         </div>
 
                         {/* Complete / WhatsApp / Certificate buttons */}
-                        {canEdit && !isCompleted && (
+                        {canEdit && !isCompleted && !isDiscontinued && (
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
                             onClick={function () {
@@ -1774,6 +1840,25 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               setCompletingEnr(en)
                             }}>
                             ✓ Complete
+                          </button>
+                        )}
+                        {/* Discontinue one course (student stays active); restore to undo */}
+                        {canEdit && !isCompleted && !isDiscontinued && (
+                          <button className="btn-s"
+                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: '#92400e', borderColor: '#fbbf24' }}
+                            disabled={courseBusy === en.id}
+                            onClick={function () { discontinueCourse(en) }}
+                            title="Mark this course discontinued and waive its unpaid fee">
+                            {courseBusy === en.id ? '…' : '⊘ Discontinue'}
+                          </button>
+                        )}
+                        {canEdit && isDiscontinued && (
+                          <button className="btn-s"
+                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
+                            disabled={courseBusy === en.id}
+                            onClick={function () { restoreCourse(en) }}
+                            title="Undo — the course becomes active and its fee due again">
+                            {courseBusy === en.id ? '…' : '↩ Restore'}
                           </button>
                         )}
                         {isCompleted && (
@@ -1784,23 +1869,25 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             💬 Review
                           </button>
                         )}
-                        <button
-                          className="btn-s"
-                          style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
-                          onClick={async function () {
-                            let centre = centreCache
-                            if (!centre && student.franchisee_id) {
-                              const { data } = await sb.from('franchisees')
-                                .select('id,business_name,city,area,country,tier')
-                                .eq('id', student.franchisee_id).single()
-                              centre = data || null
-                              setCentreCache(centre)
-                            }
-                            setCertModal({ enrollments: localEnrollments, centre })
-                          }}
-                        >
-                          {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
-                        </button>
+                        {!isDiscontinued && (
+                          <button
+                            className="btn-s"
+                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
+                            onClick={async function () {
+                              let centre = centreCache
+                              if (!centre && student.franchisee_id) {
+                                const { data } = await sb.from('franchisees')
+                                  .select('id,business_name,city,area,country,tier')
+                                  .eq('id', student.franchisee_id).single()
+                                centre = data || null
+                                setCentreCache(centre)
+                              }
+                              setCertModal({ enrollments: localEnrollments, centre })
+                            }}
+                          >
+                            {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
+                          </button>
+                        )}
 
                         {/* Assign batch toggle */}
                         {canEdit && (
@@ -1926,7 +2013,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 })}
 
                 {/* ── Other charges — belong to the account, not a course ── */}
-                {(feeCoverage.__other?.fee > 0 || otherEdit) && (
+                {(coverage.other?.fee > 0 || otherEdit) && (
                   <div style={{ border: '1px dashed var(--border)', borderRadius: 10, padding: '10px 16px',
                     display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'var(--bg2)' }}>
                     <span style={{ font: '600 13px var(--font)', color: 'var(--text2)', flex: 1 }}>
@@ -1948,11 +2035,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     ) : (
                       <>
                         <span style={{ font: '700 12px var(--mono)', color: 'var(--text)' }}>
-                          ₹{fmtAmt(feeCoverage.__other.fee)}
+                          ₹{fmtAmt(coverage.other.fee)}
                         </span>
-                        {feeCoverage.__other.due > 0 ? (
+                        {coverage.other.due > 0 ? (
                           <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
-                            ₹{fmtAmt(feeCoverage.__other.due)} due
+                            ₹{fmtAmt(coverage.other.due)} due
                           </span>
                         ) : (
                           <span style={{ font: '600 11px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 8px' }}>
@@ -1961,13 +2048,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         )}
                         {canManageFees && (
                           <button className="btn-s" style={{ fontSize: 10, padding: '1px 7px' }}
-                            onClick={function () { setOtherEdit(true); setOtherVal(String(feeCoverage.__other.fee)) }}>✎</button>
+                            onClick={function () { setOtherEdit(true); setOtherVal(String(coverage.other.fee)) }}>✎</button>
                         )}
                       </>
                     )}
                   </div>
                 )}
-                {canManageFees && !(feeCoverage.__other?.fee > 0) && !otherEdit && (
+                {canManageFees && !(coverage.other?.fee > 0) && !otherEdit && (
                   <button className="btn-s" style={{ fontSize: 11, alignSelf: 'flex-start', padding: '3px 10px' }}
                     onClick={function () { setOtherEdit(true); setOtherVal('') }}>
                     + Add other charges
