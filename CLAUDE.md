@@ -17,6 +17,17 @@ Founded 2008, Nagpur, Maharashtra. 16 skill-based courses, ages 2–21.
 - URL: https://frnnoxudtlvhyyoqdqzx.supabase.co
 - Anon key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE
 
+## Migrations — keep the repo in sync
+Every migration applied to the hosted DB (via `apply_migration` or the dashboard)
+MUST also land in `nlh-platform/supabase/migrations/` or the repo drifts and the
+schema can't be rebuilt. When YOU apply a migration, in the same turn write the
+file `supabase/migrations/<version>_<name>.sql` using the version the DB assigned
+(`select version from supabase_migrations.schema_migrations order by version desc limit 1`).
+For a bulk catch-up (e.g. SQL applied outside a session), run `npm run db:sync`
+in nlh-platform — it pulls the true history via the service-role `export_migrations()`
+RPC (needs `SUPABASE_SERVICE_KEY` in `.env.local`). A PostToolUse hook also runs
+db:sync automatically after each apply_migration on the owner's machine.
+
 ## Email (Brevo)
 - API key in index.html (var BREVO_KEY)
 - SMTP: smtp-relay.brevo.com:587 / aa0d69001@smtp-brevo.com

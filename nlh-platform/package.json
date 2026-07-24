@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:sync": "node scripts/sync-migrations.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium-min": "^149.0.0",
