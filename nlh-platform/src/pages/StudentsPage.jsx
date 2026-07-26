@@ -31,20 +31,20 @@ function deriveStatus(total, paid) {
   return 'partial'
 }
 
-// Course-wise fee settlement. Payments are held against the STUDENT, not a
-// course, so we settle courses oldest-first from a pool of real credits
-// (payments + the package discount). A DROPPED (discontinued) course waives
-// only its OWN unpaid remainder — it never lends that waiver to another course,
-// which is the whole point of being able to drop one course while others stay
-// due. Other charges settle last. Returns { perId, discount, waivedTotal,
-// activeOutstanding, other }.
+// Course-wise fee settlement. Payments are held against the STUDENT, so we
+// settle courses oldest-first from a pool of real credits (payments + the
+// package discount). A waiver is NOT a separate thing here: discontinuing a
+// course reduces its fee_amount (and the student's fee_total) exactly like a
+// discount, and the amount is stored per course as `waived` purely for display
+// and reversal. So the true balance is always fee_total - fee_paid — nothing to
+// subtract. Returns { perId, discount, waivedTotal, activeOutstanding, other }.
 function computeCoverage(enrollments, payments, feeTotalRaw, otherRaw) {
   const list      = enrollments || []
   const paidTotal = (payments || []).reduce(function (s, p) { return s + (p.amount || 0) }, 0)
   const courseSum = list.reduce(function (s, e) { return s + (Number(e.fee_amount) || 0) }, 0)
   const other     = Number(otherRaw) || 0
   const feeTotal  = Number(feeTotalRaw) || 0
-  // Charged below list = a discount, which settles courses like money does.
+  // Charged below list = a discount (or a waiver, treated identically).
   const discount  = Math.max(0, courseSum + other - feeTotal)
 
   const ordered = list.slice().sort(function (a, b) {
@@ -61,15 +61,18 @@ function computeCoverage(enrollments, payments, feeTotalRaw, otherRaw) {
   ordered.forEach(function (en) {
     const fee     = Number(en.fee_amount) || 0
     const listP   = Number(en.list_price) || 0
+    const waived  = Number(en.waived) || 0
     const covered = Math.min(pool, fee)
     pool -= covered
     const remaining = Math.max(0, fee - covered)
     const dropped   = en.status === 'dropped'
-    if (dropped) waivedTotal += remaining
-    else         activeDue   += remaining
+    waivedTotal += waived
+    if (!dropped) activeDue += remaining
     perId[en.id] = {
-      fee: fee, list: listP, off: Math.max(0, listP - fee),
-      paid: covered, due: remaining, dropped: dropped,
+      // fee_amount is already net of the waiver, so `off` reflects catalogue →
+      // charged (real discount) and the waiver shows as its own figure.
+      fee: fee, list: listP, off: Math.max(0, listP - fee - waived),
+      paid: covered, due: remaining, dropped: dropped, waived: waived,
     }
   })
 
@@ -215,17 +218,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [deleting, setDeleting] = useState(false)
   const [closing,  setClosing]  = useState(false)
 
-  // Balance and per-course dues both come from one settlement pass, so a
-  // discontinued course's waiver can never leak into an active course's due.
+  // Per-course dues come from the settlement pass; the balance is simply
+  // fee_total - fee_paid, because waivers already reduced fee_total (like a
+  // discount). Nothing anywhere needs to subtract a separate waived figure.
   const coverage = computeCoverage(localEnrollments, payments, form.fee_total, form.other_charges)
-  const balance  = coverage.activeOutstanding
+  const balance  = Math.max(0, (Number(form.fee_total) || 0) - (Number(form.fee_paid) || 0))
 
   function field(k) {
     return function (e) { setForm(function (f) { return { ...f, [k]: e.target.value } }) }
   }
 
-  // Status follows the genuinely-owed (active) balance, not the raw fee.
-  const derivedStatus = deriveStatus(form.fee_total, (Number(form.fee_total) || 0) - balance)
+  const derivedStatus = deriveStatus(form.fee_total, form.fee_paid)
 
   async function save() {
     if (to10Digit(form.phone).length !== 10) { showToast('Enter a valid 10-digit mobile number (no country code)', 'warn'); return }
@@ -850,7 +853,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -939,7 +942,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       enrolled_at:   enrolledAt,
     } })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
@@ -1067,61 +1070,62 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
 
-  // Payment status for a candidate enrolment set: owed → partial/pending;
-  // fully settled with a waiver in play → waived; otherwise paid/none.
-  function statusForSet(nextEnr) {
-    const cov = computeCoverage(nextEnr, payments, form.fee_total, form.other_charges)
-    const paidTotal = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
-    let status
-    if (cov.activeOutstanding > 0) status = paidTotal > 0 ? 'partial' : 'pending'
-    else if (cov.waivedTotal > 0)  status = 'waived'
-    else status = (Number(form.fee_total) || 0) > 0 ? 'paid' : 'none'
-    return { cov: cov, status: status }
-  }
-
-  // Discontinue ONE course: mark it dropped (no certificate) and waive only its
-  // own unpaid remainder. The student stays active; other courses are untouched.
+  // Discontinue ONE course: waive its unpaid remainder by reducing THAT course's
+  // fee and the student's agreed total (a waiver is just a discount applied at
+  // withdrawal). The amount is stored on the enrolment so it can be restored.
   async function discontinueCourse(en) {
     const cov = feeCoverage[en.id] || {}
+    const due = Math.max(0, cov.due || 0)
     const label = (en.skus?.courses?.group_name || '') + (en.skus?.level_name ? ' — ' + en.skus.level_name : '')
     const msg = 'Discontinue ' + (label || 'this course') + '?\n\n' +
       '• Marked Discontinued — no certificate\n' +
-      (cov.due > 0 ? '• Its unpaid ₹' + fmtAmt(cov.due) + ' will be WAIVED (written off)\n' : '') +
+      (due > 0 ? '• Its unpaid ₹' + fmtAmt(due) + ' will be WAIVED (written off)\n' : '') +
       '\nThe student stays active. This can be undone.'
     if (!window.confirm(msg)) return
     setCourseBusy(en.id)
-    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'dropped' } : e })
-    const { status } = statusForSet(next)
-    const w = computeCoverage(next, payments, form.fee_total, form.other_charges).waivedTotal
-    const { error } = await sb.from('enrollments').update({ status: 'dropped' }).eq('id', en.id)
-    if (!error) await sb.from('students').update({ waived_amount: w, payment_status: status }).eq('id', student.id)
+    const newFee    = (Number(en.fee_amount) || 0) - due
+    const newWaived = (Number(en.waived) || 0) + due
+    const newTotal  = (Number(form.fee_total) || 0) - due
+    const { error } = await sb.from('enrollments')
+      .update({ status: 'dropped', fee_amount: newFee, waived: newWaived }).eq('id', en.id)
+    if (!error) await sb.from('students').update({
+      fee_total: newTotal, waived_amount: (Number(form.waived_amount) || 0) + due,
+      payment_status: deriveStatus(newTotal, Number(form.fee_paid) || 0),
+    }).eq('id', student.id)
     setCourseBusy(null)
     if (error) { showToast('Could not discontinue: ' + error.message, 'err'); return }
+    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'dropped', fee_amount: newFee, waived: newWaived } : e })
     setLocalEnrollments(next)
-    setForm(function (f) { return { ...f, waived_amount: w, payment_status: status } })
-    showToast(cov.due > 0 ? 'Course discontinued · ₹' + fmtAmt(cov.due) + ' waived' : 'Course discontinued')
-    onSaved({ ...student, waived_amount: w, payment_status: status })
+    setForm(function (f) { return { ...f, fee_total: newTotal, waived_amount: (Number(f.waived_amount) || 0) + due } })
+    showToast(due > 0 ? 'Course discontinued · ₹' + fmtAmt(due) + ' waived' : 'Course discontinued')
+    onSaved({ ...student, fee_total: newTotal })
   }
 
-  // Undo a discontinuation — the course becomes active and its fee due again.
+  // Undo a discontinuation — the waived amount is restored to the course fee and
+  // the agreed total, and the course becomes active and due again.
   async function restoreCourse(en) {
     setCourseBusy(en.id)
-    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'active' } : e })
-    const { status } = statusForSet(next)
-    const w = computeCoverage(next, payments, form.fee_total, form.other_charges).waivedTotal
-    const { error } = await sb.from('enrollments').update({ status: 'active' }).eq('id', en.id)
-    if (!error) await sb.from('students').update({ waived_amount: w, payment_status: status }).eq('id', student.id)
+    const back      = Number(en.waived) || 0
+    const newFee    = (Number(en.fee_amount) || 0) + back
+    const newTotal  = (Number(form.fee_total) || 0) + back
+    const { error } = await sb.from('enrollments')
+      .update({ status: 'active', fee_amount: newFee, waived: 0 }).eq('id', en.id)
+    if (!error) await sb.from('students').update({
+      fee_total: newTotal, waived_amount: Math.max(0, (Number(form.waived_amount) || 0) - back),
+      payment_status: deriveStatus(newTotal, Number(form.fee_paid) || 0),
+    }).eq('id', student.id)
     setCourseBusy(null)
     if (error) { showToast('Could not restore: ' + error.message, 'err'); return }
+    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'active', fee_amount: newFee, waived: 0 } : e })
     setLocalEnrollments(next)
-    setForm(function (f) { return { ...f, waived_amount: w, payment_status: status } })
+    setForm(function (f) { return { ...f, fee_total: newTotal, waived_amount: Math.max(0, (Number(f.waived_amount) || 0) - back) } })
     showToast('Course restored')
-    onSaved({ ...student, waived_amount: w, payment_status: status })
+    onSaved({ ...student, fee_total: newTotal })
   }
 
   // ── Delete student (admin only) ──
@@ -1139,47 +1143,62 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (reason === null) return   // cancelled the second dialog
 
     setClosing(true)
+    // Waive each unfinished course's due (reduce its fee + the agreed total),
+    // then deactivate. Each course keeps its waived amount for a later reopen.
     const openEnr = localEnrollments.filter(function (e) { return !e.completed_at && e.status !== 'dropped' })
-    if (openEnr.length > 0) {
-      await sb.from('enrollments').update({ status: 'dropped' })
-        .in('id', openEnr.map(function (e) { return e.id }))
+    let totalWaived = 0
+    const nextById = {}
+    for (let i = 0; i < openEnr.length; i++) {
+      const e = openEnr[i]
+      const due = Math.max(0, (feeCoverage[e.id] && feeCoverage[e.id].due) || 0)
+      totalWaived += due
+      const nf = (Number(e.fee_amount) || 0) - due
+      const nw = (Number(e.waived) || 0) + due
+      nextById[e.id] = { ...e, status: 'dropped', fee_amount: nf, waived: nw }
+      await sb.from('enrollments').update({ status: 'dropped', fee_amount: nf, waived: nw }).eq('id', e.id)
     }
-    const next = localEnrollments.map(function (e) { return e.completed_at ? e : { ...e, status: 'dropped' } })
-    const w = computeCoverage(next, payments, form.fee_total, form.other_charges).waivedTotal
-    const status = w > 0 ? 'waived' : form.payment_status
+    const newTotal = (Number(form.fee_total) || 0) - totalWaived
+    const newWA    = (Number(form.waived_amount) || 0) + totalWaived
+    const status   = (newTotal - (Number(form.fee_paid) || 0) <= 0 && newWA > 0) ? 'waived' : deriveStatus(newTotal, form.fee_paid)
     const { error } = await sb.from('students').update({
-      is_active: false, payment_status: status, waived_amount: w,
+      is_active: false, payment_status: status, fee_total: newTotal, waived_amount: newWA,
       closed_at: new Date().toISOString(), close_reason: reason.trim() || null,
     }).eq('id', student.id)
     setClosing(false)
     if (error) { showToast('Could not close the account: ' + error.message, 'err'); return }
 
-    setLocalEnrollments(next)
-    setForm(function (f) { return { ...f, is_active: false, waived_amount: w, payment_status: status } })
-    showToast(w > 0 ? 'Account closed · ₹' + fmtAmt(w) + ' waived' : 'Account closed')
-    onSaved({ ...student, is_active: false, payment_status: status, closed_at: new Date().toISOString() })
+    setLocalEnrollments(localEnrollments.map(function (e) { return nextById[e.id] || e }))
+    setForm(function (f) { return { ...f, is_active: false, fee_total: newTotal, waived_amount: newWA, payment_status: status } })
+    showToast(totalWaived > 0 ? 'Account closed · ₹' + fmtAmt(totalWaived) + ' waived' : 'Account closed')
+    onSaved({ ...student, is_active: false, fee_total: newTotal, payment_status: status, closed_at: new Date().toISOString() })
   }
 
   async function reopenStudentAccount() {
     if (!window.confirm('Reopen ' + student.full_name + "'s account? They return to Active. Waived fees become due again, and discontinued courses become active.")) return
     setClosing(true)
     const discEnr = localEnrollments.filter(function (e) { return e.status === 'dropped' })
-    if (discEnr.length > 0) {
-      await sb.from('enrollments').update({ status: 'active' })
-        .in('id', discEnr.map(function (e) { return e.id }))
+    let totalBack = 0
+    const nextById = {}
+    for (let i = 0; i < discEnr.length; i++) {
+      const e = discEnr[i]
+      const back = Number(e.waived) || 0
+      totalBack += back
+      const nf = (Number(e.fee_amount) || 0) + back
+      nextById[e.id] = { ...e, status: 'active', fee_amount: nf, waived: 0 }
+      await sb.from('enrollments').update({ status: 'active', fee_amount: nf, waived: 0 }).eq('id', e.id)
     }
-    const next = localEnrollments.map(function (e) { return e.status === 'dropped' ? { ...e, status: 'active' } : e })
-    const { status } = statusForSet(next)
+    const newTotal = (Number(form.fee_total) || 0) + totalBack
+    const status   = deriveStatus(newTotal, form.fee_paid)
     const { error } = await sb.from('students').update({
-      is_active: true, payment_status: status, waived_amount: 0,
+      is_active: true, payment_status: status, fee_total: newTotal, waived_amount: 0,
       closed_at: null, close_reason: null,
     }).eq('id', student.id)
     setClosing(false)
     if (error) { showToast('Could not reopen: ' + error.message, 'err'); return }
-    setLocalEnrollments(next)
-    setForm(function (f) { return { ...f, is_active: true, waived_amount: 0, payment_status: status } })
+    setLocalEnrollments(localEnrollments.map(function (e) { return nextById[e.id] || e }))
+    setForm(function (f) { return { ...f, is_active: true, fee_total: newTotal, waived_amount: 0, payment_status: status } })
     showToast('Account reopened')
-    onSaved({ ...student, is_active: true, payment_status: status, closed_at: null })
+    onSaved({ ...student, is_active: true, fee_total: newTotal, payment_status: status, closed_at: null })
   }
 
   async function deleteStudent() {
@@ -1801,7 +1820,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                     )}
                                     {cov.dropped ? (
                                       <span style={{ font: '600 11px var(--font)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '1px 8px' }}>
-                                        {cov.due > 0 ? '₹' + fmtAmt(cov.due) + ' waived' : 'Settled'}
+                                        {cov.waived > 0 ? '₹' + fmtAmt(cov.waived) + ' waived' : 'Settled'}
                                       </span>
                                     ) : cov.due > 0 ? (
                                       <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
@@ -2906,7 +2925,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -3397,7 +3416,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -3480,7 +3499,7 @@ export default function StudentsPage() {
     if (sortBy === 'name')    return (a.full_name || '').localeCompare(b.full_name || '')
     if (sortBy === 'joined')  return new Date(b.registered_at || b.created_at || 0) - new Date(a.registered_at || a.created_at || 0)
     if (sortBy === 'balance') {
-      const bal = function (s) { return Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0) - (s.waived_amount || 0)) }
+      const bal = function (s) { return Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0)) }
       return bal(b) - bal(a)
     }
     return lastActivity(b) - lastActivity(a)   // 'activity' (default)
@@ -3510,7 +3529,7 @@ export default function StudentsPage() {
     const loaded = students.find(function (s) { return s.id === st.id })
     if (loaded) { setSelected(loaded); return }
     const { data } = await sb.from('students')
-      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
       .eq('id', st.id).single()
     setSelected(data || st)
   }
@@ -3619,12 +3638,11 @@ export default function StudentsPage() {
 
         {/* Stats */}
         {(function() {
+          // fee_total is already net of any waiver (a waiver reduces it, like a
+          // discount), so balance due is simply charged − received.
           const totalCharged  = filtered.reduce(function(s, r) { return s + (Number(r.fee_total) || 0) }, 0)
           const totalReceived = filtered.reduce(function(s, r) { return s + (Number(r.fee_paid)  || 0) }, 0)
-          // Written-off fees are not collectible, so they leave the balance due:
-          // billed − collected − waived, the standard receivables view.
-          const totalWaived   = filtered.reduce(function(s, r) { return s + (Number(r.waived_amount) || 0) }, 0)
-          const totalBalance  = Math.max(0, totalCharged - totalReceived - totalWaived)
+          const totalBalance  = Math.max(0, totalCharged - totalReceived)
           return (
             <div className="mini-stats">
               <div className="mini">
@@ -3687,10 +3705,8 @@ export default function StudentsPage() {
                   <tr><td colSpan={showCentreCol ? 10 : 9} className="empty">No students found</td></tr>
                 )}
                 {filtered.map(function (s) {
-                  // Waived amounts are settled, not owed — the profile subtracts
-                  // them, so the list must too or a written-off student reads as
-                  // still owing.
-                  const balance = Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0) - (s.waived_amount || 0))
+                  // Waivers already reduced fee_total, so this is the true owed.
+                  const balance = Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
                   const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean))]
                   const monthEnd = daysLeftInMonth() <= 5
                   return (
