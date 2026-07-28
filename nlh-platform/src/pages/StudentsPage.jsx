@@ -1212,6 +1212,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   }
 
   async function deleteStudent() {
+    // Deleting a student cascades away their payment + receipt records. That is
+    // financial history — once money has been taken, use Close/Withdraw (which
+    // keeps the record) instead of erasing it. Delete stays available for a
+    // genuine mis-entry that never took a payment.
+    const { count: payCount } = await sb.from('student_payments')
+      .select('id', { count: 'exact', head: true }).eq('student_id', student.id)
+    if ((payCount || 0) > 0) {
+      showToast(student.full_name + ' has ' + payCount + ' recorded payment' + (payCount > 1 ? 's' : '') +
+        ' — use ⊘ Close / Withdraw to keep the receipts. Delete is only for entries with no payments.', 'warn')
+      return
+    }
     if (!window.confirm('Permanently delete ' + student.full_name + ' and ALL their records (enrollments, batch assignments)?\n\nThis CANNOT be undone.')) return
     setDeleting(true)
     const enrIds = localEnrollments.map(function (e) { return e.id })

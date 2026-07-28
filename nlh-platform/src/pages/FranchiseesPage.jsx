@@ -123,6 +123,14 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
   async function handleSave() {
     const amt = Number(amount)
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    // Guard client-side too, so staff get a plain message rather than the raw
+    // DB exception when a payment would exceed the franchise fee.
+    const feeCap  = Number(franchisee.enrollment_fee) || 0
+    const already = Number(franchisee.fee_paid) || 0
+    if (feeCap > 0 && already + amt > feeCap) {
+      showToast('That exceeds the franchise fee — only ₹' + fmtAmt(Math.max(0, feeCap - already)) + ' is outstanding.', 'warn')
+      return
+    }
     setSaving(true)
     const { data: inserted, error: insErr } = await sb.from('franchisee_payments').insert({
       franchisee_id: franchisee.id,
@@ -135,10 +143,9 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     }).select('receipt_no').single()
     if (insErr) { showToast('Failed: ' + insErr.message, 'err'); setSaving(false); return }
 
-    const newFeePaid = (franchisee.fee_paid || 0) + amt
-    const newBalance = (Number(franchisee.enrollment_fee) || 0) - newFeePaid
-    const { error: feeErr } = await sb.from('franchisees').update({ fee_paid: newFeePaid }).eq('id', franchisee.id)
-    if (feeErr) { showToast('Failed to update fee record: ' + feeErr.message, 'err'); setSaving(false); return }
+    // fee_paid is maintained by a DB trigger now — no manual update here.
+    const newFeePaid = already + amt
+    const newBalance = feeCap - newFeePaid
     setSaving(false)
     showToast('Payment of ₹' + fmtAmt(amt) + ' recorded')
     if (sendWA && waPhone) {
