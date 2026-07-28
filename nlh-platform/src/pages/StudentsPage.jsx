@@ -170,6 +170,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [otherEdit,       setOtherEdit]       = useState(false)
   const [otherVal,        setOtherVal]        = useState('')
   const [courseBusy,      setCourseBusy]      = useState(null)
+  const [feeEvents,       setFeeEvents]       = useState(null)   // null = not loaded yet
+  const [feeEventsOpen,   setFeeEventsOpen]   = useState(false)
+
+  async function loadFeeEvents() {
+    const { data } = await sb.from('student_fee_events')
+      .select('id, enrollment_id, field, old_value, new_value, delta, actor, at')
+      .eq('student_id', student.id)
+      .order('at', { ascending: false })
+    setFeeEvents(data || [])
+  }
   const [skuFee,          setSkuFee]          = useState({})   // { [sku_id]: student_fee } — for invoice lines
   const [invoices,        setInvoices]        = useState([])   // student_invoices rows
   const [editInvId,       setEditInvId]       = useState(null) // invoice being edited
@@ -1562,6 +1572,60 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         </div>
                       )
                     })}
+                  </div>
+                )}
+              </div>
+
+              {/* Fee change history — the audit trail behind the numbers above */}
+              <div style={{ marginTop: 14 }}>
+                <button className="btn-s"
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                  onClick={function () {
+                    const next = !feeEventsOpen
+                    setFeeEventsOpen(next)
+                    if (next && feeEvents === null) loadFeeEvents()
+                  }}>
+                  {feeEventsOpen ? '▾' : '▸'} Fee change history
+                </button>
+                {feeEventsOpen && (
+                  <div style={{ marginTop: 8 }}>
+                    {feeEvents === null ? (
+                      <p className="hint" style={{ margin: 0 }}>Loading…</p>
+                    ) : feeEvents.length === 0 ? (
+                      <p className="hint" style={{ margin: 0 }}>No fee changes recorded yet. (Only changes made from now on are logged.)</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {feeEvents.map(function (ev) {
+                          const labels = { fee_total: 'Agreed fee', other_charges: 'Other charges',
+                            waived_amount: 'Total waived', fee_amount: 'Course fee', waived: 'Course waiver', status: 'Course status' }
+                          const enr = localEnrollments.find(function (e) { return e.id === ev.enrollment_id })
+                          const course = enr ? ((enr.skus?.courses?.group_name || '') + (enr.skus?.level_name ? ' ' + enr.skus.level_name : '')) : ''
+                          const numeric = ev.delta !== null && ev.field !== 'status'
+                          return (
+                            <div key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
+                              borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)', font: '500 11px var(--font)' }}>
+                              <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)', minWidth: 96, fontSize: 10 }}>
+                                {fmtDate(String(ev.at).slice(0, 10))}
+                              </span>
+                              <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
+                                {labels[ev.field] || ev.field}{course ? ' · ' + course : ''}
+                              </span>
+                              <span style={{ color: 'var(--text3)', fontFamily: 'var(--mono)' }}>
+                                {numeric
+                                  ? '₹' + fmtAmt(Number(ev.old_value) || 0) + ' → ₹' + fmtAmt(Number(ev.new_value) || 0)
+                                  : (ev.old_value ? ev.old_value + ' → ' : '') + (ev.new_value || '')}
+                              </span>
+                              {numeric && ev.delta !== 0 && (
+                                <span style={{ fontWeight: 700, color: ev.delta > 0 ? '#92400e' : 'var(--green)' }}>
+                                  {ev.delta > 0 ? '+' : '−'}₹{fmtAmt(Math.abs(ev.delta))}
+                                </span>
+                              )}
+                              <span style={{ marginLeft: 'auto', color: 'var(--text3)', fontSize: 10 }}>{ev.actor}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
