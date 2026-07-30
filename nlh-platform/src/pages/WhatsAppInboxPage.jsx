@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { sb } from '../supabase'
-import { showToast } from '../utils'
+import { showToast, fmtAmt, fmtDate } from '../utils'
+import { sendWAFeeReminder } from '../services/whatsapp'
 
 function timeAgo(ts) {
   const d = new Date(ts)
@@ -49,14 +50,17 @@ export default function WhatsAppInboxPage() {
   // the parent/student and their centre instead of a bare number.
   useEffect(function () {
     async function loadDirectory() {
+      // RLS scopes this to the viewer's accessible students, so a CF/SMF only
+      // ever resolves — and sees fee context for — their own territory.
       const { data } = await sb.from('students')
-        .select('full_name, parent_name, phone, franchisees(business_name, tier, city)')
+        .select('id, full_name, parent_name, phone, franchisees(business_name, tier, city)')
         .not('phone', 'is', null)
       const dir = {}
       ;(data || []).forEach(function (s) {
         const key = String(s.phone || '').replace(/\D/g, '').slice(-10)
         if (key.length === 10 && !dir[key]) {
           dir[key] = {
+            id:      s.id,
             student: s.full_name,
             parent:  s.parent_name,
             centre:  s.franchisees?.business_name,
@@ -72,6 +76,53 @@ export default function WhatsAppInboxPage() {
 
   function identify(num) {
     return directory[String(num || '').replace(/\D/g, '').slice(-10)] || null
+  }
+
+  // ── Student context for the selected conversation (read-only) ──────────────
+  // When a chat resolves to a student, pull their fees, courses and last
+  // payment so staff see who they're talking to AND what they owe. Lazy: only
+  // the open conversation is fetched, and RLS keeps it to accessible students.
+  const [ctx, setCtx]           = useState(null)
+  const [ctxLoading, setCtxLoad] = useState(false)
+  const [ctxSending, setCtxSend] = useState(false)
+
+  useEffect(function () {
+    const who = identify(selected)
+    if (!selected || !who || !who.id) { setCtx(null); return }
+    let cancelled = false
+    setCtxLoad(true)
+    ;(async function () {
+      const { data: s } = await sb.from('students')
+        .select('id, full_name, parent_name, phone, fee_total, fee_paid, waived_amount, payment_status, is_active, ' +
+                'franchisees(business_name, tier, city), ' +
+                'enrollments(id, status, completed_at, fee_amount, waived, skus(level_name, courses(group_name)))')
+        .eq('id', who.id).single()
+      const { data: pays } = await sb.from('student_payments')
+        .select('amount, paid_at, receipt_no').eq('student_id', who.id)
+        .order('paid_at', { ascending: false }).limit(1)
+      if (!cancelled) { setCtx({ student: s, lastPayment: (pays || [])[0] || null }); setCtxLoad(false) }
+    })()
+    return function () { cancelled = true }
+  }, [selected, directory])
+
+  // Send a balance reminder straight from the inbox. Reuses the approved
+  // balance_reminder template (a template send — works outside the 24h window).
+  async function sendReminderFromInbox() {
+    const s = ctx && ctx.student
+    if (!s) return
+    const bal = (Number(s.fee_total) || 0) - (Number(s.fee_paid) || 0)
+    if (bal <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
+    setCtxSend(true)
+    try {
+      const r = await sendWAFeeReminder(s.phone, {
+        name:    s.parent_name || s.full_name,
+        balance: fmtAmt(bal),
+        towards: 'course fees for ' + (s.full_name || 'your child'),
+      })
+      if (r && r.success) { showToast('⏰ Balance reminder sent'); load() }
+      else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+    } catch (e) { showToast('Reminder failed: ' + e.message, 'warn') }
+    setCtxSend(false)
   }
 
   useEffect(function () {
@@ -361,6 +412,91 @@ export default function WhatsAppInboxPage() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* ── Student context panel (desktop) — read-only fee/course snapshot ── */}
+        {!isMobile && selected && identify(selected) && (
+          <div style={{ width: 300, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', overflowY: 'auto' }}>
+            {ctxLoading || !ctx || !ctx.student ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>Loading student…</div>
+            ) : (function () {
+              const s = ctx.student
+              const bal = Math.max(0, (Number(s.fee_total) || 0) - (Number(s.fee_paid) || 0))
+              const enrs = (s.enrollments || [])
+              return (
+                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Who */}
+                  <div>
+                    <div style={{ font: '700 15px var(--font)', color: 'var(--text)' }}>{s.full_name}</div>
+                    <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                      {s.parent_name ? 'Parent: ' + s.parent_name : ''}
+                    </div>
+                    <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                      {s.franchisees?.business_name ? (s.franchisees.tier === 'NLH' ? '🏛️ ' : '🏢 ') + s.franchisees.business_name : ''}
+                      {s.franchisees?.city ? ' · ' + s.franchisees.city : ''}
+                    </div>
+                    {s.is_active === false && (
+                      <span style={{ display: 'inline-block', marginTop: 6, font: '600 10px var(--font)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '1px 8px' }}>
+                        ⊘ Account closed
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Fees */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+                    <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Fees</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', marginBottom: 3 }}>
+                      <span style={{ color: 'var(--text3)' }}>Agreed</span><span style={{ fontFamily: 'var(--mono)' }}>₹{fmtAmt(s.fee_total || 0)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', marginBottom: 3 }}>
+                      <span style={{ color: 'var(--text3)' }}>Paid</span><span style={{ fontFamily: 'var(--mono)', color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid || 0)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', font: '700 13px var(--font)', paddingTop: 5, borderTop: '1px dashed var(--border)' }}>
+                      <span>Balance</span>
+                      <span style={{ fontFamily: 'var(--mono)', color: bal > 0 ? '#b45309' : 'var(--green)' }}>
+                        {bal > 0 ? '₹' + fmtAmt(bal) : '✓ Cleared'}
+                      </span>
+                    </div>
+                    {ctx.lastPayment && (
+                      <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 6 }}>
+                        Last: ₹{fmtAmt(ctx.lastPayment.amount)} · {fmtDate(String(ctx.lastPayment.paid_at).slice(0, 10))}
+                        {ctx.lastPayment.receipt_no ? ' · ' + ctx.lastPayment.receipt_no : ''}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Courses */}
+                  {enrs.length > 0 && (
+                    <div>
+                      <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Courses ({enrs.length})</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {enrs.map(function (e) {
+                          const name = (e.skus?.courses?.group_name || '') + (e.skus?.level_name ? ' ' + e.skus.level_name : '')
+                          const tag = e.completed_at ? { t: '✓ Completed', c: 'var(--green)', bg: 'var(--green-bg)' }
+                            : e.status === 'dropped' ? { t: '⊘ Discontinued', c: '#991b1b', bg: '#fef2f2' }
+                            : { t: 'Active', c: 'var(--purple)', bg: 'var(--purple-bg)' }
+                          return (
+                            <div key={e.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, font: '500 11px var(--font)' }}>
+                              <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || 'Course'}</span>
+                              <span style={{ flexShrink: 0, font: '600 9px var(--font)', color: tag.c, background: tag.bg, borderRadius: 20, padding: '1px 7px' }}>{tag.t}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick action — reuses the approved balance_reminder template */}
+                  {bal > 0 && (
+                    <button className="btn-s" style={{ fontSize: 12, padding: '7px 10px' }}
+                      disabled={ctxSending} onClick={sendReminderFromInbox}>
+                      {ctxSending ? 'Sending…' : '⏰ Send balance reminder'}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         )}
       </div>
