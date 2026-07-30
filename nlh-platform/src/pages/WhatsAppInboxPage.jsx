@@ -50,22 +50,45 @@ export default function WhatsAppInboxPage() {
   // the parent/student and their centre instead of a bare number.
   useEffect(function () {
     async function loadDirectory() {
-      // RLS scopes this to the viewer's accessible students, so a CF/SMF only
-      // ever resolves — and sees fee context for — their own territory.
-      const { data } = await sb.from('students')
-        .select('id, full_name, parent_name, phone, franchisees(business_name, tier, city)')
-        .not('phone', 'is', null)
+      // RLS scopes both queries to the viewer's accessible rows, so a CF/SMF
+      // only ever resolves people in their own territory.
+      const [stu, fr] = await Promise.all([
+        sb.from('students')
+          .select('id, full_name, parent_name, phone, franchisees(business_name, tier, city)')
+          .not('phone', 'is', null),
+        // Franchisees receive receipts, invoices and dispatch updates too, so
+        // their numbers must resolve or the inbox is mostly bare numbers.
+        sb.from('franchisees')
+          .select('id, business_name, owner_name, phone, tier, city')
+          .not('phone', 'is', null),
+      ])
       const dir = {}
-      ;(data || []).forEach(function (s) {
+      // Students first (a shared number reads as the student/parent).
+      ;(stu.data || []).forEach(function (s) {
         const key = String(s.phone || '').replace(/\D/g, '').slice(-10)
         if (key.length === 10 && !dir[key]) {
           dir[key] = {
+            type:    'student',
             id:      s.id,
+            name:    s.parent_name || s.full_name,
             student: s.full_name,
             parent:  s.parent_name,
             centre:  s.franchisees?.business_name,
             tier:    s.franchisees?.tier,
             city:    s.franchisees?.city,
+          }
+        }
+      })
+      ;(fr.data || []).forEach(function (f) {
+        const key = String(f.phone || '').replace(/\D/g, '').slice(-10)
+        if (key.length === 10 && !dir[key]) {
+          dir[key] = {
+            type:   'franchisee',
+            id:     f.id,
+            name:   f.business_name || f.owner_name,
+            centre: f.business_name,
+            tier:   f.tier,
+            city:   f.city,
           }
         }
       })
@@ -78,10 +101,10 @@ export default function WhatsAppInboxPage() {
     return directory[String(num || '').replace(/\D/g, '').slice(-10)] || null
   }
 
-  // ── Student context for the selected conversation (read-only) ──────────────
-  // When a chat resolves to a student, pull their fees, courses and last
-  // payment so staff see who they're talking to AND what they owe. Lazy: only
-  // the open conversation is fetched, and RLS keeps it to accessible students.
+  // ── Context for the selected conversation (read-only) ──────────────────────
+  // Pull the resolved party's fees + last payment so staff see who they're
+  // talking to AND what they owe. Students get courses; franchisees get their
+  // franchise fee. Lazy: only the open conversation is fetched; RLS scopes it.
   const [ctx, setCtx]           = useState(null)
   const [ctxLoading, setCtxLoad] = useState(false)
   const [ctxSending, setCtxSend] = useState(false)
@@ -92,6 +115,16 @@ export default function WhatsAppInboxPage() {
     let cancelled = false
     setCtxLoad(true)
     ;(async function () {
+      if (who.type === 'franchisee') {
+        const { data: f } = await sb.from('franchisees')
+          .select('id, business_name, owner_name, phone, tier, city, enrollment_fee, fee_paid, status')
+          .eq('id', who.id).single()
+        const { data: pays } = await sb.from('franchisee_payments')
+          .select('amount, payment_date, receipt_no').eq('franchisee_id', who.id)
+          .order('payment_date', { ascending: false }).limit(1)
+        if (!cancelled) { setCtx({ type: 'franchisee', fr: f, lastPayment: (pays || [])[0] || null }); setCtxLoad(false) }
+        return
+      }
       const { data: s } = await sb.from('students')
         .select('id, full_name, parent_name, phone, fee_total, fee_paid, waived_amount, payment_status, is_active, ' +
                 'franchisees(business_name, tier, city), ' +
@@ -100,7 +133,7 @@ export default function WhatsAppInboxPage() {
       const { data: pays } = await sb.from('student_payments')
         .select('amount, paid_at, receipt_no').eq('student_id', who.id)
         .order('paid_at', { ascending: false }).limit(1)
-      if (!cancelled) { setCtx({ student: s, lastPayment: (pays || [])[0] || null }); setCtxLoad(false) }
+      if (!cancelled) { setCtx({ type: 'student', student: s, lastPayment: (pays || [])[0] || null }); setCtxLoad(false) }
     })()
     return function () { cancelled = true }
   }, [selected, directory])
@@ -108,17 +141,24 @@ export default function WhatsAppInboxPage() {
   // Send a balance reminder straight from the inbox. Reuses the approved
   // balance_reminder template (a template send — works outside the 24h window).
   async function sendReminderFromInbox() {
-    const s = ctx && ctx.student
-    if (!s) return
-    const bal = (Number(s.fee_total) || 0) - (Number(s.fee_paid) || 0)
+    if (!ctx) return
+    let phone, name, bal, towards
+    if (ctx.type === 'franchisee' && ctx.fr) {
+      phone = ctx.fr.phone
+      name  = ctx.fr.business_name || ctx.fr.owner_name
+      bal   = (Number(ctx.fr.enrollment_fee) || 0) - (Number(ctx.fr.fee_paid) || 0)
+      towards = 'your franchise fee'
+    } else if (ctx.student) {
+      const s = ctx.student
+      phone = s.phone
+      name  = s.parent_name || s.full_name
+      bal   = (Number(s.fee_total) || 0) - (Number(s.fee_paid) || 0)
+      towards = 'course fees for ' + (s.full_name || 'your child')
+    } else { return }
     if (bal <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
     setCtxSend(true)
     try {
-      const r = await sendWAFeeReminder(s.phone, {
-        name:    s.parent_name || s.full_name,
-        balance: fmtAmt(bal),
-        towards: 'course fees for ' + (s.full_name || 'your child'),
-      })
+      const r = await sendWAFeeReminder(phone, { name: name, balance: fmtAmt(bal), towards: towards })
       if (r && r.success) { showToast('⏰ Balance reminder sent'); load() }
       else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
     } catch (e) { showToast('Reminder failed: ' + e.message, 'warn') }
@@ -278,7 +318,7 @@ export default function WhatsAppInboxPage() {
                         <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {(function () {
                             const who = identify(c.number)
-                            return who ? (who.parent || who.student) : '+' + c.number
+                            return who ? who.name : '+' + c.number
                           })()}
                         </span>
                         <span style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0 }}>{timeAgo(c.lastAt)}</span>
@@ -288,8 +328,9 @@ export default function WhatsAppInboxPage() {
                         if (!who) return null
                         return (
                           <div style={{ fontSize: 10.5, color: 'var(--text3)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            🎓 {who.student}
-                            {who.centre ? ' · ' + (who.tier === 'NLH' ? '🏛️ ' : '🏢 ') + who.centre : ''}
+                            {who.type === 'franchisee'
+                              ? <>{who.tier === 'NLH' ? '🏛️ ' : '🏢 '}{who.tier || 'Franchisee'}{who.city ? ' · ' + who.city : ''}</>
+                              : <>🎓 {who.student}{who.centre ? ' · ' + (who.tier === 'NLH' ? '🏛️ ' : '🏢 ') + who.centre : ''}</>}
                           </div>
                         )
                       })()}
@@ -329,11 +370,13 @@ export default function WhatsAppInboxPage() {
                         return (
                           <>
                             <div style={{ fontWeight: 700, fontSize: 14, color: '#fff' }}>
-                              {who ? (who.parent || who.student) : '+' + selected}
+                              {who ? who.name : '+' + selected}
                             </div>
                             <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>
                               {who
-                                ? <>🎓 {who.student}{who.centre ? ' · ' + (who.tier === 'NLH' ? '🏛️ ' : '🏢 ') + who.centre : ''}{who.city ? ' · ' + who.city : ''} · +{selected}</>
+                                ? (who.type === 'franchisee'
+                                    ? <>{who.tier === 'NLH' ? '🏛️ ' : '🏢 '}{who.tier || 'Franchisee'}{who.city ? ' · ' + who.city : ''} · +{selected}</>
+                                    : <>🎓 {who.student}{who.centre ? ' · ' + (who.tier === 'NLH' ? '🏛️ ' : '🏢 ') + who.centre : ''}{who.city ? ' · ' + who.city : ''} · +{selected}</>)
                                 : <>{thread.length} messages</>}
                             </div>
                           </>
@@ -415,11 +458,54 @@ export default function WhatsAppInboxPage() {
           </div>
         )}
 
-        {/* ── Student context panel (desktop) — read-only fee/course snapshot ── */}
+        {/* ── Context panel (desktop) — read-only fee snapshot ── */}
         {!isMobile && selected && identify(selected) && (
           <div style={{ width: 300, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', overflowY: 'auto' }}>
-            {ctxLoading || !ctx || !ctx.student ? (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>Loading student…</div>
+            {ctxLoading || !ctx ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>Loading…</div>
+            ) : ctx.type === 'franchisee' && ctx.fr ? (function () {
+              const f = ctx.fr
+              const bal = Math.max(0, (Number(f.enrollment_fee) || 0) - (Number(f.fee_paid) || 0))
+              return (
+                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <div style={{ font: '700 15px var(--font)', color: 'var(--text)' }}>{f.business_name || f.owner_name}</div>
+                    <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                      {(f.tier === 'NLH' ? '🏛️ ' : '🏢 ') + (f.tier || 'Franchisee')}{f.city ? ' · ' + f.city : ''}
+                    </div>
+                    {f.owner_name && f.owner_name !== f.business_name && (
+                      <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>{f.owner_name}</div>
+                    )}
+                  </div>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+                    <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Franchise fee</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', marginBottom: 3 }}>
+                      <span style={{ color: 'var(--text3)' }}>Fee</span><span style={{ fontFamily: 'var(--mono)' }}>₹{fmtAmt(f.enrollment_fee || 0)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', marginBottom: 3 }}>
+                      <span style={{ color: 'var(--text3)' }}>Paid</span><span style={{ fontFamily: 'var(--mono)', color: 'var(--green)' }}>₹{fmtAmt(f.fee_paid || 0)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', font: '700 13px var(--font)', paddingTop: 5, borderTop: '1px dashed var(--border)' }}>
+                      <span>Balance</span>
+                      <span style={{ fontFamily: 'var(--mono)', color: bal > 0 ? '#b45309' : 'var(--green)' }}>{bal > 0 ? '₹' + fmtAmt(bal) : '✓ Cleared'}</span>
+                    </div>
+                    {ctx.lastPayment && (
+                      <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 6 }}>
+                        Last: ₹{fmtAmt(ctx.lastPayment.amount)} · {fmtDate(String(ctx.lastPayment.payment_date).slice(0, 10))}
+                        {ctx.lastPayment.receipt_no ? ' · ' + ctx.lastPayment.receipt_no : ''}
+                      </div>
+                    )}
+                  </div>
+                  {bal > 0 && (
+                    <button className="btn-s" style={{ fontSize: 12, padding: '7px 10px' }}
+                      disabled={ctxSending} onClick={sendReminderFromInbox}>
+                      {ctxSending ? 'Sending…' : '⏰ Send balance reminder'}
+                    </button>
+                  )}
+                </div>
+              )
+            })() : !ctx.student ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text2)', fontSize: 13 }}>No details found.</div>
             ) : (function () {
               const s = ctx.student
               const bal = Math.max(0, (Number(s.fee_total) || 0) - (Number(s.fee_paid) || 0))
