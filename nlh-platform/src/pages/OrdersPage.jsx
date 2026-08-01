@@ -727,6 +727,20 @@ function rateForSku(sku, tier) {
   return sku.uf_rate || 0
 }
 
+// UF can only order SKUs for admin-enabled levels. Mirrors the filter used on
+// CoursesPage and the student enrollment form: registered_skus (specific
+// levels) takes priority; registered_courses is only a fallback when no
+// levels have been individually enabled. SMF/CF/NLH are unrestricted.
+function filterSkusForFranchisee(pool, fr) {
+  const tier = fr?.tier || 'UF'
+  if (tier !== 'UF') return pool
+  const regSkus = fr?.registered_skus || []
+  if (regSkus.length > 0) return pool.filter(function (s) { return regSkus.includes(s.id) })
+  const regCourses = fr?.registered_courses || []
+  if (regCourses.length > 0) return pool.filter(function (s) { return regCourses.includes(s.course_id) })
+  return pool
+}
+
 // Load kit bill-of-materials for a set of SKU ids → { sku_id: [{ item_id, name, quantity }] }
 async function loadKitMap(skuIds) {
   const ids = (skuIds || []).filter(Boolean)
@@ -1196,7 +1210,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
       if (isAdmin) {
         // Admin: see all franchisees
         const fRes = await sb.from('franchisees')
-          .select('id, business_name, tier, registered_courses, address, city, state')
+          .select('id, business_name, tier, registered_courses, registered_skus, address, city, state')
           .order('business_name')
         setFranchisees(fRes.data || [])
         setVisibleSkus(allS)
@@ -1204,7 +1218,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         // SMF / CF: see self + all descendants, default selection = self
         const [selfRes, descendantIds] = await Promise.all([
           sb.from('franchisees')
-            .select('id, business_name, tier, registered_courses, address, city, state')
+            .select('id, business_name, tier, registered_courses, registered_skus, address, city, state')
             .eq('id', currentFranchiseeId)
             .single(),
           getDescendantIds(currentFranchiseeId),
@@ -1212,7 +1226,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         let allFrs = selfRes.data ? [selfRes.data] : []
         if (descendantIds.length > 0) {
           const descRes = await sb.from('franchisees')
-            .select('id, business_name, tier, registered_courses, address, city, state')
+            .select('id, business_name, tier, registered_courses, registered_skus, address, city, state')
             .in('id', descendantIds)
             .order('tier').order('business_name')
           allFrs = [...allFrs, ...(descRes.data || [])]
@@ -1223,24 +1237,19 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
           const fr = selfRes.data
           setPlacerTier(fr.tier || 'UF')
           setDeliverTo(buildAddress(fr))
-          setVisibleSkus(ordPool)   // SMF/CF: course kits only (no HO supply SKUs)
+          setVisibleSkus(filterSkusForFranchisee(ordPool, fr))
         }
       } else {
-        // UF: own data only, SKUs filtered to registered courses
+        // UF: own data only, SKUs filtered to registered levels/courses
         const frRes = await sb.from('franchisees')
-          .select('id, tier, registered_courses, address, city, state')
+          .select('id, tier, registered_courses, registered_skus, address, city, state')
           .eq('id', currentFranchiseeId)
           .single()
         if (frRes.data) {
           const fr = frRes.data
           setPlacerTier(fr.tier || 'UF')
           setDeliverTo(buildAddress(fr))
-          const regCourses = fr.registered_courses || []
-          if (fr.tier === 'UF' && regCourses.length > 0) {
-            setVisibleSkus(ordPool.filter(function (s) { return regCourses.includes(s.course_id) }))
-          } else {
-            setVisibleSkus(ordPool)
-          }
+          setVisibleSkus(filterSkusForFranchisee(ordPool, fr))
         }
       }
       setLoading(false)
@@ -1299,14 +1308,9 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     const tier = fr.tier || 'UF'
     setPlacerTier(tier)
     setDeliverTo(buildAddress(fr))
-    // Filter SKUs by registered courses for UF; supply SKUs stay HO-only.
+    // Filter SKUs by registered levels/courses for UF; supply SKUs stay HO-only.
     const pool = isAdmin ? allSkus : allSkus.filter(function (s) { return (s.sku_type || 'course_kit') !== 'supply' })
-    const regCourses = fr.registered_courses || []
-    if (tier === 'UF' && regCourses.length > 0) {
-      setVisibleSkus(pool.filter(function (s) { return regCourses.includes(s.course_id) }))
-    } else {
-      setVisibleSkus(pool)
-    }
+    setVisibleSkus(filterSkusForFranchisee(pool, fr))
     // Refresh rates on existing lines for the new tier
     setLines(function (prev) {
       return prev.map(function (line) {
