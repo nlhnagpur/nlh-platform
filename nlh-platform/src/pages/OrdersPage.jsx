@@ -1309,8 +1309,9 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     setPlacerTier(tier)
     setDeliverTo(buildAddress(fr))
     // Filter SKUs by registered levels/courses for UF; supply SKUs stay HO-only.
+    // HO admin is unrestricted — they can order anything for any franchisee.
     const pool = isAdmin ? allSkus : allSkus.filter(function (s) { return (s.sku_type || 'course_kit') !== 'supply' })
-    setVisibleSkus(filterSkusForFranchisee(pool, fr))
+    setVisibleSkus(isAdmin ? pool : filterSkusForFranchisee(pool, fr))
     // Refresh rates on existing lines for the new tier
     setLines(function (prev) {
       return prev.map(function (line) {
