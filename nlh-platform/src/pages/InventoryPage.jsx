@@ -205,6 +205,12 @@ export default function InventoryPage() {
   const [loading, setLoad]  = useState(true)
   const [search, setSearch] = useState('')
 
+  // Per-item stock card (Stock ledger tab) — pick an item to see its full
+  // opening/inward/outward/closing statement, not just the last 500 rows.
+  const [stockItemId, setStockItemId] = useState('')
+  const [stockItemLedger, setStockItemLedger] = useState(null)
+  const [stockItemLoading, setStockItemLoading] = useState(false)
+
   const [itemModal, setItemModal] = useState(null)   // 'new' | item
   const [supplyModal, setSupplyModal] = useState(false)
   const [receiptModal, setReceiptModal] = useState(false)
@@ -232,6 +238,19 @@ export default function InventoryPage() {
   const balance = {}
   ledger.forEach(function (l) { if (l.location_type === 'ho') balance[l.item_id] = (balance[l.item_id] || 0) + (l.qty || 0) })
   function itemById(id) { return items.find(function (i) { return i.id === id }) }
+
+  // Full history for one item (the capped/newest-500 `ledger` above isn't
+  // reliable for an all-time opening/inward/outward/closing statement).
+  async function loadItemLedger(id) {
+    setStockItemLoading(true)
+    const res = await sb.from('stock_ledger').select('*').eq('item_id', id).order('created_at', { ascending: true })
+    setStockItemLedger(res.data || [])
+    setStockItemLoading(false)
+  }
+  useEffect(function () {
+    if (!stockItemId) { setStockItemLedger(null); return }
+    loadItemLedger(stockItemId)
+  }, [stockItemId])
 
   async function deleteLedger(l) {
     const it = items.find(function (i) { return i.id === l.item_id })
@@ -384,33 +403,103 @@ export default function InventoryPage() {
             </div>
           )
         ) : (
-          ledger.length === 0 ? <div className="empty">No stock movements yet. Record a receipt to start.</div> : (
-            <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
-              <table className="big-tbl">
-                <thead><tr><th>When</th><th>Item</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th className="hide-mobile">Note</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
-                <tbody>
-                  {(q ? ledger.filter(function (l) { const it = itemById(l.item_id); return it && (it.name || '').toLowerCase().includes(q) }) : ledger).map(function (l) {
-                    const it = itemById(l.item_id)
-                    return (
-                      <tr key={l.id}>
-                        <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(l.created_at)}</td>
-                        <td style={{ fontSize: 12 }}>{it ? it.name : '—'}</td>
-                        <td style={{ fontSize: 12 }}>{MOVE_LABEL[l.movement_type] || l.movement_type}</td>
-                        <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
-                        <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note || (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
-                        {canManage && (
-                          <td style={{ textAlign: 'right' }}>
-                            <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }}
-                              title="Remove this stock entry" onClick={function () { deleteLedger(l) }}>🗑</button>
-                          </td>
-                        )}
-                      </tr>
-                    )
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>View item:</span>
+                <select value={stockItemId} onChange={function (e) { setStockItemId(e.target.value) }}
+                  style={{ font: '500 13px var(--font)', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)', minWidth: 260 }}>
+                  <option value="">— all items (recent activity) —</option>
+                  {items.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }).map(function (i) {
+                    return <option key={i.id} value={i.id}>{i.name}{i.item_code ? ' (' + i.item_code + ')' : ''}</option>
                   })}
-                </tbody>
-              </table>
+                </select>
+              </label>
+              {stockItemId && <button className="btn-s" onClick={function () { setStockItemId('') }}>✕ Clear</button>}
             </div>
-          )
+
+            {stockItemId ? (
+              stockItemLoading ? (
+                <div className="loading"><span className="spinner" />Loading item history…</div>
+              ) : (function () {
+                const rows = stockItemLedger || []
+                const it = itemById(stockItemId)
+                const opening = rows.filter(function (r) { return r.note === 'Opening stock' }).reduce(function (s, r) { return s + (r.qty || 0) }, 0)
+                const movementRows = rows.filter(function (r) { return r.note !== 'Opening stock' })
+                const inward  = movementRows.filter(function (r) { return (r.qty || 0) > 0 }).reduce(function (s, r) { return s + r.qty }, 0)
+                const outward = movementRows.filter(function (r) { return (r.qty || 0) < 0 }).reduce(function (s, r) { return s + Math.abs(r.qty) }, 0)
+                const closing = opening + inward - outward
+                let running = 0
+                const card = { padding: '14px 18px', borderRadius: 10, background: 'var(--bg2,#f5f4f0)', minWidth: 130 }
+                const cardLbl = { font: '600 10px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }
+                return (
+                  <>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+                      <div style={card}><div style={cardLbl}>Opening</div><div style={{ font: '700 20px var(--mono)', color: 'var(--text)' }}>{opening}</div></div>
+                      <div style={card}><div style={cardLbl}>Inward</div><div style={{ font: '700 20px var(--mono)', color: 'var(--green,#1D7A4F)' }}>+{inward}</div></div>
+                      <div style={card}><div style={cardLbl}>Outward</div><div style={{ font: '700 20px var(--mono)', color: 'var(--red,#dc2626)' }}>−{outward}</div></div>
+                      <div style={Object.assign({}, card, { background: 'var(--purple-bg,#EDE9FF)' })}><div style={cardLbl}>Closing</div><div style={{ font: '700 20px var(--mono)', color: 'var(--purple)' }}>{closing} {it?.unit}</div></div>
+                    </div>
+                    {rows.length === 0 ? <div className="empty">No stock movements yet for this item.</div> : (
+                      <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+                        <table className="big-tbl">
+                          <thead><tr><th>When</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Balance</th><th className="hide-mobile">Note</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
+                          <tbody>
+                            {rows.map(function (l) {
+                              running += (l.qty || 0)
+                              return (
+                                <tr key={l.id}>
+                                  <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(l.created_at)}</td>
+                                  <td style={{ fontSize: 12 }}>{l.note === 'Opening stock' ? '🏁 Opening' : (MOVE_LABEL[l.movement_type] || l.movement_type)}</td>
+                                  <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
+                                  <td style={{ textAlign: 'right', font: '600 12px var(--mono)', color: 'var(--text2)' }}>{running}</td>
+                                  <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note && l.note !== 'Opening stock' ? l.note : (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
+                                  {canManage && (
+                                    <td style={{ textAlign: 'right' }}>
+                                      <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }}
+                                        title="Remove this stock entry" onClick={function () { deleteLedger(l).then(function () { loadItemLedger(stockItemId) }) }}>🗑</button>
+                                    </td>
+                                  )}
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                )
+              })()
+            ) : (
+              ledger.length === 0 ? <div className="empty">No stock movements yet. Record a receipt to start.</div> : (
+                <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+                  <table className="big-tbl">
+                    <thead><tr><th>When</th><th>Item</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th className="hide-mobile">Note</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
+                    <tbody>
+                      {(q ? ledger.filter(function (l) { const it = itemById(l.item_id); return it && (it.name || '').toLowerCase().includes(q) }) : ledger).map(function (l) {
+                        const it = itemById(l.item_id)
+                        return (
+                          <tr key={l.id}>
+                            <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(l.created_at)}</td>
+                            <td style={{ fontSize: 12 }}>{it ? it.name : '—'}</td>
+                            <td style={{ fontSize: 12 }}>{MOVE_LABEL[l.movement_type] || l.movement_type}</td>
+                            <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
+                            <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note || (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
+                            {canManage && (
+                              <td style={{ textAlign: 'right' }}>
+                                <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }}
+                                  title="Remove this stock entry" onClick={function () { deleteLedger(l) }}>🗑</button>
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </>
         )}
       </div>
 
