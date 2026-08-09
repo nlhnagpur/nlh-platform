@@ -188,9 +188,63 @@ function ReceiptModal({ items, currentUserId, onClose, onSaved }) {
   )
 }
 
+// ── Record a stock issue (samples / internal use — no franchisee order) ────
+function IssueModal({ items, currentUserId, onClose, onSaved }) {
+  const [itemId, setItemId] = useState('')
+  const [qty, setQty] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [givenTo, setGivenTo] = useState('')
+  const [purpose, setPurpose] = useState('')
+  const [saving, setSaving] = useState(false)
+  async function save() {
+    const q = Math.round(Number(qty))
+    if (!itemId) { showToast('Pick an item', 'warn'); return }
+    if (!q || q <= 0) { showToast('Enter a positive quantity', 'warn'); return }
+    if (!givenTo.trim()) { showToast('Enter who this is going to', 'warn'); return }
+    setSaving(true)
+    const note = 'To: ' + givenTo.trim() + (purpose.trim() ? ' — ' + purpose.trim() : '')
+    const { error } = await sb.from('stock_ledger').insert({
+      item_id: itemId, location_type: 'ho', movement_type: 'issue_internal', qty: -q,
+      ref_type: 'manual', note, created_by: currentUserId || null,
+      created_at: (date || new Date().toISOString().slice(0, 10)) + 'T12:00:00+00:00',
+    })
+    setSaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    showToast('Stock issued ✓')
+    onSaved()
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={function (e) { e.stopPropagation() }} style={{ padding: 0, overflow: 'hidden', width: 460, maxWidth: '96vw' }}>
+        <ModalHeader title="Record Stock Issue" subtitle="Samples or internal use — not a franchisee order" onClose={onClose} />
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <label><span style={lbl}>Item</span>
+            <select value={itemId} onChange={function (e) { setItemId(e.target.value) }} style={inp}>
+              <option value="">— select item —</option>
+              {(items || []).filter(function (i) { return i.is_active !== false }).map(function (i) { return <option key={i.id} value={i.id}>{i.name}</option> })}
+            </select></label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label><span style={lbl}>Quantity</span><input type="number" value={qty} onChange={function (e) { setQty(e.target.value) }} autoFocus style={inp} /></label>
+            <label><span style={lbl}>Date</span><input type="date" value={date} onChange={function (e) { setDate(e.target.value) }} style={inp} /></label>
+          </div>
+          <label><span style={lbl}>Given to</span>
+            <input value={givenTo} onChange={function (e) { setGivenTo(e.target.value) }} placeholder="e.g. Rasesh, or a franchisee/visitor name" style={inp} /></label>
+          <label><span style={lbl}>Purpose (optional)</span>
+            <input value={purpose} onChange={function (e) { setPurpose(e.target.value) }} placeholder="e.g. Sample for a prospective franchisee" style={inp} /></label>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : '− Take from stock'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const MOVE_LABEL = {
   receipt: '📥 Receipt', issue_to_franchisee: '📦 Dispatch', receive_from_ho: '↘ Received',
   issue_to_student: '🎓 Issued', adjustment: '⚙ Adjustment', return: '↩ Return',
+  issue_internal: '🎁 Given out',
 }
 
 export default function InventoryPage() {
@@ -214,6 +268,7 @@ export default function InventoryPage() {
   const [itemModal, setItemModal] = useState(null)   // 'new' | item
   const [supplyModal, setSupplyModal] = useState(false)
   const [receiptModal, setReceiptModal] = useState(false)
+  const [issueModal, setIssueModal] = useState(false)
   const [kitSku, setKitSku] = useState(null)
 
   useEffect(function () { load() }, [])
@@ -290,6 +345,7 @@ export default function InventoryPage() {
           <input className="search tb-search" placeholder="Search items…" value={search} onChange={function (e) { setSearch(e.target.value) }} />
           {canManage && tab === 'items' && <button className="btn-s" onClick={function () { setSupplyModal(true) }}>+ Supply</button>}
           {canManage && tab === 'items' && <button className="btn-p" onClick={function () { setItemModal('new') }}>+ New item</button>}
+          {canManage && tab === 'stock' && <button className="btn-s" onClick={function () { setIssueModal(true) }}>🎁 Record issue</button>}
           {canManage && tab === 'stock' && <button className="btn-p" onClick={function () { setReceiptModal(true) }}>📥 Record receipt</button>}
         </div>
       </header>
@@ -505,7 +561,8 @@ export default function InventoryPage() {
 
       {itemModal && <ItemModal item={itemModal === 'new' ? null : itemModal} currentUserId={currentUser?.id} currentQty={itemModal === 'new' ? 0 : (balance[itemModal.id] || 0)} onClose={function () { setItemModal(null) }} onSaved={function () { setItemModal(null); load() }} />}
       {supplyModal && <SupplyModal onClose={function () { setSupplyModal(false) }} onSaved={function () { setSupplyModal(false); load() }} />}
-      {receiptModal && <ReceiptModal items={items} currentUserId={currentUser?.id} onClose={function () { setReceiptModal(false) }} onSaved={function () { setReceiptModal(false); load() }} />}
+      {receiptModal && <ReceiptModal items={items} currentUserId={currentUser?.id} onClose={function () { setReceiptModal(false) }} onSaved={function () { setReceiptModal(false); load(); if (stockItemId) loadItemLedger(stockItemId) }} />}
+      {issueModal && <IssueModal items={items} currentUserId={currentUser?.id} onClose={function () { setIssueModal(false) }} onSaved={function () { setIssueModal(false); load(); if (stockItemId) loadItemLedger(stockItemId) }} />}
       {kitSku && <KitEditorModal sku={kitSku} items={items} onClose={function () { setKitSku(null) }} onSaved={function () { setKitSku(null); load() }} />}
     </div>
   )

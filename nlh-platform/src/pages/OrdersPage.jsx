@@ -1208,9 +1208,12 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
       const ordPool = isAdmin ? allS : allS.filter(function (s) { return (s.sku_type || 'course_kit') !== 'supply' })
 
       if (isAdmin) {
-        // Admin: see all franchisees
+        // Admin: see all franchisees. NLH Head Office itself is excluded —
+        // orders always bill a franchisee (SMF/CF/UF); HO taking stock for
+        // samples/internal use is tracked as a stock issue, not an order.
         const fRes = await sb.from('franchisees')
           .select('id, business_name, tier, registered_courses, registered_skus, address, city, state')
+          .neq('tier', 'NLH')
           .order('business_name')
         setFranchisees(fRes.data || [])
         setVisibleSkus(allS)
