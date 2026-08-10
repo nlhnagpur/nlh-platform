@@ -13,9 +13,6 @@ const inp = { width: '100%', font: '500 13px var(--font)', padding: '8px 10px', 
 // ── Add / edit an inventory item ───────────────────────────────────────────
 function ItemModal({ item, currentUserId, currentQty, onClose, onSaved }) {
   const editing = !!item
-  // Opening stock can be set when creating an item, or for an existing item that
-  // still has zero stock. Once it has movements, use Stock → Record receipt.
-  const showOpening = !editing || (currentQty || 0) === 0
   const [f, setF] = useState({
     name: item?.name || '', category: item?.category || 'component',
     unit: item?.unit || 'pcs', hsn_code: item?.hsn_code || '', default_cost: item?.default_cost ?? '',
@@ -23,6 +20,20 @@ function ItemModal({ item, currentUserId, currentQty, onClose, onSaved }) {
     is_active: item?.is_active ?? true, notes: item?.notes || '',
   })
   const [saving, setSaving] = useState(false)
+  // The item's original "Opening stock" ledger row, if any — editing this
+  // form now always lets you correct that figure, even after other stock
+  // movements exist (previously it locked once stock moved).
+  const [openingEntry, setOpeningEntry] = useState(null)
+  const [openingLoaded, setOpeningLoaded] = useState(!editing)
+  useEffect(function () {
+    if (!editing) return
+    sb.from('stock_ledger').select('id, qty').eq('item_id', item.id).eq('note', 'Opening stock')
+      .order('created_at', { ascending: true }).limit(1).maybeSingle()
+      .then(function (res) {
+        if (res.data) { setOpeningEntry(res.data); setF(function (p) { return { ...p, opening: String(res.data.qty) } }) }
+        setOpeningLoaded(true)
+      })
+  }, [])
   function set(k, v) { setF(function (p) { return { ...p, [k]: v } }) }
   async function save() {
     if (!f.name.trim()) { showToast('Item name is required', 'warn'); return }
@@ -37,13 +48,18 @@ function ItemModal({ item, currentUserId, currentQty, onClose, onSaved }) {
       ? await sb.from('inventory_items').update(row).eq('id', item.id).select('id').single()
       : await sb.from('inventory_items').insert(row).select('id').single()
     if (error) { setSaving(false); showToast(/duplicate|unique/i.test(error.message) ? 'That item code already exists' : 'Save failed: ' + error.message, 'err'); return }
-    // Opening stock → first receipt in the ledger
+    // Opening stock — update the existing ledger entry if one exists,
+    // otherwise create it (only when a positive value was entered).
     const openQ = f.opening === '' ? 0 : Math.round(Number(f.opening))
-    if (showOpening && openQ > 0 && saved?.id) {
-      await sb.from('stock_ledger').insert({
-        item_id: saved.id, location_type: 'ho', movement_type: 'receipt', qty: openQ,
-        unit_cost: row.default_cost || null, ref_type: 'manual', note: 'Opening stock', created_by: currentUserId || null,
-      })
+    if (saved?.id) {
+      if (openingEntry) {
+        if (openQ !== openingEntry.qty) await sb.from('stock_ledger').update({ qty: openQ }).eq('id', openingEntry.id)
+      } else if (openQ > 0) {
+        await sb.from('stock_ledger').insert({
+          item_id: saved.id, location_type: 'ho', movement_type: 'receipt', qty: openQ,
+          unit_cost: row.default_cost || null, ref_type: 'manual', note: 'Opening stock', created_by: currentUserId || null,
+        })
+      }
     }
     setSaving(false)
     showToast(editing ? 'Item updated' : 'Item added')
@@ -73,15 +89,16 @@ function ItemModal({ item, currentUserId, currentQty, onClose, onSaved }) {
             <input type="number" value={f.sell_price} onChange={function (e) { set('sell_price', e.target.value) }} placeholder="replacement / standalone price" style={inp} /></label>
           <label><span style={lbl}>Reorder level</span>
             <input type="number" value={f.reorder_level} onChange={function (e) { set('reorder_level', e.target.value) }} placeholder="0" style={inp} /></label>
-          {showOpening ? (
-            <label style={{ gridColumn: 'span 2' }}><span style={lbl}>📦 Opening stock (HO)
-              <span style={{ fontWeight: 400, color: 'var(--text3)' }}> · current count in hand</span></span>
-              <input type="number" value={f.opening} onChange={function (e) { set('opening', e.target.value) }} placeholder="e.g. 50 — recorded as the first receipt" style={inp} /></label>
-          ) : (
-            <div style={{ gridColumn: 'span 2', font: '500 12px var(--font)', color: 'var(--text3)', alignSelf: 'center' }}>
-              In stock: <b style={{ color: 'var(--text)' }}>{currentQty}</b> {f.unit}. To change, use <b>Stock ledger → 📥 Record receipt</b>.
-            </div>
-          )}
+          <label style={{ gridColumn: 'span 2' }}><span style={lbl}>📦 Opening stock (HO)
+            <span style={{ fontWeight: 400, color: 'var(--text3)' }}> · {openingEntry ? 'editable anytime' : 'first recorded count'}</span></span>
+            <input type="number" value={f.opening} disabled={!openingLoaded} onChange={function (e) { set('opening', e.target.value) }} placeholder="e.g. 50" style={inp} />
+            {editing && (
+              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
+                Current total in stock (all movements): <b style={{ color: 'var(--text)' }}>{currentQty}</b> {f.unit}
+                {!openingEntry && openingLoaded ? ' — no opening entry yet; saving a value here adds one.' : ''}
+                {' '}· for later receipts/issues use <b>Stock ledger</b>.
+              </div>
+            )}</label>
           <label style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: 8 }}>
             <input type="checkbox" checked={f.is_active} onChange={function (e) { set('is_active', e.target.checked) }} />
             <span style={{ font: '600 13px var(--font)' }}>Active</span></label>
@@ -247,6 +264,63 @@ const MOVE_LABEL = {
   issue_internal: '🎁 Given out',
 }
 
+// ── Edit (or delete) any stock ledger entry — click a row to open ──────────
+function LedgerEditModal({ entry, itemName, onClose, onSaved, onDeleted }) {
+  const [qty, setQty] = useState(String(entry.qty))
+  const [date, setDate] = useState(String(entry.created_at).slice(0, 10))
+  const [note, setNote] = useState(entry.note || '')
+  const [saving, setSaving] = useState(false)
+  const [confirmDel, setConfirmDel] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  async function save() {
+    const q = Math.round(Number(qty))
+    if (!q) { showToast('Quantity cannot be zero', 'warn'); return }
+    setSaving(true)
+    const { error } = await sb.from('stock_ledger').update({
+      qty: q, note: note.trim() || null,
+      created_at: (date || String(entry.created_at).slice(0, 10)) + 'T12:00:00+00:00',
+    }).eq('id', entry.id)
+    setSaving(false)
+    if (error) { showToast('Update failed: ' + error.message, 'err'); return }
+    showToast('Stock entry updated')
+    onSaved()
+  }
+  async function del() {
+    setDeleting(true)
+    const { error } = await sb.from('stock_ledger').delete().eq('id', entry.id)
+    setDeleting(false)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    showToast('Stock entry removed')
+    onDeleted()
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={function (e) { e.stopPropagation() }} style={{ padding: 0, overflow: 'hidden', width: 460, maxWidth: '96vw' }}>
+        <ModalHeader title="Edit Stock Entry" subtitle={itemName + ' · ' + (MOVE_LABEL[entry.movement_type] || entry.movement_type)} onClose={onClose} />
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label><span style={lbl}>Quantity (+in / −out)</span>
+              <input type="number" value={qty} onChange={function (e) { setQty(e.target.value) }} autoFocus style={inp} /></label>
+            <label><span style={lbl}>Date</span>
+              <input type="date" value={date} onChange={function (e) { setDate(e.target.value) }} style={inp} /></label>
+          </div>
+          <label><span style={lbl}>Note {entry.note === 'Opening stock' ? '(this is the Opening stock entry)' : '· who it went to / why'}</span>
+            <input value={note} onChange={function (e) { setNote(e.target.value) }} placeholder="e.g. To: Rasesh — sample for a prospect" style={inp} /></label>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+          <button className="btn-s" style={{ color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }} onClick={function () { confirmDel ? del() : setConfirmDel(true) }} disabled={deleting}>
+            {deleting ? 'Removing…' : confirmDel ? 'Click again to confirm delete' : '🗑 Delete entry'}
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function InventoryPage() {
   const { currentRole, currentUser } = useAuth()
   const canManage = isManagerOrAbove(currentRole)
@@ -264,6 +338,19 @@ export default function InventoryPage() {
   const [stockItemId, setStockItemId] = useState('')
   const [stockItemLedger, setStockItemLedger] = useState(null)
   const [stockItemLoading, setStockItemLoading] = useState(false)
+
+  // Item list refinements (Item stock & Supplies tab)
+  const [catFilter, setCatFilter] = useState('')
+  const [lowOnly, setLowOnly] = useState(false)
+  const [itemSort, setItemSort] = useState('name')   // name | stock_asc | stock_desc
+
+  // Ledger usability (Stock ledger tab): date range + pagination, shared by
+  // both the per-item card and the all-items recent-activity view.
+  const [ledgerFrom, setLedgerFrom] = useState('')
+  const [ledgerTo, setLedgerTo] = useState('')
+  const [ledgerPage, setLedgerPage] = useState(0)
+  const LEDGER_PAGE_SIZE = 25
+  const [editEntry, setEditEntry] = useState(null)   // stock_ledger row being edited
 
   const [itemModal, setItemModal] = useState(null)   // 'new' | item
   const [supplyModal, setSupplyModal] = useState(false)
@@ -306,14 +393,7 @@ export default function InventoryPage() {
     if (!stockItemId) { setStockItemLedger(null); return }
     loadItemLedger(stockItemId)
   }, [stockItemId])
-
-  async function deleteLedger(l) {
-    const it = items.find(function (i) { return i.id === l.item_id })
-    if (!window.confirm('Remove this stock entry (' + (l.qty > 0 ? '+' : '') + l.qty + ' ' + (it ? it.name : '') + ')? The balance will be recalculated.')) return
-    const { error } = await sb.from('stock_ledger').delete().eq('id', l.id)
-    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
-    showToast('Stock entry removed'); load()
-  }
+  useEffect(function () { setLedgerPage(0) }, [stockItemId, ledgerFrom, ledgerTo])
 
   async function deleteSupply(s) {
     if (!window.confirm('Delete supply “' + s.level_name + '”?')) return
@@ -330,8 +410,16 @@ export default function InventoryPage() {
   }
 
   const q = search.trim().toLowerCase()
-  const filteredItems = items.filter(function (i) {
-    return !q || (i.name || '').toLowerCase().includes(q) || (i.item_code || '').toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q)
+  let filteredItems = items.filter(function (i) {
+    const matchesSearch = !q || (i.name || '').toLowerCase().includes(q) || (i.item_code || '').toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q)
+    const matchesCat = !catFilter || i.category === catFilter
+    const matchesLow = !lowOnly || ((i.reorder_level || 0) > 0 && (balance[i.id] || 0) <= (i.reorder_level || 0))
+    return matchesSearch && matchesCat && matchesLow
+  })
+  filteredItems = filteredItems.slice().sort(function (a, b) {
+    if (itemSort === 'stock_asc')  return (balance[a.id] || 0) - (balance[b.id] || 0)
+    if (itemSort === 'stock_desc') return (balance[b.id] || 0) - (balance[a.id] || 0)
+    return (a.name || '').localeCompare(b.name || '')
   })
   const courseKits = skus.filter(function (s) { return (s.sku_type || 'course_kit') === 'course_kit' })
   const supplies   = skus.filter(function (s) { return s.sku_type === 'supply' })
@@ -372,7 +460,26 @@ export default function InventoryPage() {
           <div className="loading"><span className="spinner" />Loading inventory…</div>
         ) : tab === 'items' ? (
           <>
-            {filteredItems.length === 0 ? <div className="empty">No items yet. Add your kit components (books, tools, bags…).</div> : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+              <select value={catFilter} onChange={function (e) { setCatFilter(e.target.value) }}
+                style={{ font: '500 12px var(--font)', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)' }}>
+                <option value="">All categories</option>
+                {CATEGORIES.map(function (c) { return <option key={c} value={c}>{c}</option> })}
+              </select>
+              <select value={itemSort} onChange={function (e) { setItemSort(e.target.value) }}
+                style={{ font: '500 12px var(--font)', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)' }}>
+                <option value="name">Sort: Name A–Z</option>
+                <option value="stock_asc">Sort: Stock low → high</option>
+                <option value="stock_desc">Sort: Stock high → low</option>
+              </select>
+              <button className={'sp' + (lowOnly ? ' on on-pend' : '')} onClick={function () { setLowOnly(!lowOnly) }}>
+                ⚠ Low stock only{lowStock > 0 ? ' (' + lowStock + ')' : ''}
+              </button>
+              {(catFilter || lowOnly || itemSort !== 'name') && (
+                <button className="btn-s" onClick={function () { setCatFilter(''); setLowOnly(false); setItemSort('name') }}>✕ Reset</button>
+              )}
+            </div>
+            {filteredItems.length === 0 ? <div className="empty">No items match these filters.</div> : (
             <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
               <table className="big-tbl">
                 <thead><tr><th>Item</th><th className="hide-mobile">Category</th><th className="hide-mobile" style={{ textAlign: 'right' }}>Sell ₹</th><th style={{ textAlign: 'right' }}>In stock (HO)</th><th className="hide-mobile" style={{ textAlign: 'right' }}>Reorder</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
@@ -458,105 +565,196 @@ export default function InventoryPage() {
               </table>
             </div>
           )
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>View item:</span>
-                <select value={stockItemId} onChange={function (e) { setStockItemId(e.target.value) }}
-                  style={{ font: '500 13px var(--font)', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)', minWidth: 260 }}>
-                  <option value="">— all items (recent activity) —</option>
-                  {items.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }).map(function (i) {
-                    return <option key={i.id} value={i.id}>{i.name}{i.item_code ? ' (' + i.item_code + ')' : ''}</option>
-                  })}
-                </select>
-              </label>
-              {stockItemId && <button className="btn-s" onClick={function () { setStockItemId('') }}>✕ Clear</button>}
-            </div>
+        ) : (function () {
+          function inRange(createdAt) {
+            const d = String(createdAt).slice(0, 10)
+            if (ledgerFrom && d < ledgerFrom) return false
+            if (ledgerTo && d > ledgerTo) return false
+            return true
+          }
+          function esc(v) {
+            if (v == null || v === '') return ''
+            const s = String(v)
+            return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
+          }
+          function downloadCSV(headers, csvRows, filename) {
+            const csv = headers.join(',') + '\n' + csvRows.map(function (r) { return r.map(esc).join(',') }).join('\n')
+            const blob = new Blob([csv], { type: 'text/csv' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url; a.download = filename; a.click()
+            URL.revokeObjectURL(url)
+          }
 
-            {stockItemId ? (
-              stockItemLoading ? (
-                <div className="loading"><span className="spinner" />Loading item history…</div>
-              ) : (function () {
-                const rows = stockItemLedger || []
-                const it = itemById(stockItemId)
-                const opening = rows.filter(function (r) { return r.note === 'Opening stock' }).reduce(function (s, r) { return s + (r.qty || 0) }, 0)
-                const movementRows = rows.filter(function (r) { return r.note !== 'Opening stock' })
-                const inward  = movementRows.filter(function (r) { return (r.qty || 0) > 0 }).reduce(function (s, r) { return s + r.qty }, 0)
-                const outward = movementRows.filter(function (r) { return (r.qty || 0) < 0 }).reduce(function (s, r) { return s + Math.abs(r.qty) }, 0)
-                const closing = opening + inward - outward
-                let running = 0
-                const card = { padding: '14px 18px', borderRadius: 10, background: 'var(--bg2,#f5f4f0)', minWidth: 130 }
-                const cardLbl = { font: '600 10px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }
-                return (
+          const dateBar = (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ font: '600 11px var(--font)', color: 'var(--text3)' }}>From</span>
+              <input type="date" value={ledgerFrom} onChange={function (e) { setLedgerFrom(e.target.value) }}
+                style={{ font: '500 12px var(--font)', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)' }} />
+              <span style={{ font: '600 11px var(--font)', color: 'var(--text3)' }}>To</span>
+              <input type="date" value={ledgerTo} onChange={function (e) { setLedgerTo(e.target.value) }}
+                style={{ font: '500 12px var(--font)', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)' }} />
+              {(ledgerFrom || ledgerTo) && <button className="btn-s" onClick={function () { setLedgerFrom(''); setLedgerTo('') }}>✕</button>}
+            </div>
+          )
+
+          if (stockItemId) {
+            if (stockItemLoading) return <div className="loading"><span className="spinner" />Loading item history…</div>
+            const allRows = stockItemLedger || []
+            const it = itemById(stockItemId)
+            const opening = allRows.filter(function (r) { return r.note === 'Opening stock' }).reduce(function (s, r) { return s + (r.qty || 0) }, 0)
+            const movementRows = allRows.filter(function (r) { return r.note !== 'Opening stock' })
+            const inward  = movementRows.filter(function (r) { return (r.qty || 0) > 0 }).reduce(function (s, r) { return s + r.qty }, 0)
+            const outward = movementRows.filter(function (r) { return (r.qty || 0) < 0 }).reduce(function (s, r) { return s + Math.abs(r.qty) }, 0)
+            const closing = opening + inward - outward
+            // Running balance is computed over full history so it's correct
+            // even when the date range hides earlier rows.
+            let running = 0
+            const withBalance = allRows.map(function (l) { running += (l.qty || 0); return { l: l, bal: running } })
+            const shown = withBalance.filter(function (x) { return inRange(x.l.created_at) })
+            const totalPages = Math.max(1, Math.ceil(shown.length / LEDGER_PAGE_SIZE))
+            const page = Math.min(ledgerPage, totalPages - 1)
+            const pageRows = shown.slice(page * LEDGER_PAGE_SIZE, page * LEDGER_PAGE_SIZE + LEDGER_PAGE_SIZE)
+            const card = { padding: '14px 18px', borderRadius: 10, background: 'var(--bg2,#f5f4f0)', minWidth: 130 }
+            const cardLbl = { font: '600 10px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }
+            return (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>View item:</span>
+                    <select value={stockItemId} onChange={function (e) { setStockItemId(e.target.value) }}
+                      style={{ font: '500 13px var(--font)', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)', minWidth: 260 }}>
+                      <option value="">— all items (recent activity) —</option>
+                      {items.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }).map(function (i) {
+                        return <option key={i.id} value={i.id}>{i.name}{i.item_code ? ' (' + i.item_code + ')' : ''}</option>
+                      })}
+                    </select>
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {dateBar}
+                    <button className="btn-s" onClick={function () {
+                      downloadCSV(
+                        ['Date', 'Type', 'Qty', 'Balance', 'Note'],
+                        shown.map(function (x) { return [fmtDate(x.l.created_at), MOVE_LABEL[x.l.movement_type] || x.l.movement_type, x.l.qty, x.bal, x.l.note || ''] }),
+                        'stock-ledger-' + (it?.item_code || 'item') + '-' + new Date().toISOString().slice(0, 10) + '.csv'
+                      )
+                    }}>⬇ Export CSV</button>
+                    <button className="btn-s" onClick={function () { setStockItemId('') }}>✕ Clear</button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+                  <div style={card}><div style={cardLbl}>Opening</div><div style={{ font: '700 20px var(--mono)', color: 'var(--text)' }}>{opening}</div></div>
+                  <div style={card}><div style={cardLbl}>Inward</div><div style={{ font: '700 20px var(--mono)', color: 'var(--green,#1D7A4F)' }}>+{inward}</div></div>
+                  <div style={card}><div style={cardLbl}>Outward</div><div style={{ font: '700 20px var(--mono)', color: 'var(--red,#dc2626)' }}>−{outward}</div></div>
+                  <div style={Object.assign({}, card, { background: 'var(--purple-bg,#EDE9FF)' })}><div style={cardLbl}>Closing</div><div style={{ font: '700 20px var(--mono)', color: 'var(--purple)' }}>{closing} {it?.unit}</div></div>
+                </div>
+                {shown.length === 0 ? <div className="empty">No stock movements {ledgerFrom || ledgerTo ? 'in this date range' : 'yet for this item'}.</div> : (
                   <>
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-                      <div style={card}><div style={cardLbl}>Opening</div><div style={{ font: '700 20px var(--mono)', color: 'var(--text)' }}>{opening}</div></div>
-                      <div style={card}><div style={cardLbl}>Inward</div><div style={{ font: '700 20px var(--mono)', color: 'var(--green,#1D7A4F)' }}>+{inward}</div></div>
-                      <div style={card}><div style={cardLbl}>Outward</div><div style={{ font: '700 20px var(--mono)', color: 'var(--red,#dc2626)' }}>−{outward}</div></div>
-                      <div style={Object.assign({}, card, { background: 'var(--purple-bg,#EDE9FF)' })}><div style={cardLbl}>Closing</div><div style={{ font: '700 20px var(--mono)', color: 'var(--purple)' }}>{closing} {it?.unit}</div></div>
+                    <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+                      <table className="big-tbl">
+                        <thead><tr><th>When</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Balance</th><th className="hide-mobile">Note</th></tr></thead>
+                        <tbody>
+                          {pageRows.map(function (x) {
+                            const l = x.l
+                            return (
+                              <tr key={l.id} style={canManage ? { cursor: 'pointer' } : undefined} onClick={canManage ? function () { setEditEntry(l) } : undefined} title={canManage ? 'Click to edit or delete' : undefined}>
+                                <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(l.created_at)}</td>
+                                <td style={{ fontSize: 12 }}>{l.note === 'Opening stock' ? '🏁 Opening' : (MOVE_LABEL[l.movement_type] || l.movement_type)}</td>
+                                <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
+                                <td style={{ textAlign: 'right', font: '600 12px var(--mono)', color: 'var(--text2)' }}>{x.bal}</td>
+                                <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note && l.note !== 'Opening stock' ? l.note : (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                    {rows.length === 0 ? <div className="empty">No stock movements yet for this item.</div> : (
-                      <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
-                        <table className="big-tbl">
-                          <thead><tr><th>When</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th style={{ textAlign: 'right' }}>Balance</th><th className="hide-mobile">Note</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
-                          <tbody>
-                            {rows.map(function (l) {
-                              running += (l.qty || 0)
-                              return (
-                                <tr key={l.id}>
-                                  <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(l.created_at)}</td>
-                                  <td style={{ fontSize: 12 }}>{l.note === 'Opening stock' ? '🏁 Opening' : (MOVE_LABEL[l.movement_type] || l.movement_type)}</td>
-                                  <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
-                                  <td style={{ textAlign: 'right', font: '600 12px var(--mono)', color: 'var(--text2)' }}>{running}</td>
-                                  <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note && l.note !== 'Opening stock' ? l.note : (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
-                                  {canManage && (
-                                    <td style={{ textAlign: 'right' }}>
-                                      <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }}
-                                        title="Remove this stock entry" onClick={function () { deleteLedger(l).then(function () { loadItemLedger(stockItemId) }) }}>🗑</button>
-                                    </td>
-                                  )}
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
+                    {totalPages > 1 && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 12 }}>
+                        <button className="btn-s" disabled={page === 0} onClick={function () { setLedgerPage(page - 1) }}>← Prev</button>
+                        <span style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>Page {page + 1} of {totalPages}</span>
+                        <button className="btn-s" disabled={page >= totalPages - 1} onClick={function () { setLedgerPage(page + 1) }}>Next →</button>
                       </div>
                     )}
                   </>
-                )
-              })()
-            ) : (
-              ledger.length === 0 ? <div className="empty">No stock movements yet. Record a receipt to start.</div> : (
-                <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
-                  <table className="big-tbl">
-                    <thead><tr><th>When</th><th>Item</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th className="hide-mobile">Note</th>{canManage && <th style={{ textAlign: 'right' }}>Actions</th>}</tr></thead>
-                    <tbody>
-                      {(q ? ledger.filter(function (l) { const it = itemById(l.item_id); return it && (it.name || '').toLowerCase().includes(q) }) : ledger).map(function (l) {
-                        const it = itemById(l.item_id)
-                        return (
-                          <tr key={l.id}>
-                            <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(l.created_at)}</td>
-                            <td style={{ fontSize: 12 }}>{it ? it.name : '—'}</td>
-                            <td style={{ fontSize: 12 }}>{MOVE_LABEL[l.movement_type] || l.movement_type}</td>
-                            <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
-                            <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note || (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
-                            {canManage && (
-                              <td style={{ textAlign: 'right' }}>
-                                <button className="btn-s" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red,#dc2626)', borderColor: 'var(--red,#dc2626)' }}
-                                  title="Remove this stock entry" onClick={function () { deleteLedger(l) }}>🗑</button>
-                              </td>
-                            )}
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                )}
+                {editEntry && <LedgerEditModal entry={editEntry} itemName={it?.name || ''} onClose={function () { setEditEntry(null) }}
+                  onSaved={function () { setEditEntry(null); load(); loadItemLedger(stockItemId) }}
+                  onDeleted={function () { setEditEntry(null); load(); loadItemLedger(stockItemId) }} />}
+              </>
+            )
+          }
+
+          // All-items recent-activity view (capped at the 500 most recent movements)
+          const allShown = ledger.filter(function (l) {
+            const it = itemById(l.item_id)
+            const matchesSearch = !q || (it && (it.name || '').toLowerCase().includes(q))
+            return matchesSearch && inRange(l.created_at)
+          })
+          const totalPages = Math.max(1, Math.ceil(allShown.length / LEDGER_PAGE_SIZE))
+          const page = Math.min(ledgerPage, totalPages - 1)
+          const pageRows = allShown.slice(page * LEDGER_PAGE_SIZE, page * LEDGER_PAGE_SIZE + LEDGER_PAGE_SIZE)
+          return (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>View item:</span>
+                  <select value={stockItemId} onChange={function (e) { setStockItemId(e.target.value) }}
+                    style={{ font: '500 13px var(--font)', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)', minWidth: 260 }}>
+                    <option value="">— all items (recent activity) —</option>
+                    {items.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }).map(function (i) {
+                      return <option key={i.id} value={i.id}>{i.name}{i.item_code ? ' (' + i.item_code + ')' : ''}</option>
+                    })}
+                  </select>
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  {dateBar}
+                  <button className="btn-s" onClick={function () {
+                    downloadCSV(
+                      ['Date', 'Item', 'Type', 'Qty', 'Note'],
+                      allShown.map(function (l) { const it = itemById(l.item_id); return [fmtDate(l.created_at), it ? it.name : '', MOVE_LABEL[l.movement_type] || l.movement_type, l.qty, l.note || ''] }),
+                      'stock-ledger-all-' + new Date().toISOString().slice(0, 10) + '.csv'
+                    )
+                  }}>⬇ Export CSV</button>
                 </div>
-              )
-            )}
-          </>
-        )}
+              </div>
+              {allShown.length === 0 ? <div className="empty">No stock movements match these filters.</div> : (
+                <>
+                  <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+                    <table className="big-tbl">
+                      <thead><tr><th>When</th><th>Item</th><th>Type</th><th style={{ textAlign: 'right' }}>Qty</th><th className="hide-mobile">Note</th></tr></thead>
+                      <tbody>
+                        {pageRows.map(function (l) {
+                          const it = itemById(l.item_id)
+                          return (
+                            <tr key={l.id} style={canManage ? { cursor: 'pointer' } : undefined} onClick={canManage ? function () { setEditEntry(l) } : undefined} title={canManage ? 'Click to edit or delete' : undefined}>
+                              <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(l.created_at)}</td>
+                              <td style={{ fontSize: 12 }}>{it ? it.name : '—'}</td>
+                              <td style={{ fontSize: 12 }}>{MOVE_LABEL[l.movement_type] || l.movement_type}</td>
+                              <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
+                              <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note || (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {totalPages > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 12 }}>
+                      <button className="btn-s" disabled={page === 0} onClick={function () { setLedgerPage(page - 1) }}>← Prev</button>
+                      <span style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>Page {page + 1} of {totalPages}</span>
+                      <button className="btn-s" disabled={page >= totalPages - 1} onClick={function () { setLedgerPage(page + 1) }}>Next →</button>
+                    </div>
+                  )}
+                </>
+              )}
+              {editEntry && <LedgerEditModal entry={editEntry} itemName={(itemById(editEntry.item_id) || {}).name || ''} onClose={function () { setEditEntry(null) }}
+                onSaved={function () { setEditEntry(null); load() }}
+                onDeleted={function () { setEditEntry(null); load() }} />}
+            </>
+          )
+        })()}
       </div>
 
       {itemModal && <ItemModal item={itemModal === 'new' ? null : itemModal} currentUserId={currentUser?.id} currentQty={itemModal === 'new' ? 0 : (balance[itemModal.id] || 0)} onClose={function () { setItemModal(null) }} onSaved={function () { setItemModal(null); load() }} />}
