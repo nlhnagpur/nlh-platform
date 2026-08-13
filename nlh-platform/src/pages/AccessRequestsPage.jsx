@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { showToast } from '../utils'
 import { sendWelcomeEmail } from '../services/email'
 import ModalHeader from '../components/ModalHeader'
+import { useAuth } from '../context/AuthContext'
 
 function CredentialsModal({ email, password, onClose }) {
   const [copied, setCopied] = useState(false)
@@ -56,7 +57,129 @@ const STATUS_CLASS = {
   rejected: 'badge bd',
 }
 
-export default function AccessRequestsPage() {
+// Public-facing submission form — rendered for anonymous visitors who click
+// "Request Platform Access" from the landing/login screens. Not gated by
+// auth; RLS's anyone_can_request INSERT policy is what actually allows this.
+function PublicRequestForm() {
+  const { setScreen } = useAuth()
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', message: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(false)
+
+  function field(key) {
+    return function (e) { setForm(function (f) { return { ...f, [key]: e.target.value } }) }
+  }
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!form.full_name.trim())               { showToast('Please enter your name', 'warn'); return }
+    if (!form.email.trim() || !form.email.includes('@')) { showToast('Please enter a valid email address', 'warn'); return }
+    setSubmitting(true)
+    const { error } = await sb.from('access_requests').insert({
+      full_name:      form.full_name.trim(),
+      email:          form.email.trim().toLowerCase(),
+      phone:          form.phone.trim() || null,
+      role_requested: form.role_requested,
+      state:          form.state.trim() || null,
+      city:           form.city.trim() || null,
+      message:        form.message.trim() || null,
+    })
+    setSubmitting(false)
+    if (error) { showToast('Could not submit request: ' + error.message, 'err'); return }
+    setDone(true)
+  }
+
+  if (done) {
+    return (
+      <div className="login-wrap">
+        <div className="login-card">
+          <div className="login-logo">
+            <div className="login-icon">N</div>
+            <div>
+              <div className="login-brand">New Learning Horizons</div>
+              <div className="login-brand-sub">ISO 9001:2015 Certified · Franchise Platform</div>
+            </div>
+          </div>
+          <div className="login-title">Request submitted ✓</div>
+          <div className="login-sub">
+            Thanks, {form.full_name.split(' ')[0]}! NLH Admin will review your request and email your
+            login details once approved.
+          </div>
+          <div className="login-toggle" style={{ marginTop: 16 }}>
+            <a onClick={function () { setScreen('login') }}>← Back to sign in</a>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-logo">
+          <div className="login-icon">N</div>
+          <div>
+            <div className="login-brand">New Learning Horizons</div>
+            <div className="login-brand-sub">ISO 9001:2015 Certified · Franchise Platform</div>
+          </div>
+        </div>
+        <div className="login-title">Request platform access</div>
+        <div className="login-sub">Tell us about yourself — NLH Admin will review and set up your login.</div>
+        <form onSubmit={submit}>
+          <div className="form-row">
+            <label>Full name *</label>
+            <input value={form.full_name} onChange={field('full_name')} placeholder="Your full name" />
+          </div>
+          <div className="form-row">
+            <label>Email address *</label>
+            <input type="email" value={form.email} onChange={field('email')} placeholder="you@example.com" />
+          </div>
+          <div className="form-row">
+            <label>Phone</label>
+            <input value={form.phone} onChange={field('phone')} placeholder="10-digit mobile" />
+          </div>
+          <div className="form-row">
+            <label>What are you requesting?</label>
+            <select value={form.role_requested} onChange={field('role_requested')}>
+              <option value="uf">Unit Franchise (UF)</option>
+              <option value="cf">City Franchise (CF)</option>
+              <option value="smf">State Master Franchise (SMF)</option>
+              <option value="staff">NLH Staff</option>
+            </select>
+          </div>
+          <div className="form-row">
+            <label>State</label>
+            <input value={form.state} onChange={field('state')} placeholder="State" />
+          </div>
+          <div className="form-row">
+            <label>City</label>
+            <input value={form.city} onChange={field('city')} placeholder="City" />
+          </div>
+          <div className="form-row">
+            <label>Message (optional)</label>
+            <input value={form.message} onChange={field('message')} placeholder="Anything else NLH Admin should know" />
+          </div>
+          <button type="submit" className="btn-login" disabled={submitting}>
+            {submitting ? 'Submitting...' : 'Submit request'}
+          </button>
+        </form>
+        <div className="login-toggle" style={{ marginTop: 12 }}>
+          <a onClick={function () { setScreen('landing') }}>← Back to home</a>
+          &nbsp;·&nbsp;
+          <a onClick={function () { setScreen('login') }}>Already have an account?</a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function AccessRequestsPage({ standalone }) {
+  if (standalone) return <PublicRequestForm />
+
+  return <AdminAccessRequestsView />
+}
+
+function AdminAccessRequestsView() {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
@@ -94,11 +217,10 @@ export default function AccessRequestsPage() {
         ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
       },
       body: JSON.stringify({
-        email:        req.email,
-        password:     tempPass,
-        fullName:     req.name,
-        role:         req.type,
-        franchiseeId: req.franchisee_id || null,
+        email:    req.email,
+        password: tempPass,
+        fullName: req.full_name,
+        role:     req.role_requested,
       }),
     })
     const createData = await createRes.json()
@@ -116,7 +238,7 @@ export default function AccessRequestsPage() {
       .eq('id', req.id)
 
     // Send welcome email (non-fatal)
-    const emailResult = await sendWelcomeEmail(req.email, req.name, req.type, tempPass)
+    const emailResult = await sendWelcomeEmail(req.email, req.full_name, req.role_requested, tempPass)
     if (emailResult?.success === false) {
       showToast('Approved, but email delivery failed — share credentials manually.', 'warn')
     } else {
@@ -193,10 +315,10 @@ export default function AccessRequestsPage() {
                 const rejectingThis = actionLoading === req.id + '_reject'
                 return (
                   <tr key={req.id}>
-                    <td>{req.name}</td>
+                    <td>{req.full_name}</td>
                     <td className="mono">{req.email}</td>
                     <td className="mono">{req.phone || '—'}</td>
-                    <td>{TYPE_LABELS[req.type] || req.type}</td>
+                    <td>{TYPE_LABELS[req.role_requested] || req.role_requested}</td>
                     <td className="muted">
                       {[req.state, req.city].filter(Boolean).join(' / ') || '—'}
                     </td>
