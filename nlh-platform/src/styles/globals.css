@@ -37,6 +37,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 .login-toggle{text-align:center;margin-top:16px;font-size:12px;color:var(--text3)}
 .login-toggle a{color:var(--purple);cursor:pointer;text-decoration:none;font-weight:500}
 
+/* Wide variant — used by longer single-column forms (e.g. Request Access)
+   so short fields can pair up on desktop instead of stretching edge to
+   edge. Aligned to the app's existing 768px mobile/tablet cutoff below so
+   there's no overlap with the .login-card full-width override there. */
+.req-grid{display:block}
+@media (min-width:769px){
+  .login-card.wide{width:640px}
+  .req-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
+  .req-grid .req-full{grid-column:1/-1}
+}
+
 /* ── APP SHELL ── */
 .app{display:flex;height:100vh;overflow:hidden;flex-direction:row}
 .sb{width:220px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}

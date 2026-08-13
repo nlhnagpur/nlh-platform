@@ -62,7 +62,7 @@ const STATUS_CLASS = {
 // auth; RLS's anyone_can_request INSERT policy is what actually allows this.
 function PublicRequestForm() {
   const { setScreen } = useAuth()
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', pincode: '', date_of_birth: '', qualification: '' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', role_requested: 'uf', address: '', area: '', city: '', pincode: '', state: '', date_of_birth: '', qualification: '' })
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [allPrograms, setAllPrograms] = useState([])
@@ -91,9 +91,11 @@ function PublicRequestForm() {
     if (!form.last_name.trim())                { showToast('Please enter your last name', 'warn'); return }
     if (!form.email.trim() || !form.email.includes('@')) { showToast('Please enter a valid email address', 'warn'); return }
     if (!form.phone.trim())                    { showToast('Please enter your phone number', 'warn'); return }
-    if (!form.state.trim())                    { showToast('Please enter your state', 'warn'); return }
+    if (!form.address.trim())                  { showToast('Please enter your address', 'warn'); return }
+    if (!form.area.trim())                     { showToast('Please enter the area / locality', 'warn'); return }
     if (!form.city.trim())                     { showToast('Please enter your city', 'warn'); return }
     if (!form.pincode.trim())                  { showToast('Please enter your PIN code', 'warn'); return }
+    if (!form.state.trim())                    { showToast('Please enter your state', 'warn'); return }
     if (!form.date_of_birth)                   { showToast('Please enter your date of birth', 'warn'); return }
     if (form.role_requested === 'uf' && programsRequested.length === 0) {
       showToast('Please select at least one program you are applying for', 'warn'); return
@@ -106,9 +108,11 @@ function PublicRequestForm() {
       email:              form.email.trim().toLowerCase(),
       phone:              form.phone.trim(),
       role_requested:     form.role_requested,
-      state:              form.state.trim(),
+      address:            form.address.trim(),
+      area:               form.area.trim(),
       city:               form.city.trim(),
       pincode:            form.pincode.trim(),
+      state:              form.state.trim(),
       date_of_birth:      form.date_of_birth,
       qualification:      form.qualification.trim() || null,
       programs_requested: form.role_requested === 'uf' && programsRequested.length > 0 ? programsRequested : null,
@@ -144,7 +148,7 @@ function PublicRequestForm() {
 
   return (
     <div className="login-wrap">
-      <div className="login-card">
+      <div className="login-card wide">
         <div className="login-logo">
           <div className="login-icon">N</div>
           <div>
@@ -155,86 +159,96 @@ function PublicRequestForm() {
         <div className="login-title">Request platform access</div>
         <div className="login-sub">Tell us about yourself — NLH Admin will review and set up your login.</div>
         <form onSubmit={submit}>
-          <div className="form-row">
-            <label>First name *</label>
-            <input value={form.first_name} onChange={field('first_name')} placeholder="First name" />
-          </div>
-          <div className="form-row">
-            <label>Last name *</label>
-            <input value={form.last_name} onChange={field('last_name')} placeholder="Last name" />
-          </div>
-          <div className="form-row">
-            <label>Email address *</label>
-            <input type="email" value={form.email} onChange={field('email')} placeholder="you@example.com" />
-          </div>
-          <div className="form-row">
-            <label>Phone *</label>
-            <input value={form.phone} onChange={field('phone')} placeholder="10-digit mobile" />
-          </div>
-          <div className="form-row">
-            <label>What are you requesting? *</label>
-            <select value={form.role_requested} onChange={field('role_requested')}>
-              <option value="uf">Unit Franchise (UF)</option>
-              <option value="cf">City Franchise (CF)</option>
-              <option value="smf">State Master Franchise (SMF)</option>
-              <option value="staff">NLH Staff</option>
-            </select>
-            {(form.role_requested === 'cf' || form.role_requested === 'smf') && (
-              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-                City and State Master Franchisees get access to all programs by default — no need to pick individual ones.
+          <div className="req-grid">
+            <div className="form-row">
+              <label>First name *</label>
+              <input value={form.first_name} onChange={field('first_name')} placeholder="First name" />
+            </div>
+            <div className="form-row">
+              <label>Last name *</label>
+              <input value={form.last_name} onChange={field('last_name')} placeholder="Last name" />
+            </div>
+            <div className="form-row">
+              <label>Email address *</label>
+              <input type="email" value={form.email} onChange={field('email')} placeholder="you@example.com" />
+            </div>
+            <div className="form-row">
+              <label>Phone *</label>
+              <input value={form.phone} onChange={field('phone')} placeholder="10-digit mobile" />
+            </div>
+            <div className="form-row req-full">
+              <label>What are you requesting? *</label>
+              <select value={form.role_requested} onChange={field('role_requested')}>
+                <option value="uf">Unit Franchise (UF)</option>
+                <option value="cf">City Franchise (CF)</option>
+                <option value="smf">State Master Franchise (SMF)</option>
+                <option value="staff">NLH Staff</option>
+              </select>
+              {(form.role_requested === 'cf' || form.role_requested === 'smf') && (
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                  City and State Master Franchisees get access to all programs by default — no need to pick individual ones.
+                </div>
+              )}
+            </div>
+            {form.role_requested === 'uf' && (
+              <div className="form-row req-full">
+                <label>Programs applying for *</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 0' }}>
+                  {allPrograms.map(function (name) {
+                    const checked = programsRequested.includes(name)
+                    return (
+                      <label
+                        key={name}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          padding: '5px 10px', borderRadius: 16,
+                          border: '1px solid ' + (checked ? 'var(--purple)' : 'var(--border)'),
+                          background: checked ? 'var(--purple)' : 'transparent',
+                          color: checked ? '#fff' : 'var(--text2)',
+                          fontSize: 12, cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={function () { toggleProgram(name) }}
+                          style={{ display: 'none' }}
+                        />
+                        {name}
+                      </label>
+                    )
+                  })}
+                </div>
               </div>
             )}
-          </div>
-          {form.role_requested === 'uf' && (
-            <div className="form-row">
-              <label>Programs applying for *</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 0' }}>
-                {allPrograms.map(function (name) {
-                  const checked = programsRequested.includes(name)
-                  return (
-                    <label
-                      key={name}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        padding: '5px 10px', borderRadius: 16,
-                        border: '1px solid ' + (checked ? 'var(--purple)' : 'var(--border)'),
-                        background: checked ? 'var(--purple)' : 'transparent',
-                        color: checked ? '#fff' : 'var(--text2)',
-                        fontSize: 12, cursor: 'pointer',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={function () { toggleProgram(name) }}
-                        style={{ display: 'none' }}
-                      />
-                      {name}
-                    </label>
-                  )
-                })}
-              </div>
+            <div className="form-row req-full">
+              <label>Address *</label>
+              <input value={form.address} onChange={field('address')} placeholder="Shop no., building name, street" />
             </div>
-          )}
-          <div className="form-row">
-            <label>State *</label>
-            <input value={form.state} onChange={field('state')} placeholder="State" />
-          </div>
-          <div className="form-row">
-            <label>City *</label>
-            <input value={form.city} onChange={field('city')} placeholder="City" />
-          </div>
-          <div className="form-row">
-            <label>PIN code *</label>
-            <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
-          </div>
-          <div className="form-row">
-            <label>Date of birth *</label>
-            <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} />
-          </div>
-          <div className="form-row">
-            <label>Highest qualification</label>
-            <input value={form.qualification} onChange={field('qualification')} placeholder="e.g. B.Ed, M.A. Education" />
+            <div className="form-row">
+              <label>Area / Locality *</label>
+              <input value={form.area} onChange={field('area')} placeholder="Area / locality of the centre" />
+            </div>
+            <div className="form-row">
+              <label>City *</label>
+              <input value={form.city} onChange={field('city')} placeholder="City" />
+            </div>
+            <div className="form-row">
+              <label>PIN code *</label>
+              <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
+            </div>
+            <div className="form-row">
+              <label>State *</label>
+              <input value={form.state} onChange={field('state')} placeholder="State" />
+            </div>
+            <div className="form-row">
+              <label>Date of birth *</label>
+              <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} />
+            </div>
+            <div className="form-row req-full">
+              <label>Highest qualification</label>
+              <input value={form.qualification} onChange={field('qualification')} placeholder="e.g. B.Ed, M.A. Education" />
+            </div>
           </div>
           <button type="submit" className="btn-login" disabled={submitting}>
             {submitting ? 'Submitting...' : 'Submit request'}
@@ -382,7 +396,8 @@ function AdminAccessRequestsView() {
                 <th>Phone</th>
                 <th>Type</th>
                 <th>Programs</th>
-                <th>State / City / PIN</th>
+                <th>Address</th>
+                <th>Area / City / PIN / State</th>
                 <th>DOB</th>
                 <th>Qualification</th>
                 <th>Status</th>
@@ -402,8 +417,9 @@ function AdminAccessRequestsView() {
                     <td className="muted">
                       {(req.programs_requested || []).length > 0 ? req.programs_requested.join(', ') : '—'}
                     </td>
+                    <td className="muted">{req.address || '—'}</td>
                     <td className="muted">
-                      {[req.state, req.city, req.pincode].filter(Boolean).join(' / ') || '—'}
+                      {[req.area, req.city, req.pincode, req.state].filter(Boolean).join(' / ') || '—'}
                     </td>
                     <td className="muted">{req.date_of_birth || '—'}</td>
                     <td className="muted">{req.qualification || '—'}</td>
