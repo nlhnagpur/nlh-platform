@@ -1319,7 +1319,12 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       })
       const createData = await createRes.json()
       if (!createData.success && !createData.error?.includes('already registered')) {
-        showToast('Auth account error: ' + (createData.error || 'Unknown'), 'warn')
+        // Login account was NOT created — do not proceed. Continuing here
+        // would leave a franchisee record + welcome email with credentials
+        // that can never actually log in (the exact bug this guards against).
+        showToast('Franchisee record saved, but login account creation failed: ' + (createData.error || 'Unknown error') + '. Fix the issue and use "Resend Login Access" once available, or contact support.', 'err')
+        setSaving(false)
+        return
       }
 
       // Insert user record

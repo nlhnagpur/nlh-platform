@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server not configured (missing SUPABASE_SERVICE_ROLE_KEY)' })
   }
 
-  const { email, password, fullName, role, franchiseeId } = req.body
+  const { email, password, fullName, role, franchiseeId, id } = req.body
   if (!email || !password) {
     return res.status(400).json({ error: 'email and password are required' })
   }
@@ -35,7 +35,12 @@ export default async function handler(req, res) {
 
   const normalizedEmail = email.trim().toLowerCase()
 
+  // `id` is optional — pass it through to reuse an existing users.id when
+  // repairing an orphaned profile row (created without a matching auth
+  // account). Omitted for normal new-franchisee creation, where GoTrue
+  // generates a fresh id.
   const { data, error } = await adminSb.auth.admin.createUser({
+    ...(id ? { id } : {}),
     email:          normalizedEmail,
     password:       password,
     email_confirm:  true,                           // skip email verification
@@ -49,14 +54,17 @@ export default async function handler(req, res) {
 
   const userId = data.user.id
 
-  // Insert the users profile row server-side so the client never writes role
-  const { error: insertErr } = await adminSb.from('users').insert({
+  // Insert/repair the users profile row server-side so the client never
+  // writes role. Upsert on id so this can also repair an existing orphaned
+  // profile row (same id, previously missing its auth account) without
+  // creating a duplicate.
+  const { error: insertErr } = await adminSb.from('users').upsert({
     id:            userId,
     email:         normalizedEmail,
     full_name:     (fullName || '').trim(),
     role:          role,
     franchisee_id: franchiseeId || null,
-  })
+  }, { onConflict: 'id' })
 
   if (insertErr) {
     // Auth user was created but profile insert failed — clean up to avoid orphans
