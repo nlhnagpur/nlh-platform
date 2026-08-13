@@ -65,9 +65,24 @@ function PublicRequestForm() {
   const [form, setForm] = useState({ full_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', pincode: '', date_of_birth: '', qualification: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  const [allPrograms, setAllPrograms] = useState([])
+  const [programsRequested, setProgramsRequested] = useState([])
+
+  useEffect(function () {
+    sb.from('courses').select('group_name').eq('is_active', true).then(function (res) {
+      const names = Array.from(new Set((res.data || []).map(function (c) { return c.group_name }).filter(Boolean))).sort()
+      setAllPrograms(names)
+    })
+  }, [])
 
   function field(key) {
     return function (e) { setForm(function (f) { return { ...f, [key]: e.target.value } }) }
+  }
+
+  function toggleProgram(name) {
+    setProgramsRequested(function (list) {
+      return list.includes(name) ? list.filter(function (n) { return n !== name }) : [...list, name]
+    })
   }
 
   async function submit(e) {
@@ -76,16 +91,17 @@ function PublicRequestForm() {
     if (!form.email.trim() || !form.email.includes('@')) { showToast('Please enter a valid email address', 'warn'); return }
     setSubmitting(true)
     const { error } = await sb.from('access_requests').insert({
-      full_name:      form.full_name.trim(),
-      email:          form.email.trim().toLowerCase(),
-      phone:          form.phone.trim() || null,
-      role_requested: form.role_requested,
-      state:          form.state.trim() || null,
-      city:           form.city.trim() || null,
-      pincode:        form.pincode.trim() || null,
-      date_of_birth:  form.date_of_birth || null,
-      qualification:  form.qualification.trim() || null,
-      message:        form.message.trim() || null,
+      full_name:          form.full_name.trim(),
+      email:              form.email.trim().toLowerCase(),
+      phone:              form.phone.trim() || null,
+      role_requested:     form.role_requested,
+      state:              form.state.trim() || null,
+      city:               form.city.trim() || null,
+      pincode:            form.pincode.trim() || null,
+      date_of_birth:      form.date_of_birth || null,
+      qualification:      form.qualification.trim() || null,
+      programs_requested: form.role_requested === 'uf' && programsRequested.length > 0 ? programsRequested : null,
+      message:            form.message.trim() || null,
     })
     setSubmitting(false)
     if (error) { showToast('Could not submit request: ' + error.message, 'err'); return }
@@ -150,6 +166,37 @@ function PublicRequestForm() {
               <option value="staff">NLH Staff</option>
             </select>
           </div>
+          {form.role_requested === 'uf' && (
+            <div className="form-row">
+              <label>Programs applying for</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 0' }}>
+                {allPrograms.map(function (name) {
+                  const checked = programsRequested.includes(name)
+                  return (
+                    <label
+                      key={name}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '5px 10px', borderRadius: 16,
+                        border: '1px solid ' + (checked ? 'var(--purple)' : 'var(--border)'),
+                        background: checked ? 'var(--purple)' : 'transparent',
+                        color: checked ? '#fff' : 'var(--text2)',
+                        fontSize: 12, cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={function () { toggleProgram(name) }}
+                        style={{ display: 'none' }}
+                      />
+                      {name}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           <div className="form-row">
             <label>State</label>
             <input value={form.state} onChange={field('state')} placeholder="State" />
@@ -319,6 +366,7 @@ function AdminAccessRequestsView() {
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Type</th>
+                <th>Programs</th>
                 <th>State / City / PIN</th>
                 <th>DOB</th>
                 <th>Qualification</th>
@@ -336,6 +384,9 @@ function AdminAccessRequestsView() {
                     <td className="mono">{req.email}</td>
                     <td className="mono">{req.phone || '—'}</td>
                     <td>{TYPE_LABELS[req.role_requested] || req.role_requested}</td>
+                    <td className="muted">
+                      {(req.programs_requested || []).length > 0 ? req.programs_requested.join(', ') : '—'}
+                    </td>
                     <td className="muted">
                       {[req.state, req.city, req.pincode].filter(Boolean).join(' / ') || '—'}
                     </td>
