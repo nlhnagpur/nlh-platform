@@ -2954,7 +2954,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         const loginEmail = `student.${st.id}@nlhnagpur.info`
         try {
           const { data: { session: admSess } } = await sb.auth.getSession()
-          await fetch('/api/create-user', {
+          const createRes = await fetch('/api/create-user', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -2964,15 +2964,25 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
               email:    loginEmail,
               password: tempPass,
               fullName: form.full_name.trim(),
+              role:     'student',
             }),
           })
-          await sb.from('users').upsert({
-            email: loginEmail,
-            full_name: form.full_name.trim(),
-            role: 'student',
-            franchisee_id: form.franchisee_id,
-            student_id: st.id,
-          }, { onConflict: 'email' })
+          const createData = await createRes.json()
+          if (createData.success || createData.error?.includes('already registered')) {
+            // Only write the profile row when a real login account exists —
+            // otherwise this leaves a login that always fails (matches the
+            // bug fixed in FranchiseesPage.jsx's onboarding flow).
+            await sb.from('users').upsert({
+              email: loginEmail,
+              full_name: form.full_name.trim(),
+              role: 'student',
+              franchisee_id: form.franchisee_id,
+              student_id: st.id,
+            }, { onConflict: 'email' })
+          } else {
+            console.warn('Student auth account creation failed:', createData.error)
+            showToast('Student saved, but login account could not be created: ' + (createData.error || 'Unknown error'), 'warn')
+          }
         } catch (authErr) {
           console.warn('Student auth account skipped:', authErr.message)
         }

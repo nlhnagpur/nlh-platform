@@ -1304,6 +1304,7 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       if (frErr) { showToast('Failed to create franchisee: ' + frErr.message, 'err'); setSaving(false); return }
 
       // Create auth account server-side — no session displacement
+      const roleMap = { SMF: 'smf', CF: 'cf', UF: 'uf' }
       const { data: { session: admSess } } = await sb.auth.getSession()
       const createRes = await fetch('/api/create-user', {
         method: 'POST',
@@ -1315,6 +1316,8 @@ function AddFranchiseeModal({ onClose, onSaved }) {
           email:    form.email.trim().toLowerCase(),
           password: tempPass,
           fullName: form.owner_name.trim(),
+          role:     roleMap[form.tier] || 'uf',
+          franchiseeId: fr.id,
         }),
       })
       const createData = await createRes.json()
@@ -1328,7 +1331,6 @@ function AddFranchiseeModal({ onClose, onSaved }) {
       }
 
       // Insert user record
-      const roleMap = { SMF: 'smf', CF: 'cf', UF: 'uf' }
       await sb.from('users').upsert({
         email: form.email.trim().toLowerCase(),
         full_name: form.owner_name.trim(),
