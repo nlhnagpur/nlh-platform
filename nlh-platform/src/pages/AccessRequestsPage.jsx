@@ -62,7 +62,7 @@ const STATUS_CLASS = {
 // auth; RLS's anyone_can_request INSERT policy is what actually allows this.
 function PublicRequestForm() {
   const { setScreen } = useAuth()
-  const [form, setForm] = useState({ full_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', pincode: '', date_of_birth: '', qualification: '', message: '' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', pincode: '', date_of_birth: '', qualification: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [allPrograms, setAllPrograms] = useState([])
@@ -87,18 +87,29 @@ function PublicRequestForm() {
 
   async function submit(e) {
     e.preventDefault()
-    if (!form.full_name.trim())               { showToast('Please enter your name', 'warn'); return }
+    if (!form.first_name.trim())               { showToast('Please enter your first name', 'warn'); return }
+    if (!form.last_name.trim())                { showToast('Please enter your last name', 'warn'); return }
     if (!form.email.trim() || !form.email.includes('@')) { showToast('Please enter a valid email address', 'warn'); return }
+    if (!form.phone.trim())                    { showToast('Please enter your phone number', 'warn'); return }
+    if (!form.state.trim())                    { showToast('Please enter your state', 'warn'); return }
+    if (!form.city.trim())                     { showToast('Please enter your city', 'warn'); return }
+    if (!form.pincode.trim())                  { showToast('Please enter your PIN code', 'warn'); return }
+    if (!form.date_of_birth)                   { showToast('Please enter your date of birth', 'warn'); return }
+    if (form.role_requested === 'uf' && programsRequested.length === 0) {
+      showToast('Please select at least one program you are applying for', 'warn'); return
+    }
     setSubmitting(true)
     const { error } = await sb.from('access_requests').insert({
-      full_name:          form.full_name.trim(),
+      first_name:         form.first_name.trim(),
+      last_name:          form.last_name.trim(),
+      full_name:          (form.first_name.trim() + ' ' + form.last_name.trim()).trim(),
       email:              form.email.trim().toLowerCase(),
-      phone:              form.phone.trim() || null,
+      phone:              form.phone.trim(),
       role_requested:     form.role_requested,
-      state:              form.state.trim() || null,
-      city:               form.city.trim() || null,
-      pincode:            form.pincode.trim() || null,
-      date_of_birth:      form.date_of_birth || null,
+      state:              form.state.trim(),
+      city:               form.city.trim(),
+      pincode:            form.pincode.trim(),
+      date_of_birth:      form.date_of_birth,
       qualification:      form.qualification.trim() || null,
       programs_requested: form.role_requested === 'uf' && programsRequested.length > 0 ? programsRequested : null,
       message:            form.message.trim() || null,
@@ -121,7 +132,7 @@ function PublicRequestForm() {
           </div>
           <div className="login-title">Request submitted ✓</div>
           <div className="login-sub">
-            Thanks, {form.full_name.split(' ')[0]}! NLH Admin will review your request and email your
+            Thanks, {form.first_name}! NLH Admin will review your request and email your
             login details once approved.
           </div>
           <div className="login-toggle" style={{ marginTop: 16 }}>
@@ -146,29 +157,38 @@ function PublicRequestForm() {
         <div className="login-sub">Tell us about yourself — NLH Admin will review and set up your login.</div>
         <form onSubmit={submit}>
           <div className="form-row">
-            <label>Full name *</label>
-            <input value={form.full_name} onChange={field('full_name')} placeholder="Your full name" />
+            <label>First name *</label>
+            <input value={form.first_name} onChange={field('first_name')} placeholder="First name" />
+          </div>
+          <div className="form-row">
+            <label>Last name *</label>
+            <input value={form.last_name} onChange={field('last_name')} placeholder="Last name" />
           </div>
           <div className="form-row">
             <label>Email address *</label>
             <input type="email" value={form.email} onChange={field('email')} placeholder="you@example.com" />
           </div>
           <div className="form-row">
-            <label>Phone</label>
+            <label>Phone *</label>
             <input value={form.phone} onChange={field('phone')} placeholder="10-digit mobile" />
           </div>
           <div className="form-row">
-            <label>What are you requesting?</label>
+            <label>What are you requesting? *</label>
             <select value={form.role_requested} onChange={field('role_requested')}>
               <option value="uf">Unit Franchise (UF)</option>
               <option value="cf">City Franchise (CF)</option>
               <option value="smf">State Master Franchise (SMF)</option>
               <option value="staff">NLH Staff</option>
             </select>
+            {(form.role_requested === 'cf' || form.role_requested === 'smf') && (
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                City and State Master Franchisees get access to all programs by default — no need to pick individual ones.
+              </div>
+            )}
           </div>
           {form.role_requested === 'uf' && (
             <div className="form-row">
-              <label>Programs applying for</label>
+              <label>Programs applying for *</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 0' }}>
                 {allPrograms.map(function (name) {
                   const checked = programsRequested.includes(name)
@@ -198,19 +218,19 @@ function PublicRequestForm() {
             </div>
           )}
           <div className="form-row">
-            <label>State</label>
+            <label>State *</label>
             <input value={form.state} onChange={field('state')} placeholder="State" />
           </div>
           <div className="form-row">
-            <label>City</label>
+            <label>City *</label>
             <input value={form.city} onChange={field('city')} placeholder="City" />
           </div>
           <div className="form-row">
-            <label>PIN code</label>
+            <label>PIN code *</label>
             <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
           </div>
           <div className="form-row">
-            <label>Date of birth</label>
+            <label>Date of birth *</label>
             <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} />
           </div>
           <div className="form-row">
