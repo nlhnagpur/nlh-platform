@@ -62,7 +62,7 @@ const STATUS_CLASS = {
 // auth; RLS's anyone_can_request INSERT policy is what actually allows this.
 function PublicRequestForm() {
   const { setScreen } = useAuth()
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', pincode: '', date_of_birth: '', qualification: '', message: '' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', pincode: '', date_of_birth: '', qualification: '' })
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [allPrograms, setAllPrograms] = useState([])
@@ -112,7 +112,6 @@ function PublicRequestForm() {
       date_of_birth:      form.date_of_birth,
       qualification:      form.qualification.trim() || null,
       programs_requested: form.role_requested === 'uf' && programsRequested.length > 0 ? programsRequested : null,
-      message:            form.message.trim() || null,
     })
     setSubmitting(false)
     if (error) { showToast('Could not submit request: ' + error.message, 'err'); return }
@@ -236,10 +235,6 @@ function PublicRequestForm() {
           <div className="form-row">
             <label>Highest qualification</label>
             <input value={form.qualification} onChange={field('qualification')} placeholder="e.g. B.Ed, M.A. Education" />
-          </div>
-          <div className="form-row">
-            <label>Message (optional)</label>
-            <input value={form.message} onChange={field('message')} placeholder="Anything else NLH Admin should know" />
           </div>
           <button type="submit" className="btn-login" disabled={submitting}>
             {submitting ? 'Submitting...' : 'Submit request'}
