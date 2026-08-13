@@ -257,7 +257,7 @@ function StatusBadge({ status }) {
 }
 
 function genTempPass() {
-  return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
+  return 'NLH@123'
 }
 
 // Sort franchisees: state A→Z → tier SMF→CF→UF → city A→Z → name A→Z

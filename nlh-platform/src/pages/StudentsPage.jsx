@@ -103,7 +103,7 @@ function StatusBadge({ status }) {
 }
 
 function genTempPass() {
-  return 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
+  return 'NLH@123'
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

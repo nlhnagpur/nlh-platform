@@ -303,7 +303,7 @@ function AdminAccessRequestsView() {
   async function handleApprove(req) {
     setActionLoading(req.id + '_approve')
 
-    const tempPass = 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
+    const tempPass = 'NLH@123'
     const tierMap = { uf: 'UF', cf: 'CF', smf: 'SMF' }
     const tier = tierMap[req.role_requested] || null
 
