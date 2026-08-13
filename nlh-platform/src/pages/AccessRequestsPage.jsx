@@ -62,7 +62,7 @@ const STATUS_CLASS = {
 // auth; RLS's anyone_can_request INSERT policy is what actually allows this.
 function PublicRequestForm() {
   const { setScreen } = useAuth()
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', role_requested: 'uf', address: '', area: '', city: '', pincode: '', state: '', date_of_birth: '', qualification: '' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', business_name: '', email: '', phone: '', role_requested: 'uf', address: '', area: '', city: '', pincode: '', state: '', date_of_birth: '', qualification: '' })
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [allPrograms, setAllPrograms] = useState([])
@@ -105,6 +105,7 @@ function PublicRequestForm() {
       first_name:         form.first_name.trim(),
       last_name:          form.last_name.trim(),
       full_name:          (form.first_name.trim() + ' ' + form.last_name.trim()).trim(),
+      business_name:      form.business_name.trim() || null,
       email:              form.email.trim().toLowerCase(),
       phone:              form.phone.trim(),
       role_requested:     form.role_requested,
@@ -167,6 +168,10 @@ function PublicRequestForm() {
             <div className="form-row">
               <label>Last name *</label>
               <input value={form.last_name} onChange={field('last_name')} placeholder="Last name" />
+            </div>
+            <div className="form-row req-full">
+              <label>Business / Centre name (optional)</label>
+              <input value={form.business_name} onChange={field('business_name')} placeholder="Optional — e.g. Bright Minds Academy" />
             </div>
             <div className="form-row">
               <label>Email address *</label>
@@ -299,25 +304,85 @@ function AdminAccessRequestsView() {
     setActionLoading(req.id + '_approve')
 
     const tempPass = 'NLH@' + Math.random().toString(36).slice(2, 8).toUpperCase()
+    const tierMap = { uf: 'UF', cf: 'CF', smf: 'SMF' }
+    const tier = tierMap[req.role_requested] || null
 
-    const { data: { session } } = await sb.auth.getSession()
-    const createRes = await fetch('/api/create-user', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({
-        email:    req.email,
-        password: tempPass,
-        fullName: req.full_name,
-        role:     req.role_requested,
-      }),
-    })
-    const createData = await createRes.json()
+    // Staff requests get a login only — no franchisee record.
+    let franchiseeId = null
+    if (tier) {
+      let courseIds = []
+      if (tier === 'UF') {
+        const wanted = req.programs_requested || []
+        if (wanted.length > 0) {
+          const { data: crs } = await sb.from('courses').select('id').eq('is_active', true).in('group_name', wanted)
+          courseIds = (crs || []).map(function (c) { return c.id })
+        }
+      } else {
+        // CF/SMF get every active course by default (matches the same
+        // rule applied when adding a franchisee directly).
+        const { data: crs } = await sb.from('courses').select('id').eq('is_active', true)
+        courseIds = (crs || []).map(function (c) { return c.id })
+      }
+
+      const noteParts = []
+      if (req.date_of_birth) noteParts.push('DOB: ' + req.date_of_birth)
+      if (req.qualification) noteParts.push('Qualification: ' + req.qualification)
+      noteParts.push('Created from an approved access request.')
+
+      const { data: fr, error: frErr } = await sb.from('franchisees').insert({
+        owner_name:         req.full_name,
+        business_name:      req.business_name || req.full_name,
+        email:               req.email,
+        phone:               req.phone,
+        state:               req.state,
+        city:                req.city,
+        area:                req.area || null,
+        pincode:             req.pincode || null,
+        address:             req.address || null,
+        tier:                tier,
+        status:              'active',
+        registered_courses:  courseIds,
+        notes:               noteParts.join(' · '),
+      }).select().single()
+
+      if (frErr) {
+        showToast('Could not create franchisee record: ' + frErr.message, 'err')
+        setActionLoading(null)
+        return
+      }
+      franchiseeId = fr.id
+    }
+
+    // Wrapped in try/catch — a network failure or a non-JSON response
+    // (e.g. a 500 with an empty body) must still be treated as a failure
+    // and trigger the franchisee rollback below, not throw past it.
+    let createData
+    try {
+      const { data: { session } } = await sb.auth.getSession()
+      const createRes = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          email:        req.email,
+          password:     tempPass,
+          fullName:     req.full_name,
+          role:         req.role_requested,
+          franchiseeId: franchiseeId,
+        }),
+      })
+      createData = await createRes.json()
+    } catch (err) {
+      createData = { success: false, error: err.message }
+    }
 
     if (!createData.success) {
-      showToast('User creation failed: ' + (createData.error || 'Unknown error'))
+      // Don't leave a franchisee record with no working login behind —
+      // the exact failure mode fixed elsewhere in onboarding.
+      if (franchiseeId) await sb.from('franchisees').delete().eq('id', franchiseeId)
+      showToast('User creation failed: ' + (createData.error || 'Unknown error') + '. Franchisee record was not kept.', 'err')
       setActionLoading(null)
       return
     }
@@ -333,7 +398,7 @@ function AdminAccessRequestsView() {
     if (emailResult?.success === false) {
       showToast('Approved, but email delivery failed — share credentials manually.', 'warn')
     } else {
-      showToast('Approved! Credentials sent via email.')
+      showToast('Approved! Credentials sent via email.' + (franchiseeId ? ' Franchisee record created — set parent centre & payment details in Franchisees.' : ''))
     }
     setCredentials({ email: req.email, password: tempPass })
     await loadRequests()
@@ -392,6 +457,7 @@ function AdminAccessRequestsView() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Business / Centre</th>
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Type</th>
@@ -411,6 +477,7 @@ function AdminAccessRequestsView() {
                 return (
                   <tr key={req.id}>
                     <td>{req.full_name}</td>
+                    <td className="muted">{req.business_name || '—'}</td>
                     <td className="mono">{req.email}</td>
                     <td className="mono">{req.phone || '—'}</td>
                     <td>{TYPE_LABELS[req.role_requested] || req.role_requested}</td>
