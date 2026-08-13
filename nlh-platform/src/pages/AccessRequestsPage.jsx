@@ -62,7 +62,7 @@ const STATUS_CLASS = {
 // auth; RLS's anyone_can_request INSERT policy is what actually allows this.
 function PublicRequestForm() {
   const { setScreen } = useAuth()
-  const [form, setForm] = useState({ full_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', message: '' })
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', role_requested: 'uf', state: '', city: '', pincode: '', date_of_birth: '', qualification: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
 
@@ -82,6 +82,9 @@ function PublicRequestForm() {
       role_requested: form.role_requested,
       state:          form.state.trim() || null,
       city:           form.city.trim() || null,
+      pincode:        form.pincode.trim() || null,
+      date_of_birth:  form.date_of_birth || null,
+      qualification:  form.qualification.trim() || null,
       message:        form.message.trim() || null,
     })
     setSubmitting(false)
@@ -154,6 +157,18 @@ function PublicRequestForm() {
           <div className="form-row">
             <label>City</label>
             <input value={form.city} onChange={field('city')} placeholder="City" />
+          </div>
+          <div className="form-row">
+            <label>PIN code</label>
+            <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
+          </div>
+          <div className="form-row">
+            <label>Date of birth</label>
+            <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} />
+          </div>
+          <div className="form-row">
+            <label>Highest qualification</label>
+            <input value={form.qualification} onChange={field('qualification')} placeholder="e.g. B.Ed, M.A. Education" />
           </div>
           <div className="form-row">
             <label>Message (optional)</label>
@@ -304,7 +319,9 @@ function AdminAccessRequestsView() {
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Type</th>
-                <th>State / City</th>
+                <th>State / City / PIN</th>
+                <th>DOB</th>
+                <th>Qualification</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -320,8 +337,10 @@ function AdminAccessRequestsView() {
                     <td className="mono">{req.phone || '—'}</td>
                     <td>{TYPE_LABELS[req.role_requested] || req.role_requested}</td>
                     <td className="muted">
-                      {[req.state, req.city].filter(Boolean).join(' / ') || '—'}
+                      {[req.state, req.city, req.pincode].filter(Boolean).join(' / ') || '—'}
                     </td>
+                    <td className="muted">{req.date_of_birth || '—'}</td>
+                    <td className="muted">{req.qualification || '—'}</td>
                     <td>
                       <span className={STATUS_CLASS[req.status] || 'badge'}>
                         {req.status}
