@@ -64,7 +64,14 @@ const INDIA_STATES = Object.keys(STATE_CITIES).sort()
 
 function LocationFields({ form, onChange, disabled }) {
   const isIndia = (form.country || 'India').toLowerCase() === 'india'
-  const cityList = isIndia ? (STATE_CITIES[form.state] || []) : []
+  const presetCities = isIndia ? (STATE_CITIES[form.state] || []) : []
+  // The city list is a curated preset, not the full set of real cities/towns —
+  // a saved value that isn't in it (renamed city, smaller town, data entered
+  // before this was a dropdown) would otherwise vanish from the <select>
+  // entirely even though it's still the real, unchanged value underneath.
+  const cityList = (form.city && !presetCities.includes(form.city))
+    ? [form.city, ...presetCities]
+    : presetCities
 
   function handleCountryChange(e) {
     onChange('country', e.target.value)
