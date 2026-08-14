@@ -309,6 +309,7 @@ export function printStudentInvoice(student, ctx) {
 
   const body = `
     <div class="items"><div class="ih"><div>#</div><div>Course / Level</div><div class="r">Fee (₹)</div></div>${rows}</div>
+    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
     <div class="pt">
       ${(balance > 0) ? PAY_BOX.replace('<div class="pt">', '') : '<div></div>'}
       <div class="tot"><div class="bl"></div>

@@ -124,11 +124,25 @@ export async function loadFranchiseeLedger(franchiseeId) {
   })
 
   txns.sort(function (a, b) {
-    const d = new Date(a.date) - new Date(b.date)
-    if (d !== 0) return d
-    // Same date — debit (amount owed) before its own credit (payment).
+    // Compare at day granularity, not full timestamp — payment_date/paid_on
+    // are date-only (midnight) while contract_start/created_at carry a
+    // time-of-day, so on the same calendar day the debit could otherwise
+    // sort after its own payment just because it happened later that day.
+    const da = String(a.date || '').slice(0, 10)
+    const db = String(b.date || '').slice(0, 10)
+    if (da !== db) return da < db ? -1 : 1
+    // Same day — debit (amount owed) before its own credit (payment).
     return (b.debit - b.credit) - (a.debit - a.credit)
   })
+
+  // The enrollment fee is where the account begins — guaranteed first entry
+  // regardless of any date edge case (backdated orders, a contract_start
+  // typo, etc.), not just "usually first by date".
+  const feeDebitIdx = txns.findIndex(function (t) { return t.category === 'fee' && t.debit > 0 && t.credit === 0 })
+  if (feeDebitIdx > 0) {
+    const feeDebit = txns.splice(feeDebitIdx, 1)[0]
+    txns.unshift(feeDebit)
+  }
 
   let running = 0
   txns.forEach(function (t) {
