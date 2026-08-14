@@ -10,10 +10,11 @@ import { sb } from '../supabase'
 // Debit  = amount owed (franchise fee assessed, order invoiced)
 // Credit = amount received (a payment against either)
 //
-// Every row also carries a `doc` descriptor so the UI can open the real,
-// branded document for it — the enrollment invoice, a fee receipt, or an
-// order payment receipt (all rendered by src/components/studentDocs.js,
-// the same generator used everywhere else in the app).
+// Every row also carries a `doc` descriptor so the UI can open the real
+// document for it — the enrollment invoice, a fee/order receipt (rendered
+// by src/components/studentDocs.js), or the full order invoice (the real
+// InvoiceView modal, same one Orders uses) — never a bespoke rendering
+// just for this table.
 export async function loadFranchiseeLedger(franchiseeId) {
   const [frRes, fpRes, ordRes] = await Promise.all([
     sb.from('franchisees')
@@ -23,9 +24,11 @@ export async function loadFranchiseeLedger(franchiseeId) {
       .select('id, amount, payment_date, payment_mode, reference_no, notes, receipt_no')
       .eq('franchisee_id', franchiseeId),
     // placer_id, not bill_to_franchisee_id — matches RLS and matches how
-    // "My orders" already scopes a franchisee's own orders.
+    // "My orders" already scopes a franchisee's own orders. Full row (not a
+    // narrow column list) — InvoiceView, opened straight from a ledger row,
+    // needs the rest (bill_to/ship_to ids, courier/payment fields, etc.).
     sb.from('orders')
-      .select('id, order_ref, invoice_no, grand_total, amount_paid, status, created_at, invoice_cancelled_at')
+      .select('*')
       .eq('placer_id', franchiseeId),
   ])
 
@@ -109,7 +112,7 @@ export async function loadFranchiseeLedger(franchiseeId) {
       ref: o.invoice_no || o.order_ref || null,
       debit: Number(o.grand_total) || 0,
       credit: 0,
-      doc: null, // full order invoice already viewable from the Orders tab
+      doc: { type: 'order_invoice', order: o },
     })
   })
   orderPayments.forEach(function (p) {

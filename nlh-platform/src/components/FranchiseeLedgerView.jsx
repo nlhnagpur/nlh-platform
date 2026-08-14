@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
 import { fmtDate, fmtAmt } from '../utils'
 import { loadFranchiseeLedger } from '../utils/franchiseeLedger'
 import { printFranchiseeEnrollmentInvoice, printFranchiseeReceipt, printOrderReceipt } from './studentDocs'
+import InvoiceView from './InvoiceView'
 
 const PAGE_SIZE = 25
 
@@ -19,19 +21,11 @@ function downloadCSV(headers, rows, filename) {
   URL.revokeObjectURL(url)
 }
 
-// Opens the real, branded document behind a ledger row — the enrollment
-// invoice, a franchise fee receipt, or an order payment receipt — using the
-// same generators (studentDocs.js) every other invoice/receipt in the app
-// is built from, rather than a bespoke rendering just for this table.
-function openLedgerDoc(doc) {
-  if (!doc) return
-  if (doc.type === 'enrollment_invoice') {
-    printFranchiseeEnrollmentInvoice(doc.franchisee, doc.courseNames)
-  } else if (doc.type === 'fee_receipt') {
-    printFranchiseeReceipt(doc.franchisee, doc.payment, { total: Number(doc.franchisee?.enrollment_fee) || 0, paidToDate: doc.paidToDate })
-  } else if (doc.type === 'order_receipt') {
-    printOrderReceipt(Object.assign({}, doc.order, { placer: doc.franchisee }), doc.payment, { paidToDate: doc.paidToDate })
-  }
+const DOC_LABEL = {
+  enrollment_invoice: 'Invoice',
+  order_invoice:      'Invoice',
+  fee_receipt:         'Receipt',
+  order_receipt:       'Receipt',
 }
 
 // Combined "Accounts" ledger — every debit (franchise fee assessed, orders
@@ -40,12 +34,31 @@ function openLedgerDoc(doc) {
 // the franchisee's own self-service "My Account" page — same component,
 // same numbers, whoever's looking at it.
 export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
+  const { currentRole, currentUser } = useAuth()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
   const [category, setCategory] = useState('all')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [page, setPage] = useState(0)
+  const [viewOrder, setViewOrder] = useState(null)
+
+  // Opens the real document behind a ledger row — the enrollment invoice,
+  // a franchise fee/order receipt (studentDocs.js, same generator used
+  // everywhere else in the app), or the actual order invoice (InvoiceView,
+  // same modal Orders uses — not a re-implementation).
+  function openLedgerDoc(doc) {
+    if (!doc) return
+    if (doc.type === 'enrollment_invoice') {
+      printFranchiseeEnrollmentInvoice(doc.franchisee, doc.courseNames)
+    } else if (doc.type === 'fee_receipt') {
+      printFranchiseeReceipt(doc.franchisee, doc.payment, { total: Number(doc.franchisee?.enrollment_fee) || 0, paidToDate: doc.paidToDate })
+    } else if (doc.type === 'order_receipt') {
+      printOrderReceipt(Object.assign({}, doc.order, { placer: doc.franchisee }), doc.payment, { paidToDate: doc.paidToDate })
+    } else if (doc.type === 'order_invoice') {
+      setViewOrder(doc.order)
+    }
+  }
 
   useEffect(function () {
     let cancelled = false
@@ -167,7 +180,7 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
                         {t.doc && (
                           <button className="btn-s" style={{ fontSize: 11, padding: '4px 8px' }}
                             onClick={function () { openLedgerDoc(t.doc) }}>
-                            🧾 {t.doc.type === 'enrollment_invoice' ? 'Invoice' : 'Receipt'}
+                            🧾 {DOC_LABEL[t.doc.type] || 'View'}
                           </button>
                         )}
                       </td>
@@ -185,6 +198,16 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
             </div>
           )}
         </>
+      )}
+
+      {viewOrder && (
+        <InvoiceView
+          order={viewOrder}
+          onClose={function () { setViewOrder(null) }}
+          onCancelled={function () { setViewOrder(null); loadFranchiseeLedger(franchiseeId).then(setData) }}
+          currentRole={currentRole}
+          currentUser={currentUser}
+        />
       )}
     </div>
   )
