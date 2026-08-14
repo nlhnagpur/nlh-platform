@@ -8,7 +8,7 @@ import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail 
 import { sendWAPaymentReceived, sendWAFeeReminder } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
-import { printFranchiseeReceipt } from '../components/studentDocs'
+import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
 import { StudentDetailModal } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
@@ -467,6 +467,19 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
+  function viewEnrollmentInvoice() {
+    const courseNames = Array.from(new Set(
+      allCourses
+        .filter(function (c) { return registeredCourses.includes(c.id) })
+        .map(function (c) { return c.group_name || c.name })
+        .filter(Boolean)
+    )).sort()
+    printFranchiseeEnrollmentInvoice(
+      Object.assign({}, franchisee, form, { enrollment_fee: Number(form.enrollment_fee) || 0 }),
+      courseNames
+    )
+  }
+
   function field(k) {
     return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) }
   }
@@ -730,16 +743,21 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               </label>
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>💰 Fee Tracking</span>
-                {admin && balance > 0 && (
-                  <span style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn-s" onClick={sendFeeReminder} style={{ fontSize: 11 }} title="Send a WhatsApp fee reminder to the franchisee">
-                      💬 Send Reminder
-                    </button>
-                    <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
-                      📥 Record Payment
-                    </button>
-                  </span>
-                )}
+                <span style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn-s" onClick={viewEnrollmentInvoice} style={{ fontSize: 11 }} title="View / print the franchise enrollment invoice">
+                    🧾 Invoice
+                  </button>
+                  {admin && balance > 0 && (
+                    <>
+                      <button className="btn-s" onClick={sendFeeReminder} style={{ fontSize: 11 }} title="Send a WhatsApp fee reminder to the franchisee">
+                        💬 Send Reminder
+                      </button>
+                      <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
+                        📥 Record Payment
+                      </button>
+                    </>
+                  )}
+                </span>
               </div>
               <label>Enrollment Fee (₹)
                 <input type="number" value={form.enrollment_fee} onChange={field('enrollment_fee')} disabled={!admin} />
