@@ -246,10 +246,22 @@ const PAY_BOX = `<div class="pt"><div class="pay"><div class="bl"></div>
   <div class="upi">📱 UPI: newlearninghorizons@idfcbank</div>
 </div>`
 
+// window.open('', ...) + document.write() is exactly the pattern popup
+// blockers are tuned to kill — silently, with no error surfaced to the
+// caller, so "nothing happens" for the user. A Blob URL opened via a real
+// <a target="_blank"> click is a genuine navigation, not a popup, and isn't
+// blocked the same way.
 function openWin(html) {
-  const w = window.open('', '_blank', 'width=900,height=800')
-  if (!w) return
-  w.document.write(html); w.document.close()
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(function () { URL.revokeObjectURL(url) }, 60000)
 }
 
 // Every document ends here. By default it opens a print window; pass

@@ -18,7 +18,11 @@ function esc(v) {
 function downloadCSV(preambleLines, headers, rows, filename) {
   const pre = (preambleLines || []).map(function (l) { return esc(l) }).join('\n')
   const csv = pre + (pre ? '\n\n' : '') + headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
+  // Excel on Windows ignores the file's actual UTF-8 encoding and guesses a
+  // legacy codepage unless a BOM is present — without it, the em dash and
+  // middle dots in the header block above render as mojibake (confirmed:
+  // "New Learning Horizons â€" Statement" instead of "—").
+  const blob = new Blob([String.fromCharCode(0xFEFF) + csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url; a.download = filename; a.click()
