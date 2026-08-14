@@ -465,6 +465,7 @@ export function printFranchiseeEnrollmentInvoice(franchisee, courseNames, ctx) {
 
   const body = `
     <div class="items"><div class="ih"><div>#</div><div>Registered Program</div><div class="r"></div></div>${rows}</div>
+    <div class="mascot"><img src="/NLH%20Mascot.png" alt=""></div>
     <div class="pt">
       <div></div>
       <div class="tot"><div class="bl"></div>
