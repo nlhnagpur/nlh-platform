@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, fmtAmt } from '../utils'
 import { loadFranchiseeLedger } from '../utils/franchiseeLedger'
-import { printFranchiseeEnrollmentInvoice, printFranchiseeReceipt, printOrderReceipt } from './studentDocs'
+import { printFranchiseeEnrollmentInvoice, printFranchiseeReceipt, printOrderReceipt, printFranchiseeStatement } from './studentDocs'
 import InvoiceView from './InvoiceView'
 
 const PAGE_SIZE = 25
@@ -12,13 +12,24 @@ function esc(v) {
   const s = String(v)
   return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
 }
-function downloadCSV(headers, rows, filename) {
-  const csv = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
+// preambleLines: plain text lines identifying what the export is (NLH,
+// which franchisee, what period) before the actual column headers/rows —
+// a bare column dump doesn't say whose statement it is or what it covers.
+function downloadCSV(preambleLines, headers, rows, filename) {
+  const pre = (preambleLines || []).map(function (l) { return esc(l) }).join('\n')
+  const csv = pre + (pre ? '\n\n' : '') + headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url; a.download = filename; a.click()
   URL.revokeObjectURL(url)
+}
+
+function periodLabel(from, to) {
+  if (from && to) return fmtDate(from) + ' to ' + fmtDate(to)
+  if (from) return 'From ' + fmtDate(from)
+  if (to) return 'Up to ' + fmtDate(to)
+  return 'All time'
 }
 
 const DOC_LABEL = {
@@ -132,15 +143,31 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
             <button className="btn-s" onClick={function () { setFrom(''); setTo(''); setCategory('all') }}>✕ Clear</button>
           )}
         </div>
-        <button className="btn-s" onClick={function () {
-          downloadCSV(
-            ['Date', 'Description', 'Reference', 'Debit', 'Credit', 'Balance'],
-            displayRows.map(function (t) {
-              return [fmtDate(t.date), t.desc, t.ref || '', t.debit || '', t.credit || '', t.balance]
-            }),
-            'ledger-' + (franchiseeName || 'franchisee').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv'
-          )
-        }}>⬇ Export CSV</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-s" onClick={function () {
+            const name = franchiseeName || data.franchisee?.business_name || 'this franchisee'
+            downloadCSV(
+              [
+                'New Learning Horizons — Statement of Account',
+                'Franchisee: ' + name + (data.franchisee?.tier ? ' (' + data.franchisee.tier + ')' : ''),
+                'Period: ' + periodLabel(from, to),
+                'Generated: ' + fmtDate(new Date()),
+                'Total Debit: ' + fmtAmt(totalDebit) + ' · Total Credit: ' + fmtAmt(totalCredit) + ' · ' + (balance > 0 ? 'Balance Due: ' + fmtAmt(balance) : 'Balance: Cleared'),
+              ],
+              ['Date', 'Description', 'Reference', 'Debit', 'Credit', 'Balance'],
+              displayRows.map(function (t) {
+                return [fmtDate(t.date), t.desc, t.ref || '', t.debit || '', t.credit || '', t.balance]
+              }),
+              'statement-' + name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv'
+            )
+          }}>⬇ CSV</button>
+          <button className="btn-s" onClick={function () {
+            printFranchiseeStatement(data.franchisee || { business_name: franchiseeName }, displayRows, {
+              from: from || null, to: to || null,
+              totalDebit: totalDebit, totalCredit: totalCredit, balance: balance,
+            })
+          }}>⬇ PDF</button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (

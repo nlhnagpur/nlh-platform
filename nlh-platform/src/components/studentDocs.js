@@ -496,6 +496,83 @@ export function printFranchiseeEnrollmentInvoice(franchisee, courseNames, ctx) {
   }))
 }
 
+// ── Statement of Account — the franchisee's full ledger as one document ───────
+// Every debit/credit row, oldest first, as a real HTML <table> (not the
+// app's usual itemised-invoice divs) specifically so its <thead> repeats on
+// every printed page — a statement can run to many rows, unlike a single
+// invoice or receipt.
+// franchisee: { business_name, owner_name, tier, city, state, phone, email }
+// transactions: [{ date, desc, ref, debit, credit, balance }] — already
+//   filtered/sorted by the caller (oldest first)
+// opts: { from, to, totalDebit, totalCredit, balance }
+export function printFranchiseeStatement(franchisee, transactions, opts) {
+  const c = opts || {}
+  const txns = transactions || []
+
+  const periodLabel = c.from && c.to ? fmtLong(c.from) + ' to ' + fmtLong(c.to)
+    : c.from ? 'From ' + fmtLong(c.from)
+    : c.to   ? 'Up to ' + fmtLong(c.to)
+    : 'All time'
+
+  const rows = txns.length ? txns.map(function (t) {
+    return `<tr>
+      <td style="padding:8px 10px;font:600 10px 'DM Mono';color:#5C5A54;white-space:nowrap;border-bottom:1px solid #E2E0D8">${fmtLong(t.date)}</td>
+      <td style="padding:8px 10px;font:600 11px 'DM Sans';color:#1A1916;border-bottom:1px solid #E2E0D8">${esc(t.desc)}</td>
+      <td style="padding:8px 10px;font:600 10px 'DM Mono';color:#9C9A92;white-space:nowrap;border-bottom:1px solid #E2E0D8">${esc(t.ref || '—')}</td>
+      <td style="padding:8px 10px;font:700 11px 'DM Mono';color:${t.debit ? '#A32D2D' : '#9C9A92'};text-align:right;white-space:nowrap;border-bottom:1px solid #E2E0D8">${t.debit ? '&#8377;' + fmtAmt(t.debit) : '—'}</td>
+      <td style="padding:8px 10px;font:700 11px 'DM Mono';color:${t.credit ? '#1D7A4F' : '#9C9A92'};text-align:right;white-space:nowrap;border-bottom:1px solid #E2E0D8">${t.credit ? '&#8377;' + fmtAmt(t.credit) : '—'}</td>
+      <td style="padding:8px 10px;font:700 11px 'DM Mono';color:${t.balance > 0 ? '#A32D2D' : '#1A1916'};text-align:right;white-space:nowrap;border-bottom:1px solid #E2E0D8">&#8377;${fmtAmt(t.balance)}</td>
+    </tr>`
+  }).join('') : `<tr><td colspan="6" style="padding:20px;text-align:center;color:#9C9A92;font:500 11px 'DM Sans'">No transactions in this period.</td></tr>`
+
+  const body = `
+    <div style="font:500 11px 'DM Sans';color:#5C5A54;line-height:1.6;background:#F7F6F3;border-radius:8px;padding:10px 14px">
+      This is a statement of account issued by <b style="color:#1A1916">New Learning Horizons</b> for
+      <b style="color:#1A1916">${esc(franchisee.business_name || franchisee.owner_name || 'this franchisee')}</b>,
+      covering <b style="color:#1A1916">${esc(periodLabel)}</b>. All amounts are in Indian Rupees (&#8377;).
+    </div>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #E2E0D8;border-radius:10px;overflow:hidden">
+      <thead>
+        <tr style="background:linear-gradient(90deg,#534AB7,#6F66CC)">
+          <th style="padding:9px 10px;text-align:left;font:700 9px 'DM Mono';color:#fff;text-transform:uppercase;letter-spacing:.07em">Date</th>
+          <th style="padding:9px 10px;text-align:left;font:700 9px 'DM Mono';color:#fff;text-transform:uppercase;letter-spacing:.07em">Description</th>
+          <th style="padding:9px 10px;text-align:left;font:700 9px 'DM Mono';color:#fff;text-transform:uppercase;letter-spacing:.07em">Reference</th>
+          <th style="padding:9px 10px;text-align:right;font:700 9px 'DM Mono';color:#fff;text-transform:uppercase;letter-spacing:.07em">Debit</th>
+          <th style="padding:9px 10px;text-align:right;font:700 9px 'DM Mono';color:#fff;text-transform:uppercase;letter-spacing:.07em">Credit</th>
+          <th style="padding:9px 10px;text-align:right;font:700 9px 'DM Mono';color:#fff;text-transform:uppercase;letter-spacing:.07em">Balance</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="pt">
+      <div></div>
+      <div class="tot"><div class="bl"></div>
+        <div class="h">Statement Summary</div>
+        <div class="trow"><span class="l">Total Debit</span><span class="v">&#8377;${fmtAmt(c.totalDebit || 0)}</span></div>
+        <div class="trow" style="border:none"><span class="l">Total Credit</span><span class="v" style="color:#1D7A4F">&#8377;${fmtAmt(c.totalCredit || 0)}</span></div>
+        <div class="grand"><div class="gl">${(c.balance || 0) > 0 ? 'Balance Due' : 'Balance'}</div><div class="gv">${(c.balance || 0) > 0 ? '<span style="font:700 12px \'DM Sans\';margin-right:3px;opacity:.85">&#8377;</span>' + fmtAmt(c.balance) : 'Cleared &#10003;'}</div></div>
+      </div>
+    </div>`
+
+  return emit(opts, shell({
+    title: 'STATEMENT OF ACCOUNT', sub: 'New Learning Horizons · Franchise Account',
+    meta: [
+      { l: 'Franchisee', v: franchisee.business_name || franchisee.owner_name || '—', sans: true },
+      { l: 'Period', v: periodLabel, sans: true },
+      { l: 'Generated', v: fmtLong(new Date()) },
+      { l: 'Tier', v: franchisee.tier || '—', sans: true },
+    ],
+    party: partyCards({
+      badge: franchisee.tier || 'Franchisee',
+      name:  franchisee.business_name || franchisee.owner_name,
+      sub:   [franchisee.owner_name, franchisee.city, franchisee.state].filter(Boolean).join(' · '),
+      phone: franchisee.phone,
+      email: franchisee.email,
+    }),
+    bodyHTML: body,
+  }))
+}
+
 // The two boxes that close a receipt: the running figures on the left, the
 // amount received on the right. Side by side they come to roughly half the
 // height of one stacked box, which is what leaves room for the mascot between
