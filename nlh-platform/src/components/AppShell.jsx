@@ -20,6 +20,7 @@ const EmailLogPage       = lazy(() => import('../pages/EmailLogPage'))
 const MessagesPage       = lazy(() => import('../pages/MessagesPage'))
 const CouponsPage        = lazy(() => import('../pages/CouponsPage'))
 const InventoryPage      = lazy(() => import('../pages/InventoryPage'))
+const MyAccountPage      = lazy(() => import('../pages/MyAccountPage'))
 
 const PAGE_MAP = {
   dashboard:        DashboardPage,
@@ -39,6 +40,7 @@ const PAGE_MAP = {
   messages:         MessagesPage,
   coupons:          CouponsPage,
   inventory:        InventoryPage,
+  ledger:           MyAccountPage,
 }
 
 // Recover gracefully when a lazy page chunk fails to load — almost always

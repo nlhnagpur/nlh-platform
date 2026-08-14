@@ -86,6 +86,7 @@ export const NAV_ITEMS = {
     { id: 'franchisees', l: 'My franchisees',   c: '#1D7A4F' },
     { id: 'students',    l: 'My students',      c: '#1A5FA8' },
     { id: 'courses',     l: 'Course catalogue', c: '#534AB7' },
+    { id: 'ledger',      l: 'My Account',       c: '#0F766E' },
     { id: 'messages',    l: 'Head Office',      c: '#0891B2' },
   ],
   cf: [
@@ -94,6 +95,7 @@ export const NAV_ITEMS = {
     { id: 'franchisees', l: 'My franchisees', c: '#1D7A4F' },
     { id: 'students',    l: 'My students',    c: '#1A5FA8' },
     { id: 'courses',     l: 'My courses',     c: '#534AB7' },
+    { id: 'ledger',      l: 'My Account',     c: '#0F766E' },
     { id: 'messages',    l: 'Head Office',    c: '#0891B2' },
   ],
   uf: [
@@ -101,6 +103,7 @@ export const NAV_ITEMS = {
     { id: 'orders',    l: 'My orders',  c: '#8A5200' },
     { id: 'students',  l: 'My students', c: '#1A5FA8' },
     { id: 'courses',   l: 'My courses', c: '#534AB7' },
+    { id: 'ledger',    l: 'My Account', c: '#0F766E' },
     { id: 'messages',  l: 'Head Office', c: '#0891B2' },
   ],
   student: [

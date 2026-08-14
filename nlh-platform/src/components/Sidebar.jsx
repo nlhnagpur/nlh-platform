@@ -21,6 +21,7 @@ const NAV_ICONS = {
   requests:         '🤝',
   coupons:          '🎟️',
   inventory:        '🧰',
+  ledger:           '💰',
 }
 
 const SETTINGS_IDS   = ['prices', 'courses', 'coupons', 'inventory', 'price-history', 'users', 'requests']
@@ -65,7 +66,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
 
   // Group nav items
   const ops           = navItems.filter(function(item) {
-    return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'batches', 'invoices', 'whatsapp-inbox', 'messages'].includes(item.id)
+    return ['dashboard', 'franchisees', 'orders', 'students', 'instructors', 'batches', 'invoices', 'whatsapp-inbox', 'messages', 'ledger'].includes(item.id)
   })
   const accountingAll = navItems.filter(function(item) {
     return ACCOUNTING_IDS.includes(item.id)
@@ -76,7 +77,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
 
   // Fallback: items not in any known section
   const other = navItems.filter(function(item) {
-    return !['dashboard','franchisees','orders','students','instructors','batches','invoices','whatsapp-inbox','messages',...ACCOUNTING_IDS,...SETTINGS_IDS].includes(item.id)
+    return !['dashboard','franchisees','orders','students','instructors','batches','invoices','whatsapp-inbox','messages','ledger',...ACCOUNTING_IDS,...SETTINGS_IDS].includes(item.id)
   })
 
   // Auto-expand settings when current page lives there

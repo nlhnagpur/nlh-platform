@@ -11,6 +11,7 @@ import { printFranchiseeCert, default as FranchiseeCertModal } from '../componen
 import { printFranchiseeReceipt } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
 import { StudentDetailModal } from './StudentsPage'
+import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
@@ -646,9 +647,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         </div>
 
         <div className="tabs">
-          {['info', 'courses', 'orders', 'students', 'cert'].map(t => (
+          {['info', 'courses', 'orders', 'students', 'ledger', 'cert'].map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
-              {t === 'cert' ? '📜 Certificate' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'cert' ? '📜 Certificate' : t === 'ledger' ? '💰 Accounts' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -1030,6 +1031,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {tab === 'ledger' && (
+            <div style={{ padding: 20 }}>
+              <FranchiseeLedgerView franchiseeId={franchisee.id} franchiseeName={franchisee.business_name || franchisee.owner_name} />
             </div>
           )}
 

@@ -1,0 +1,168 @@
+import { useState, useEffect } from 'react'
+import { fmtDate, fmtAmt } from '../utils'
+import { loadFranchiseeLedger } from '../utils/franchiseeLedger'
+
+const PAGE_SIZE = 25
+
+const CAT_LABEL = { fee: '🏫 Franchise Fee', order: '📦 Order' }
+
+function esc(v) {
+  if (v == null || v === '') return ''
+  const s = String(v)
+  return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
+}
+function downloadCSV(headers, rows, filename) {
+  const csv = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
+// Combined "Accounts" ledger — every debit (franchise fee assessed, orders
+// invoiced) and credit (payments received) for one franchisee, running
+// balance included. Used both in the admin's franchisee detail view and in
+// the franchisee's own self-service "My Account" page — same component,
+// same numbers, whoever's looking at it.
+export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState(null)
+  const [category, setCategory] = useState('all')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [page, setPage] = useState(0)
+
+  useEffect(function () {
+    let cancelled = false
+    setLoading(true)
+    loadFranchiseeLedger(franchiseeId).then(function (res) {
+      if (!cancelled) { setData(res); setLoading(false) }
+    })
+    return function () { cancelled = true }
+  }, [franchiseeId])
+
+  useEffect(function () { setPage(0) }, [category, from, to])
+
+  if (loading) return <div className="loading"><span className="spinner" />Loading account statement…</div>
+  if (!data) return <div className="empty">Could not load this account.</div>
+
+  const { transactions, totalDebit, totalCredit, balance } = data
+
+  const filtered = transactions.filter(function (t) {
+    if (category !== 'all' && t.category !== category) return false
+    const d = String(t.date || '').slice(0, 10)
+    if (from && d < from) return false
+    if (to && d > to) return false
+    return true
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const curPage = Math.min(page, totalPages - 1)
+  // Latest first for reading, oldest first internally for the running balance.
+  const displayRows = filtered.slice().reverse()
+  const pageRows = displayRows.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
+
+  const card = { padding: '14px 18px', borderRadius: 10, background: 'var(--bg2,#f5f4f0)', minWidth: 140, flex: '1 1 140px' }
+  const cardLbl = { font: '600 10px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div style={card}>
+          <div style={cardLbl}>Total Debit</div>
+          <div style={{ font: '700 20px var(--mono)', color: 'var(--text)' }}>₹{fmtAmt(totalDebit)}</div>
+        </div>
+        <div style={card}>
+          <div style={cardLbl}>Total Credit</div>
+          <div style={{ font: '700 20px var(--mono)', color: 'var(--green,#1D7A4F)' }}>₹{fmtAmt(totalCredit)}</div>
+        </div>
+        <div style={Object.assign({}, card, { background: balance > 0 ? 'var(--red-bg,#fef2f2)' : 'var(--purple-bg,#EDE9FF)' })}>
+          <div style={cardLbl}>{balance > 0 ? 'Balance Due' : 'Balance'}</div>
+          <div style={{ font: '700 20px var(--mono)', color: balance > 0 ? 'var(--red,#dc2626)' : 'var(--purple)' }}>
+            {balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <select value={category} onChange={function (e) { setCategory(e.target.value) }}
+            style={{ font: '500 12px var(--font)', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)' }}>
+            <option value="all">All transactions</option>
+            <option value="fee">Franchise fee only</option>
+            <option value="order">Orders only</option>
+          </select>
+          <span style={{ font: '600 11px var(--font)', color: 'var(--text3)' }}>From</span>
+          <input type="date" value={from} onChange={function (e) { setFrom(e.target.value) }}
+            style={{ font: '500 12px var(--font)', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)' }} />
+          <span style={{ font: '600 11px var(--font)', color: 'var(--text3)' }}>To</span>
+          <input type="date" value={to} onChange={function (e) { setTo(e.target.value) }}
+            style={{ font: '500 12px var(--font)', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border2, #d8d5cc)' }} />
+          {(from || to || category !== 'all') && (
+            <button className="btn-s" onClick={function () { setFrom(''); setTo(''); setCategory('all') }}>✕ Clear</button>
+          )}
+        </div>
+        <button className="btn-s" onClick={function () {
+          downloadCSV(
+            ['Date', 'Type', 'Description', 'Reference', 'Debit', 'Credit', 'Balance'],
+            displayRows.map(function (t) {
+              return [fmtDate(t.date), CAT_LABEL[t.category] || t.category, t.desc, t.ref || '', t.debit || '', t.credit || '', t.balance]
+            }),
+            'ledger-' + (franchiseeName || 'franchisee').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv'
+          )
+        }}>⬇ Export CSV</button>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="empty">No transactions {(from || to || category !== 'all') ? 'match this filter' : 'yet'}.</div>
+      ) : (
+        <>
+          <div className="card tbl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+            <table className="big-tbl">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th className="hide-mobile">Reference</th>
+                  <th style={{ textAlign: 'right' }}>Debit</th>
+                  <th style={{ textAlign: 'right' }}>Credit</th>
+                  <th style={{ textAlign: 'right' }}>Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map(function (t) {
+                  return (
+                    <tr key={t.id}>
+                      <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(t.date)}</td>
+                      <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{CAT_LABEL[t.category] || t.category}</td>
+                      <td style={{ fontSize: 12 }}>{t.desc}</td>
+                      <td className="hide-mobile mono" style={{ fontSize: 11, color: 'var(--text3)' }}>{t.ref || '—'}</td>
+                      <td style={{ textAlign: 'right', font: '600 12px var(--mono)', color: t.debit ? 'var(--red,#dc2626)' : 'var(--text3)' }}>
+                        {t.debit ? '₹' + fmtAmt(t.debit) : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', font: '600 12px var(--mono)', color: t.credit ? 'var(--green,#1D7A4F)' : 'var(--text3)' }}>
+                        {t.credit ? '₹' + fmtAmt(t.credit) : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', font: '700 12px var(--mono)', color: t.balance > 0 ? 'var(--red,#dc2626)' : 'var(--text2)' }}>
+                        ₹{fmtAmt(t.balance)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 12 }}>
+              <button className="btn-s" disabled={curPage === 0} onClick={function () { setPage(curPage - 1) }}>← Prev</button>
+              <span style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>Page {curPage + 1} of {totalPages}</span>
+              <button className="btn-s" disabled={curPage >= totalPages - 1} onClick={function () { setPage(curPage + 1) }}>Next →</button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
