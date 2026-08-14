@@ -5,8 +5,6 @@ import { printFranchiseeEnrollmentInvoice, printFranchiseeReceipt, printOrderRec
 
 const PAGE_SIZE = 25
 
-const CAT_LABEL = { fee: '🏫 Franchise Fee', order: '📦 Order' }
-
 function esc(v) {
   if (v == null || v === '') return ''
   const s = String(v)
@@ -75,8 +73,10 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const curPage = Math.min(page, totalPages - 1)
-  // Latest first for reading, oldest first internally for the running balance.
-  const displayRows = filtered.slice().reverse()
+  // Oldest first, top to bottom — a statement of account reads in the order
+  // things actually happened (enrollment, then orders, then payments), the
+  // balance building down the page, not a reverse-chronological activity feed.
+  const displayRows = filtered
   const pageRows = displayRows.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
 
   const card = { padding: '14px 18px', borderRadius: 10, background: 'var(--bg2,#f5f4f0)', minWidth: 140, flex: '1 1 140px' }
@@ -121,9 +121,9 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
         </div>
         <button className="btn-s" onClick={function () {
           downloadCSV(
-            ['Date', 'Type', 'Description', 'Reference', 'Debit', 'Credit', 'Balance'],
+            ['Date', 'Description', 'Reference', 'Debit', 'Credit', 'Balance'],
             displayRows.map(function (t) {
-              return [fmtDate(t.date), CAT_LABEL[t.category] || t.category, t.desc, t.ref || '', t.debit || '', t.credit || '', t.balance]
+              return [fmtDate(t.date), t.desc, t.ref || '', t.debit || '', t.credit || '', t.balance]
             }),
             'ledger-' + (franchiseeName || 'franchisee').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' + new Date().toISOString().slice(0, 10) + '.csv'
           )
@@ -139,9 +139,8 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Type</th>
                   <th>Description</th>
-                  <th className="hide-mobile">Reference</th>
+                  <th>Reference</th>
                   <th style={{ textAlign: 'right' }}>Debit</th>
                   <th style={{ textAlign: 'right' }}>Credit</th>
                   <th style={{ textAlign: 'right' }}>Balance</th>
@@ -153,9 +152,8 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
                   return (
                     <tr key={t.id}>
                       <td className="mono" style={{ whiteSpace: 'nowrap', color: 'var(--text3)', fontSize: 11 }}>{fmtDate(t.date)}</td>
-                      <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{CAT_LABEL[t.category] || t.category}</td>
                       <td style={{ fontSize: 12 }}>{t.desc}</td>
-                      <td className="hide-mobile mono" style={{ fontSize: 11, color: 'var(--text3)' }}>{t.ref || '—'}</td>
+                      <td className="mono" style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{t.ref || '—'}</td>
                       <td style={{ textAlign: 'right', font: '600 12px var(--mono)', color: t.debit ? 'var(--red,#dc2626)' : 'var(--text3)' }}>
                         {t.debit ? '₹' + fmtAmt(t.debit) : '—'}
                       </td>
