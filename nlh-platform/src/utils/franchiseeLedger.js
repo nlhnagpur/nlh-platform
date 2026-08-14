@@ -70,12 +70,16 @@ export async function loadFranchiseeLedger(franchiseeId) {
 
   const txns = []
 
+  // Invoice/receipt numbers are folded straight into the description text,
+  // not left to the Reference column alone — that column hides on mobile,
+  // and the number is what a franchisee or admin would actually quote back.
   if (franchisee && Number(franchisee.enrollment_fee) > 0) {
+    const invNo = franchisee.enrollment_invoice_no || '—'
     txns.push({
       id: 'fee-debit-' + franchisee.id,
       date: franchisee.contract_start || franchisee.created_at,
       category: 'fee',
-      desc: 'Franchise Fee (Enrollment)',
+      desc: 'Franchise Fee (Enrollment) — Invoice ' + invNo,
       ref: franchisee.enrollment_invoice_no || null,
       debit: Number(franchisee.enrollment_fee),
       credit: 0,
@@ -83,11 +87,12 @@ export async function loadFranchiseeLedger(franchiseeId) {
     })
   }
   feePayments.forEach(function (p) {
+    const recNo = p.receipt_no || p.reference_no || '—'
     txns.push({
       id: 'fee-payment-' + p.id,
       date: p.payment_date,
       category: 'fee',
-      desc: 'Franchise fee payment' + (p.payment_mode ? ' · ' + p.payment_mode : '') + (p.notes ? ' · ' + p.notes : ''),
+      desc: 'Franchise fee payment' + (p.payment_mode ? ' · ' + p.payment_mode : '') + ' — Receipt ' + recNo + (p.notes ? ' · ' + p.notes : ''),
       ref: p.receipt_no || p.reference_no || null,
       debit: 0,
       credit: Number(p.amount) || 0,
@@ -98,11 +103,12 @@ export async function loadFranchiseeLedger(franchiseeId) {
   orders.forEach(function (o) {
     if (o.status === 'pending') return       // not invoiced yet — nothing owed
     if (o.invoice_cancelled_at) return       // cancelled invoice — doesn't count
+    const invNo = o.invoice_no || o.order_ref || '—'
     txns.push({
       id: 'order-debit-' + o.id,
       date: o.created_at,
       category: 'order',
-      desc: 'Order ' + (o.invoice_no || o.order_ref || ''),
+      desc: 'Order — Invoice ' + invNo,
       ref: o.invoice_no || o.order_ref || null,
       debit: Number(o.grand_total) || 0,
       credit: 0,
@@ -111,11 +117,13 @@ export async function loadFranchiseeLedger(franchiseeId) {
   })
   orderPayments.forEach(function (p) {
     const o = orderById[p.order_id]
+    const invNo = (o && (o.invoice_no || o.order_ref)) || '—'
+    const recNo = p.receipt_no || p.reference || '—'
     txns.push({
       id: 'order-payment-' + p.id,
       date: p.paid_on,
       category: 'order',
-      desc: 'Payment for order ' + ((o && (o.invoice_no || o.order_ref)) || ''),
+      desc: 'Payment for order ' + invNo + ' — Receipt ' + recNo,
       ref: p.receipt_no || p.reference || null,
       debit: 0,
       credit: Number(p.amount) || 0,
