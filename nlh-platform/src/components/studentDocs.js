@@ -446,6 +446,54 @@ ${receiptTotals(total > 0 ? [
   }))
 }
 
+// ── Franchise Invoice — the very first entry on a franchisee's account ────────
+// Same chrome as the Fee Invoice, listing every registered program as a line
+// (the enrollment fee is a single lump sum, not priced per program, so lines
+// carry no individual amount) with the fee as one grand total.
+// franchisee: { business_name, owner_name, tier, city, state, phone, email,
+//               enrollment_fee, enrollment_invoice_no, contract_start, created_at }
+// courseNames: string[] — unique program names from registered_courses
+export function printFranchiseeEnrollmentInvoice(franchisee, courseNames, ctx) {
+  const c     = ctx || {}
+  const total = c.total != null ? c.total : (franchisee.enrollment_fee || 0)
+  const names = (courseNames && courseNames.length) ? courseNames : ['To be assigned']
+  const tierLabel = { SMF: 'State Master Franchise', CF: 'City Franchise', UF: 'Unit Franchise' }[franchisee.tier] || franchisee.tier || 'Franchise'
+
+  const rows = names.map(function (n, i) {
+    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(n)}</div></div><div class="amt r"></div></div>`
+  }).join('')
+
+  const body = `
+    <div class="items"><div class="ih"><div>#</div><div>Registered Program</div><div class="r"></div></div>${rows}</div>
+    <div class="pt">
+      <div></div>
+      <div class="tot"><div class="bl"></div>
+        <div class="h">Invoice Summary</div>
+        <div class="trow" style="border:none"><span class="l">${esc(tierLabel)} enrollment fee</span><span class="v">&#8377;${fmtAmt(total)}</span></div>
+        <div class="grand"><div class="gl">Total Amount</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(total)}</div></div>
+        <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(total))}</b></div>
+      </div>
+    </div>`
+
+  return emit(ctx, shell({
+    title: 'FRANCHISE INVOICE', sub: 'Enrollment · Original Copy',
+    meta: [
+      { l: 'Invoice no.', v: franchisee.enrollment_invoice_no || '—' },
+      { l: 'Date', v: fmtLong(franchisee.contract_start || franchisee.created_at || new Date()) },
+      { l: 'Tier', v: tierLabel, sans: true },
+      { l: 'Programs', v: String(names.length), sans: true },
+    ],
+    party: partyCards({
+      badge: franchisee.tier || 'Franchisee',
+      name:  franchisee.business_name || franchisee.owner_name,
+      sub:   [franchisee.owner_name, franchisee.city, franchisee.state].filter(Boolean).join(' · '),
+      phone: franchisee.phone,
+      email: franchisee.email,
+    }),
+    bodyHTML: body,
+  }))
+}
+
 // The two boxes that close a receipt: the running figures on the left, the
 // amount received on the right. Side by side they come to roughly half the
 // height of one stacked box, which is what leaves room for the mascot between

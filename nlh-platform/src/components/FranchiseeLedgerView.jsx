@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fmtDate, fmtAmt } from '../utils'
 import { loadFranchiseeLedger } from '../utils/franchiseeLedger'
+import { printFranchiseeEnrollmentInvoice, printFranchiseeReceipt, printOrderReceipt } from './studentDocs'
 
 const PAGE_SIZE = 25
 
@@ -18,6 +19,21 @@ function downloadCSV(headers, rows, filename) {
   const a = document.createElement('a')
   a.href = url; a.download = filename; a.click()
   URL.revokeObjectURL(url)
+}
+
+// Opens the real, branded document behind a ledger row — the enrollment
+// invoice, a franchise fee receipt, or an order payment receipt — using the
+// same generators (studentDocs.js) every other invoice/receipt in the app
+// is built from, rather than a bespoke rendering just for this table.
+function openLedgerDoc(doc) {
+  if (!doc) return
+  if (doc.type === 'enrollment_invoice') {
+    printFranchiseeEnrollmentInvoice(doc.franchisee, doc.courseNames)
+  } else if (doc.type === 'fee_receipt') {
+    printFranchiseeReceipt(doc.franchisee, doc.payment, { total: Number(doc.franchisee?.enrollment_fee) || 0, paidToDate: doc.paidToDate })
+  } else if (doc.type === 'order_receipt') {
+    printOrderReceipt(Object.assign({}, doc.order, { placer: doc.franchisee }), doc.payment, { paidToDate: doc.paidToDate })
+  }
 }
 
 // Combined "Accounts" ledger — every debit (franchise fee assessed, orders
@@ -129,6 +145,7 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
                   <th style={{ textAlign: 'right' }}>Debit</th>
                   <th style={{ textAlign: 'right' }}>Credit</th>
                   <th style={{ textAlign: 'right' }}>Balance</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -147,6 +164,14 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
                       </td>
                       <td style={{ textAlign: 'right', font: '700 12px var(--mono)', color: t.balance > 0 ? 'var(--red,#dc2626)' : 'var(--text2)' }}>
                         ₹{fmtAmt(t.balance)}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {t.doc && (
+                          <button className="btn-s" style={{ fontSize: 11, padding: '4px 8px' }}
+                            onClick={function () { openLedgerDoc(t.doc) }}>
+                            🧾 {t.doc.type === 'enrollment_invoice' ? 'Invoice' : 'Receipt'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )
