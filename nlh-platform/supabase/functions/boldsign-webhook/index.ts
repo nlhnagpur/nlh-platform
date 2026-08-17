@@ -29,7 +29,9 @@ Deno.serve(async (req: Request) => {
     const documentId =
       payload?.data?.documentId || payload?.documentId || payload?.data?.document?.documentId || null
 
-    console.log('[boldsign-webhook] event:', eventType, documentId)
+    // Full payload while we're diagnosing why a send didn't land — in
+    // particular SendFailed carries an error message we otherwise never see.
+    console.log('[boldsign-webhook] event:', eventType, documentId, JSON.stringify(payload).slice(0, 2000))
 
     if (eventType !== 'Completed' || !documentId) {
       return new Response('ok', { status: 200 })

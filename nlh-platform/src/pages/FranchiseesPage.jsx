@@ -1259,9 +1259,15 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {admin && (!agreement || agreement.status === 'draft') && (
+                {admin && (
                   <button className="btn-s" onClick={generateOrRefreshAgreement} disabled={agreementBusy}>
-                    {agreementBusy ? 'Generating…' : agreement ? '🔁 Regenerate' : '📄 Generate Agreement'}
+                    {agreementBusy
+                      ? 'Generating…'
+                      : !agreement
+                        ? '📄 Generate Agreement'
+                        : agreement.status === 'draft'
+                          ? '🔁 Regenerate'
+                          : '🆕 New Agreement'}
                   </button>
                 )}
                 {agreement && (

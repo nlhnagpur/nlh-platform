@@ -234,8 +234,13 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
   // signs. BoldSign's UseTextTags parser finds this and turns it into a
   // real signature field for the sole signer (index 1); nothing is visible
   // to a human reading a printed or downloaded copy of this page.
+  // The 4th (placeholder-label) section is left empty on purpose — it's
+  // documented as valid for TextBox fields only; BoldSign's API rejects
+  // the whole send with "Placeholder is only applicable for TextBox field
+  // type" if it's set on a `sign` tag (confirmed via a real SendFailed
+  // webhook event).
   doc.setTextColor(255, 255, 255); doc.setFontSize(1)
-  doc.text('{{sign|1|*|Sign Here|uf_signature}}', rightX + 2, y + 13)
+  doc.text('{{sign|1|*||uf_signature}}', rightX + 2, y + 13)
 
   doc.setFont('times', 'bold'); doc.setFontSize(10.5); doc.setTextColor(17, 17, 17)
   doc.text('Dhiral Panchmatia', leftX, y + 19)
