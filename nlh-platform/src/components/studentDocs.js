@@ -246,22 +246,35 @@ const PAY_BOX = `<div class="pt"><div class="pay"><div class="bl"></div>
   <div class="upi">📱 UPI: newlearninghorizons@idfcbank</div>
 </div>`
 
-// window.open('', ...) + document.write() is exactly the pattern popup
-// blockers are tuned to kill — silently, with no error surfaced to the
-// caller, so "nothing happens" for the user. A Blob URL opened via a real
-// <a target="_blank"> click is a genuine navigation, not a popup, and isn't
-// blocked the same way.
+// window.open(...) — whether given '' or a blob: URL — is a genuinely
+// unreliable way to get a print-preview in front of a user: popup blockers
+// kill the empty-URL form silently, and several browsers refuse to
+// cross-navigate a blob: URL into a brand new top-level tab even via a
+// real click (both confirmed against a real browser, not just this one).
+// A hidden iframe on the CURRENT page sidesteps both — no new window or
+// tab is ever created, so there's nothing for a blocker to block — and
+// calling print() on it goes straight to the OS print dialog, where
+// "Save as PDF" is one of the destinations.
 function openWin(html) {
-  const blob = new Blob([html], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.target = '_blank'
-  a.rel = 'noopener'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(function () { URL.revokeObjectURL(url) }, 60000)
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
+  document.body.appendChild(iframe)
+  const doc = iframe.contentWindow.document
+  doc.open(); doc.write(html); doc.close()
+  function cleanup() { if (iframe.parentNode) document.body.removeChild(iframe) }
+  iframe.onload = function () {
+    setTimeout(function () {
+      try {
+        iframe.contentWindow.focus()
+        iframe.contentWindow.print()
+      } finally {
+        // afterprint fires once the dialog is dismissed; a timeout is the
+        // fallback for browsers that don't fire it reliably for iframes.
+        iframe.contentWindow.addEventListener('afterprint', cleanup)
+        setTimeout(cleanup, 60000)
+      }
+    }, 150)
+  }
 }
 
 // Every document ends here. By default it opens a print window; pass
@@ -610,4 +623,182 @@ function receiptTotals(rows, amount) {
         <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(amount || 0))}</b></div>
       </div>
     </div>`
+}
+
+// ── Unit Franchise Agreement — plain-paper legal document, not the yellow/
+// purple financial-document chrome above. Deliberately unstyled: NLH logo
+// top-left, head-office address top-right, a rule, serif body text, a
+// plain-bordered kit table, underline signature lines, "Page 1 of 1" as the
+// only footer. Same clause text for every franchisee — only the meta,
+// party, course list and Annexure A kit table (a snapshot taken when the
+// agreement was generated — franchisee_agreements.courses/.kit) differ.
+// franchisee: { business_name, owner_name, tier, city, state, address, email }
+// agreement: a franchisee_agreements row — { agreement_no, fee, term_start,
+//   term_end, courses, kit, status, signed_at, signed_name, verification_code }
+function numberWords(n) {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+  function cvt(x) {
+    if (x < 20) return ones[x]
+    if (x < 100) return tens[Math.floor(x / 10)] + (x % 10 ? ' ' + ones[x % 10] : '')
+    if (x < 1000) return ones[Math.floor(x / 100)] + ' Hundred' + (x % 100 ? ' ' + cvt(x % 100) : '')
+    if (x < 100000) return cvt(Math.floor(x / 1000)) + ' Thousand' + (x % 1000 ? ' ' + cvt(x % 1000) : '')
+    return cvt(Math.floor(x / 100000)) + ' Lakh' + (x % 100000 ? ' ' + cvt(x % 100000) : '')
+  }
+  return cvt(Math.round(n || 0))
+}
+
+const AGREEMENT_CLAUSES = function (termLabel) { return `
+  <div class="clauses">
+    <div class="clause">The UF agrees to teach the courses to the interested students only in the area of the Unit Franchisee Centre.</div>
+    <div class="clause">New Learning Horizons shall coordinate &amp; support the Franchisee Centre owner by providing a one-time training in the courses opted for to the Course Instructor (CI) or Instructors appointed by the UF and monitor their progress from time to time. Any subsequent training required shall be on a chargeable basis.</div>
+    <div class="clause">The UF shall purchase all the course material to teach the course to the interested students from New Learning Horizons at the rates fixed, or as may be revised from time to time (see Annexure A). The UF shall not reproduce the course material either by photocopy or duplication, or print in any other form or name for any purpose.</div>
+    <div class="clause">New Learning Horizons shall forward a banner (one time), study material, students' admission form and receipt books as and when required, and a Certificate on completion of the course to the Centre as a part of the Kit.
+      <div class="sub"><div class="subclause">NLH will also supply on order from the UF, students' study material and a Certificate on completion of the course to the Centres as a part of the Student Kit; the cost of the student kit ordered and courier charges will be paid by the UF.</div></div>
+    </div>
+    <div class="clause">New Learning Horizons reserves the right to change the cost of training fees and the cost of the student's course material from time to time.</div>
+    <div class="clause">The UF shall follow the methods and systems set out in the training by NLH for all the courses opted for, and also ensure the following:
+      <div class="sub">
+        <div class="subclause">Use and supply only the said course material as received from NLH and shall not conduct any unauthorised or similar type of courses.</div>
+        <div class="subclause">Keep and maintain a full and proper student enrolment, attendance, progress and fees register for the students in her area of operation.</div>
+        <div class="subclause">Send every month a list of students enrolled and a list of students who drop out during the course of study, in the set formats sent by New Learning Horizons from time to time.</div>
+      </div>
+    </div>
+    <div class="clause">UF shall maintain confidentiality of business methods, pricing, and training content, and shall also be responsible for the data privacy of students and staff.</div>
+    <div class="clause">Upon termination of the agreement for any cause, the UF shall:
+      <div class="sub">
+        <div class="subclause">Promptly pay to New Learning Horizons all money due;</div>
+        <div class="subclause">Promptly return all instructional and educational material supplied to them and cease to describe herself as UF of NLH;</div>
+        <div class="subclause">Not impart the knowledge gained with respect to the above courses to anyone thereafter.</div>
+      </div>
+    </div>
+    <div class="clause">This agreement shall be for a period of 3 years (${esc(termLabel)}), which may be extendable with the mutual consent of both parties at a nominal renewal amount of 25% of the Franchise amount prevalent at the time. However, either party may terminate the agreement by giving the other party 1 month's prior registered notice in the event of a breach of any term or condition of this agreement. In the event of the agreement herein being terminated, New Learning Horizons shall not be liable to the UF for any compensation or damage of any kind.</div>
+    <div class="clause">UF must demonstrate consistent growth and program outreach. NLH reserves the right to terminate the agreement for poor performance.</div>
+    <div class="clause">Disputes, if any, shall be resolved amicably; failing which, arbitration shall be held in Nagpur. Jurisdiction will be the Nagpur courts only.</div>
+    <div class="clause">The fee structure and sharing ratios of all courses are as per Annexure A and were also explained at the time of signing the contract. These are subject to change from time to time as per changes in the course and course material.</div>
+  </div>` }
+
+const AGREEMENT_STYLE = `
+  :root{--ink:#111;--muted:#555;--rule:#111;--hair:#bbb}
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);font-family:Georgia,'Times New Roman',Times,serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{max-width:210mm;margin:0 auto;padding:16mm 18mm}
+  .letterhead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:8px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand img{width:44px;height:44px;object-fit:contain}
+  .brand b{font:700 15px Georgia,serif;display:block}
+  .brand span{font:italic 10.5px Georgia,serif;color:var(--muted);display:block}
+  .addr{text-align:right;font:11px/1.6 Arial,Helvetica,sans-serif;color:var(--muted)}
+  .rule{border:none;border-top:1px solid var(--rule);margin:14px 0 22px}
+  h1{text-align:center;font:700 16px/1.4 Georgia,serif;text-transform:uppercase;letter-spacing:.04em;margin:0 0 4px}
+  .subtitle{text-align:center;font:italic 11.5px Georgia,serif;color:var(--muted);margin:0 0 22px}
+  .docmeta{font:11px/1.7 Arial,Helvetica,sans-serif;color:var(--muted);text-align:center;margin-bottom:26px}
+  .docmeta b{color:var(--ink)}
+  .body{font-size:12.8px;line-height:1.85;text-align:left}
+  .body p{margin:0 0 13px}
+  h2{font:700 12px Georgia,serif;text-transform:uppercase;letter-spacing:.03em;margin:24px 0 8px}
+  .clauses{counter-reset:cl;list-style:none;margin:0;padding:0}
+  .clause{counter-increment:cl;position:relative;padding-left:24px;margin-bottom:11px}
+  .clause::before{content:counter(cl) '.';position:absolute;left:0;top:0;font-weight:700}
+  .sub{counter-reset:scl;list-style:none;margin:6px 0 0;padding:0}
+  .subclause{counter-increment:scl;position:relative;padding-left:28px;margin:6px 0 0}
+  .subclause::before{content:'(' counter(scl,lower-alpha) ')';position:absolute;left:0;top:0;font-weight:700}
+  table.kit{width:100%;border-collapse:collapse;margin:14px 0 4px;font:11.5px/1.5 Arial,Helvetica,sans-serif}
+  table.kit caption{caption-side:top;text-align:left;font:italic 11px Georgia,serif;color:var(--muted);margin-bottom:8px}
+  table.kit th,table.kit td{border:1px solid var(--ink);padding:6px 10px;text-align:left}
+  table.kit th{font-weight:700}
+  table.kit td.r,table.kit th.r{text-align:right;font-variant-numeric:tabular-nums}
+  .feeline{font:11.5px Arial,Helvetica,sans-serif;color:var(--muted);margin-top:4px}
+  .sigblock{margin-top:44px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
+  .sigcell .line{border-top:1px solid var(--ink);margin-top:46px;padding-top:6px}
+  .sigcell .role{font:11px Arial,Helvetica,sans-serif;color:var(--muted)}
+  .sigcell .name{font:700 12.5px Georgia,serif;margin-top:2px}
+  .sigcell .place{font:11px Arial,Helvetica,sans-serif;color:var(--muted);margin-top:16px}
+  .sigcell .status{font:700 10px Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.06em;margin-top:8px;color:var(--muted)}
+  .consent{border:1px solid var(--hair);border-radius:3px;padding:10px 12px;margin-top:10px;font:11px Arial,Helvetica,sans-serif;color:var(--muted);display:flex;gap:8px;align-items:flex-start}
+  .consent .box{width:12px;height:12px;border:1.5px solid var(--muted);flex:none;margin-top:1px}
+  .verify{margin-top:30px;padding-top:12px;border-top:1px dotted var(--hair);font:10.5px Arial,Helvetica,sans-serif;color:var(--muted)}
+  .verify b{color:var(--ink)}
+  .pagefoot{text-align:center;font:10.5px Arial,Helvetica,sans-serif;color:var(--muted);margin-top:34px;padding-top:10px;border-top:1px solid var(--hair)}
+  .np{text-align:right;padding:10px 20px;background:#f0f0f0}
+  .np button{background:#534AB7;color:#fff;border:none;padding:8px 18px;border-radius:7px;font:600 13px sans-serif;cursor:pointer}
+  @media print{@page{size:A4;margin:0}.np{display:none}.page{padding:14mm 16mm}}
+`
+
+export function printFranchiseeAgreement(franchisee, agreement, ctx) {
+  const a = agreement || {}
+  const kit = a.kit || []
+  const courses = (a.courses && a.courses.length) ? a.courses : ['To be assigned']
+  const courseList = courses.length > 1
+    ? courses.slice(0, -1).join(', ') + ' and ' + courses[courses.length - 1]
+    : courses[0]
+  const execDate = fmtLong(a.generated_at || new Date())
+  const termLabel = fmtLong(a.term_start) + ' to ' + fmtLong(a.term_end)
+  const address = [franchisee.address, franchisee.city, franchisee.state].filter(Boolean).join(', ')
+  const signed = a.status === 'signed'
+
+  const kitRows = kit.length ? kit.map(function (k) {
+    return `<tr><td>${esc(k.course)}</td><td>${esc(k.level)}</td><td class="r">${fmtAmt(k.rate)}</td></tr>`
+  }).join('') : `<tr><td colspan="3" style="text-align:center;color:var(--muted)">No programmes registered yet.</td></tr>`
+
+  const body = `
+    <div class="letterhead">
+      <div class="brand">
+        <img src="/NLH%20Logo.png" alt="New Learning Horizons">
+        <div><b>New Learning Horizons</b><span>ISO 9001:2015 Certified</span></div>
+      </div>
+      <div class="addr">9, Anjuman Shopping Complex, Sadar<br>Nagpur, Maharashtra 440 001<br>+91 9373 111 311 &middot; dhiral@nlhnagpur.info</div>
+    </div>
+    <hr class="rule">
+
+    <h1>Agreement for Unit Franchise</h1>
+    <div class="subtitle">Agreement No. ${esc(a.agreement_no || '—')}</div>
+    <div class="docmeta">Executed on <b>${execDate}</b> at Nagpur &middot; Term: <b>${termLabel}</b></div>
+
+    <div class="body">
+      <p>This agreement is made on <b>${execDate}</b> between <b>New Learning Horizons</b>, an ISO 9001&ndash;2015 Certified institute, through its proprietor Mrs. Dhiral Panchmatia, R/o. 9 Anjuman Complex, Sadar, Nagpur, Maharashtra (hereinafter referred to as Party of the 1st Part or "NLH"),</p>
+      <p>AND</p>
+      <p><b>${esc(franchisee.owner_name || franchisee.business_name)}</b>, R/o. ${esc(address)} (hereinafter referred to as UF or the "Second Party"), and is interested in taking a Unit Franchise centre for <b>${esc(courseList)}</b> at a non-refundable training fee of Rs. ${fmtAmt(a.fee)}/&ndash; (Rupees ${numberWords(a.fee)} only), hereinafter referred to as Party of the 2nd Part or "UF".</p>
+      <p>Whereas the 1st party New Learning Horizons is a registered trademarked training institute for imparting training to interested parties to teach ACEM Abacus, Write&ndash;Well Handwriting Improvement &amp; Calligraphy, Easy Math &ndash; Concepts of Vedic Math, Phonics, Montessori and other skill enhancement courses for children. The 1st party has agreed to appoint the 2nd party as the UF imparting training to the interested students for the courses as mentioned above.</p>
+
+      <h2>Definitions</h2>
+      <p>NLH: New Learning Horizons. UF: Unit Franchise. CI: Course Instructor.</p>
+
+      <h2>Terms and Conditions</h2>
+      ${AGREEMENT_CLAUSES(termLabel)}
+
+      <h2>Annexure A &mdash; Kit Charges as on ${execDate}</h2>
+      <table class="kit">
+        <caption>Rates apply to the UF's registered programmes and levels only</caption>
+        <thead><tr><th>Course Name</th><th>Level</th><th class="r">Kit Charge (Rs.)</th></tr></thead>
+        <tbody>${kitRows}</tbody>
+      </table>
+      <div class="feeline">Note: These kit charges are subject to periodic revision by NLH. Courier charges to be borne by the franchisee.</div>
+    </div>
+
+    <div class="sigblock">
+      <div class="sigcell">
+        <div class="line"><div class="name">Dhiral Panchmatia</div><div class="role">Proprietor, New Learning Horizons</div></div>
+        <div class="place">Signed at Nagpur &middot; ${execDate}</div>
+        <div class="status">&#10003; Signed for NLH</div>
+      </div>
+      <div class="sigcell">
+        <div class="line"><div class="name">${esc(signed ? a.signed_name : franchisee.owner_name || franchisee.business_name)}</div><div class="role">Unit Franchisee, ${esc(franchisee.city || '')}</div></div>
+        ${signed
+          ? `<div class="place">Signed &middot; ${fmtLong(a.signed_at)}${a.signed_ip ? ' &middot; IP ' + esc(a.signed_ip) : ''}</div><div class="status" style="color:#1D7A4F">&#10003; Signed</div>`
+          : `<div class="place">Awaiting signature${franchisee.email ? ' &middot; link sent to ' + esc(franchisee.email) : ''}</div><div class="status">&#9675; Not yet signed</div><div class="consent"><span class="box"></span> "I have read and agree to the terms of this Agreement, and this typed name is my signature." &mdash; ticked and typed by the UF to sign.</div>`
+        }
+      </div>
+    </div>
+
+    <div class="verify">Verification code: <b>${esc(a.verification_code || '—')}</b>. ${signed ? 'Signed and recorded against this code.' : 'Once signed, the UF\'s name, IP address, timestamp and a hash of this document are recorded against this code and can be checked at any time from the franchisee\'s account.'}</div>
+
+    <div class="pagefoot">Page 1 of 1 &middot; New Learning Horizons &middot; Agreement No. ${esc(a.agreement_no || '—')}</div>`
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unit Franchise Agreement</title><style>${AGREEMENT_STYLE}</style></head><body>
+    <div class="np"><button onclick="window.print()">Print / Save PDF</button></div>
+    <div class="page">${body}</div>
+  </body></html>`
+
+  return emit(ctx, html)
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
+import FranchiseeAgreementView from '../components/FranchiseeAgreementView'
 
 // Self-service "My Account" — a franchisee's own combined statement of
 // account (franchise fee + every order), same data and same component as
@@ -15,7 +16,7 @@ export default function MyAccountPage() {
   useEffect(function () {
     if (!currentFranchiseeId) { setLoading(false); return }
     sb.from('franchisees')
-      .select('id, business_name, owner_name, tier')
+      .select('id, business_name, owner_name, tier, city, state, address, email, phone')
       .eq('id', currentFranchiseeId)
       .single()
       .then(function ({ data }) { setFranchisee(data); setLoading(false) })
@@ -32,6 +33,7 @@ export default function MyAccountPage() {
       <p className="hint" style={{ marginTop: -8, marginBottom: 18 }}>
         Statement of account for {franchisee?.business_name || franchisee?.owner_name || 'your centre'} — franchise fee and every order, debits, credits, and running balance.
       </p>
+      <FranchiseeAgreementView franchisee={franchisee} />
       <FranchiseeLedgerView franchiseeId={currentFranchiseeId} franchiseeName={franchisee?.business_name || franchisee?.owner_name} />
     </div>
   )

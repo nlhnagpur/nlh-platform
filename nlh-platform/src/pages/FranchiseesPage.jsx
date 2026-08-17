@@ -8,10 +8,11 @@ import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail 
 import { sendWAPaymentReceived, sendWAFeeReminder } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
-import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice } from '../components/studentDocs'
+import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice, printFranchiseeAgreement } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
 import { StudentDetailModal } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
+import { loadLatestAgreement, generateAgreement } from '../utils/franchiseeAgreement'
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
@@ -327,9 +328,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [saving, setSaving] = useState(false)
   const [orders, setOrders] = useState([])
   const [students, setStudents] = useState([])
-  const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false })
+  const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false, agreement: false })
   const [certEmailing, setCertEmailing] = useState(false)
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
+  const [agreement, setAgreement] = useState(null)
+  const [agreementBusy, setAgreementBusy] = useState(false)
   const [resending, setResending] = useState(false)
   const [changingEmail, setChangingEmail] = useState(false)
   const [newEmail, setNewEmail] = useState('')
@@ -497,6 +500,33 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       const { data } = await sb.from('students').select('id,full_name,parent_name,dob,registered_at,phone,email,pincode,country,state,city,area,address,channel,payment_status,payment_mode,fee_total,fee_paid,franchisee_id').eq('franchisee_id', franchisee.id).order('full_name').limit(50)
       setStudents(data || [])
     }
+    if (t === 'agreement') {
+      const row = await loadLatestAgreement(franchisee.id)
+      setAgreement(row)
+    }
+  }
+
+  async function generateOrRefreshAgreement() {
+    setAgreementBusy(true)
+    try {
+      const row = await generateAgreement(
+        Object.assign({}, franchisee, form, {
+          enrollment_fee: Number(form.enrollment_fee) || 0,
+          registered_courses: registeredCourses,
+        }),
+        currentUser?.email
+      )
+      setAgreement(row)
+      showToast('Agreement ' + row.agreement_no + ' generated ✓')
+    } catch (err) {
+      showToast('Could not generate agreement: ' + err.message, 'err')
+    }
+    setAgreementBusy(false)
+  }
+
+  function viewAgreement() {
+    if (!agreement) return
+    printFranchiseeAgreement(Object.assign({}, franchisee, form), agreement)
   }
 
   function toggleCourse(id) {
@@ -660,9 +690,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         </div>
 
         <div className="tabs">
-          {['info', 'courses', 'orders', 'students', 'ledger', 'cert'].map(t => (
+          {['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement'].map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
-              {t === 'cert' ? '📜 Certificate' : t === 'ledger' ? '💰 Accounts' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -1180,6 +1210,44 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               </div>
             )
           })()}
+
+          {tab === 'agreement' && (
+            <div>
+              {!agreement && (
+                <p className="hint">No Unit Franchise Agreement generated yet for this franchisee.</p>
+              )}
+              {agreement && (
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ font: '700 13px var(--font)' }}>{agreement.agreement_no}</span>
+                    <span className={`badge ${agreement.status === 'signed' ? 'ba' : 'bp'}`}>
+                      {agreement.status === 'signed' ? '✓ Signed' : agreement.status === 'sent' ? 'Sent' : 'Draft'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.7 }}>
+                    Fee: <strong style={{ color: 'var(--text)' }}>₹{fmtAmt(agreement.fee)}</strong> &middot;
+                    {' '}Term: <strong style={{ color: 'var(--text)' }}>{fmtDate(agreement.term_start)} – {fmtDate(agreement.term_end)}</strong><br/>
+                    {agreement.status === 'signed'
+                      ? <>Signed by <strong style={{ color: 'var(--text)' }}>{agreement.signed_name}</strong> on {fmtDate(agreement.signed_at)}</>
+                      : 'Awaiting the franchisee\'s signature from their My Account page.'}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                {admin && (!agreement || agreement.status !== 'signed') && (
+                  <button className="btn-s" onClick={generateOrRefreshAgreement} disabled={agreementBusy}>
+                    {agreementBusy ? 'Generating…' : agreement ? '🔁 Regenerate' : '📄 Generate Agreement'}
+                  </button>
+                )}
+                {agreement && (
+                  <button className="btn-p" onClick={viewAgreement}>🖨️ View / Print</button>
+                )}
+              </div>
+              {agreement && agreement.status !== 'signed' && (
+                <p className="hint" style={{ marginTop: 8 }}>Regenerating creates a fresh draft with a new agreement number — the franchisee always signs the latest one.</p>
+              )}
+            </div>
+          )}
         </div>
 
         {admin && (tab === 'info' || tab === 'courses') && (
