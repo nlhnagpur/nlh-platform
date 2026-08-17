@@ -13,6 +13,7 @@ import { captureDocPng } from '../utils/captureReceipt'
 import { StudentDetailModal } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
 import { loadLatestAgreement, generateAgreement } from '../utils/franchiseeAgreement'
+import { buildAgreementPdfDataUrl } from '../utils/agreementPdf'
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
@@ -520,6 +521,28 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       showToast('Agreement ' + row.agreement_no + ' generated ✓')
     } catch (err) {
       showToast('Could not generate agreement: ' + err.message, 'err')
+    }
+    setAgreementBusy(false)
+  }
+
+  async function sendAgreementForSignature() {
+    if (!agreement) return
+    if (!(form.email || franchisee.email)) {
+      showToast('No email on file for this franchisee — BoldSign needs one to send the signing invite', 'err')
+      return
+    }
+    setAgreementBusy(true)
+    try {
+      const pdfDataUrl = await buildAgreementPdfDataUrl(Object.assign({}, franchisee, form), agreement)
+      const { data, error } = await sb.functions.invoke('boldsign-send', {
+        body: { agreementId: agreement.id, pdfDataUrl },
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error))
+      setAgreement(function (a) { return { ...a, status: 'sent', boldsign_document_id: data.documentId } })
+      showToast('Sent for signature via BoldSign ✓ — ' + (form.email || franchisee.email) + ' will get a signing email')
+    } catch (err) {
+      showToast('Could not send for signature: ' + err.message, 'err')
     }
     setAgreementBusy(false)
   }
@@ -1228,13 +1251,15 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     Fee: <strong style={{ color: 'var(--text)' }}>₹{fmtAmt(agreement.fee)}</strong> &middot;
                     {' '}Term: <strong style={{ color: 'var(--text)' }}>{fmtDate(agreement.term_start)} – {fmtDate(agreement.term_end)}</strong><br/>
                     {agreement.status === 'signed'
-                      ? <>Signed by <strong style={{ color: 'var(--text)' }}>{agreement.signed_name}</strong> on {fmtDate(agreement.signed_at)}</>
-                      : 'Awaiting the franchisee\'s signature from their My Account page.'}
+                      ? <>Signed via BoldSign by <strong style={{ color: 'var(--text)' }}>{agreement.signed_name}</strong> on {fmtDate(agreement.signed_at)}</>
+                      : agreement.status === 'sent'
+                        ? <>Sent to <strong style={{ color: 'var(--text)' }}>{form.email || franchisee.email}</strong> for signature via BoldSign — waiting on them to sign.</>
+                        : 'Not sent yet.'}
                   </div>
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 8 }}>
-                {admin && (!agreement || agreement.status !== 'signed') && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {admin && (!agreement || agreement.status === 'draft') && (
                   <button className="btn-s" onClick={generateOrRefreshAgreement} disabled={agreementBusy}>
                     {agreementBusy ? 'Generating…' : agreement ? '🔁 Regenerate' : '📄 Generate Agreement'}
                   </button>
@@ -1242,9 +1267,14 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 {agreement && (
                   <button className="btn-p" onClick={viewAgreement}>🖨️ View / Print</button>
                 )}
+                {admin && agreement && agreement.status === 'draft' && (
+                  <button className="btn-p" onClick={sendAgreementForSignature} disabled={agreementBusy}>
+                    {agreementBusy ? 'Sending…' : '📤 Send for Signature via BoldSign'}
+                  </button>
+                )}
               </div>
-              {agreement && agreement.status !== 'signed' && (
-                <p className="hint" style={{ marginTop: 8 }}>Regenerating creates a fresh draft with a new agreement number — the franchisee always signs the latest one.</p>
+              {agreement && agreement.status === 'draft' && (
+                <p className="hint" style={{ marginTop: 8 }}>Regenerating creates a fresh draft with a new agreement number. Sending emails a secure BoldSign link to the franchisee — no separate PDF step needed.</p>
               )}
             </div>
           )}
