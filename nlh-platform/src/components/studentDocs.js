@@ -636,6 +636,7 @@ function receiptTotals(rows, amount) {
 // agreement: a franchisee_agreements row — { agreement_no, fee, term_start,
 //   term_end, courses, kit, status, signed_at, signed_name, verification_code }
 function numberWords(n) {
+  if (!n) return 'Zero'
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
   function cvt(x) {
@@ -758,7 +759,9 @@ export function printFranchiseeAgreement(franchisee, agreement, ctx) {
     <div class="body">
       <p>This agreement is made on <b>${execDate}</b> between <b>New Learning Horizons</b>, an ISO 9001&ndash;2015 Certified institute, through its proprietor Mrs. Dhiral Panchmatia, R/o. 9 Anjuman Complex, Sadar, Nagpur, Maharashtra (hereinafter referred to as Party of the 1st Part or "NLH"),</p>
       <p>AND</p>
-      <p><b>${esc(franchisee.owner_name || franchisee.business_name)}</b>, R/o. ${esc(address)} (hereinafter referred to as UF or the "Second Party"), and is interested in taking a Unit Franchise centre for <b>${esc(courseList)}</b> at a non-refundable training fee of Rs. ${fmtAmt(a.fee)}/&ndash; (Rupees ${numberWords(a.fee)} only), hereinafter referred to as Party of the 2nd Part or "UF".</p>
+      <p><b>${esc(franchisee.owner_name || franchisee.business_name)}</b>, R/o. ${esc(address)} (hereinafter referred to as UF or the "Second Party"), and is interested in taking a Unit Franchise centre for <b>${esc(courseList)}</b>${a.fee > 0
+        ? ` at a non-refundable training fee of Rs. ${fmtAmt(a.fee)}/&ndash; (Rupees ${numberWords(a.fee)} only)`
+        : ', continuing as an existing NLH franchisee on a no-fee basis in recognition of the relationship already in place'}, hereinafter referred to as Party of the 2nd Part or "UF".</p>
       <p>Whereas the 1st party New Learning Horizons is a registered trademarked training institute for imparting training to interested parties to teach ACEM Abacus, Write&ndash;Well Handwriting Improvement &amp; Calligraphy, Easy Math &ndash; Concepts of Vedic Math, Phonics, Montessori and other skill enhancement courses for children. The 1st party has agreed to appoint the 2nd party as the UF imparting training to the interested students for the courses as mentioned above.</p>
 
       <h2>Definitions</h2>
