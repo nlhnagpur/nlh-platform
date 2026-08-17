@@ -661,7 +661,7 @@ const AGREEMENT_CLAUSES = function (termLabel) { return `
     <div class="clause">The UF shall follow the methods and systems set out in the training by NLH for all the courses opted for, and also ensure the following:
       <div class="sub">
         <div class="subclause">Use and supply only the said course material as received from NLH and shall not conduct any unauthorised or similar type of courses.</div>
-        <div class="subclause">Keep and maintain a full and proper student enrolment, attendance, progress and fees register for the students in her area of operation.</div>
+        <div class="subclause">Keep and maintain a full and proper student enrolment, attendance, progress and fees register for the students in the UF's area of operation.</div>
         <div class="subclause">Send every month a list of students enrolled and a list of students who drop out during the course of study, in the set formats sent by New Learning Horizons from time to time.</div>
       </div>
     </div>
@@ -669,7 +669,7 @@ const AGREEMENT_CLAUSES = function (termLabel) { return `
     <div class="clause">Upon termination of the agreement for any cause, the UF shall:
       <div class="sub">
         <div class="subclause">Promptly pay to New Learning Horizons all money due;</div>
-        <div class="subclause">Promptly return all instructional and educational material supplied to them and cease to describe herself as UF of NLH;</div>
+        <div class="subclause">Promptly return all instructional and educational material supplied to them and cease to describe itself as UF of NLH;</div>
         <div class="subclause">Not impart the knowledge gained with respect to the above courses to anyone thereafter.</div>
       </div>
     </div>
@@ -733,7 +733,11 @@ export function printFranchiseeAgreement(franchisee, agreement, ctx) {
   const courseList = courses.length > 1
     ? courses.slice(0, -1).join(', ') + ' and ' + courses[courses.length - 1]
     : courses[0]
-  const execDate = fmtLong(a.generated_at || new Date())
+  // The agreement's own "made on" date is the term's start date, not
+  // whenever this row happened to be generated/regenerated in our system —
+  // otherwise a backdated franchisee's term (e.g. starting 2 years ago)
+  // reads as beginning before the agreement was even made.
+  const execDate = fmtLong(a.term_start || a.generated_at || new Date())
   const termLabel = fmtLong(a.term_start) + ' to ' + fmtLong(a.term_end)
   const address = [franchisee.address, franchisee.city, franchisee.state].filter(Boolean).join(', ')
   const signed = a.status === 'signed'
@@ -759,9 +763,9 @@ export function printFranchiseeAgreement(franchisee, agreement, ctx) {
     <div class="body">
       <p>This agreement is made on <b>${execDate}</b> between <b>New Learning Horizons</b>, an ISO 9001&ndash;2015 Certified institute, through its proprietor Mrs. Dhiral Panchmatia, R/o. 9 Anjuman Complex, Sadar, Nagpur, Maharashtra (hereinafter referred to as Party of the 1st Part or "NLH"),</p>
       <p>AND</p>
-      <p><b>${esc(franchisee.owner_name || franchisee.business_name)}</b>, R/o. ${esc(address)} (hereinafter referred to as UF or the "Second Party"), and is interested in taking a Unit Franchise centre for <b>${esc(courseList)}</b>${a.fee > 0
+      <p><b>${esc(franchisee.owner_name || franchisee.business_name)}</b>, R/o. ${esc(address)} (hereinafter referred to as Party of the 2nd Part or the "UF"), and is interested in taking a Unit Franchise centre for <b>${esc(courseList)}</b>${a.fee > 0
         ? ` at a non-refundable training fee of Rs. ${fmtAmt(a.fee)}/&ndash; (Rupees ${numberWords(a.fee)} only)`
-        : ', continuing as an existing NLH franchisee on a no-fee basis in recognition of the relationship already in place'}, hereinafter referred to as Party of the 2nd Part or "UF".</p>
+        : ', continuing as an existing NLH franchisee on a no-fee basis in recognition of the relationship already in place'}.</p>
       <p>Whereas the 1st party New Learning Horizons is a registered trademarked training institute for imparting training to interested parties to teach ACEM Abacus, Write&ndash;Well Handwriting Improvement &amp; Calligraphy, Easy Math &ndash; Concepts of Vedic Math, Phonics, Montessori and other skill enhancement courses for children. The 1st party has agreed to appoint the 2nd party as the UF imparting training to the interested students for the courses as mentioned above.</p>
 
       <h2>Definitions</h2>

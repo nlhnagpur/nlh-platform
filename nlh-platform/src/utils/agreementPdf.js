@@ -144,7 +144,11 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
   doc.setFont('times', 'italic'); doc.setFontSize(9.5); doc.setTextColor(85, 85, 85)
   doc.text('Agreement No. ' + (a.agreement_no || '—'), PAGE_W / 2, y, { align: 'center' })
   y += 6
-  const execDate = fmtLong(a.generated_at || new Date())
+  // The agreement's own "made on" date is the term's start date, not
+  // whenever this row happened to be generated/regenerated in our system —
+  // otherwise a backdated franchisee's term (e.g. starting 2 years ago)
+  // reads as beginning before the agreement was even made.
+  const execDate = fmtLong(a.term_start || a.generated_at || new Date())
   const termLabel = fmtLong(a.term_start) + ' to ' + fmtLong(a.term_end)
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(85, 85, 85)
   doc.text('Executed on ' + execDate + ' at Nagpur · Term: ' + termLabel, PAGE_W / 2, y, { align: 'center' })
@@ -160,7 +164,7 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
   const feeClause = a.fee > 0
     ? ' at a non-refundable training fee of Rs. ' + fmtAmt(a.fee) + '/– (Rupees ' + numberWords(a.fee) + ' only)'
     : ', continuing as an existing NLH franchisee on a no-fee basis in recognition of the relationship already in place'
-  para((franchisee.owner_name || franchisee.business_name) + ', R/o. ' + address + ' (hereinafter referred to as UF or the "Second Party"), and is interested in taking a Unit Franchise centre for ' + courseList + feeClause + ', hereinafter referred to as Party of the 2nd Part or "UF".')
+  para((franchisee.owner_name || franchisee.business_name) + ', R/o. ' + address + ' (hereinafter referred to as Party of the 2nd Part or the "UF"), and is interested in taking a Unit Franchise centre for ' + courseList + feeClause + '.')
   para('Whereas the 1st party New Learning Horizons is a registered trademarked training institute for imparting training to interested parties to teach ACEM Abacus, Write–Well Handwriting Improvement & Calligraphy, Easy Math – Concepts of Vedic Math, Phonics, Montessori and other skill enhancement courses for children. The 1st party has agreed to appoint the 2nd party as the UF imparting training to the interested students for the courses as mentioned above.')
 
   heading('Definitions')
@@ -175,12 +179,12 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
   clause(5, "New Learning Horizons reserves the right to change the cost of training fees and the cost of the student's course material from time to time.")
   clause(6, 'The UF shall follow the methods and systems set out in the training by NLH for all the courses opted for, and also ensure the following:')
   subclause('a', 'Use and supply only the said course material as received from NLH and shall not conduct any unauthorised or similar type of courses.')
-  subclause('b', 'Keep and maintain a full and proper student enrolment, attendance, progress and fees register for the students in her area of operation.')
+  subclause('b', "Keep and maintain a full and proper student enrolment, attendance, progress and fees register for the students in the UF's area of operation.")
   subclause('c', 'Send every month a list of students enrolled and a list of students who drop out during the course of study, in the set formats sent by New Learning Horizons from time to time.')
   clause(7, 'UF shall maintain confidentiality of business methods, pricing, and training content, and shall also be responsible for the data privacy of students and staff.')
   clause(8, 'Upon termination of the agreement for any cause, the UF shall:')
   subclause('a', 'Promptly pay to New Learning Horizons all money due;')
-  subclause('b', 'Promptly return all instructional and educational material supplied to them and cease to describe herself as UF of NLH;')
+  subclause('b', 'Promptly return all instructional and educational material supplied to them and cease to describe itself as UF of NLH;')
   subclause('c', 'Not impart the knowledge gained with respect to the above courses to anyone thereafter.')
   clause(9, 'This agreement shall be for a period of 3 years (' + termLabel + '), which may be extendable with the mutual consent of both parties at a nominal renewal amount of 25% of the Franchise amount prevalent at the time. However, either party may terminate the agreement by giving the other party 1 month\'s prior registered notice in the event of a breach of any term or condition of this agreement. In the event of the agreement herein being terminated, New Learning Horizons shall not be liable to the UF for any compensation or damage of any kind.')
   clause(10, 'UF must demonstrate consistent growth and program outreach. NLH reserves the right to terminate the agreement for poor performance.')
