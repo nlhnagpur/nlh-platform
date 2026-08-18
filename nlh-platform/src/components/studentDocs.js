@@ -257,7 +257,12 @@ const PAY_BOX = `<div class="pt"><div class="pay"><div class="bl"></div>
 // "Save as PDF" is one of the destinations.
 function openWin(html) {
   const iframe = document.createElement('iframe')
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
+  // A real A4-sized box, not 0x0 — a 0-width iframe has no viewport for the
+  // document to lay out against, which any template relying on max-width
+  // rather than a fixed width (see the agreement's .page above) collapses
+  // into. Off-screen via a large negative offset, not width:0, so it's
+  // still invisible without being layout-less.
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0;visibility:hidden'
   document.body.appendChild(iframe)
   const doc = iframe.contentWindow.document
   doc.open(); doc.write(html); doc.close()
@@ -683,7 +688,13 @@ const AGREEMENT_STYLE = `
   :root{--ink:#111;--muted:#555;--rule:#111;--hair:#bbb}
   *{box-sizing:border-box}
   body{margin:0;background:#fff;color:var(--ink);font-family:Georgia,'Times New Roman',Times,serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .page{max-width:210mm;margin:0 auto;padding:18mm}
+  /* width, not max-width — this document is printed through a hidden 0x0
+     iframe (see openWin below), which has no viewport width of its own to
+     cap against. max-width only caps size, so inside a 0px container the
+     page (and everything in it) collapsed to 0 width, wrapping every
+     clause one character per line. An explicit width forces the real A4
+     size regardless of the iframe's own on-screen box. */
+  .page{width:210mm;margin:0 auto;padding:18mm}
   .letterhead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:8px}
   .brand{display:flex;align-items:center;gap:12px}
   .brand img{width:44px;height:44px;object-fit:contain}
