@@ -144,11 +144,15 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
   doc.setFont('times', 'italic'); doc.setFontSize(9.5); doc.setTextColor(85, 85, 85)
   doc.text('Agreement No. ' + (a.agreement_no || '—'), PAGE_W / 2, y, { align: 'center' })
   y += 6
-  // The agreement's own "made on" date is the term's start date, not
-  // whenever this row happened to be generated/regenerated in our system —
-  // otherwise a backdated franchisee's term (e.g. starting 2 years ago)
-  // reads as beginning before the agreement was even made.
-  const execDate = fmtLong(a.term_start || a.generated_at || new Date())
+  // Execution date and term start are two different things, not one
+  // derived from the other: the term always runs from the franchisee's
+  // actual registration date (term_start), however long ago that was,
+  // while the agreement is only truly "made" once it's actually signed —
+  // so this is signed_at once available, or today while it's still a
+  // draft/pending signature (this PDF is built pre-signature, so in
+  // practice it's always "today" here; the view/print copy shows the
+  // real signed_at once BoldSign confirms it).
+  const execDate = fmtLong(a.signed_at || a.generated_at || new Date())
   const termLabel = fmtLong(a.term_start) + ' to ' + fmtLong(a.term_end)
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(85, 85, 85)
   doc.text('Executed on ' + execDate + ' at Nagpur · Term: ' + termLabel, PAGE_W / 2, y, { align: 'center' })

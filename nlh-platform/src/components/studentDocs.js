@@ -735,11 +735,14 @@ export function printFranchiseeAgreement(franchisee, agreement, ctx) {
   const courseList = courses.length > 1
     ? courses.slice(0, -1).join(', ') + ' and ' + courses[courses.length - 1]
     : courses[0]
-  // The agreement's own "made on" date is the term's start date, not
-  // whenever this row happened to be generated/regenerated in our system —
-  // otherwise a backdated franchisee's term (e.g. starting 2 years ago)
-  // reads as beginning before the agreement was even made.
-  const execDate = fmtLong(a.term_start || a.generated_at || new Date())
+  // Execution date and term start are two different things, not one
+  // derived from the other: the term always runs from the franchisee's
+  // actual registration date (term_start), however long ago that was,
+  // while the agreement is only truly "made" once it's actually signed —
+  // so this is signed_at once available, or today while it's still a
+  // draft/pending signature (a provisional date, same as any unsigned
+  // contract).
+  const execDate = fmtLong(a.signed_at || a.generated_at || new Date())
   const termLabel = fmtLong(a.term_start) + ' to ' + fmtLong(a.term_end)
   const address = [franchisee.address, franchisee.city, franchisee.state].filter(Boolean).join(', ')
   const signed = a.status === 'signed'
