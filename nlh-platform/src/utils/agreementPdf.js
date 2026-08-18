@@ -51,7 +51,7 @@ function loadImage(src) {
   })
 }
 
-export async function buildAgreementPdfDataUrl(franchisee, agreement) {
+async function buildAgreementPdfDoc(franchisee, agreement) {
   const a = agreement || {}
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   let y = MARGIN
@@ -270,6 +270,12 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
     doc.text('Page ' + i + ' of ' + pageCount + ' · New Learning Horizons · Agreement No. ' + (a.agreement_no || '—'), PAGE_W / 2, PAGE_H - 10, { align: 'center' })
   }
 
+  return doc
+}
+
+// For BoldSign's API (Files: [{ base64, fileName }]) — a data URL string.
+export async function buildAgreementPdfDataUrl(franchisee, agreement) {
+  const doc = await buildAgreementPdfDoc(franchisee, agreement)
   // NOT doc.output('datauristring') — jsPDF emits
   // "data:application/pdf;filename=generated.pdf;base64,...", and that extra
   // ;filename=...; segment is enough to make BoldSign's API reject the file
@@ -280,4 +286,11 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
   const arr = new Uint8Array(bytes)
   for (let i = 0; i < arr.length; i++) binary += String.fromCharCode(arr[i])
   return 'data:application/pdf;base64,' + btoa(binary)
+}
+
+// For manually uploading to BoldSign's web app (the $0 Essentials plan) —
+// saves the file straight to the browser's downloads, same document either way.
+export async function downloadAgreementPdf(franchisee, agreement) {
+  const doc = await buildAgreementPdfDoc(franchisee, agreement)
+  doc.save((agreement?.agreement_no || 'agreement') + '.pdf')
 }

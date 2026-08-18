@@ -13,7 +13,7 @@ import { captureDocPng } from '../utils/captureReceipt'
 import { StudentDetailModal } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
 import { loadLatestAgreement, generateAgreement } from '../utils/franchiseeAgreement'
-import { buildAgreementPdfDataUrl } from '../utils/agreementPdf'
+import { buildAgreementPdfDataUrl, downloadAgreementPdf } from '../utils/agreementPdf'
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
@@ -550,6 +550,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   function viewAgreement() {
     if (!agreement) return
     printFranchiseeAgreement(Object.assign({}, franchisee, form), agreement)
+  }
+
+  function downloadAgreementPdfFile() {
+    if (!agreement) return
+    downloadAgreementPdf(Object.assign({}, franchisee, form), agreement)
   }
 
   function toggleCourse(id) {
@@ -1273,14 +1278,21 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 {agreement && (
                   <button className="btn-p" onClick={viewAgreement}>🖨️ View / Print</button>
                 )}
+                {agreement && agreement.status === 'draft' && (
+                  <button className="btn-s" onClick={downloadAgreementPdfFile}>⬇ Download PDF for BoldSign</button>
+                )}
                 {admin && agreement && agreement.status === 'draft' && (
-                  <button className="btn-p" onClick={sendAgreementForSignature} disabled={agreementBusy}>
-                    {agreementBusy ? 'Sending…' : '📤 Send for Signature via BoldSign'}
+                  <button className="btn-p" onClick={sendAgreementForSignature} disabled={agreementBusy} title="Requires a Live BoldSign API key — currently sandbox">
+                    {agreementBusy ? 'Sending…' : '📤 Send via BoldSign API'}
                   </button>
                 )}
               </div>
               {agreement && agreement.status === 'draft' && (
-                <p className="hint" style={{ marginTop: 8 }}>Regenerating creates a fresh draft with a new agreement number. Sending emails a secure BoldSign link to the franchisee — no separate PDF step needed.</p>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  Download the PDF, then in BoldSign click <strong>Create New → Send a Document</strong>, upload it, and send to <strong>{form.email || franchisee.email}</strong> —
+                  keep the document title exactly as <strong>"Unit Franchise Agreement — {franchisee.business_name || franchisee.owner_name} ({agreement.agreement_no})"</strong> so this app can match it and update the status automatically once signed.
+                  Regenerating creates a fresh draft with a new agreement number.
+                </p>
               )}
             </div>
           )}
