@@ -683,7 +683,7 @@ const AGREEMENT_STYLE = `
   :root{--ink:#111;--muted:#555;--rule:#111;--hair:#bbb}
   *{box-sizing:border-box}
   body{margin:0;background:#fff;color:var(--ink);font-family:Georgia,'Times New Roman',Times,serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .page{max-width:210mm;margin:0 auto;padding:16mm 18mm}
+  .page{max-width:210mm;margin:0 auto;padding:18mm}
   .letterhead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:8px}
   .brand{display:flex;align-items:center;gap:12px}
   .brand img{width:44px;height:44px;object-fit:contain}
@@ -723,7 +723,9 @@ const AGREEMENT_STYLE = `
   .pagefoot{text-align:center;font:10.5px Arial,Helvetica,sans-serif;color:var(--muted);margin-top:34px;padding-top:10px;border-top:1px solid var(--hair)}
   .np{text-align:right;padding:10px 20px;background:#f0f0f0}
   .np button{background:#534AB7;color:#fff;border:none;padding:8px 18px;border-radius:7px;font:600 13px sans-serif;cursor:pointer}
-  @media print{@page{size:A4;margin:0}.np{display:none}.page{padding:14mm 16mm}}
+  /* Matches the 18mm margin agreementPdf.js (jsPDF) uses for the copy sent
+     to BoldSign — this print copy and the signed copy should look the same. */
+  @media print{@page{size:A4;margin:0}.np{display:none}.page{padding:18mm}}
 `
 
 export function printFranchiseeAgreement(franchisee, agreement, ctx) {
