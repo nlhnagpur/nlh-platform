@@ -791,8 +791,10 @@ export function printFranchiseeAgreement(franchisee, agreement, ctx) {
     <div class="sigblock">
       <div class="sigcell">
         <div class="line"><div class="name">Dhiral Panchmatia</div><div class="role">Proprietor, New Learning Horizons</div></div>
-        <div class="place">Signed at Nagpur &middot; ${execDate}</div>
-        <div class="status">&#10003; Signed for NLH</div>
+        ${signed
+          ? `<div class="place">Signed via BoldSign &middot; ${fmtLong(a.signed_at)}</div><div class="status" style="color:#1D7A4F">&#10003; Signed</div>`
+          : `<div class="place">Signs alongside the UF via BoldSign</div><div class="status">&#9675; Not yet signed</div>`
+        }
       </div>
       <div class="sigcell">
         <div class="line"><div class="name">${esc(signed ? a.signed_name : franchisee.owner_name || franchisee.business_name)}</div><div class="role">Unit Franchisee, ${esc(franchisee.city || '')}</div></div>
@@ -803,7 +805,7 @@ export function printFranchiseeAgreement(franchisee, agreement, ctx) {
       </div>
     </div>
 
-    <div class="verify">Verification code: <b>${esc(a.verification_code || '—')}</b>. ${signed ? 'Signed and recorded against this code.' : 'Once signed, the UF\'s name, IP address, timestamp and a hash of this document are recorded against this code and can be checked at any time from the franchisee\'s account.'}</div>
+    <div class="verify">Verification code: <b>${esc(a.verification_code || '—')}</b>. ${signed ? 'Signed by both parties and recorded against this code.' : 'Once both NLH and the UF have signed via BoldSign, each signer\'s identity, timestamp and IP are recorded against this code and can be checked at any time from the franchisee\'s account.'}</div>
 
     <div class="pagefoot">Page 1 of 1 &middot; New Learning Horizons &middot; Agreement No. ${esc(a.agreement_no || '—')}</div>`
 

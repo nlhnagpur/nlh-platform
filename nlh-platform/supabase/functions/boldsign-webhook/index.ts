@@ -53,13 +53,13 @@ Deno.serve(async (req: Request) => {
     // the agreement number embedded in the title (manually sent).
     let row: any = null
     {
-      const { data } = await sb.from('franchisee_agreements').select('id, status, boldsign_document_id').eq('boldsign_document_id', documentId).maybeSingle()
+      const { data } = await sb.from('franchisee_agreements').select('id, status, boldsign_document_id, franchisee_id').eq('boldsign_document_id', documentId).maybeSingle()
       row = data
     }
     if (!row) {
       const m = messageTitle.match(/AGR-HO-\d{4}/)
       if (m) {
-        const { data } = await sb.from('franchisee_agreements').select('id, status, boldsign_document_id').eq('agreement_no', m[0]).maybeSingle()
+        const { data } = await sb.from('franchisee_agreements').select('id, status, boldsign_document_id, franchisee_id').eq('agreement_no', m[0]).maybeSingle()
         row = data
       }
     }
@@ -98,14 +98,29 @@ Deno.serve(async (req: Request) => {
       return new Response('ok', { status: 200 })
     }
 
-    const signer = (props?.signerDetails || [])[0] || {}
-    const doc_hash = await sha256Hex(JSON.stringify({ documentId, status: props.status, signer: signer.signerEmail }))
+    // Two signers now (NLH + the UF), added in that order — signerDetails[0]
+    // is no longer reliably the franchisee. Identify the UF's entry by their
+    // actual email on file rather than assuming a position in the array.
+    const signers = props?.signerDetails || []
+    let ufSigner = signers[0] || {}
+    if (row.franchisee_id) {
+      const { data: fr } = await sb.from('franchisees').select('email').eq('id', row.franchisee_id).maybeSingle()
+      const frEmail = (fr?.email || '').toLowerCase()
+      const match = signers.find((s: any) => (s.signerEmail || '').toLowerCase() === frEmail)
+      if (match) ufSigner = match
+      else {
+        // Fall back to "whichever signer isn't NLH" if the email lookup misses.
+        const notNlh = signers.find((s: any) => (s.signerEmail || '').toLowerCase() !== 'dhiral@nlhnagpur.info')
+        if (notNlh) ufSigner = notNlh
+      }
+    }
+    const doc_hash = await sha256Hex(JSON.stringify({ documentId, status: props.status, signers: signers.map((s: any) => s.signerEmail) }))
 
     const { error } = await sb.from('franchisee_agreements')
       .update({
         status: 'signed',
         signed_at: new Date().toISOString(),
-        signed_name: signer.signerName || null,
+        signed_name: ufSigner.signerName || null,
         signed_ip: null, // BoldSign doesn't expose signer IP via this endpoint
         doc_hash,
         boldsign_document_id: documentId,
