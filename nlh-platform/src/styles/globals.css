@@ -854,18 +854,26 @@ vercel-toolbar { display: none !important; }
   .main { width: 100%; min-width: 0; }
 
   /* ── topbar: indent for hamburger, compact ── */
+  /* A page with several filters/toggles plus its primary "+ Add …" button
+     (Students, Franchisees, Instructors, Orders, Users) doesn't fit a
+     58px-indented 375px-wide topbar — it used to just get clipped off the
+     right edge by .app's overflow:hidden, with no way to reach it at all.
+     overflow-x:auto turns that into a swipe instead of a dead end. */
   .tb {
     padding: 0 14px 0 58px;
     height: 52px;
     position: sticky;
     top: 0;
     z-index: 20;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .tb::-webkit-scrollbar { display: none; }
   .tb-search { display: none; }
-  .tb-r { gap: 6px; }
-  .tb-r .btn { display: none; }        /* hide Export */
+  .tb-r { gap: 6px; flex-shrink: 0; }
   .tb-r .btn-p { padding: 6px 12px; font-size: 11px; }
-  .crumb { font-size: 12px; }
+  .crumb { font-size: 12px; flex-shrink: 0; }
 
   /* ── content area ── */
   .content { padding: 14px 12px 32px; gap: 12px; }
