@@ -238,20 +238,29 @@ async function buildAgreementPdfDoc(franchisee, agreement) {
   doc.line(leftX, y + 14, leftX + sigColW, y + 14)
   doc.line(rightX, y + 14, rightX + sigColW, y + 14)
 
-  // Invisible BoldSign text tags — white-on-white, sitting right where each
-  // party signs. BoldSign's UseTextTags parser finds these and turns them
-  // into real signature fields — signer 1 (NLH, added first as a recipient)
-  // on the left, signer 2 (the UF) on the right — so BOTH parties' actual
-  // signatures get captured, not just the UF's with NLH left as printed
-  // text. Nothing is visible to a human reading a printed/downloaded copy.
+  // NLH's side is Dhiral's actual signature — a real scanned signature
+  // image (the same file the Franchise Certificate already stamps on every
+  // certificate), placed directly on the line, not a BoldSign field. This
+  // is a one-time image drop, not per-document e-signing, so it doesn't
+  // need her to click-sign every single agreement.
+  const sig = await loadImage('/DRP%20Signature.png')
+  if (sig) {
+    const sigH = 9
+    const sigW = sigH * (sig.naturalWidth / sig.naturalHeight)
+    doc.addImage(sig, 'PNG', leftX, y + 14 - sigH - 1, sigW, sigH)
+  }
+
+  // Invisible BoldSign text tag — white-on-white, sitting right where the
+  // UF signs. BoldSign's UseTextTags parser finds this and turns it into a
+  // real signature field for the sole signer (index 1); nothing is visible
+  // to a human reading a printed or downloaded copy of this page.
   // The 4th (placeholder-label) section is left empty on purpose — it's
   // documented as valid for TextBox fields only; BoldSign's API rejects
   // the whole send with "Placeholder is only applicable for TextBox field
   // type" if it's set on a `sign` tag (confirmed via a real SendFailed
   // webhook event).
   doc.setTextColor(255, 255, 255); doc.setFontSize(1)
-  doc.text('{{sign|1|*||nlh_signature}}', leftX + 2, y + 13)
-  doc.text('{{sign|2|*||uf_signature}}', rightX + 2, y + 13)
+  doc.text('{{sign|1|*||uf_signature}}', rightX + 2, y + 13)
 
   doc.setFont('times', 'bold'); doc.setFontSize(10.5); doc.setTextColor(17, 17, 17)
   doc.text('Dhiral Panchmatia', leftX, y + 19)
@@ -259,7 +268,7 @@ async function buildAgreementPdfDoc(franchisee, agreement) {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(85, 85, 85)
   doc.text('Proprietor, New Learning Horizons', leftX, y + 23)
   doc.text('Unit Franchisee, ' + (franchisee.city || ''), rightX, y + 23)
-  doc.text('Sign above to accept this Agreement', leftX, y + 28)
+  doc.text('Signed at Nagpur · ' + execDate, leftX, y + 28)
   doc.text('Sign above to accept this Agreement', rightX, y + 28)
   y += 34
 
