@@ -324,6 +324,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     fee_paid: franchisee.fee_paid ?? '',
     valid_till: franchisee.valid_till || '',
     renewal_fee: franchisee.renewal_fee ?? '',
+    date_of_birth: franchisee.date_of_birth || '',
+    qualification: franchisee.qualification || '',
   })
   const [registeredCourses, setRegisteredCourses] = useState(franchisee.registered_courses || [])
   const [saving, setSaving] = useState(false)
@@ -580,6 +582,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       fee_paid: form.fee_paid === '' ? null : Number(form.fee_paid),
       valid_till: form.valid_till || null,
       renewal_fee: form.renewal_fee === '' ? null : Number(form.renewal_fee),
+      date_of_birth: form.date_of_birth || null,
+      qualification: form.qualification.trim() || null,
     }
     payload.registered_courses = registeredCourses
     const { error } = await sb.from('franchisees').update(payload).eq('id', franchisee.id)
@@ -798,6 +802,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   <option value="inactive">Inactive</option>
                   <option value="pending">Pending</option>
                 </select>
+              </label>
+              <label>Date of Birth
+                <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} disabled={!admin} />
+              </label>
+              <label>Qualification
+                <input value={form.qualification} onChange={field('qualification')} disabled={!admin} placeholder="e.g. B.Ed, M.A. Education" />
               </label>
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>💰 Fee Tracking</span>

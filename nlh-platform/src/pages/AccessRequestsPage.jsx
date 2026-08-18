@@ -342,6 +342,8 @@ function AdminAccessRequestsView() {
         tier:                tier,
         status:              'active',
         registered_courses:  courseIds,
+        date_of_birth:       req.date_of_birth || null,
+        qualification:       req.qualification || null,
         notes:               noteParts.join(' · '),
       }).select().single()
 
