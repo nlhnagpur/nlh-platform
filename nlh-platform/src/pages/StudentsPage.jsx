@@ -3794,7 +3794,14 @@ export default function StudentsPage() {
                 {filtered.map(function (s) {
                   // Waivers already reduced fee_total, so this is the true owed.
                   const balance = Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
-                  const courseNames = [...new Set((s.enrollments || []).map(e => e.skus?.courses?.group_name).filter(Boolean))]
+                  // Per level, not deduped to the program alone — a student with
+                  // two different levels of the same course (e.g. Reading Level 1
+                  // finished, Level 2 in progress) must show as two distinct
+                  // entries, not collapse into one "Reading" that hides which
+                  // level(s) they're actually on.
+                  const courseLevels = (s.enrollments || [])
+                    .filter(e => e.skus?.courses?.group_name)
+                    .map(e => ({ id: e.id, group: e.skus.courses.group_name, level: e.skus.level_name, done: !!e.completed_at }))
                   const monthEnd = daysLeftInMonth() <= 5
                   return (
                     <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelected(s) }}>
@@ -3827,7 +3834,7 @@ export default function StudentsPage() {
                         {(s.enrollments || []).length === 0
                           ? <span style={{ color: 'var(--text3)' }}>—</span>
                           : (s.enrollments || []).map(function (e) {
-                              const cn  = e.skus?.courses?.group_name || 'Course'
+                              const cn  = (e.skus?.courses?.group_name || 'Course') + (e.skus?.level_name ? ' — ' + e.skus.level_name : '')
                               const bt  = e.skus?.courses?.billing_type
                               const tot = e.skus?.total_sessions || 0
                               const att = attMap[e.id] || 0
@@ -3842,7 +3849,7 @@ export default function StudentsPage() {
                               else { txt = att + ' sess'; color = 'var(--text2)'; bg = 'var(--bg2)' }
                               return (
                                 <div key={e.id} style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 2, whiteSpace: 'nowrap' }}>
-                                  <span style={{ color: 'var(--text3)', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cn}</span>
+                                  <span title={cn} style={{ color: 'var(--text3)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cn}</span>
                                   <span style={{ color: color, background: bg, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{txt}</span>
                                 </div>
                               )
@@ -3854,11 +3861,13 @@ export default function StudentsPage() {
                         {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
                       </td>
                       <td>
-                        {courseNames.length === 0
+                        {courseLevels.length === 0
                           ? <span style={{ color: 'var(--text3)' }}>None</span>
-                          : courseNames.map(function (cn) {
+                          : courseLevels.map(function (cl) {
                             return (
-                              <span key={cn} className={'stu-chip stu-chip-' + courseTone(cn)}>{cn}</span>
+                              <span key={cl.id} className={'stu-chip stu-chip-' + courseTone(cl.group)}>
+                                {cl.group}{cl.level ? ' — ' + cl.level : ''}{cl.done ? ' ✓' : ''}
+                              </span>
                             )
                           })
                         }
