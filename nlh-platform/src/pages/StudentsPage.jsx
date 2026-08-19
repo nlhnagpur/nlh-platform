@@ -3777,7 +3777,6 @@ export default function StudentsPage() {
                 <tr>
                   <th>Student</th>
                   {showCentreCol && <th className="hide-mobile">Centre</th>}
-                  <th className="hide-mobile">Sessions</th>
                   <th className="hide-mobile">Parent</th>
                   <th>Courses</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Total</th>
@@ -3789,19 +3788,11 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={showCentreCol ? 10 : 9} className="empty">No students found</td></tr>
+                  <tr><td colSpan={showCentreCol ? 9 : 8} className="empty">No students found</td></tr>
                 )}
                 {filtered.map(function (s) {
                   // Waivers already reduced fee_total, so this is the true owed.
                   const balance = Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
-                  // Per level, not deduped to the program alone — a student with
-                  // two different levels of the same course (e.g. Reading Level 1
-                  // finished, Level 2 in progress) must show as two distinct
-                  // entries, not collapse into one "Reading" that hides which
-                  // level(s) they're actually on.
-                  const courseLevels = (s.enrollments || [])
-                    .filter(e => e.skus?.courses?.group_name)
-                    .map(e => ({ id: e.id, group: e.skus.courses.group_name, level: e.skus.level_name, done: !!e.completed_at }))
                   const monthEnd = daysLeftInMonth() <= 5
                   return (
                     <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelected(s) }}>
@@ -3830,11 +3821,16 @@ export default function StudentsPage() {
                           ) : <span style={{ color: 'var(--text3)' }}>—</span>}
                         </td>
                       )}
-                      <td className="hide-mobile" style={{ fontSize: 11 }}>
+                      <td className="hide-mobile" style={{ color: 'var(--text2)' }}>
+                        <div>{s.parent_name || '—'}</div>
+                        {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
+                      </td>
+                      <td style={{ fontSize: 11 }}>
                         {(s.enrollments || []).length === 0
-                          ? <span style={{ color: 'var(--text3)' }}>—</span>
+                          ? <span style={{ color: 'var(--text3)' }}>None</span>
                           : (s.enrollments || []).map(function (e) {
-                              const cn  = (e.skus?.courses?.group_name || 'Course') + (e.skus?.level_name ? ' — ' + e.skus.level_name : '')
+                              const group = e.skus?.courses?.group_name || 'Course'
+                              const cn = group + (e.skus?.level_name ? ' — ' + e.skus.level_name : '')
                               const bt  = e.skus?.courses?.billing_type
                               const tot = e.skus?.total_sessions || 0
                               const att = attMap[e.id] || 0
@@ -3848,28 +3844,12 @@ export default function StudentsPage() {
                               else if (tot > 0) { txt = att + '/' + tot; color = done ? '#B45309' : 'var(--text2)'; bg = done ? '#FEF3C7' : 'var(--bg2)' }
                               else { txt = att + ' sess'; color = 'var(--text2)'; bg = 'var(--bg2)' }
                               return (
-                                <div key={e.id} style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 2, whiteSpace: 'nowrap' }}>
-                                  <span title={cn} style={{ color: 'var(--text3)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cn}</span>
+                                <span key={e.id} className={'stu-chip stu-chip-' + courseTone(group)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                  <span>{cn}</span>
                                   <span style={{ color: color, background: bg, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{txt}</span>
-                                </div>
+                                </span>
                               )
                             })
-                        }
-                      </td>
-                      <td className="hide-mobile" style={{ color: 'var(--text2)' }}>
-                        <div>{s.parent_name || '—'}</div>
-                        {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
-                      </td>
-                      <td>
-                        {courseLevels.length === 0
-                          ? <span style={{ color: 'var(--text3)' }}>None</span>
-                          : courseLevels.map(function (cl) {
-                            return (
-                              <span key={cl.id} className={'stu-chip stu-chip-' + courseTone(cl.group)}>
-                                {cl.group}{cl.level ? ' — ' + cl.level : ''}{cl.done ? ' ✓' : ''}
-                              </span>
-                            )
-                          })
                         }
                       </td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(s.fee_total)}</div></td>
