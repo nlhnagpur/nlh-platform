@@ -3539,6 +3539,12 @@ export default function StudentsPage() {
     load()
   }, [admin, currentRole, currentFranchiseeId])
 
+  // The Centre column itself is only useful when rows can come from more than
+  // one centre — once a specific centre is picked in the filter, every row
+  // shows the same centre, so the column is pure noise. The filter dropdown
+  // stays available regardless (showCentreCol); only the column disappears.
+  const centreColVisible = showCentreCol && !centreFilter
+
   const centreOptions = showCentreCol
     ? [...new Map(
         students.filter(function (s) { return s.franchisees }).map(function (s) {
@@ -3776,7 +3782,7 @@ export default function StudentsPage() {
               <thead>
                 <tr>
                   <th>Student</th>
-                  {showCentreCol && <th className="hide-mobile">Centre</th>}
+                  {centreColVisible && <th className="hide-mobile">Centre</th>}
                   <th className="hide-mobile">Parent</th>
                   <th>Courses</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Total</th>
@@ -3788,7 +3794,7 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={showCentreCol ? 9 : 8} className="empty">No students found</td></tr>
+                  <tr><td colSpan={centreColVisible ? 9 : 8} className="empty">No students found</td></tr>
                 )}
                 {filtered.map(function (s) {
                   // Waivers already reduced fee_total, so this is the true owed.
@@ -3811,7 +3817,7 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </td>
-                      {showCentreCol && (
+                      {centreColVisible && (
                         <td className="hide-mobile">
                           {s.franchisees ? (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, font: '600 11px var(--font)', color: s.franchisees.tier === 'NLH' ? 'var(--purple)' : 'var(--text2)' }}>
