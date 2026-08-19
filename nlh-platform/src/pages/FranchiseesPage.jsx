@@ -10,7 +10,7 @@ import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice, printFranchiseeAgreement } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
-import { StudentDetailModal } from './StudentsPage'
+import { StudentDetailModal, daysLeftInMonth } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
 import { loadLatestAgreement, generateAgreement } from '../utils/franchiseeAgreement'
 import { buildAgreementPdfDataUrl, downloadAgreementPdf } from '../utils/agreementPdf'
@@ -331,6 +331,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [saving, setSaving] = useState(false)
   const [orders, setOrders] = useState([])
   const [students, setStudents] = useState([])
+  const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended session count }
   const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false, agreement: false })
   const [certEmailing, setCertEmailing] = useState(false)
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
@@ -507,6 +508,19 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       // shows blank there, with no error to catch it.
       const { data } = await sb.from('students').select('*, enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))').eq('franchisee_id', franchisee.id).order('full_name').limit(50)
       setStudents(data || [])
+
+      // Attended-session counts per enrollment, same as the main Students
+      // page — needed for the same "3/15" progress badge in the Courses column.
+      const enrIds = (data || []).flatMap(function (s) { return (s.enrollments || []).map(function (e) { return e.id }) })
+      if (enrIds.length > 0) {
+        const { data: attRows } = await sb.from('session_attendance')
+          .select('enrollment_id').in('enrollment_id', enrIds).eq('attended', true)
+        const m = {}
+        ;(attRows || []).forEach(function (a) { m[a.enrollment_id] = (m[a.enrollment_id] || 0) + 1 })
+        setAttMap(m)
+      } else {
+        setAttMap({})
+      }
     }
     if (t === 'agreement') {
       const row = await loadLatestAgreement(franchisee.id)
@@ -601,6 +615,16 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const balance = (Number(form.enrollment_fee) || 0) - (Number(form.fee_paid) || 0)
 
   const rs = renewalStatus({ ...franchisee, ...form })
+
+  // Tone index per course name (cycle through 8 tones) — same scheme as the
+  // main Students page, scoped to this franchisee's own course list rather
+  // than imported, since it's a closure over locally-loaded students.
+  const courseList = [...new Set(students.flatMap(function (s) { return (s.enrollments || []).map(function (e) { return e.skus?.courses?.group_name }).filter(Boolean) }))]
+  function courseTone(name) {
+    const idx = courseList.indexOf(name)
+    return (idx % 8) + 1
+  }
+  const monthEnd = daysLeftInMonth() <= 5
 
   async function resendAccess() {
     return resendAccessImpl()
@@ -1111,15 +1135,28 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                       return (
                         <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelectedStudent(s) }}>
                           <td>{s.full_name}</td>
-                          <td>
+                          <td style={{ fontSize: 11 }}>
                             {enrolled.length === 0
                               ? <span style={{ color: 'var(--text3)' }}>None</span>
                               : enrolled.map(function (e) {
                                   const group = e.skus?.courses?.group_name || 'Course'
-                                  const level = e.skus?.level_name
+                                  const cn = group + (e.skus?.level_name ? ' — ' + e.skus.level_name : '')
+                                  const bt  = e.skus?.courses?.billing_type
+                                  const tot = e.skus?.total_sessions || 0
+                                  const att = attMap[e.id] || 0
+                                  const done = !e.completed_at && tot > 0 && att >= tot
+                                  let txt, color, bg
+                                  if (e.completed_at) { txt = '✓ done'; color = 'var(--green)'; bg = 'var(--green-bg)' }
+                                  else if (bt === 'monthly') {
+                                    if (monthEnd) { txt = '📅 renew'; color = '#1D4ED8'; bg = '#DBEAFE' }
+                                    else { txt = 'monthly'; color = 'var(--text2)'; bg = 'var(--bg2)' }
+                                  }
+                                  else if (tot > 0) { txt = att + '/' + tot; color = done ? '#B45309' : 'var(--text2)'; bg = done ? '#FEF3C7' : 'var(--bg2)' }
+                                  else { txt = att + ' sess'; color = 'var(--text2)'; bg = 'var(--bg2)' }
                                   return (
-                                    <span key={e.id} className="stu-chip stu-chip-1">
-                                      {group}{level ? ' — ' + level : ''}{e.completed_at ? ' ✓' : ''}
+                                    <span key={e.id} className={'stu-chip stu-chip-' + courseTone(group)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                      <span>{cn}</span>
+                                      <span style={{ color: color, background: bg, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{txt}</span>
                                     </span>
                                   )
                                 })

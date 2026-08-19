@@ -15,7 +15,7 @@ import StudentCertModal from '../components/StudentCertModal'
 // ── helpers ────────────────────────────────────────────────────────────────────
 
 // Days remaining in the current calendar month (today = the last day → 0)
-function daysLeftInMonth() {
+export function daysLeftInMonth() {
   const d = new Date()
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
   return lastDay - d.getDate()
