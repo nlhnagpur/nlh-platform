@@ -735,7 +735,15 @@ function StudentsPanel({ onNavigate }) {
             <tbody>
               {filtered.map(function (s) {
                 const balance  = (s.fee_total || 0) - (s.fee_paid || 0)
-                const courses  = [...new Set((s.enrollments || []).map(function (e) { return e.skus?.courses?.group_name }).filter(Boolean))]
+                // Per-enrollment, not deduped by course name alone — a student enrolled
+                // in the same course at two levels (e.g. Reading L1 + L2) must show both,
+                // and the level name belongs in the chip (same fix as the Students page's
+                // Courses column, commit e41bef5).
+                const courses  = (s.enrollments || []).map(function (e) {
+                  const g = e.skus?.courses?.group_name
+                  if (!g) return null
+                  return g + (e.skus?.level_name ? ' — ' + e.skus.level_name : '')
+                }).filter(Boolean)
                 const isOpen   = openId === s.id
                 const ok       = s.payment_status === 'paid' || balance <= 0
                 return (
