@@ -500,7 +500,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       setOrders(data || [])
     }
     if (t === 'students') {
-      const { data } = await sb.from('students').select('id,full_name,parent_name,dob,registered_at,phone,email,pincode,country,state,city,area,address,channel,payment_status,payment_mode,fee_total,fee_paid,franchisee_id,enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))').eq('franchisee_id', franchisee.id).order('full_name').limit(50)
+      // select('*', ...) rather than an enumerated column list — the hand-picked
+      // list this used to be was missing gender (and would silently miss
+      // whatever's added next); StudentDetailModal reads directly off
+      // whatever student.* it's handed, so any column left out here just
+      // shows blank there, with no error to catch it.
+      const { data } = await sb.from('students').select('*, enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))').eq('franchisee_id', franchisee.id).order('full_name').limit(50)
       setStudents(data || [])
     }
     if (t === 'agreement') {
