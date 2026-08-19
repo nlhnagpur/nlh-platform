@@ -3714,8 +3714,10 @@ export default function StudentsPage() {
             <h1 className="ph-title">Students</h1>
             <div className="ph-sub">
               {currentRole === 'uf'
-                ? <><b>{students.length} students</b> enrolled at your centre.</>
-                : <><b>{students.length} students</b>{showCentreCol ? ' enrolled across your territory.' : ' enrolled across all centres.'}</>
+                ? <><b>{filtered.length} students</b> enrolled at your centre.</>
+                : centreFilter
+                  ? <><b>{filtered.length} students</b> enrolled at this centre.</>
+                  : <><b>{filtered.length} students</b>{showCentreCol ? ' enrolled across your territory.' : ' enrolled across all centres.'}</>
               }
             </div>
           </div>
