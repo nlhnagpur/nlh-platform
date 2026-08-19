@@ -1712,6 +1712,15 @@ export default function FranchiseesPage() {
     uf:  filtered.filter(function (f) { return f.tier === 'UF' }).length,
   }
 
+  // "Partners" excludes NLH HQ's own row (it's the franchisor, not a partner)
+  // and — like the SMF/CF/UF breakdown above — respects the active search,
+  // so the subtitle and the Total Partners stat card always agree and both
+  // move together when searching, instead of the stat card staying pinned
+  // to the full unfiltered count.
+  const partnerCount = admin
+    ? filtered.filter(function (f) { return f.tier !== 'NLH' }).length
+    : filtered.filter(function (f) { return f.id !== currentFranchiseeId }).length
+
   const totalOutstanding = franchisees.reduce(function (sum, f) {
     const bal = (Number(f.enrollment_fee) || 0) - (Number(f.fee_paid) || 0)
     return sum + (bal > 0 ? bal : 0)
@@ -1783,12 +1792,7 @@ export default function FranchiseesPage() {
             <div className="ph-eyebrow"><span className="dot"></span>Network</div>
             <h1 className="ph-title">Franchisees</h1>
             <div className="ph-sub">
-              {(function () {
-                const partnerCount = admin
-                  ? franchisees.filter(function (f) { return f.tier !== 'NLH' }).length
-                  : franchisees.filter(function (f) { return f.id !== currentFranchiseeId }).length
-                return <><b>{partnerCount} partner{partnerCount !== 1 ? 's' : ''}</b> in your network. Organised by tier: SMF · CF · UF.</>
-              })()}
+              <b>{partnerCount} partner{partnerCount !== 1 ? 's' : ''}</b> in your network. Organised by tier: SMF · CF · UF.
             </div>
           </div>
         </div>
@@ -1797,7 +1801,7 @@ export default function FranchiseesPage() {
         <div className="mini-stats">
           <div className="mini">
             <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🏢</div>
-            <div className="mini-num">{franchisees.length}</div>
+            <div className="mini-num">{partnerCount}</div>
             <div className="mini-lbl">Total partners</div>
           </div>
           <div className="mini">
