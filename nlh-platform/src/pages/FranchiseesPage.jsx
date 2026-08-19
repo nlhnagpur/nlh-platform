@@ -1102,14 +1102,29 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               <div className="tbl-scroll">
                 <table className="data-table">
                   <thead>
-                    <tr><th>Name</th><th>Status</th><th>Fee Total</th><th>Fee Paid</th><th>Balance</th></tr>
+                    <tr><th>Name</th><th>Course &amp; Level</th><th>Status</th><th>Fee Total</th><th>Fee Paid</th><th>Balance</th></tr>
                   </thead>
                   <tbody>
-                    {students.length === 0 && <tr><td colSpan={5} className="empty">No students</td></tr>}
+                    {students.length === 0 && <tr><td colSpan={6} className="empty">No students</td></tr>}
                     {students.map(function (s) {
+                      const enrolled = (s.enrollments || []).filter(function (e) { return e.status !== 'discontinued' })
                       return (
                         <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelectedStudent(s) }}>
                           <td>{s.full_name}</td>
+                          <td>
+                            {enrolled.length === 0
+                              ? <span style={{ color: 'var(--text3)' }}>None</span>
+                              : enrolled.map(function (e) {
+                                  const group = e.skus?.courses?.group_name || 'Course'
+                                  const level = e.skus?.level_name
+                                  return (
+                                    <span key={e.id} className="stu-chip stu-chip-1">
+                                      {group}{level ? ' — ' + level : ''}{e.completed_at ? ' ✓' : ''}
+                                    </span>
+                                  )
+                                })
+                            }
+                          </td>
                           <td><StatusBadge status={s.payment_status} /></td>
                           <td>₹{fmtAmt(s.fee_total)}</td>
                           <td>₹{fmtAmt(s.fee_paid)}</td>
