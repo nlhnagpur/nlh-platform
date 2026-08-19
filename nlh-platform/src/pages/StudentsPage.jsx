@@ -784,13 +784,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       .update({ completed_at, status: 'completed' })
       .eq('id', en.id)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    setLocalEnrollments(function (prev) {
-      return prev.map(function (e) {
-        return e.id === en.id ? { ...e, completed_at, status: 'completed' } : e
-      })
+    const next = localEnrollments.map(function (e) {
+      return e.id === en.id ? { ...e, completed_at, status: 'completed' } : e
     })
+    setLocalEnrollments(next)
     setCompletingEnr(null)
     showToast('Marked as completed on ' + fmtDate(dateStr) + ' ✓')
+    // Sync the outer student list too — this modal's localEnrollments is a
+    // separate copy from the parent's cached row, so without this the table's
+    // Courses column keeps showing the pre-completion state until a full
+    // page reload (the bug reported: chip showed "0/10" instead of "✓ done").
+    if (onSaved) onSaved({ ...student, ...form, enrollments: next })
   }
 
   function openReview(en) {
@@ -832,20 +836,20 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const { error } = await sb.from('enrollments').update({ sku_id: newSkuId }).eq('id', changingEn.id)
     setChangeSaving(false)
     if (error) { showToast('Change failed: ' + error.message, 'err'); return }
-    setLocalEnrollments(function (prev) {
-      return prev.map(function (e) {
-        if (e.id !== changingEn.id) return e
-        return {
-          ...e,
-          sku_id: newSkuId,
-          skus: target
-            ? { level_name: target.level_name, courses: target.courses || e.skus?.courses }
-            : e.skus,
-        }
-      })
+    const next = localEnrollments.map(function (e) {
+      if (e.id !== changingEn.id) return e
+      return {
+        ...e,
+        sku_id: newSkuId,
+        skus: target
+          ? { level_name: target.level_name, courses: target.courses || e.skus?.courses }
+          : e.skus,
+      }
     })
+    setLocalEnrollments(next)
     setChangingEn(null)
     showToast('Course / level updated ✓')
+    if (onSaved) onSaved({ ...student, ...form, enrollments: next })
   }
 
   // ── Remove an enrollment ──
@@ -1121,7 +1125,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setLocalEnrollments(next)
     setForm(function (f) { return { ...f, fee_total: newTotal, waived_amount: (Number(f.waived_amount) || 0) + due } })
     showToast(due > 0 ? 'Course discontinued · ₹' + fmtAmt(due) + ' waived' : 'Course discontinued')
-    onSaved({ ...student, fee_total: newTotal })
+    onSaved({ ...student, fee_total: newTotal, enrollments: next })
   }
 
   // Undo a discontinuation — the waived amount is restored to the course fee and
@@ -1143,7 +1147,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setLocalEnrollments(next)
     setForm(function (f) { return { ...f, fee_total: newTotal, waived_amount: Math.max(0, (Number(f.waived_amount) || 0) - back) } })
     showToast('Course restored')
-    onSaved({ ...student, fee_total: newTotal })
+    onSaved({ ...student, fee_total: newTotal, enrollments: next })
   }
 
   // ── Delete student (admin only) ──
