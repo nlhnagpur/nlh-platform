@@ -153,6 +153,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [localEnrollments, setLocalEnrollments] = useState(student.enrollments || [])
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
+  const [lastAttendedDate,setLastAttendedDate]= useState({})   // { [enrollment_id]: latest attended session_date (YYYY-MM-DD) }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
   const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
   const [remindSending,   setRemindSending]   = useState(false)
@@ -612,16 +613,23 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       ;(certRows || []).forEach(function (r) { cs[r.id] = r.cert_wa_status || 'sent' })
       setCertWaStatus(cs)
 
-      // Attended-session count per enrollment (for the "X / Y sessions" badge)
+      // Attended-session count per enrollment (for the "X / Y sessions" badge),
+      // plus the date of each enrollment's most recent attended session — used
+      // to default "Mark Course Complete" to the last class actually attended
+      // instead of today.
       const { data: attRows } = await sb.from('session_attendance')
-        .select('enrollment_id')
+        .select('enrollment_id, batch_sessions(session_date)')
         .in('enrollment_id', enrIds)
         .eq('attended', true)
       const counts = {}
+      const lastDate = {}
       ;(attRows || []).forEach(function (a) {
         counts[a.enrollment_id] = (counts[a.enrollment_id] || 0) + 1
+        const d = a.batch_sessions?.session_date
+        if (d && (!lastDate[a.enrollment_id] || d > lastDate[a.enrollment_id])) lastDate[a.enrollment_id] = d
       })
       setSessionCounts(counts)
+      setLastAttendedDate(lastDate)
 
       // Total sessions + billing type per enrolled SKU
       const enrSkuIds = localEnrollments.map(function (e) { return e.sku_id }).filter(Boolean)
@@ -1930,7 +1938,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
                             onClick={function () {
-                              setCompleteDate(new Date().toISOString().slice(0, 10))
+                              setCompleteDate(lastAttendedDate[en.id] || new Date().toISOString().slice(0, 10))
                               setCompletingEnr(en)
                             }}>
                             ✓ Complete
@@ -2461,7 +2469,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   />
                 </label>
                 <p className="hint" style={{ marginTop: 8 }}>
-                  The student stays on sessions up to this date and drops off any sessions after it.
+                  Defaults to the last attended class. The student stays on sessions up to this date and drops off any sessions after it.
                 </p>
               </div>
               <div className="modal-actions">
