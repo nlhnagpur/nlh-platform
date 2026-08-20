@@ -18,6 +18,7 @@ import ModalHeader from '../components/ModalHeader'
 function StatusBadge({ status }) {
   const map = {
     pending:           { cls: 'bdg-pend', txt: 'pending' },
+    proforma:          { cls: 'bdg-pend', txt: 'proforma' },
     invoiced:          { cls: 'bdg-inv',  txt: 'invoiced' },
     payment_submitted: { cls: 'bdg-pmt',  txt: 'pmt submitted' },
     verified:          { cls: 'bdg-paid', txt: 'verified' },
@@ -42,7 +43,7 @@ function TierBadge({ tier }) {
 }
 
 const FILTER_LABELS = {
-  all: 'All', pending: 'Pending', invoiced: 'Invoiced',
+  all: 'All', pending: 'Pending', proforma: 'Proforma', invoiced: 'Invoiced',
   payment_submitted: 'Pmt Submitted', closed: 'Closed',
 }
 
@@ -687,22 +688,31 @@ function DispatchModal({ order, onClose, onSaved }) {
 }
 
 // Confirms invoicing and lets the admin control the WhatsApp invoice notice.
-function InvoiceConfirmModal({ order, onClose, onConfirm }) {
+function InvoiceConfirmModal({ order, mode, onClose, onConfirm }) {
+  const isProforma = mode === 'proforma'
   const [sendWA, setSendWA] = useState(true)
   const [waPhone, setWaPhone] = useState(order.placer?.phone || '')
+  const billee = order.bill_to_school?.name || order.placer?.business_name || 'the franchisee'
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }} style={{ maxWidth: 460 }}>
-        <ModalHeader flush title="Generate Invoice" subtitle={'Order ' + (order.order_ref || '')} onClose={onClose} />
+        <ModalHeader flush title={isProforma ? 'Generate Proforma' : 'Generate Invoice'} subtitle={'Order ' + (order.order_ref || '')} onClose={onClose} />
         <div style={{ padding: '4px 20px 8px' }}>
-          <p style={{ font: '500 13px var(--font)', color: 'var(--text2)', margin: '4px 0 12px' }}>
-            This will assign an invoice number and mark the order as <strong>invoiced</strong>
-            {' '}for <strong>{order.placer?.business_name || 'the franchisee'}</strong>.
-          </p>
+          {isProforma ? (
+            <p style={{ font: '500 13px var(--font)', color: 'var(--text2)', margin: '4px 0 12px' }}>
+              This creates a <strong>proforma</strong> document (not a tax invoice, no invoice number consumed) for <strong>{billee}</strong>.
+              The real invoice is only generated once payment is verified, and the order can't be dispatched before then.
+            </p>
+          ) : (
+            <p style={{ font: '500 13px var(--font)', color: 'var(--text2)', margin: '4px 0 12px' }}>
+              This will assign an invoice number and mark the order as <strong>invoiced</strong>
+              {' '}for <strong>{billee}</strong>.
+            </p>
+          )}
           <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
               <input type="checkbox" checked={sendWA} onChange={function (e) { setSendWA(e.target.checked) }} />
-              💬 Send WhatsApp invoice notice to franchisee
+              💬 Send WhatsApp {isProforma ? 'proforma' : 'invoice'} notice to franchisee
             </label>
             {sendWA && (
               <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
@@ -712,7 +722,93 @@ function InvoiceConfirmModal({ order, onClose, onConfirm }) {
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
-          <button className="btn-p" onClick={function () { onConfirm({ sendWA: sendWA, waPhone: waPhone.trim() }) }}>Generate Invoice</button>
+          <button className="btn-p" onClick={function () { onConfirm({ sendWA: sendWA, waPhone: waPhone.trim() }) }}>
+            {isProforma ? 'Generate Proforma' : 'Generate Invoice'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── RaiseCreditNoteModal — admin-only, pays out a CF's commission on a
+// closed school order by crediting it into their ledger. Pre-fills the
+// system-computed suggestion (Σ sent_qty × cf_commission_rate) but the
+// amount is editable before raising, per how this was specified.
+function RaiseCreditNoteModal({ order, currentUser, onClose, onSaved }) {
+  const [suggested, setSuggested] = useState(0)
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(function () {
+    async function load() {
+      const { data } = await sb.from('order_items')
+        .select('sent_qty, ordered_qty, cf_commission_rate, skus(level_name, courses(group_name))')
+        .eq('order_id', order.id)
+      const total = (data || []).reduce(function (sum, it) {
+        const qty = (it.sent_qty && it.sent_qty > 0) ? it.sent_qty : (it.ordered_qty || 0)
+        return sum + qty * (it.cf_commission_rate || 0)
+      }, 0)
+      setSuggested(total)
+      setAmount(String(total))
+      const lines = (data || []).filter(function (it) { return (it.cf_commission_rate || 0) > 0 })
+        .map(function (it) { return (it.skus?.courses?.group_name || 'Kit') + ' — ' + (it.skus?.level_name || '') })
+      setReason('School kit commission · ' + (order.order_ref || '') + (lines.length ? ' · ' + lines.join(', ') : ''))
+      setLoading(false)
+    }
+    load()
+  }, [order.id])
+
+  async function save() {
+    const amt = parseInt(amount, 10) || 0
+    if (amt <= 0) { showToast('Enter an amount greater than zero', 'warn'); return }
+    setSaving(true)
+    const { error } = await sb.from('franchisee_credit_notes').insert({
+      franchisee_id: order.placer_id,
+      order_id: order.id,
+      suggested_amount: suggested,
+      amount: amt,
+      reason: reason.trim() || null,
+      requested_by: currentUser?.email || null,
+    })
+    setSaving(false)
+    if (error) { showToast('Failed to raise credit note: ' + error.message, 'err'); return }
+    showToast('Credit note raised — awaiting approval ✓')
+    onSaved()
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 440 }}>
+        <ModalHeader flush title="Raise Credit Note" subtitle={'Order ' + (order.order_ref || '') + ' · ' + (order.bill_to_school?.name || '')} onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px' }}>
+          {loading ? <div className="muted">Calculating commission…</div> : (
+            <>
+              <p className="hint" style={{ marginBottom: 10 }}>
+                System-suggested commission: <strong>₹{fmtAmt(suggested)}</strong> (based on sent quantities × the agreed per-kit cut).
+                Adjust below if needed before raising.
+              </p>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                Amount
+                <input type="number" min={0} value={amount} onChange={function (e) { setAmount(e.target.value) }}
+                  style={{ marginTop: 6, fontSize: 14, width: '100%', fontWeight: 700 }} />
+              </label>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>
+                Reason / note
+                <textarea rows={2} value={reason} onChange={function (e) { setReason(e.target.value) }}
+                  style={{ marginTop: 6, fontSize: 12, width: '100%', resize: 'vertical' }} />
+              </label>
+              <p className="hint" style={{ marginTop: 10 }}>
+                This still needs a separate approval before it shows up in {order.placer?.business_name || 'the CF'}'s ledger.
+              </p>
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving || loading}>{saving ? 'Raising…' : 'Raise Credit Note'}</button>
         </div>
       </div>
     </div>
@@ -1179,11 +1275,39 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   const [placerId, setPlacerId] = useState(showFrDropdown ? (isAdmin ? '' : currentFranchiseeId) : currentFranchiseeId)
   const [placerTier, setPlacerTier] = useState('')
   const [deliverTo, setDeliverTo] = useState('')
-  // Each line: { sku_id, qty, rate, excluded }  — excluded = kit item_ids not being sent
-  const [lines, setLines] = useState([{ sku_id: '', qty: 1, rate: 0, excluded: [] }])
+  // Each line: { sku_id, qty, rate, excluded, cf_commission_rate }  — excluded = kit item_ids not being sent
+  const [lines, setLines] = useState([{ sku_id: '', qty: 1, rate: 0, excluded: [], cf_commission_rate: null }])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [coupon, setCoupon] = useState(null)   // { coupon_id, code, discount, _base }
+
+  // A CF can place an order billed to one of their schools instead of their
+  // own centre — HO bills the school directly, the CF earns a per-kit
+  // commission (school_sku_rates), and the order lines re-price accordingly.
+  const [cfSchools, setCfSchools] = useState([])
+  const [schoolId, setSchoolId] = useState('')
+  const [schoolRates, setSchoolRates] = useState({})   // { [sku_id]: { rate, cf_cut } }
+
+  useEffect(function () {
+    if (placerTier !== 'CF' || !placerId) { setCfSchools([]); setSchoolId(''); return }
+    let cancelled = false
+    sb.from('schools').select('id, name').eq('cf_franchisee_id', placerId).eq('status', 'active').order('name')
+      .then(function (res) { if (!cancelled) setCfSchools(res.data || []) })
+    return function () { cancelled = true }
+  }, [placerId, placerTier])
+
+  useEffect(function () {
+    if (!schoolId) { setSchoolRates({}); return }
+    let cancelled = false
+    sb.from('school_sku_rates').select('sku_id, rate, cf_cut').eq('school_id', schoolId)
+      .then(function (res) {
+        if (cancelled) return
+        const m = {}
+        ;(res.data || []).forEach(function (r) { m[r.sku_id] = { rate: r.rate, cf_cut: r.cf_cut } })
+        setSchoolRates(m)
+      })
+    return function () { cancelled = true }
+  }, [schoolId])
 
   // Build a delivery address string from franchisee fields
   function buildAddress(fr) {
@@ -1295,7 +1419,13 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
             const id = val && val.indexOf('sku:') === 0 ? val.slice(4) : val
             updated.sku_id = id; updated.item_id = null
             const sku = allSkus.find(function (s) { return s.id === id })
-            updated.rate = rateForSku(sku, placerTier)
+            if (schoolId && schoolRates[id]) {
+              updated.rate = schoolRates[id].rate
+              updated.cf_commission_rate = schoolRates[id].cf_cut
+            } else {
+              updated.rate = rateForSku(sku, placerTier)
+              updated.cf_commission_rate = null
+            }
           }
         }
         return updated
@@ -1306,6 +1436,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   // When franchisee selection changes: auto-fill address + tier + refresh line rates + filter SKUs
   function handleFranchiseeChange(fid) {
     setPlacerId(fid)
+    setSchoolId('')   // switching franchisee resets any school selection — schools belong to one CF
     const fr = franchisees.find(function (f) { return f.id === fid })
     if (!fr) return
     const tier = fr.tier || 'UF'
@@ -1321,6 +1452,27 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         if (!line.sku_id) return line
         const sku = allSkus.find(function (s) { return s.id === line.sku_id })
         return { ...line, rate: rateForSku(sku, tier) }
+      })
+    })
+  }
+
+  // Switching the school (or clearing it, back to "own centre") re-prices
+  // every already-picked line — same rationale as handleFranchiseeChange.
+  function handleSchoolChange(sid) {
+    setSchoolId(sid)
+    setLines(function (prev) {
+      return prev.map(function (line) {
+        if (!line.sku_id) return line
+        if (sid) {
+          const r = schoolRates[line.sku_id]
+          // Rate map for the newly-picked school isn't loaded yet on this same
+          // tick (it's fetched by the schoolId effect) — the effect's rerender
+          // will settle it; here just clear commission if this SKU has no
+          // agreed school rate at all.
+          return r ? { ...line, rate: r.rate, cf_commission_rate: r.cf_cut } : line
+        }
+        const sku = allSkus.find(function (s) { return s.id === line.sku_id })
+        return { ...line, rate: rateForSku(sku, placerTier), cf_commission_rate: null }
       })
     })
   }
@@ -1370,6 +1522,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         coupon_id: coupon?.coupon_id || null,
         coupon_code: coupon?.code || null,
         status: 'pending',
+        bill_to_school_id: schoolId || null,
       })
       .select().single()
 
@@ -1391,6 +1544,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         sent_qty: 0,
         rate: parseInt(line.rate, 10) || 0,
         excluded_kit_items: line.sku_id ? (line.excluded || []) : [],
+        cf_commission_rate: line.cf_commission_rate != null ? parseInt(line.cf_commission_rate, 10) : null,
       }
     })
 
@@ -1446,6 +1600,21 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                 </div>
               </div>
 
+              {/* This order can bill a school this CF services instead of the CF's
+                  own centre — HO bills the school directly, the CF earns the
+                  per-kit commission negotiated for that school (school_sku_rates). */}
+              {placerTier === 'CF' && cfSchools.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={lblCap}>Bill to{schoolId && <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400, color: 'var(--text3)' }}> · HO invoices the school; you earn a per-kit commission</span>}</div>
+                  <select value={schoolId} onChange={function (e) { handleSchoolChange(e.target.value) }} style={fld}>
+                    <option value="">Own centre (regular CF order)</option>
+                    {cfSchools.map(function (s) {
+                      return <option key={s.id} value={s.id}>🏫 {s.name}</option>
+                    })}
+                  </select>
+                </div>
+              )}
+
               {/* ── Invoice-style line items card ── */}
               <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,.03)' }}>
                 {/* header row */}
@@ -1457,7 +1626,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
 
                 {lines.map(function (line, idx) {
                   const sku = allSkus.find(function (s) { return s.id === line.sku_id })
-                  const defaultRate = rateForSku(sku, placerTier)
+                  const defaultRate = schoolId ? (schoolRates[line.sku_id]?.rate || 0) : rateForSku(sku, placerTier)
                   const lineRate = parseInt(line.rate, 10) || 0
                   const lineAmt = lineRate * (parseInt(line.qty, 10) || 0)
                   const isOverridden = sku && lineRate !== defaultRate
@@ -1468,7 +1637,11 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                       <select value={line.item_id ? 'item:' + line.item_id : (line.sku_id ? 'sku:' + line.sku_id : '')} onChange={function (e) { updateLine(idx, 'sku_id', e.target.value) }} style={fldSm}>
                         <option value="">{isAdmin ? '— Select SKU or item —' : '— Select SKU —'}</option>
                         {Object.entries(
-                          visibleSkus.reduce(function (acc, s) { const c = s.courses?.group_name || 'Other'; if (!acc[c]) acc[c] = []; acc[c].push(s); return acc }, {})
+                          // A school order can only order kits that have an agreed
+                          // rate for that school — ordering something with no
+                          // negotiated price makes no sense here.
+                          (schoolId ? visibleSkus.filter(function (s) { return schoolRates[s.id] }) : visibleSkus)
+                            .reduce(function (acc, s) { const c = s.courses?.group_name || 'Other'; if (!acc[c]) acc[c] = []; acc[c].push(s); return acc }, {})
                         ).map(function ([course, skus]) {
                           return <optgroup key={course} label={course}>{skus.map(function (s) { return <option key={s.id} value={'sku:' + s.id}>{s.level_name}</option> })}</optgroup>
                         })}
@@ -1902,7 +2075,7 @@ async function generateInvoicePDF(order, items) {
 // ---------------------------------------------------------------------------
 // OrdersPage — main component
 // ---------------------------------------------------------------------------
-const ORDER_FILTERS = ['all', 'pending', 'invoiced', 'payment_submitted', 'closed']
+const ORDER_FILTERS = ['all', 'pending', 'proforma', 'invoiced', 'payment_submitted', 'closed']
 
 export default function OrdersPage() {
   const { currentRole, currentFranchiseeId, currentUser } = useAuth()
@@ -1922,6 +2095,9 @@ export default function OrdersPage() {
   const [showNewOrder, setShowNewOrder] = useState(false)
   const [invoiceViewOrder, setInvoiceViewOrder] = useState(null)
   const [invoiceConfirm, setInvoiceConfirm] = useState(null)
+  const [proformaConfirm, setProformaConfirm] = useState(null)
+  const [raiseCnOrder, setRaiseCnOrder] = useState(null)
+  const [pendingCns, setPendingCns] = useState([])
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -1931,14 +2107,43 @@ export default function OrdersPage() {
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
     loadOrders()
+    if (isAdminRole(currentRole)) loadPendingCns()
   }, [currentRole, currentFranchiseeId])
+
+  async function loadPendingCns() {
+    const { data } = await sb.from('franchisee_credit_notes')
+      .select('*, franchisees(business_name, tier), orders(order_ref, invoice_no)')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+    setPendingCns(data || [])
+  }
+
+  async function approveCreditNote(cn) {
+    setActionLoading('cn_' + cn.id)
+    const { error } = await sb.from('franchisee_credit_notes')
+      .update({ status: 'approved', approved_by: currentUser?.email || null })
+      .eq('id', cn.id)
+    if (error) { showToast('Failed to approve: ' + error.message, 'err') }
+    else { showToast('Credit note approved ✓'); await loadPendingCns() }
+    setActionLoading(null)
+  }
+
+  async function rejectCreditNote(cn) {
+    setActionLoading('cn_' + cn.id)
+    const { error } = await sb.from('franchisee_credit_notes')
+      .update({ status: 'rejected', approved_by: currentUser?.email || null, approved_at: new Date().toISOString() })
+      .eq('id', cn.id)
+    if (error) { showToast('Failed to reject: ' + error.message, 'err') }
+    else { showToast('Credit note rejected'); await loadPendingCns() }
+    setActionLoading(null)
+  }
 
   async function loadOrders() {
     setLoading(true)
     let data, error
 
     const PLACER_FIELDS = 'business_name, tier, email, city, state, phone, address'
-    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name, tier)'
+    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name, tier), bill_to_school:schools(name, contact_name, phone, address, city, state, gstin)'
     if (isAdmin) {
       ;({ data, error } = await sb
         .from('orders')
@@ -2028,8 +2233,66 @@ export default function OrdersPage() {
     setActionLoading(null)
   }
 
+  // Proforma is a preliminary, non-tax document — no invoice number consumed,
+  // no dispatch allowed yet. It reuses the same total/kit-capacity checks as
+  // a direct invoice, just targets 'proforma' instead of 'invoiced' so
+  // trg_proforma_no (not trg_invoice_no) fires.
+  async function handleMarkProforma(order, waOpts) {
+    setActionLoading(order.id + '_proforma')
+
+    const { data: itemRows } = await sb
+      .from('order_items').select('sku_id, ordered_qty, rate').eq('order_id', order.id)
+
+    const kmap = await loadKitMap((itemRows || []).map(function (r) { return r.sku_id }))
+    const fit = invoiceFit((itemRows || []).map(function (r) {
+      return { kitCount: (kmap[r.sku_id] || []).length }
+    }))
+    if (fit.overflow > 0) {
+      showToast('Document is full — please create another order for the remaining items.', 'warn')
+      setActionLoading(null)
+      return
+    }
+
+    const itemsTotal = (itemRows || []).reduce(function (sum, it) {
+      return sum + (it.ordered_qty || 0) * (it.rate || 0)
+    }, 0)
+    const discount = Math.min(order.discount_amount || 0, itemsTotal)
+    const grandTotal = Math.max(0, itemsTotal + (order.courier_charges || 0) - discount)
+
+    const { error } = await sb
+      .from('orders')
+      .update({ status: 'proforma', grand_total: grandTotal, subtotal: itemsTotal })
+      .eq('id', order.id)
+      .eq('status', 'pending')
+
+    if (error) {
+      showToast('Failed to generate proforma: ' + error.message)
+    } else {
+      const { data: refreshed } = await sb
+        .from('orders').select('proforma_no').eq('id', order.id).single()
+      showToast('Proforma generated: ' + (refreshed?.proforma_no || ''))
+      await loadOrders()
+      // Deliberately no auto-email/WA-send of the proforma itself yet (unlike
+      // the real invoice) — admin shares it manually via the PDF/print view
+      // for now; wanted the payment-status branch settled before wiring that up.
+    }
+    setActionLoading(null)
+  }
+
   async function handleVerifyPayment(order) {
     setActionLoading(order.id + '_verify')
+    // A proforma order has no invoice_no yet — verifying its payment is what
+    // converts it to a real tax invoice (fires trg_invoice_no on the
+    // proforma -> invoiced transition) before closing it. A direct-invoiced
+    // order already has its invoice_no, so it just closes as before.
+    if (order.proforma_no && !order.invoice_no) {
+      const { error: invErr } = await sb.from('orders').update({ status: 'invoiced' }).eq('id', order.id)
+      if (invErr) {
+        showToast('Failed to convert proforma to invoice: ' + invErr.message)
+        setActionLoading(null)
+        return
+      }
+    }
     const { error } = await sb
       .from('orders')
       .update({ status: 'closed', payment_verified_at: new Date().toISOString() })
@@ -2209,22 +2472,32 @@ export default function OrdersPage() {
             <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
           )}
           {order.status === 'pending' && isAdmin && (
-            <button className="row-action primary" disabled={busy} onClick={function () { setInvoiceConfirm(order) }}>
-              {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
-            </button>
+            <>
+              <button className="row-action primary" disabled={busy} onClick={function () { setInvoiceConfirm(order) }}>
+                {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
+              </button>
+              <button className="row-action" disabled={busy} onClick={function () { setProformaConfirm(order) }}
+                title="Preliminary, non-tax document — no dispatch until payment is verified">
+                {isActing(order.id, 'proforma') ? '…' : 'Proforma'}
+              </button>
+            </>
           )}
-          {['invoiced', 'part_paid'].includes(order.status) && !isAdmin && (
+          {['invoiced', 'part_paid', 'proforma'].includes(order.status) && !isAdmin && (
             <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
           )}
           {/* part_paid must offer these too — a part-paid order still needs the
-              balance recorded, chasing and editing. */}
-          {['invoiced', 'part_paid'].includes(order.status) && isAdmin && (
+              balance recorded, chasing and editing. proforma gets Record Pmt +
+              Remind the same way, just no Edit (nothing to re-price yet the
+              way an invoiced order's line items can be). */}
+          {['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && (
             <>
               <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
               <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
                 {isActing(order.id, 'reminder') ? '…' : 'Remind'}
               </button>
-              <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
+              {order.status !== 'proforma' && (
+                <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
+              )}
             </>
           )}
           {order.status === 'payment_submitted' && isAdmin && (
@@ -2243,14 +2516,31 @@ export default function OrdersPage() {
             <button className="row-action" title="View payments and print receipts"
               onClick={function () { setViewPayOrder(order) }}>Receipts</button>
           )}
-          {['invoiced', 'part_paid', 'payment_submitted', 'closed'].includes(order.status) && (
+          {['invoiced', 'part_paid', 'payment_submitted', 'closed', 'proforma'].includes(order.status) && (
             <button className="row-action" onClick={function () { setInvoiceViewOrder(order) }}>PDF</button>
           )}
-          <button className="row-action" onClick={function () { setDispatchOrder(order) }}>
-            {order.dispatched_at ? 'Dispatch ✎' : 'Dispatch'}
-          </button>
+          {/* A proforma order with no real invoice yet can't dispatch — payment
+              has to be verified first (which converts it to a real invoice). */}
+          {order.proforma_no && !order.invoice_no ? (
+            <button className="row-action" disabled title="Verify payment first — this order is still on a proforma, not a real invoice">
+              🔒 Dispatch
+            </button>
+          ) : (
+            <button className="row-action" onClick={function () { setDispatchOrder(order) }}>
+              {order.dispatched_at ? 'Dispatch ✎' : 'Dispatch'}
+            </button>
+          )}
           {canCancel && ['invoiced', 'payment_submitted'].includes(order.status) && (
             <button className="row-action danger" onClick={function () { setCancelOrder(order) }}>Cancel</button>
+          )}
+          {/* CF commission payout — admin-only, never available to the CF
+              themselves. Only makes sense once the school order is actually
+              settled (closed) so the commission is on real, paid business. */}
+          {isAdmin && order.bill_to_school_id && order.status === 'closed' && (
+            <button className="row-action" style={{ color: 'var(--purple)', borderColor: 'var(--purple)' }}
+              onClick={function () { setRaiseCnOrder(order) }}>
+              🧾 Raise Credit Note
+            </button>
           )}
         </div>
 
@@ -2281,6 +2571,7 @@ export default function OrdersPage() {
   const statusPillMap = [
     { id: 'all',               l: 'All',           cls: 'all' },
     { id: 'pending',           l: 'Pending',        cls: 'pending' },
+    { id: 'proforma',          l: 'Proforma',       cls: 'pending' },
     { id: 'invoiced',          l: 'Invoiced',       cls: 'inv' },
     { id: 'payment_submitted', l: 'Pmt Submitted',  cls: 'pmt' },
     { id: 'closed',            l: 'Closed',         cls: 'closed' },
@@ -2310,6 +2601,33 @@ export default function OrdersPage() {
             </div>
           </div>
         </div>
+
+        {/* CF commission credit notes awaiting approval — admin-only, raised
+            only by admin, so this is purely a review/approve queue. Approving
+            is what makes it show up in the CF's ledger (loadFranchiseeLedger). */}
+        {isAdmin && pendingCns.length > 0 && (
+          <div style={{ background: '#FFF7DA', border: '1px solid #D97706', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+            <div style={{ font: '700 11px var(--mono)', color: '#92400E', textTransform: 'uppercase', marginBottom: 8 }}>
+              🧾 {pendingCns.length} credit note{pendingCns.length !== 1 ? 's' : ''} awaiting approval
+            </div>
+            {pendingCns.map(function (cn) {
+              const busy = actionLoading === 'cn_' + cn.id
+              return (
+                <div key={cn.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid #F3E4B8', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, flex: 1, minWidth: 200 }}>
+                    <b>{cn.franchisees?.business_name || '—'}</b> ({cn.franchisees?.tier}) · ₹{fmtAmt(cn.amount)}
+                    {cn.orders?.order_ref ? ' · order ' + cn.orders.order_ref : ''}
+                    {cn.reason ? <span style={{ color: 'var(--text3)' }}> — {cn.reason}</span> : ''}
+                  </span>
+                  <button className="row-action green" disabled={busy} onClick={function () { approveCreditNote(cn) }}>
+                    {busy ? '…' : 'Approve'}
+                  </button>
+                  <button className="row-action danger" disabled={busy} onClick={function () { rejectCreditNote(cn) }}>Reject</button>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         {/* Status pills filter */}
         <div className="status-pills">
@@ -2438,12 +2756,35 @@ export default function OrdersPage() {
       {invoiceConfirm && (
         <InvoiceConfirmModal
           order={invoiceConfirm}
+          mode="invoice"
           onClose={function () { setInvoiceConfirm(null) }}
           onConfirm={function (waOpts) {
             const ord = invoiceConfirm
             setInvoiceConfirm(null)
             handleMarkInvoiced(ord, waOpts)
           }}
+        />
+      )}
+
+      {proformaConfirm && (
+        <InvoiceConfirmModal
+          order={proformaConfirm}
+          mode="proforma"
+          onClose={function () { setProformaConfirm(null) }}
+          onConfirm={function (waOpts) {
+            const ord = proformaConfirm
+            setProformaConfirm(null)
+            handleMarkProforma(ord, waOpts)
+          }}
+        />
+      )}
+
+      {raiseCnOrder && (
+        <RaiseCreditNoteModal
+          order={raiseCnOrder}
+          currentUser={currentUser}
+          onClose={function () { setRaiseCnOrder(null) }}
+          onSaved={async function () { setRaiseCnOrder(null); await loadPendingCns() }}
         />
       )}
 

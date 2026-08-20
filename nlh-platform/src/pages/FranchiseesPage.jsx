@@ -364,7 +364,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [orders, setOrders] = useState([])
   const [students, setStudents] = useState([])
   const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended session count }
-  const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false, agreement: false })
+  const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false, agreement: false, schools: false })
+
+  // CF's schools — bill-to-school kit supply. Only relevant for tier === 'CF'.
+  const [schools, setSchools] = useState([])
+  const [showAddSchool, setShowAddSchool] = useState(false)
+  const [ratesForSchool, setRatesForSchool] = useState(null)   // school row currently open in the rates editor
   const [certEmailing, setCertEmailing] = useState(false)
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
   const [agreement, setAgreement] = useState(null)
@@ -558,6 +563,15 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       const row = await loadLatestAgreement(franchisee.id)
       setAgreement(row)
     }
+    if (t === 'schools') {
+      const { data } = await sb.from('schools').select('*').eq('cf_franchisee_id', franchisee.id).order('name')
+      setSchools(data || [])
+    }
+  }
+
+  async function reloadSchools() {
+    const { data } = await sb.from('schools').select('*').eq('cf_franchisee_id', franchisee.id).order('name')
+    setSchools(data || [])
   }
 
   async function generateOrRefreshAgreement() {
@@ -783,9 +797,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         </div>
 
         <div className="tabs">
-          {['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement'].map(t => (
+          {['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
+            .concat(franchisee.tier === 'CF' ? ['schools'] : [])
+            .map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
-              {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t === 'schools' ? '🏫 Schools' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -1395,6 +1411,41 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               )}
             </div>
           )}
+
+          {tab === 'schools' && (
+            <div style={{ padding: '4px 20px 16px' }}>
+              <p className="hint" style={{ marginBottom: 12 }}>
+                Schools this CF brings in as an institutional customer — HO bills the school
+                directly and dispatches to them, while this CF earns a per-kit commission
+                (set per school, per SKU) for facilitating the relationship.
+              </p>
+              {schools.length === 0 ? (
+                <p style={{ color: 'var(--text3)', fontSize: 13 }}>No schools added yet.</p>
+              ) : (
+                <div className="tbl-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>School</th><th>Contact</th><th>City</th><th>Status</th><th>Rates</th></tr>
+                    </thead>
+                    <tbody>
+                      {schools.map(function (s) {
+                        return (
+                          <tr key={s.id}>
+                            <td>{s.name}</td>
+                            <td style={{ fontSize: 11, color: 'var(--text2)' }}>{s.contact_name}{s.phone ? ' · ' + s.phone : ''}</td>
+                            <td>{s.city || '—'}</td>
+                            <td><span className={'badge ' + (s.status === 'active' ? 'ba' : 'bp')}>{s.status}</span></td>
+                            <td><button className="btn-s" style={{ fontSize: 11 }} onClick={function () { setRatesForSchool(s) }}>Kit Rates</button></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <button className="btn-p" style={{ marginTop: 12 }} onClick={function () { setShowAddSchool(true) }}>+ Add School</button>
+            </div>
+          )}
         </div>
 
         {admin && (tab === 'info' || tab === 'courses') && (
@@ -1416,6 +1467,22 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
           setSelectedStudent(null)
           setStudents(function (prev) { return prev.map(function (s) { return s.id === updated.id ? { ...s, ...updated } : s }) })
         }}
+      />
+    )}
+
+    {showAddSchool && (
+      <AddSchoolModal
+        cfFranchiseeId={franchisee.id}
+        onClose={function () { setShowAddSchool(false) }}
+        onSaved={function () { setShowAddSchool(false); reloadSchools() }}
+      />
+    )}
+
+    {ratesForSchool && (
+      <SchoolRatesModal
+        school={ratesForSchool}
+        admin={admin}
+        onClose={function () { setRatesForSchool(null) }}
       />
     )}
 
@@ -1674,6 +1741,180 @@ function AddFranchiseeModal({ onClose, onSaved }) {
           <button className="btn-p" onClick={save} disabled={saving}>
             {saving ? 'Creating…' : 'Create Franchisee'}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AddSchoolModal — CF adds an institutional customer it services ─────────────
+function AddSchoolModal({ cfFranchiseeId, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name: '', contact_name: '', phone: '', email: '',
+    address: '', area: '', city: '', state: '', country: 'India', pincode: '', gstin: '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  function field(k) { return function (e) { setForm(f => ({ ...f, [k]: e.target.value })) } }
+
+  async function save() {
+    if (!form.name.trim()) { showToast('School name is required', 'warn'); return }
+    setSaving(true)
+    const { error } = await sb.from('schools').insert({
+      cf_franchisee_id: cfFranchiseeId,
+      name: form.name.trim(),
+      contact_name: form.contact_name.trim() || null,
+      phone: form.phone.trim() || null,
+      email: form.email.trim() || null,
+      address: form.address.trim() || null,
+      city: form.city.trim() || null,
+      state: form.state.trim() || null,
+      country: form.country.trim() || 'India',
+      pincode: form.pincode.trim() || null,
+      gstin: form.gstin.trim() || null,
+    })
+    setSaving(false)
+    if (error) { showToast('Failed to add school: ' + error.message, 'err'); return }
+    showToast('School added ✓')
+    onSaved()
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <ModalHeader flush title="Add School" subtitle="A CF-serviced institutional customer" onClose={onClose} />
+        <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
+          <label>School Name *
+            <input value={form.name} onChange={field('name')} placeholder="e.g. St. Xavier's High School" />
+          </label>
+          <label>Point of Contact
+            <input value={form.contact_name} onChange={field('contact_name')} placeholder="Contact person at the school" />
+          </label>
+          <label>Phone
+            <input value={form.phone} onChange={field('phone')} />
+          </label>
+          <label>Email
+            <input value={form.email} onChange={field('email')} />
+          </label>
+          <label>GSTIN
+            <input value={form.gstin} onChange={field('gstin')} />
+          </label>
+          <LocationFields
+            form={form}
+            onChange={function (k, v) { setForm(function (f) { return { ...f, [k]: v } }) }}
+            disabled={false}
+          />
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Adding…' : 'Add School'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── SchoolRatesModal — per-SKU price + CF commission for one school ────────────
+// Rate/cut are set once here and reused on every future order for this school
+// (order_items snapshots cf_commission_rate at order time). Admin-only to
+// write — a CF setting their own commission would be a conflict of interest;
+// the CF can still open this to see what's agreed.
+function SchoolRatesModal({ school, admin, onClose }) {
+  const [skus, setSkus] = useState([])
+  const [rates, setRates] = useState({})     // { [sku_id]: { rate, cf_cut, _rowId } }
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(function () {
+    async function load() {
+      const [skuRes, rateRes] = await Promise.all([
+        sb.from('skus').select('id, level_name, courses(group_name)').order('sort_order'),
+        sb.from('school_sku_rates').select('*').eq('school_id', school.id),
+      ])
+      setSkus(skuRes.data || [])
+      const m = {}
+      ;(rateRes.data || []).forEach(function (r) { m[r.sku_id] = { rate: String(r.rate), cf_cut: String(r.cf_cut), _rowId: r.id } })
+      setRates(m)
+      setLoading(false)
+    }
+    load()
+  }, [school.id])
+
+  function setRate(skuId, field, val) {
+    setRates(function (prev) {
+      return { ...prev, [skuId]: { ...(prev[skuId] || { rate: '', cf_cut: '' }), [field]: val } }
+    })
+  }
+
+  async function saveAll() {
+    setSaving(true)
+    const rows = Object.entries(rates)
+      .filter(function ([, v]) { return v.rate !== '' || v.cf_cut !== '' })
+      .map(function ([skuId, v]) {
+        return { school_id: school.id, sku_id: skuId, rate: parseInt(v.rate, 10) || 0, cf_cut: parseInt(v.cf_cut, 10) || 0 }
+      })
+    const { error } = await sb.from('school_sku_rates').upsert(rows, { onConflict: 'school_id,sku_id' })
+    setSaving(false)
+    if (error) { showToast('Failed to save rates: ' + error.message, 'err'); return }
+    showToast('Kit rates saved ✓')
+    onClose()
+  }
+
+  const grouped = skus.reduce(function (acc, s) {
+    const c = s.courses?.group_name || 'Other'
+    if (!acc[c]) acc[c] = []
+    acc[c].push(s)
+    return acc
+  }, {})
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal modal-lg" style={{ maxWidth: 640, display: 'flex', flexDirection: 'column', maxHeight: '86vh' }}>
+        <ModalHeader flush title={'Kit Rates — ' + school.name}
+          subtitle={admin ? 'Price billed to the school, and this CF\'s commission, per kit' : 'View only — set by admin'}
+          onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px', overflowY: 'auto' }}>
+          {loading ? <div className="muted">Loading…</div> : (
+            <div className="tbl-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Course / Level</th><th style={{ textAlign: 'right' }}>Rate to School</th><th style={{ textAlign: 'right' }}>CF Cut</th></tr>
+                </thead>
+                <tbody>
+                  {Object.entries(grouped).map(function ([course, list]) {
+                    return list.map(function (s, i) {
+                      const r = rates[s.id] || { rate: '', cf_cut: '' }
+                      return (
+                        <tr key={s.id}>
+                          <td style={{ fontSize: 12 }}>{i === 0 && <span style={{ font: '700 10px var(--mono)', color: 'var(--purple)', display: 'block' }}>{course}</span>}{s.level_name}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <input type="number" min={0} value={r.rate} disabled={!admin}
+                              onChange={function (e) { setRate(s.id, 'rate', e.target.value) }}
+                              style={{ width: 90, textAlign: 'right', fontSize: 12 }} placeholder="0" />
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <input type="number" min={0} value={r.cf_cut} disabled={!admin}
+                              onChange={function (e) { setRate(s.id, 'cf_cut', e.target.value) }}
+                              style={{ width: 90, textAlign: 'right', fontSize: 12 }} placeholder="0" />
+                          </td>
+                        </tr>
+                      )
+                    })
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="hint" style={{ marginTop: 10 }}>
+            Only SKUs with a Rate to School set here will be orderable for this school. Leave both
+            blank for a kit this school isn't buying.
+          </p>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>{admin ? 'Cancel' : 'Close'}</button>
+          {admin && (
+            <button className="btn-p" onClick={saveAll} disabled={saving || loading}>{saving ? 'Saving…' : 'Save Rates'}</button>
+          )}
         </div>
       </div>
     </div>

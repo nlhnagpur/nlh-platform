@@ -16,7 +16,7 @@ import { sb } from '../supabase'
 // InvoiceView modal, same one Orders uses) — never a bespoke rendering
 // just for this table.
 export async function loadFranchiseeLedger(franchiseeId) {
-  const [frRes, fpRes, ordRes] = await Promise.all([
+  const [frRes, fpRes, ordRes, cnRes] = await Promise.all([
     sb.from('franchisees')
       .select('id, business_name, owner_name, tier, city, state, phone, email, centre_code, registered_courses, enrollment_fee, enrollment_invoice_no, contract_start, created_at')
       .eq('id', franchiseeId).single(),
@@ -30,11 +30,18 @@ export async function loadFranchiseeLedger(franchiseeId) {
     sb.from('orders')
       .select('*')
       .eq('placer_id', franchiseeId),
+    // CF commission payouts — only approved ones count; pending/rejected
+    // never touch the ledger (see franchisee_credit_notes RLS/workflow).
+    sb.from('franchisee_credit_notes')
+      .select('id, order_id, amount, reason, credit_note_no, approved_at')
+      .eq('franchisee_id', franchiseeId)
+      .eq('status', 'approved'),
   ])
 
   const franchisee = frRes.data || null
   const feePayments = fpRes.data || []
   const orders = ordRes.data || []
+  const creditNotes = cnRes.data || []
   const orderIds = orders.map(function (o) { return o.id })
 
   const [opRes, courseRes] = await Promise.all([
@@ -126,6 +133,21 @@ export async function loadFranchiseeLedger(franchiseeId) {
       debit: 0,
       credit: Number(p.amount) || 0,
       doc: o ? { type: 'order_receipt', order: o, franchisee: franchisee, payment: p, paidToDate: orderPaidToDate[p.id] || 0 } : null,
+    })
+  })
+
+  creditNotes.forEach(function (cn) {
+    txns.push({
+      id: 'credit-note-' + cn.id,
+      date: cn.approved_at,
+      category: 'credit_note',
+      desc: 'Credit Note' + (cn.reason ? ' — ' + cn.reason : ''),
+      ref: cn.credit_note_no || null,
+      debit: 0,
+      credit: Number(cn.amount) || 0,
+      // No dedicated printable document for a credit note yet — the row
+      // shows in the ledger like any other line, just isn't clickable.
+      doc: null,
     })
   })
 
