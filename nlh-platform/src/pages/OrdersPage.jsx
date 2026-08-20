@@ -2143,7 +2143,7 @@ export default function OrdersPage() {
     let data, error
 
     const PLACER_FIELDS = 'business_name, tier, email, city, state, phone, address'
-    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name, tier), bill_to_school:schools(name, contact_name, phone, address, city, state, gstin)'
+    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name, tier), bill_to_school:schools(name, contact_name, phone, email, address, city, state, gstin)'
     if (isAdmin) {
       ;({ data, error } = await sb
         .from('orders')

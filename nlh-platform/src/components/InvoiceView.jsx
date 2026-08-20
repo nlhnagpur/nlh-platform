@@ -382,14 +382,15 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   // template has an image header, so we screenshot the rendered sheet, park the
   // PNG in the public chat-attachments bucket, and pass its URL as the header.
   async function handleSendWhatsApp() {
-    const fr2 = billToFr || placer || {}
-    if (!fr2.phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+    // fr resolves to the school for a school order — the school is who
+    // should receive the invoice, not the CF who placed it on their behalf.
+    if (!fr.phone) { showToast('No phone number on file for ' + (school ? 'this school' : 'this franchisee'), 'warn'); return }
     setWaSending(true)
     try {
       const imageUrl = await captureInvoicePng(order.invoice_no)
       if (!imageUrl) { showToast('Could not prepare the invoice image', 'err'); setWaSending(false); return }
-      const r = await sendWAOrderInvoiced(fr2.phone, {
-        name:      fr2.business_name || 'Partner',
+      const r = await sendWAOrderInvoiced(fr.phone, {
+        name:      fr.business_name || 'Partner',
         invoiceNo: order.invoice_no || order.order_ref || '',
         amount:    fmtAmt(liveGrandTotal),
         imageUrl:  imageUrl,
@@ -403,7 +404,11 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   }
 
   async function handleSendEmail() {
-    const fr = billToFr || placer || {}
+    // NOTE: sendInvoiceEmail() only passes orderId to a server-side edge
+    // function, which resolves its own recipient — for a school order that
+    // function needs its own bill_to_school_id-aware fix (not done here);
+    // this button's enabled/disabled state and confirmation text already
+    // correctly reflect the school as the intended recipient.
     const email = fr.email
     if (!email) { alert('No email found.'); return }
     setSending(true)
@@ -415,7 +420,19 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   }
 
   // ── computed ───────────────────────────────────────────────────────────────
-  const fr         = billToFr || placer || {}
+  // A proforma has no invoice_no yet (see the order lifecycle in OrdersPage) —
+  // it's a preliminary, non-tax document, and prints as such.
+  const isProforma = order.status === 'proforma' && !order.invoice_no
+  // A school order bills the school directly, not the CF who placed it — the
+  // CF (placer) is only the point of contact for the school.
+  const school = order.bill_to_school || null
+  const fr         = school
+    ? {
+        business_name: school.name,
+        address: school.address, city: school.city, state: school.state,
+        phone: school.phone, email: school.email, tier: 'SCHOOL', gstin: school.gstin,
+      }
+    : (billToFr || placer || {})
   const shipFr     = shipToFr
   const subtotal   = items.reduce(function(s, i) { return s + (i.rate||0)*(i.ordered_qty||0) }, 0)
   const discount   = Math.min(order.discount_amount || 0, subtotal)
@@ -440,7 +457,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
       {/* toolbar */}
       <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:16, background:'#fff', borderRadius:30, padding:'5px 5px 5px 16px', boxShadow:'0 4px 14px rgba(0,0,0,.12)', flexShrink:0, flexWrap:'wrap', justifyContent:'center' }}>
         <span style={{ font:'600 11px "DM Mono",monospace', color:'#5C5A54', marginRight:4, textTransform:'uppercase', letterSpacing:'.05em' }}>
-          <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#16A34A', marginRight:5, verticalAlign:'middle' }} />{order.invoice_no||'Draft'}
+          <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#16A34A', marginRight:5, verticalAlign:'middle' }} />{order.invoice_no || order.proforma_no || 'Draft'}
         </span>
         <button onClick={function(){setActiveTab('view')}} style={tbBtn(activeTab==='view','#534AB7')}>📄 View</button>
         <button onClick={function(){setActiveTab('edit')}} style={tbBtn(activeTab==='edit','#D97706')}>✏ Edit</button>
@@ -632,8 +649,12 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               </div>
               {/* Title */}
               <div style={{ textAlign:'center' }}>
-                <div style={{ font:'800 48px "DM Sans",sans-serif', color:'#1E40AF', letterSpacing:'-.02em', lineHeight:1, marginBottom:2 }}>INVOICE</div>
-                <div style={{ font:'700 8px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.2em' }}>Tax Invoice · Original Copy</div>
+                <div style={{ font:(isProforma?'800 34px':'800 48px')+' "DM Sans",sans-serif', color:'#1E40AF', letterSpacing:'-.02em', lineHeight:1, marginBottom:2 }}>
+                  {isProforma ? 'PROFORMA INVOICE' : 'INVOICE'}
+                </div>
+                <div style={{ font:'700 8px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.2em' }}>
+                  {isProforma ? 'Not a Tax Invoice · For Payment Reference Only' : 'Tax Invoice · Original Copy'}
+                </div>
               </div>
               {/* Address */}
               <div style={{ textAlign:'right' }}>
@@ -657,7 +678,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           {/* ── META ── */}
           <div id="inv-hd-meta" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', background:'#F7F6F3', borderBottom:'1px solid #E2E0D8', padding:'8px 20px', gap:10, flexShrink:0 }}>
             {[
-              { lbl:'Invoice no.', val:order.invoice_no||'DRAFT', mono:true },
+              { lbl:isProforma?'Proforma no.':'Invoice no.', val:(isProforma?order.proforma_no:order.invoice_no)||'DRAFT', mono:true },
               { lbl:'Order ref.',  val:order.order_ref||('ORD-'+String(order.id).slice(0,8).toUpperCase()), mono:true },
               { lbl:'Issue date',  val:fmtDateLong(order.invoiced_at||order.created_at) },
               { lbl:'Due date',    val:dueDateStr(order.invoiced_at||order.created_at), status:payStatus },
@@ -691,8 +712,15 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                   phone:'9373 111 311', email:'dhiral@nlhnagpur.info' },
                 { lbl:'Bill to', bg:'linear-gradient(135deg,#FFF7DA,#FFEAA0)', border:'#F59E0B', badgeColor:'#D97706',
                   badge:fr.tier||'UF', name:fr.business_name||'—',
-                  address:[fr.address,fr.area,[fr.city,fr.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '),
-                  phone:fr.phone, email:fr.email },
+                  address:[
+                    [fr.address,fr.area,[fr.city,fr.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '),
+                    fr.gstin ? 'GSTIN: ' + fr.gstin : null,
+                  ].filter(Boolean).join(' · '),
+                  phone:fr.phone, email:fr.email,
+                  // A school order bills the school, not the CF — the CF who
+                  // placed it is the point of contact, printed as a note so
+                  // whoever's paying the invoice knows who to call.
+                  note: school ? 'Attn: ' + (placer?.business_name || 'CF') + (placer?.phone ? ' · ' + placer.phone : '') : null },
                 shipFr ? { lbl:'Ship to', bg:'linear-gradient(135deg,#E6F5ED,#C6EDD8)', border:'#16A34A', badgeColor:'#16A34A',
                   badge:shipFr.tier||'UF', name:shipFr.business_name||'—',
                   address:[shipFr.address,[shipFr.city,shipFr.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '),
