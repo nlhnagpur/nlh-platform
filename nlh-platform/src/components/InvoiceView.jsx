@@ -770,19 +770,26 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                     <div style={{ font:'600 10px "DM Mono",monospace', color:'#9C9A92' }}>{String(i+1).padStart(2,'0')}</div>
                     <div>
                       <div style={{ font:'600 13px "DM Sans",sans-serif', color:'#1A1916', lineHeight:1.25 }}>{name}</div>
-                      {item.sku_id && kitMap[item.sku_id] && kitMap[item.sku_id].length > 0 && (
-                        <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 6px', marginTop:4 }}>
-                          <span style={{ font:'700 9px "DM Mono",monospace', color:'#9C8BD9', textTransform:'uppercase', letterSpacing:'.06em', alignSelf:'center' }}>Kit:</span>
-                          {kitMap[item.sku_id].map(function(k, ki) {
-                            const notSent = (item.excluded_kit_items || []).includes(k.item_id)
-                            return (
-                              <span key={ki} style={{ font:'600 10px "DM Mono",monospace', color:notSent?'#B0ADA4':'#534AB7', background:notSent?'#F0EFEC':'#EEEDFE', borderRadius:4, padding:'2px 7px', whiteSpace:'nowrap', textDecoration:notSent?'line-through':'none' }}>
-                                {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}{notSent ? ' · not sent' : ''}
-                              </span>
-                            )
-                          })}
-                        </div>
-                      )}
+                      {item.sku_id && kitMap[item.sku_id] && (function() {
+                        // Only what's actually going out — an excluded/not-sent
+                        // component has no business on the printed invoice.
+                        const sentComps = kitMap[item.sku_id].filter(function(k) {
+                          return !(item.excluded_kit_items || []).includes(k.item_id)
+                        })
+                        if (sentComps.length === 0) return null
+                        return (
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 6px', marginTop:4 }}>
+                            <span style={{ font:'700 9px "DM Mono",monospace', color:'#9C8BD9', textTransform:'uppercase', letterSpacing:'.06em', alignSelf:'center' }}>Kit:</span>
+                            {sentComps.map(function(k, ki) {
+                              return (
+                                <span key={ki} style={{ font:'600 10px "DM Mono",monospace', color:'#534AB7', background:'#EEEDFE', borderRadius:4, padding:'2px 7px', whiteSpace:'nowrap' }}>
+                                  {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div style={{ textAlign:'right', font:'500 12.5px "DM Mono",monospace', color:'#5C5A54' }}>{item.ordered_qty||0}</div>
                     <div style={{ textAlign:'right', font:'500 12.5px "DM Mono",monospace', color:sent===item.ordered_qty?'#16A34A':'#5C5A54', fontWeight:sent===item.ordered_qty?700:500 }}>{sent}</div>
