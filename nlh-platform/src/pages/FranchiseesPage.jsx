@@ -1530,6 +1530,14 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         defaultCourses = (allCrs || []).map(c => c.id)
       }
 
+      // Contract term starts today, runs 3 years (matches the franchise agreement
+      // generator's own +3 years / -1 day convention — see franchiseeAgreement.js)
+      const contractStart = new Date().toISOString().slice(0, 10)
+      const contractEndDate = new Date(contractStart + 'T00:00:00')
+      contractEndDate.setFullYear(contractEndDate.getFullYear() + 3)
+      contractEndDate.setDate(contractEndDate.getDate() - 1)
+      const contractEnd = contractEndDate.toISOString().slice(0, 10)
+
       // Insert franchisee
       const { data: fr, error: frErr } = await sb.from('franchisees').insert({
         owner_name: form.owner_name.trim(),
@@ -1546,6 +1554,8 @@ function AddFranchiseeModal({ onClose, onSaved }) {
         parent_id: form.parent_id || null,
         status: 'active',
         registered_courses: defaultCourses,
+        contract_start: contractStart,
+        contract_end: contractEnd,
       }).select().single()
 
       if (frErr) { showToast('Failed to create franchisee: ' + frErr.message, 'err'); setSaving(false); return }

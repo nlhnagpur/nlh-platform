@@ -329,6 +329,15 @@ function AdminAccessRequestsView() {
       if (req.qualification) noteParts.push('Qualification: ' + req.qualification)
       noteParts.push('Created from an approved access request.')
 
+      // Contract term starts today, runs 3 years (matches the franchise
+      // agreement generator's own +3 years / -1 day convention, and the
+      // same insert in FranchiseesPage.jsx's "+ Add Franchisee" flow).
+      const contractStart = new Date().toISOString().slice(0, 10)
+      const contractEndDate = new Date(contractStart + 'T00:00:00')
+      contractEndDate.setFullYear(contractEndDate.getFullYear() + 3)
+      contractEndDate.setDate(contractEndDate.getDate() - 1)
+      const contractEnd = contractEndDate.toISOString().slice(0, 10)
+
       const { data: fr, error: frErr } = await sb.from('franchisees').insert({
         owner_name:         req.full_name,
         business_name:      req.business_name || req.full_name,
@@ -345,6 +354,8 @@ function AdminAccessRequestsView() {
         date_of_birth:       req.date_of_birth || null,
         qualification:       req.qualification || null,
         notes:               noteParts.join(' · '),
+        contract_start:      contractStart,
+        contract_end:        contractEnd,
       }).select().single()
 
       if (frErr) {
