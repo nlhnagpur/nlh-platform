@@ -885,6 +885,21 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const [coupon, setCoupon] = useState(
     order.coupon_id ? { coupon_id: order.coupon_id, code: order.coupon_code, discount: order.discount_amount || 0 } : null
   )
+  // This order bills a school (a real franchisee, tier SCHOOL) — new/edited
+  // lines must price from the negotiated school_sku_rates, not the flat
+  // uf_rate/cf_rate/smf_rate columns, same as NewOrderModal already does.
+  const isSchoolOrder = order.bill_to_fr?.tier === 'SCHOOL'
+  const [schoolRates, setSchoolRates] = useState({})   // { [sku_id]: { rate, cf_cut } }
+
+  useEffect(function () {
+    if (!isSchoolOrder) return
+    sb.from('school_sku_rates').select('sku_id, rate, cf_cut').eq('franchisee_id', order.bill_to_franchisee_id)
+      .then(function (res) {
+        const m = {}
+        ;(res.data || []).forEach(function (r) { m[r.sku_id] = { rate: r.rate, cf_cut: r.cf_cut } })
+        setSchoolRates(m)
+      })
+  }, [isSchoolOrder, order.bill_to_franchisee_id])
 
   useEffect(function () { loadData() }, [])
 
@@ -943,7 +958,13 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
         }
         const id = value && value.indexOf('sku:') === 0 ? value.slice(4) : value
         const sku = allSkus.find(function (s) { return s.id === id })
-        return { ...it, sku_id: id, item_id: null, skus: sku || null, inventory_items: null, rate: sku ? rateForSku(sku, tier) : 0, ordered_qty: it.ordered_qty || 1, excluded_kit_items: [] }
+        const schoolRate = isSchoolOrder ? schoolRates[id] : null
+        return {
+          ...it, sku_id: id, item_id: null, skus: sku || null, inventory_items: null,
+          rate: schoolRate ? schoolRate.rate : (sku ? rateForSku(sku, tier) : 0),
+          cf_commission_rate: schoolRate ? schoolRate.cf_cut : null,
+          ordered_qty: it.ordered_qty || 1, excluded_kit_items: [],
+        }
       })
     })
   }
@@ -1026,6 +1047,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
           sent_qty: item.sent_qty || 0,
           rate: item.rate || 0,
           excluded_kit_items: item.sku_id ? (item.excluded_kit_items || []) : [],
+          cf_commission_rate: item.cf_commission_rate != null ? item.cf_commission_rate : null,
         })
         if (error) { showToast('Error adding item: ' + error.message); setSaving(false); return }
       }
@@ -1054,7 +1076,7 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       })
     }
 
-    showToast(order.invoice_no ? 'Invoice updated.' : 'Order updated.')
+    showToast(order.invoice_no ? 'Invoice updated.' : order.proforma_no ? 'Proforma updated.' : 'Order updated.')
     onSaved()
     setSaving(false)
   }
@@ -1063,7 +1085,10 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     <div className="modal-bg" onClick={onClose}>
       <div className="modal modal-lg" onClick={function (e) { e.stopPropagation() }}
         style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
-        <ModalHeader title={(order.invoice_no ? 'Edit Invoice — ' : 'Edit Order — ') + order.order_ref} subtitle={'New Learning Horizons · ' + (order.invoice_no ? 'Invoice editor' : 'Order editor')} onClose={onClose} />
+        <ModalHeader
+          title={(order.invoice_no ? 'Edit Invoice — ' : order.proforma_no ? 'Edit Proforma — ' : 'Edit Order — ') + order.order_ref}
+          subtitle={'New Learning Horizons · ' + (order.invoice_no ? 'Invoice editor' : order.proforma_no ? 'Proforma editor' : 'Order editor')}
+          onClose={onClose} />
         <div style={{ padding: '18px 22px', overflowY: 'auto', background: 'var(--bg2, #FAFAF8)', flex: 1 }}>
           {loading ? (
             <div className="muted">Loading items…</div>
@@ -1082,7 +1107,8 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                 </thead>
                 <tbody>
                   {items.map(function (item, idx) {
-                    const defaultRate = item.skus ? rateForSku(item.skus, order.placer_tier) : 0
+                    const schoolRate = isSchoolOrder && item.sku_id ? schoolRates[item.sku_id] : null
+                    const defaultRate = schoolRate ? schoolRate.rate : (item.skus ? rateForSku(item.skus, order.placer_tier) : 0)
                     const isNew = !item.id
                     const rowKey = item.id || ('new-' + idx)
                     const kitComps = item.sku_id ? kitMap[item.sku_id] : null
@@ -1097,12 +1123,16 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                             >
                               <option value="">— Select SKU or item —</option>
                               {Object.entries(
-                                allSkus.reduce(function (acc, s) {
-                                  const c = s.courses?.group_name || 'Other'
-                                  if (!acc[c]) acc[c] = []
-                                  acc[c].push(s)
-                                  return acc
-                                }, {})
+                                // A school order can only order kits with an
+                                // agreed rate for that school — same restriction
+                                // as NewOrderModal's initial placement.
+                                (isSchoolOrder ? allSkus.filter(function (s) { return schoolRates[s.id] }) : allSkus)
+                                  .reduce(function (acc, s) {
+                                    const c = s.courses?.group_name || 'Other'
+                                    if (!acc[c]) acc[c] = []
+                                    acc[c].push(s)
+                                    return acc
+                                  }, {})
                               ).map(function ([course, skus]) {
                                 return (
                                   <optgroup key={course} label={course}>
@@ -1112,7 +1142,9 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                                   </optgroup>
                                 )
                               })}
-                              {allItems.length > 0 && (
+                              {/* Raw inventory items aren't covered by school_sku_rates — a school
+                                  order can only carry priced kits, not individually-billed items. */}
+                              {!isSchoolOrder && allItems.length > 0 && (
                                 <optgroup label="📦 Inventory items (individual)">
                                   {allItems.map(function (iv) {
                                     return <option key={iv.id} value={'item:' + iv.id}>{iv.name}{iv.sell_price ? ' — ₹' + fmtAmt(iv.sell_price) : ''}</option>
@@ -2492,19 +2524,18 @@ export default function OrdersPage() {
           {['invoiced', 'part_paid', 'proforma'].includes(order.status) && !isAdmin && (
             <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
           )}
-          {/* part_paid must offer these too — a part-paid order still needs the
-              balance recorded, chasing and editing. proforma gets Record Pmt +
-              Remind the same way, just no Edit (nothing to re-price yet the
-              way an invoiced order's line items can be). */}
+          {/* part_paid and proforma get the same actions as invoiced — Edit
+              included: InvoiceEditModal only touches order_items/subtotal/
+              grand_total/courier/coupon, never invoice_no or proforma_no, so
+              re-pricing a proforma before it's converted is exactly as safe
+              as editing a pending order. */}
           {['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && (
             <>
               <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
               <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
                 {isActing(order.id, 'reminder') ? '…' : 'Remind'}
               </button>
-              {order.status !== 'proforma' && (
-                <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
-              )}
+              <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
             </>
           )}
           {order.status === 'payment_submitted' && isAdmin && (
