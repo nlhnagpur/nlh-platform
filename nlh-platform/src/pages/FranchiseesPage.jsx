@@ -65,6 +65,38 @@ const STATE_CITIES = {
 
 const INDIA_STATES = Object.keys(STATE_CITIES).sort()
 
+// ── Franchisee CSV export — every downloadable field, in a fixed column order ──
+// `checkedByDefault` reproduces the original always-exported set so existing
+// habits don't change unless the user opens the picker and asks for more.
+const EXPORT_FIELDS = [
+  { key: 'business_name',          label: 'Business Name',          get: r => r.business_name,          checkedByDefault: true },
+  { key: 'owner_name',             label: 'Owner Name',             get: r => r.owner_name,              checkedByDefault: true },
+  { key: 'tier',                   label: 'Tier',                   get: r => r.tier,                    checkedByDefault: true },
+  { key: 'email',                  label: 'Email',                  get: r => r.email,                   checkedByDefault: true },
+  { key: 'phone',                  label: 'Phone',                  get: r => r.phone,                   checkedByDefault: true },
+  { key: 'address',                label: 'Address',                get: r => r.address,                 checkedByDefault: false },
+  { key: 'area',                   label: 'Area',                   get: r => r.area,                    checkedByDefault: true },
+  { key: 'city',                   label: 'City',                   get: r => r.city,                    checkedByDefault: true },
+  { key: 'state',                  label: 'State',                  get: r => r.state,                   checkedByDefault: true },
+  { key: 'country',                label: 'Country',                get: r => r.country,                 checkedByDefault: true },
+  { key: 'pincode',                label: 'PIN Code',                get: r => r.pincode,                checkedByDefault: true },
+  { key: 'gstin',                  label: 'GSTIN',                  get: r => r.gstin,                   checkedByDefault: false },
+  { key: 'centre_code',            label: 'Centre Code',            get: r => r.centre_code,             checkedByDefault: false },
+  { key: 'status',                 label: 'Status',                 get: r => r.status,                  checkedByDefault: true },
+  { key: 'payment_status',         label: 'Payment Status',         get: r => r.payment_status,          checkedByDefault: false },
+  { key: 'enrollment_fee',         label: 'Enrollment Fee',         get: r => r.enrollment_fee || 0,     checkedByDefault: true },
+  { key: 'fee_paid',               label: 'Fee Paid',               get: r => r.fee_paid || 0,           checkedByDefault: true },
+  { key: 'renewal_fee',            label: 'Renewal Fee',            get: r => r.renewal_fee || 0,        checkedByDefault: false },
+  { key: 'enrollment_invoice_no',  label: 'Enrollment Invoice No',  get: r => r.enrollment_invoice_no,   checkedByDefault: false },
+  { key: 'contract_start',         label: 'Contract Start',         get: r => r.contract_start,          checkedByDefault: false },
+  { key: 'contract_end',           label: 'Contract End',           get: r => r.contract_end,            checkedByDefault: false },
+  { key: 'valid_till',             label: 'Valid Till',             get: r => r.valid_till,              checkedByDefault: false },
+  { key: 'date_of_birth',          label: 'Date of Birth',          get: r => r.date_of_birth,           checkedByDefault: false },
+  { key: 'qualification',          label: 'Qualification',          get: r => r.qualification,           checkedByDefault: false },
+  { key: 'registered_courses',     label: 'Registered Courses (count)', get: r => (r.registered_courses || []).length, checkedByDefault: false },
+  { key: 'registered_skus',        label: 'Registered SKUs (count)',    get: r => (r.registered_skus || []).length,    checkedByDefault: false },
+]
+
 function LocationFields({ form, onChange, disabled }) {
   const isIndia = (form.country || 'India').toLowerCase() === 'india'
   const presetCities = isIndia ? (STATE_CITIES[form.state] || []) : []
@@ -1651,6 +1683,11 @@ export default function FranchiseesPage() {
   const [exporting, setExporting]   = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [showExport, setShowExport] = useState(false)
+  const [exportFieldKeys, setExportFieldKeys] = useState(function () {
+    return EXPORT_FIELDS.filter(function (f) { return f.checkedByDefault }).map(function (f) { return f.key })
+  })
+  const [exportTiers, setExportTiers] = useState(['NLH', 'SMF', 'CF', 'UF'])
 
   useEffect(() => {
     if (currentRole === null) return  // wait until auth resolves
@@ -1737,7 +1774,11 @@ export default function FranchiseesPage() {
 
   function exportCSV() {
     // Use the already-loaded, role-filtered franchisees state — no extra DB query needed
-    if (!franchisees.length) { showToast('No franchisees to export.', 'warn'); return }
+    const tierSet = new Set(exportTiers)
+    const scoped = franchisees.filter(function (r) { return tierSet.has(r.tier) })
+    const fields = EXPORT_FIELDS.filter(function (f) { return exportFieldKeys.includes(f.key) })
+    if (!scoped.length) { showToast('No franchisees match the selected tiers.', 'warn'); return }
+    if (!fields.length) { showToast('Select at least one field to export.', 'warn'); return }
     setExporting(true)
     try {
       const date = new Date().toISOString().slice(0, 10)
@@ -1746,10 +1787,8 @@ export default function FranchiseesPage() {
         const s = String(v)
         return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s
       }
-      const headers = ['Business Name','Owner Name','Tier','Email','Phone','Area','City','State','Country','PIN Code','Status','Enrollment Fee','Fee Paid']
-      const rows    = franchisees.map(function (r) {
-        return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pincode, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
-      })
+      const headers = fields.map(function (f) { return f.label })
+      const rows    = scoped.map(function (r) { return fields.map(function (f) { return f.get(r) }) })
       const csv  = headers.join(',') + '\n' + rows.map(function (r) { return r.map(esc).join(',') }).join('\n')
       const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
       const url  = URL.createObjectURL(blob)
@@ -1758,10 +1797,22 @@ export default function FranchiseesPage() {
       document.body.appendChild(a); a.click(); document.body.removeChild(a)
       URL.revokeObjectURL(url)
       showToast(rows.length + ' franchisees exported ✓')
+      setShowExport(false)
     } catch (err) {
       showToast('Export failed: ' + err.message, 'err')
     }
     setExporting(false)
+  }
+
+  function toggleExportField(key) {
+    setExportFieldKeys(function (prev) {
+      return prev.includes(key) ? prev.filter(function (k) { return k !== key }) : [...prev, key]
+    })
+  }
+  function toggleExportTier(tier) {
+    setExportTiers(function (prev) {
+      return prev.includes(tier) ? prev.filter(function (t) { return t !== tier }) : [...prev, tier]
+    })
   }
 
   return (
@@ -1776,8 +1827,8 @@ export default function FranchiseesPage() {
             value={search}
             onChange={function (e) { setSearch(e.target.value) }}
           />
-          <button className="btn btn-s" onClick={exportCSV} disabled={exporting} title="Export CSV">
-            {exporting ? '…' : '↓'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
+          <button className="btn btn-s" onClick={function () { setShowExport(true) }} title="Choose fields and tiers to export">
+            ↓<span className="btn-label"> Export</span>
           </button>
           {admin && (
             <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>
@@ -2003,6 +2054,69 @@ export default function FranchiseesPage() {
           onClose={() => setShowAdd(false)}
           onSaved={handleAdded}
         />
+      )}
+
+      {showExport && (
+        <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setShowExport(false) }}>
+          <div className="modal" style={{ maxWidth: 480, padding: 0, display: 'flex', flexDirection: 'column', maxHeight: '86vh' }}>
+            <ModalHeader flush title="Export Franchisees" subtitle="Choose tiers and fields to include"
+              onClose={function () { setShowExport(false) }} />
+            <div style={{ padding: '4px 22px 18px', overflowY: 'auto' }}>
+              <div style={{ font: '700 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 8 }}>
+                Tiers
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+                {[
+                  { key: 'NLH', label: 'NLH Head Office' },
+                  { key: 'SMF', label: 'SMF' },
+                  { key: 'CF',  label: 'CF' },
+                  { key: 'UF',  label: 'UF' },
+                ].map(function (t) {
+                  const count = franchisees.filter(function (f) { return f.tier === t.key }).length
+                  if (count === 0) return null
+                  return (
+                    <label key={t.key} className="checkbox-item" style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--border)', borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={exportTiers.includes(t.key)} onChange={function () { toggleExportTier(t.key) }} />
+                      <span style={{ fontSize: 12 }}>{t.label} <span style={{ color: 'var(--text3)' }}>({count})</span></span>
+                    </label>
+                  )
+                })}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ font: '700 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' }}>
+                  Fields
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button style={{ font: '600 11px var(--font)', color: 'var(--purple)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    onClick={function () { setExportFieldKeys(EXPORT_FIELDS.map(function (f) { return f.key })) }}>
+                    Select all
+                  </button>
+                  <button style={{ font: '600 11px var(--font)', color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    onClick={function () { setExportFieldKeys([]) }}>
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px' }}>
+                {EXPORT_FIELDS.map(function (f) {
+                  return (
+                    <label key={f.key} className="checkbox-item" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={exportFieldKeys.includes(f.key)} onChange={function () { toggleExportField(f.key) }} />
+                      <span style={{ fontSize: 12 }}>{f.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={function () { setShowExport(false) }}>Cancel</button>
+              <button className="btn-p" disabled={exporting} onClick={exportCSV}>
+                {exporting ? 'Exporting…' : 'Download CSV'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
