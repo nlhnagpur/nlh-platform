@@ -692,7 +692,7 @@ function InvoiceConfirmModal({ order, mode, onClose, onConfirm }) {
   const isProforma = mode === 'proforma'
   const [sendWA, setSendWA] = useState(true)
   const [waPhone, setWaPhone] = useState(order.placer?.phone || '')
-  const billee = order.bill_to_school?.name || order.placer?.business_name || 'the franchisee'
+  const billee = order.bill_to_fr?.business_name || order.placer?.business_name || 'the franchisee'
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }} style={{ maxWidth: 460 }}>
@@ -782,7 +782,7 @@ function RaiseCreditNoteModal({ order, currentUser, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 440 }}>
-        <ModalHeader flush title="Raise Credit Note" subtitle={'Order ' + (order.order_ref || '') + ' · ' + (order.bill_to_school?.name || '')} onClose={onClose} />
+        <ModalHeader flush title="Raise Credit Note" subtitle={'Order ' + (order.order_ref || '') + ' · ' + (order.bill_to_fr?.business_name || '')} onClose={onClose} />
         <div style={{ padding: '4px 20px 16px' }}>
           {loading ? <div className="muted">Calculating commission…</div> : (
             <>
@@ -1282,8 +1282,9 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   const [coupon, setCoupon] = useState(null)   // { coupon_id, code, discount, _base }
 
   // A CF can place an order billed to one of their schools instead of their
-  // own centre — HO bills the school directly, the CF earns a per-kit
-  // commission (school_sku_rates), and the order lines re-price accordingly.
+  // own centre. A school is a real franchisee row (tier SCHOOL, parented
+  // under the CF) — HO bills it directly, the CF earns a per-kit commission
+  // (school_sku_rates), and the order lines re-price accordingly.
   const [cfSchools, setCfSchools] = useState([])
   const [schoolId, setSchoolId] = useState('')
   const [schoolRates, setSchoolRates] = useState({})   // { [sku_id]: { rate, cf_cut } }
@@ -1291,7 +1292,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   useEffect(function () {
     if (placerTier !== 'CF' || !placerId) { setCfSchools([]); setSchoolId(''); return }
     let cancelled = false
-    sb.from('schools').select('id, name').eq('cf_franchisee_id', placerId).eq('status', 'active').order('name')
+    sb.from('franchisees').select('id, business_name').eq('parent_id', placerId).eq('tier', 'SCHOOL').eq('status', 'active').order('business_name')
       .then(function (res) { if (!cancelled) setCfSchools(res.data || []) })
     return function () { cancelled = true }
   }, [placerId, placerTier])
@@ -1299,7 +1300,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   useEffect(function () {
     if (!schoolId) { setSchoolRates({}); return }
     let cancelled = false
-    sb.from('school_sku_rates').select('sku_id, rate, cf_cut').eq('school_id', schoolId)
+    sb.from('school_sku_rates').select('sku_id, rate, cf_cut').eq('franchisee_id', schoolId)
       .then(function (res) {
         if (cancelled) return
         const m = {}
@@ -1335,9 +1336,13 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         // Admin: see all franchisees. NLH Head Office itself is excluded —
         // orders always bill a franchisee (SMF/CF/UF); HO taking stock for
         // samples/internal use is tracked as a stock issue, not an order.
+        // SCHOOL-tier rows are excluded too — a school is never a normal
+        // order placer/payer, it's only ever reached via a CF's "Bill to
+        // school" sub-selector below, which correctly prices from the
+        // negotiated school_sku_rates instead of the flat tier rate.
         const fRes = await sb.from('franchisees')
           .select('id, business_name, tier, registered_courses, registered_skus, address, city, state')
-          .neq('tier', 'NLH')
+          .not('tier', 'in', '(NLH,SCHOOL)')
           .order('business_name')
         setFranchisees(fRes.data || [])
         setVisibleSkus(allS)
@@ -1352,9 +1357,11 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         ])
         let allFrs = selfRes.data ? [selfRes.data] : []
         if (descendantIds.length > 0) {
+          // Same SCHOOL exclusion as the admin branch above.
           const descRes = await sb.from('franchisees')
             .select('id, business_name, tier, registered_courses, registered_skus, address, city, state')
             .in('id', descendantIds)
+            .neq('tier', 'SCHOOL')
             .order('tier').order('business_name')
           allFrs = [...allFrs, ...(descRes.data || [])]
         }
@@ -1522,7 +1529,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         coupon_id: coupon?.coupon_id || null,
         coupon_code: coupon?.code || null,
         status: 'pending',
-        bill_to_school_id: schoolId || null,
+        bill_to_franchisee_id: schoolId || null,
       })
       .select().single()
 
@@ -1609,7 +1616,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
                   <select value={schoolId} onChange={function (e) { handleSchoolChange(e.target.value) }} style={fld}>
                     <option value="">Own centre (regular CF order)</option>
                     {cfSchools.map(function (s) {
-                      return <option key={s.id} value={s.id}>🏫 {s.name}</option>
+                      return <option key={s.id} value={s.id}>🏫 {s.business_name}</option>
                     })}
                   </select>
                 </div>
@@ -2143,7 +2150,7 @@ export default function OrdersPage() {
     let data, error
 
     const PLACER_FIELDS = 'business_name, tier, email, city, state, phone, address'
-    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name, tier), bill_to_school:schools(name, contact_name, phone, email, address, city, state, gstin)'
+    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + PLACER_FIELDS + ', gstin)'
     if (isAdmin) {
       ;({ data, error } = await sb
         .from('orders')
@@ -2536,7 +2543,7 @@ export default function OrdersPage() {
           {/* CF commission payout — admin-only, never available to the CF
               themselves. Only makes sense once the school order is actually
               settled (closed) so the commission is on real, paid business. */}
-          {isAdmin && order.bill_to_school_id && order.status === 'closed' && (
+          {isAdmin && order.bill_to_fr?.tier === 'SCHOOL' && order.status === 'closed' && (
             <button className="row-action" style={{ color: 'var(--purple)', borderColor: 'var(--purple)' }}
               onClick={function () { setRaiseCnOrder(order) }}>
               🧾 Raise Credit Note

@@ -288,7 +288,7 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
 
 function TierBadge({ tier }) {
   if (!tier) return null
-  const cls = { SMF: 't-smf', CF: 't-cf', UF: 't-uf' }[tier] || ''
+  const cls = { SMF: 't-smf', CF: 't-cf', UF: 't-uf', SCHOOL: 't-school' }[tier] || ''
   return <span className={`tier ${cls}`}>{tier}</span>
 }
 
@@ -366,10 +366,14 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended session count }
   const [tabLoaded, setTabLoaded] = useState({ info: true, courses: false, orders: false, students: false, cert: false, agreement: false, schools: false })
 
-  // CF's schools — bill-to-school kit supply. Only relevant for tier === 'CF'.
+  // CF's schools — a school is a real franchisee row (tier 'SCHOOL', parented
+  // under this CF), so it gets the full franchisee machinery (students,
+  // enrollments, courses, orders, accounts) for free. Only kit pricing/CF
+  // commission (school_sku_rates) and the bill-to-school order path are custom.
   const [schools, setSchools] = useState([])
   const [showAddSchool, setShowAddSchool] = useState(false)
-  const [ratesForSchool, setRatesForSchool] = useState(null)   // school row currently open in the rates editor
+  const [ratesForSchool, setRatesForSchool] = useState(null)   // school franchisee row currently open in the rates editor
+  const [viewingSchool, setViewingSchool] = useState(null)     // school franchisee row currently drilled into (its own full detail modal)
   const [certEmailing, setCertEmailing] = useState(false)
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
   const [agreement, setAgreement] = useState(null)
@@ -564,13 +568,13 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       setAgreement(row)
     }
     if (t === 'schools') {
-      const { data } = await sb.from('schools').select('*').eq('cf_franchisee_id', franchisee.id).order('name')
+      const { data } = await sb.from('franchisees').select('*').eq('parent_id', franchisee.id).eq('tier', 'SCHOOL').order('business_name')
       setSchools(data || [])
     }
   }
 
   async function reloadSchools() {
-    const { data } = await sb.from('schools').select('*').eq('cf_franchisee_id', franchisee.id).order('name')
+    const { data } = await sb.from('franchisees').select('*').eq('parent_id', franchisee.id).eq('tier', 'SCHOOL').order('business_name')
     setSchools(data || [])
   }
 
@@ -797,9 +801,13 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         </div>
 
         <div className="tabs">
-          {['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
-            .concat(franchisee.tier === 'CF' ? ['schools'] : [])
-            .map(t => (
+          {(franchisee.tier === 'SCHOOL'
+              // A school doesn't sign a Unit Franchise Agreement — it's a
+              // CF's B2B customer, not a franchise business in its own right.
+              ? ['info', 'courses', 'orders', 'students', 'ledger', 'cert']
+              : ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
+                  .concat(franchisee.tier === 'CF' ? ['schools'] : [])
+            ).map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
               {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t === 'schools' ? '🏫 Schools' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -841,7 +849,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </>
                 )}
               </label>
-              {admin && (
+              {admin && franchisee.tier !== 'SCHOOL' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button
                     className="btn-s"
@@ -1415,9 +1423,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
           {tab === 'schools' && (
             <div style={{ padding: '4px 20px 16px' }}>
               <p className="hint" style={{ marginBottom: 12 }}>
-                Schools this CF brings in as an institutional customer — HO bills the school
-                directly and dispatches to them, while this CF earns a per-kit commission
-                (set per school, per SKU) for facilitating the relationship.
+                Schools this CF brings in — each works like a UF (its own students,
+                enrollments, certificates, courses), except HO bills the school directly
+                and this CF earns a per-kit commission (set per school, per SKU) instead
+                of the usual franchise fee/order model. Click a row to open it fully.
               </p>
               {schools.length === 0 ? (
                 <p style={{ color: 'var(--text3)', fontSize: 13 }}>No schools added yet.</p>
@@ -1425,17 +1434,16 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 <div className="tbl-scroll">
                   <table className="data-table">
                     <thead>
-                      <tr><th>School</th><th>Contact</th><th>City</th><th>Status</th><th>Rates</th></tr>
+                      <tr><th>School</th><th>City</th><th>Status</th><th></th></tr>
                     </thead>
                     <tbody>
                       {schools.map(function (s) {
                         return (
-                          <tr key={s.id}>
-                            <td>{s.name}</td>
-                            <td style={{ fontSize: 11, color: 'var(--text2)' }}>{s.contact_name}{s.phone ? ' · ' + s.phone : ''}</td>
+                          <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setViewingSchool(s) }}>
+                            <td>{s.business_name}</td>
                             <td>{s.city || '—'}</td>
                             <td><span className={'badge ' + (s.status === 'active' ? 'ba' : 'bp')}>{s.status}</span></td>
-                            <td><button className="btn-s" style={{ fontSize: 11 }} onClick={function () { setRatesForSchool(s) }}>Kit Rates</button></td>
+                            <td><button className="btn-s" style={{ fontSize: 11 }} onClick={function (e) { e.stopPropagation(); setRatesForSchool(s) }}>Kit Rates</button></td>
                           </tr>
                         )
                       })}
@@ -1483,6 +1491,22 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         school={ratesForSchool}
         admin={admin}
         onClose={function () { setRatesForSchool(null) }}
+      />
+    )}
+
+    {viewingSchool && (
+      <FranchiseeDetailModal
+        franchisee={viewingSchool}
+        allCourses={allCourses}
+        onClose={function () { setViewingSchool(null) }}
+        onSaved={function (updated) {
+          const wasId = viewingSchool.id
+          setViewingSchool(null)
+          setSchools(function (prev) {
+            if (updated === null) return prev.filter(function (s) { return s.id !== wasId })
+            return prev.map(function (s) { return s.id === updated.id ? { ...s, ...updated } : s })
+          })
+        }}
       />
     )}
 
@@ -1759,19 +1783,35 @@ function AddSchoolModal({ cfFranchiseeId, onClose, onSaved }) {
 
   async function save() {
     if (!form.name.trim()) { showToast('School name is required', 'warn'); return }
+    // franchisees.phone/email/city/state are all NOT NULL — every other
+    // franchisee row already requires these, a school is no different.
+    if (!form.phone.trim()) { showToast('Phone is required', 'warn'); return }
+    if (!form.email.trim()) { showToast('Email is required', 'warn'); return }
+    if (!form.city.trim()) { showToast('City is required', 'warn'); return }
+    if (!form.state.trim()) { showToast('State is required', 'warn'); return }
     setSaving(true)
-    const { error } = await sb.from('schools').insert({
-      cf_franchisee_id: cfFranchiseeId,
-      name: form.name.trim(),
-      contact_name: form.contact_name.trim() || null,
+    // A school is a real franchisee row (tier SCHOOL, parented under this CF)
+    // so it gets students/enrollments/courses/orders for free — no login is
+    // created (the CF manages it), no enrollment_fee (schools don't pay a
+    // franchise fee — see the ledger, which only debits a fee line when
+    // enrollment_fee > 0), and it starts with no registered_courses, same
+    // as a fresh UF, so admin/CF has to explicitly enable levels for it.
+    const { error } = await sb.from('franchisees').insert({
+      tier: 'SCHOOL',
+      parent_id: cfFranchiseeId,
+      business_name: form.name.trim(),
+      owner_name: form.contact_name.trim() || form.name.trim(),
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
       address: form.address.trim() || null,
+      area: form.area.trim() || null,
       city: form.city.trim() || null,
       state: form.state.trim() || null,
       country: form.country.trim() || 'India',
       pincode: form.pincode.trim() || null,
       gstin: form.gstin.trim() || null,
+      status: 'active',
+      registered_courses: [],
     })
     setSaving(false)
     if (error) { showToast('Failed to add school: ' + error.message, 'err'); return }
@@ -1790,10 +1830,10 @@ function AddSchoolModal({ cfFranchiseeId, onClose, onSaved }) {
           <label>Point of Contact
             <input value={form.contact_name} onChange={field('contact_name')} placeholder="Contact person at the school" />
           </label>
-          <label>Phone
+          <label>Phone *
             <input value={form.phone} onChange={field('phone')} />
           </label>
-          <label>Email
+          <label>Email *
             <input value={form.email} onChange={field('email')} />
           </label>
           <label>GSTIN
@@ -1829,7 +1869,7 @@ function SchoolRatesModal({ school, admin, onClose }) {
     async function load() {
       const [skuRes, rateRes] = await Promise.all([
         sb.from('skus').select('id, level_name, courses(group_name)').order('sort_order'),
-        sb.from('school_sku_rates').select('*').eq('school_id', school.id),
+        sb.from('school_sku_rates').select('*').eq('franchisee_id', school.id),
       ])
       setSkus(skuRes.data || [])
       const m = {}
@@ -1851,9 +1891,9 @@ function SchoolRatesModal({ school, admin, onClose }) {
     const rows = Object.entries(rates)
       .filter(function ([, v]) { return v.rate !== '' || v.cf_cut !== '' })
       .map(function ([skuId, v]) {
-        return { school_id: school.id, sku_id: skuId, rate: parseInt(v.rate, 10) || 0, cf_cut: parseInt(v.cf_cut, 10) || 0 }
+        return { franchisee_id: school.id, sku_id: skuId, rate: parseInt(v.rate, 10) || 0, cf_cut: parseInt(v.cf_cut, 10) || 0 }
       })
-    const { error } = await sb.from('school_sku_rates').upsert(rows, { onConflict: 'school_id,sku_id' })
+    const { error } = await sb.from('school_sku_rates').upsert(rows, { onConflict: 'franchisee_id,sku_id' })
     setSaving(false)
     if (error) { showToast('Failed to save rates: ' + error.message, 'err'); return }
     showToast('Kit rates saved ✓')
@@ -1870,7 +1910,7 @@ function SchoolRatesModal({ school, admin, onClose }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal modal-lg" style={{ maxWidth: 640, display: 'flex', flexDirection: 'column', maxHeight: '86vh' }}>
-        <ModalHeader flush title={'Kit Rates — ' + school.name}
+        <ModalHeader flush title={'Kit Rates — ' + school.business_name}
           subtitle={admin ? 'Price billed to the school, and this CF\'s commission, per kit' : 'View only — set by admin'}
           onClose={onClose} />
         <div style={{ padding: '4px 20px 16px', overflowY: 'auto' }}>
@@ -1998,6 +2038,7 @@ export default function FranchiseesPage() {
     smf: filtered.filter(function (f) { return f.tier === 'SMF' }).length,
     cf:  filtered.filter(function (f) { return f.tier === 'CF' }).length,
     uf:  filtered.filter(function (f) { return f.tier === 'UF' }).length,
+    school: filtered.filter(function (f) { return f.tier === 'SCHOOL' }).length,
   }
 
   // "Partners" excludes NLH HQ's own row (it's the franchisor, not a partner)
@@ -2157,7 +2198,8 @@ export default function FranchiseesPage() {
               { id: 'smf', l: 'SMF' },
               { id: 'cf',  l: 'CF'  },
               { id: 'uf',  l: 'UF'  },
-            ].map(function (t) {
+            ].concat(counts.school > 0 ? [{ id: 'school', l: 'Schools' }] : [])
+              .map(function (t) {
               return (
                 <button
                   key={t.id}

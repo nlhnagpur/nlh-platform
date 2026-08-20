@@ -106,6 +106,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 .t-smf{background:rgba(138,82,0,.15);color:var(--amber)}
 .t-cf{background:rgba(29,122,79,.15);color:var(--green)}
 .t-uf{background:rgba(26,95,168,.15);color:var(--blue)}
+.t-school{background:rgba(217,119,6,.15);color:#D97706}
 
 /* ── BUTTONS ── */
 .btn-p{background:var(--purple);color:#fff;border:none;padding:8px 16px;border-radius:var(--r2);font-size:12px;cursor:pointer;font-family:var(--font);font-weight:500;transition:background .1s}
@@ -1060,6 +1061,7 @@ vercel-toolbar { display: none !important; }
 .t-uf  { background:rgba(37,99,235,.13); color:var(--blue); }
 .t-cf  { background:rgba(22,163,74,.13); color:var(--green-2); }
 .t-smf { background:rgba(217,119,6,.16); color:var(--orange); }
+.t-school { background:rgba(190,24,93,.13); color:#BE185D; }
 
 /* ── Placer cell (avatar + name in table) ── */
 .placer-cell { display:flex; align-items:center; gap:9px; }

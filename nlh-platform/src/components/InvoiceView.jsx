@@ -6,7 +6,7 @@ import { sendWAOrderInvoiced } from '../services/whatsapp'
 import { captureInvoicePng } from '../utils/captureInvoice'
 
 const CANCEL_ROLES = ['owner', 'super_admin', 'admin']
-const FR_FIELDS = 'id,business_name,tier,email,city,state,area,country,phone,address,parent_id'
+const FR_FIELDS = 'id,business_name,tier,email,city,state,area,country,phone,address,parent_id,gstin'
 
 function fmtDateLong(d) {
   if (!d) return '—'
@@ -405,10 +405,11 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
 
   async function handleSendEmail() {
     // NOTE: sendInvoiceEmail() only passes orderId to a server-side edge
-    // function, which resolves its own recipient — for a school order that
-    // function needs its own bill_to_school_id-aware fix (not done here);
-    // this button's enabled/disabled state and confirmation text already
-    // correctly reflect the school as the intended recipient.
+    // function, which resolves its own recipient — for an order billed to
+    // someone other than the placer (a school, or any bill_to_franchisee_id
+    // override) that function needs its own fix to honor bill_to_franchisee_id
+    // (not done here); this button's enabled/disabled state and confirmation
+    // text already correctly reflect the actual bill-to party.
     const email = fr.email
     if (!email) { alert('No email found.'); return }
     setSending(true)
@@ -423,16 +424,12 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   // A proforma has no invoice_no yet (see the order lifecycle in OrdersPage) —
   // it's a preliminary, non-tax document, and prints as such.
   const isProforma = order.status === 'proforma' && !order.invoice_no
-  // A school order bills the school directly, not the CF who placed it — the
-  // CF (placer) is only the point of contact for the school.
-  const school = order.bill_to_school || null
-  const fr         = school
-    ? {
-        business_name: school.name,
-        address: school.address, city: school.city, state: school.state,
-        phone: school.phone, email: school.email, tier: 'SCHOOL', gstin: school.gstin,
-      }
-    : (billToFr || placer || {})
+  // A school is a real franchisee row (tier SCHOOL) — billToFr already
+  // resolves it generically via bill_to_franchisee_id, same as any other
+  // "bill someone other than the placer" case. The CF who placed the order
+  // is only the point of contact for the school, not the payer.
+  const fr         = billToFr || placer || {}
+  const school     = fr.tier === 'SCHOOL' ? fr : null
   const shipFr     = shipToFr
   const subtotal   = items.reduce(function(s, i) { return s + (i.rate||0)*(i.ordered_qty||0) }, 0)
   const discount   = Math.min(order.discount_amount || 0, subtotal)
