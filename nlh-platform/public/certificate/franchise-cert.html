@@ -176,6 +176,12 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
   font-family: var(--script); font-style: italic; font-size: 32px; font-weight: bold;
   color: var(--red); text-align: center; margin-bottom: 8px;
 }
+/* A school's "City, State" line under its name — same slot as .c-state-label
+   (SMF's dramatic state name) but styled like the muted address text instead. */
+.c-state-label.c-loc {
+  font-family: var(--font); font-style: normal; font-size: 15px; font-weight: 500;
+  color: var(--text2); margin-bottom: 10px;
+}
 
 .c-reg  { font-size: 17px; color: #1A1916; text-align: center; margin-bottom: 1px; }
 .c-type { font-size: 18px; font-weight: 700; color: var(--red); text-align: center; margin-bottom: 10px; }
@@ -189,6 +195,11 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
   text-align: center; line-height: 1.45;
   max-width: 640px; margin-bottom: 0;
 }
+/* School's authorization sentence — reads as a sentence, not a bold list. */
+.c-courses.c-auth {
+  font-size: 18px; font-weight: 400; line-height: 1.5; max-width: 680px;
+}
+.c-courses.c-auth b { font-weight: 700; color: var(--red); }
 
 /* Footer: date + signature */
 .c-footer {
@@ -316,6 +327,9 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
           <button class="tbtn" id="btn-smf" onclick="setType('SMF',this)">
             <span class="badge">SMF</span>State Master
           </button>
+          <button class="tbtn" id="btn-school" onclick="setType('SCHOOL',this)">
+            <span class="badge">SCH</span>School
+          </button>
         </div>
       </div>
 
@@ -380,17 +394,17 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
           <div class="cert-left">
             <div class="cbody">
 
-              <div class="c-title">Franchise Certificate</div>
+              <div class="c-title" id="cTitle">Franchise Certificate</div>
               <div class="c-sub">This is to Certify that</div>
 
               <div class="c-main">
                 <div class="c-name" id="cName">Franchisee Name</div>
                 <div class="c-state-label" id="cStateLabel" style="display:none"></div>
 
-                <div class="c-reg">Is a Registered</div>
+                <div class="c-reg" id="cReg">Is a Registered</div>
                 <div class="c-type" id="cType">Unit Franchisee of</div>
 
-                <div class="c-org">New Learning Horizons at</div>
+                <div class="c-org" id="cOrg">New Learning Horizons at</div>
                 <div class="c-addr" id="cAddr">—</div>
                 <div class="c-courses" id="cCourses">for —</div>
               </div>
@@ -473,8 +487,8 @@ function setType(type, btn) {
   currentType = type;
   document.querySelectorAll('.tbtn').forEach(function (b) { b.classList.remove('active'); });
   btn.classList.add('active');
-  document.getElementById('grpCity').style.display  = type === 'CF'  ? 'flex' : 'none';
-  document.getElementById('grpState').style.display = type === 'SMF' ? 'flex' : 'none';
+  document.getElementById('grpCity').style.display  = (type === 'CF' || type === 'SCHOOL') ? 'flex' : 'none';
+  document.getElementById('grpState').style.display = (type === 'SMF' || type === 'SCHOOL') ? 'flex' : 'none';
   updateCert();
 }
 
@@ -483,7 +497,7 @@ function prefill(preselectedCourses) {
   const p = new URLSearchParams(location.search);
 
   const tier = p.get('tier') || 'UF';
-  const btnMap = { UF: 'btn-uf', CF: 'btn-cf', SMF: 'btn-smf' };
+  const btnMap = { UF: 'btn-uf', CF: 'btn-cf', SMF: 'btn-smf', SCHOOL: 'btn-school' };
   const btn = document.getElementById(btnMap[tier] || 'btn-uf');
   if (btn) setType(tier, btn);
 
@@ -577,6 +591,14 @@ function buildCourseText(list) {
   return 'for ' + list.slice(0, -1).join(', ') + ' & ' + list[list.length - 1];
 }
 
+// "the X Program" / "the X & Y Programs" — singular/plural agrees with the count.
+function buildAuthorisationText(list) {
+  if (!list.length) return 'and is authorized to conduct programs at its school premises.';
+  const named = list.length === 1 ? list[0] : list.slice(0, -1).join(', ') + ' & ' + list[list.length - 1];
+  const word  = list.length === 1 ? 'Program' : 'Programs';
+  return 'and is authorized to conduct the ' + named + ' ' + word + ' at its school premises.';
+}
+
 /* ── Live render ──────────────────────────────────────── */
 function updateCert() {
   const name    = document.getElementById('fName').value.trim() || 'Franchisee Name';
@@ -585,6 +607,7 @@ function updateCert() {
   const addr    = document.getElementById('fAddr').value.trim() || '—';
   const date    = document.getElementById('fDate').value;
   const courses = getCheckedCourses();
+  const isSchool = currentType === 'SCHOOL';
 
   /* Name — dynamic font-size */
   const cName = document.getElementById('cName');
@@ -592,24 +615,52 @@ function updateCert() {
   const len = name.length;
   cName.style.fontSize = len > 32 ? '30px' : len > 24 ? '38px' : len > 18 ? '46px' : '56px';
 
-  /* State label (SMF only) */
-  const cSL = document.getElementById('cStateLabel');
-  cSL.style.display = currentType === 'SMF' ? 'block' : 'none';
-  if (currentType === 'SMF') cSL.textContent = state || 'State';
+  /* Title + subtitle */
+  document.getElementById('cTitle').textContent = isSchool ? 'Certificate of Authorisation' : 'Franchise Certificate';
 
-  /* Type text */
-  const cType = document.getElementById('cType');
-  if (currentType === 'CF') {
-    cType.textContent = (city ? city + ' ' : '') + 'City Master Franchisee of';
-  } else if (currentType === 'SMF') {
-    cType.textContent = 'State Master Franchisee of';
-  } else {
-    cType.textContent = 'Unit Franchisee of';
+  /* State label — SMF's own dramatic red state name, or (repurposed) a
+     school's "City, State" location line right under its name. */
+  const cSL = document.getElementById('cStateLabel');
+  cSL.style.display = (currentType === 'SMF' || isSchool) ? 'block' : 'none';
+  if (currentType === 'SMF') {
+    cSL.className = 'c-state-label';
+    cSL.textContent = state || 'State';
+  } else if (isSchool) {
+    cSL.className = 'c-state-label c-loc';
+    cSL.textContent = [city, state].filter(Boolean).join(', ') || '—';
   }
 
-  document.getElementById('cAddr').textContent    = addr;
-  document.getElementById('cCourses').textContent = buildCourseText(courses);
-  document.getElementById('cDate').textContent    = fmtDate(date);
+  /* Reg / Type / Org lines */
+  const cReg  = document.getElementById('cReg');
+  const cType = document.getElementById('cType');
+  const cOrg  = document.getElementById('cOrg');
+  if (isSchool) {
+    cReg.textContent  = 'is an Authorized';
+    cType.textContent = 'Program Partner of';
+    cOrg.textContent  = 'New Learning Horizons';
+  } else {
+    cReg.textContent = 'Is a Registered';
+    cOrg.textContent = 'New Learning Horizons at';
+    if (currentType === 'CF') {
+      cType.textContent = (city ? city + ' ' : '') + 'City Master Franchisee of';
+    } else if (currentType === 'SMF') {
+      cType.textContent = 'State Master Franchisee of';
+    } else {
+      cType.textContent = 'Unit Franchisee of';
+    }
+  }
+
+  /* Address line — a school states its authorized program(s) here instead
+     (location already moved up next to its name), everyone else keeps the
+     address + "for <courses>" pair. */
+  const cAddr = document.getElementById('cAddr');
+  cAddr.style.display = isSchool ? 'none' : 'block';
+  cAddr.textContent = addr;
+  const cCourses = document.getElementById('cCourses');
+  cCourses.classList.toggle('c-auth', isSchool);
+  cCourses.textContent = isSchool ? buildAuthorisationText(courses) : buildCourseText(courses);
+
+  document.getElementById('cDate').textContent = fmtDate(date);
 }
 
 /* ── Scale certificate to fit preview panel ───────────── */

@@ -1253,17 +1253,39 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               if (f.tier === 'CF')  return `${f.city || ''} City Master Franchisee of`
               return 'Unit Franchisee of'
             }
+            // A school's authorization runs to the end of the current academic
+            // year (30 April), not the 3-year franchise term — re-issued fresh
+            // each year the school continues with NLH, not renewed multi-year.
+            function schoolAcademicYearEnd() {
+              const now = new Date()
+              const aprilThisYear = new Date(now.getFullYear(), 3, 30)
+              return now <= aprilThisYear ? aprilThisYear : new Date(now.getFullYear() + 1, 3, 30)
+            }
             function vTill(f) {
               const d = f.valid_till
                 ? new Date(f.valid_till)
-                : (() => { const x = new Date(f.created_at || Date.now()); x.setFullYear(x.getFullYear() + 3); return x })()
+                : f.tier === 'SCHOOL'
+                  ? schoolAcademicYearEnd()
+                  : (() => { const x = new Date(f.created_at || Date.now()); x.setFullYear(x.getFullYear() + 3); return x })()
               return [String(d.getDate()).padStart(2,'0'), String(d.getMonth()+1).padStart(2,'0'), d.getFullYear()].join('.')
             }
+            // "the X Program" / "the X & Y Programs" — matches franchise-cert.html's
+            // buildAuthorisationText so the on-screen preview and the printed
+            // certificate always agree.
+            function authorisationText(names) {
+              if (!names.length) return 'and is authorized to conduct programs at its school premises.'
+              const named = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1]
+              const word  = names.length === 1 ? 'Program' : 'Programs'
+              return `and is authorized to conduct the ${named} ${word} at its school premises.`
+            }
+            const isSchool = fr.tier === 'SCHOOL'
             const address = [fr.address, fr.area, fr.city, fr.state,
               fr.country && fr.country !== 'India' ? fr.country : null].filter(Boolean).join(', ')
+            const location = [fr.city, fr.state].filter(Boolean).join(', ')
             const courses = courseNames.join(', ')
             const label   = tierLbl(fr)
             const till    = vTill(fr)
+            const authText = authorisationText(courseNames)
 
             async function emailCert() {
               if (!fr.email) { showToast('No email on file for this franchisee', 'warn'); return }
@@ -1302,7 +1324,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     </div>
                   </div>
 
-                  <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 4 }}>FRANCHISE CERTIFICATE</div>
+                  <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 4 }}>
+                    {isSchool ? 'CERTIFICATE OF AUTHORISATION' : 'FRANCHISE CERTIFICATE'}
+                  </div>
                   <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>This is to Certify that</div>
                   <div style={{ fontFamily: 'Georgia,serif', fontSize: 22, fontWeight: 700, color: '#CC0000', marginBottom: 2, lineHeight: 1.2 }}>
                     {fr.name || fr.business_name}
@@ -1310,11 +1334,25 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   {fr.tier === 'SMF' && (
                     <div style={{ fontFamily: 'Georgia,serif', fontSize: 14, color: '#CC0000', marginBottom: 4 }}>{fr.state}</div>
                   )}
-                  <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, marginBottom: 2 }}>Is a Registered</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#CC0000', marginBottom: 5 }}>{label}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 4 }}>New Learning Horizons at</div>
-                  <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: courses ? 4 : 0 }}>{address}</div>
-                  {courses && <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5, marginBottom: 2 }}>for {courses}</div>}
+                  {isSchool && location && (
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{location}</div>
+                  )}
+                  {isSchool ? (
+                    <>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, marginBottom: 2 }}>is an Authorized</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#CC0000', marginBottom: 5 }}>Program Partner of</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 5 }}>New Learning Horizons</div>
+                      <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5 }}>{authText}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 8, marginBottom: 2 }}>Is a Registered</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#CC0000', marginBottom: 5 }}>{label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 4 }}>New Learning Horizons at</div>
+                      <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: courses ? 4 : 0 }}>{address}</div>
+                      {courses && <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.5, marginBottom: 2 }}>for {courses}</div>}
+                    </>
+                  )}
 
                   {/* Footer: sig | valid till | mascot */}
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginTop:12, paddingTop:10, borderTop:'1px dashed var(--border)' }}>

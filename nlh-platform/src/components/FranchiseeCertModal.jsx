@@ -12,16 +12,38 @@ function tierLabel(fr) {
   return 'Unit Franchisee of'
 }
 
+// A school's authorization runs to the end of the current academic year
+// (30 April), not the 3-year franchise term — re-issued fresh each year the
+// school continues with NLH, rather than renewed for another multi-year span.
+function schoolAcademicYearEnd() {
+  const now = new Date()
+  const aprilThisYear = new Date(now.getFullYear(), 3, 30)   // month 3 = April
+  return now <= aprilThisYear ? aprilThisYear : new Date(now.getFullYear() + 1, 3, 30)
+}
+
 function validTill(fr) {
-  // Use stored valid_till if admin has set it, otherwise compute 3 years from onboarding
+  // Use stored valid_till if admin has set it, otherwise compute the default
+  // for this franchisee type — 3 years from onboarding, or (for a school)
+  // the end of the current academic year.
   const d = fr.valid_till
     ? new Date(fr.valid_till)
-    : (() => { const x = new Date(fr.created_at || Date.now()); x.setFullYear(x.getFullYear() + 3); return x })()
+    : fr.tier === 'SCHOOL'
+      ? schoolAcademicYearEnd()
+      : (() => { const x = new Date(fr.created_at || Date.now()); x.setFullYear(x.getFullYear() + 3); return x })()
   return [
     String(d.getDate()).padStart(2, '0'),
     String(d.getMonth() + 1).padStart(2, '0'),
     d.getFullYear(),
   ].join('.')
+}
+
+// "the X Program" / "the X & Y Programs" — matches franchise-cert.html's
+// buildAuthorisationText so the modal preview and the printable page agree.
+function authorisationText(courseNames) {
+  if (!courseNames.length) return 'and is authorized to conduct programs at its school premises.'
+  const named = courseNames.length === 1 ? courseNames[0] : courseNames.slice(0, -1).join(', ') + ' & ' + courseNames[courseNames.length - 1]
+  const word  = courseNames.length === 1 ? 'Program' : 'Programs'
+  return `and is authorized to conduct the ${named} ${word} at its school premises.`
 }
 
 function buildAddress(fr) {
@@ -52,10 +74,13 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
   const [emailing, setEmailing] = useState(false)
   const [emailed,  setEmailed]  = useState(!!franchisee.cert_emailed_at)
 
+  const isSchool = franchisee.tier === 'SCHOOL'
   const label   = tierLabel(franchisee)
   const till    = validTill(franchisee)
   const address = buildAddress(franchisee)
   const courses = courseNames.join(', ')
+  const authText = authorisationText(courseNames)
+  const location = [franchisee.city, franchisee.state].filter(Boolean).join(', ')
 
   async function handleEmail() {
     if (!franchisee.email) {
@@ -80,7 +105,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 580 }}>
-        <ModalHeader flush title="Franchise Certificate" subtitle="New Learning Horizons" onClose={onClose} />
+        <ModalHeader flush title={isSchool ? 'Certificate of Authorisation' : 'Franchise Certificate'} subtitle="New Learning Horizons" onClose={onClose} />
 
         {/* ── Preview card ── */}
         <div style={{ padding: '0 20px' }}>
@@ -100,7 +125,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
                 onError={e => { e.target.style.display = 'none' }}
               />
               <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 2, color: '#1A1916', marginBottom: 2 }}>
-                FRANCHISE CERTIFICATE
+                {isSchool ? 'CERTIFICATE OF AUTHORISATION' : 'FRANCHISE CERTIFICATE'}
               </div>
               <div style={{ fontSize: 9, fontStyle: 'italic', color: '#555', marginBottom: 8 }}>This is to Certify that</div>
 
@@ -112,13 +137,27 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
                   {franchisee.state}
                 </div>
               )}
+              {isSchool && location && (
+                <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>{location}</div>
+              )}
 
-              <div style={{ fontSize: 9, color: '#555', marginTop: 6, marginBottom: 1 }}>Is a Registered</div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#CC0000', marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916', marginBottom: 2 }}>New Learning Horizons at</div>
-              <div style={{ fontSize: 9, color: '#3A3830', marginBottom: courses ? 3 : 0, lineHeight: 1.4 }}>{address}</div>
-              {courses && (
-                <div style={{ fontSize: 9, color: '#1A1916', lineHeight: 1.4 }}>for {courses}</div>
+              {isSchool ? (
+                <>
+                  <div style={{ fontSize: 9, color: '#555', marginTop: 6, marginBottom: 1 }}>is an Authorized</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#CC0000', marginBottom: 4 }}>Program Partner of</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916', marginBottom: 4 }}>New Learning Horizons</div>
+                  <div style={{ fontSize: 9, color: '#1A1916', lineHeight: 1.4 }}>{authText}</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 9, color: '#555', marginTop: 6, marginBottom: 1 }}>Is a Registered</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#CC0000', marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916', marginBottom: 2 }}>New Learning Horizons at</div>
+                  <div style={{ fontSize: 9, color: '#3A3830', marginBottom: courses ? 3 : 0, lineHeight: 1.4 }}>{address}</div>
+                  {courses && (
+                    <div style={{ fontSize: 9, color: '#1A1916', lineHeight: 1.4 }}>for {courses}</div>
+                  )}
+                </>
               )}
 
               {/* Footer */}
