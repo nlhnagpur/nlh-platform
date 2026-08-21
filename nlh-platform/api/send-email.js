@@ -377,8 +377,11 @@ function buildFranchiseeCert(fr, courseNames) {
   function mkValidTill(f) {
     if (f.valid_till) return dmyDate(f.valid_till)
     if (f.tier === 'SCHOOL') return dmyDate(schoolAcademicYearEnd())
+    // Matches the web preview's franchise term default (FranchiseesPage.jsx's
+    // vTill / FranchiseeCertModal.jsx's validTill) — this template used to
+    // default to +5 years here, a mismatch from before the school-cert work.
     const d = new Date(f.created_at || Date.now())
-    d.setFullYear(d.getFullYear() + 5)
+    d.setFullYear(d.getFullYear() + 3)
     return dmyDate(d)
   }
   function mkAddress(f) {
