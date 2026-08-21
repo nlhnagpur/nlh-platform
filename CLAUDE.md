@@ -36,7 +36,9 @@ RPC (needs `SUPABASE_SERVICE_KEY` in `.env.local`). A PostToolUse hook also runs
 db:sync automatically after each apply_migration on the owner's machine.
 
 ## Email (Brevo)
-- API key in index.html (var BREVO_KEY)
+- API key is server-only: `process.env.BREVO_KEY`, read in `api/send-email.js`
+  (a Vercel function). Not present anywhere in the client bundle — checked by
+  grepping the actual key value across the repo, no matches.
 - SMTP: smtp-relay.brevo.com:587 / aa0d69001@smtp-brevo.com
 - Sender: admin@nlhnagpur.info / New Learning Horizons
 
@@ -93,7 +95,6 @@ All admin roles use `isAdminRole(currentRole)` check.
 
 ## Known Issues / Pending
 - Revenue split engine not implemented (`revenue_splits` table exists, unused)
-- Brevo API key exposed in frontend (move to backend)
 - sb.auth.signUp workaround for admin session — `/api/create-user.js` now exists
   specifically to avoid this; confirm no remaining direct client-side `signUp()`
   calls before assuming it's fully retired everywhere
