@@ -5,13 +5,20 @@ New Learning Horizons (NLH) — ISO 9001:2015 certified education franchise plat
 Founded 2008, Nagpur, Maharashtra. 16 skill-based courses, ages 2–21.
 
 ## Architecture
-- **Single-file SPA**: Everything is in `index.html` (~660KB)
-- **Frontend**: Vanilla JS + CSS (no React/build tools yet)
+- **Frontend**: React 18 + Vite SPA, 35 files under `src/` (pages/components/context) —
+  the old single-file `index.html` vanilla-JS build has been fully replaced.
+  Routing is mostly hand-rolled through `AuthContext`'s `screen` state and
+  `Sidebar`'s active-page id, not URL-addressable routes.
+- **Serverless API**: `api/*.js` — Vercel functions for anything needing a secret
+  key or server-side work (create-user, send-email, WhatsApp sends, Razorpay).
+  Everything else talks to Supabase directly from the browser (anon key + RLS).
 - **Database**: Supabase PostgreSQL (project: frnnoxudtlvhyyoqdqzx, Mumbai region)
 - **Auth**: Supabase Auth with JWT
 - **Email**: Brevo API (transactional) + Brevo SMTP (password reset via Supabase)
-- **Hosting**: Vercel (frontend) at nlh-platform.vercel.app
-- **PDF**: jsPDF for invoice generation
+- **Hosting**: Vercel (frontend + `api/`) at nlh-platform.vercel.app
+- **PDF**: jsPDF (franchise agreements) + `InvoiceView.jsx`'s own print/PDF flow
+  for orders (a separate, older jsPDF-based invoice generator existed in
+  OrdersPage.jsx but was dead code — never wired to any button — and was removed)
 
 ## Database Connection
 - URL: https://frnnoxudtlvhyyoqdqzx.supabase.co
@@ -73,8 +80,10 @@ All admin roles use `isAdminRole(currentRole)` check.
 5. Dispatch with AWB can happen anytime independently
 
 ## Coding Conventions
-- All functions are plain `function` or `async function` (no arrow functions)
-- Event delegation via `document.addEventListener('click', ...)` with data-* attributes
+- All functions are plain `function` or `async function` (no arrow functions) —
+  this carried over from the old vanilla-JS build and is still followed in React
+- Event handling is normal React (`onClick={...}` etc.) — the old build's
+  `document.addEventListener('click', ...)` + data-* delegation pattern is gone
 - UI uses CSS custom properties (--purple, --green, --text, --border etc.)
 - Primary color: #534AB7 (purple)
 - Font: DM Sans (UI), DM Mono (data/codes)
@@ -83,12 +92,14 @@ All admin roles use `isAdminRole(currentRole)` check.
 - sb.auth.signUp must be followed by session restore (admin session fix)
 
 ## Known Issues / Pending
-- Revenue split engine not implemented
-- Should migrate to multi-file architecture (React + Node.js backend)
+- Revenue split engine not implemented (`revenue_splits` table exists, unused)
 - Brevo API key exposed in frontend (move to backend)
-- sb.auth.signUp workaround for admin session (needs Supabase Admin API)
-- No stock/inventory tracking per franchisee yet
-- No WhatsApp integration yet
+- sb.auth.signUp workaround for admin session — `/api/create-user.js` now exists
+  specifically to avoid this; confirm no remaining direct client-side `signUp()`
+  calls before assuming it's fully retired everywhere
+- No stock/inventory tracking per franchisee yet (HO-level only)
+- The multi-file React migration and WhatsApp integration (both previously listed
+  here as pending) are done — see Architecture above and the WhatsApp Inbox page
 
 ## Future Architecture (from tech brief)
 - Frontend: React.js + Vite + Tailwind CSS
