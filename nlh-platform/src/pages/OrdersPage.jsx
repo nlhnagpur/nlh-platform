@@ -690,18 +690,25 @@ function DispatchModal({ order, onClose, onSaved }) {
 // Confirms invoicing and lets the admin control the WhatsApp invoice notice.
 function InvoiceConfirmModal({ order, mode, onClose, onConfirm }) {
   const isProforma = mode === 'proforma'
+  const isConvert  = mode === 'convert'
   const [sendWA, setSendWA] = useState(true)
   const [waPhone, setWaPhone] = useState(order.placer?.phone || '')
   const billee = order.bill_to_fr?.business_name || order.placer?.business_name || 'the franchisee'
+  const title = isProforma ? 'Generate Proforma' : isConvert ? 'Convert to Invoice' : 'Generate Invoice'
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }} style={{ maxWidth: 460 }}>
-        <ModalHeader flush title={isProforma ? 'Generate Proforma' : 'Generate Invoice'} subtitle={'Order ' + (order.order_ref || '')} onClose={onClose} />
+        <ModalHeader flush title={title} subtitle={'Order ' + (order.order_ref || '')} onClose={onClose} />
         <div style={{ padding: '4px 20px 8px' }}>
           {isProforma ? (
             <p style={{ font: '500 13px var(--font)', color: 'var(--text2)', margin: '4px 0 12px' }}>
               This creates a <strong>proforma</strong> document (not a tax invoice, no invoice number consumed) for <strong>{billee}</strong>.
               The real invoice is only generated once payment is verified, and the order can't be dispatched before then.
+            </p>
+          ) : isConvert ? (
+            <p style={{ font: '500 13px var(--font)', color: 'var(--text2)', margin: '4px 0 12px' }}>
+              This assigns a real invoice number for <strong>{billee}</strong> right now, <strong>without waiting for a payment</strong> —
+              use this once the order is confirmed even if money hasn't landed yet. Proforma {order.proforma_no || ''} is superseded; dispatch unlocks immediately after.
             </p>
           ) : (
             <p style={{ font: '500 13px var(--font)', color: 'var(--text2)', margin: '4px 0 12px' }}>
@@ -723,7 +730,7 @@ function InvoiceConfirmModal({ order, mode, onClose, onConfirm }) {
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
           <button className="btn-p" onClick={function () { onConfirm({ sendWA: sendWA, waPhone: waPhone.trim() }) }}>
-            {isProforma ? 'Generate Proforma' : 'Generate Invoice'}
+            {title}
           </button>
         </div>
       </div>
@@ -2135,11 +2142,14 @@ export default function OrdersPage() {
   const [invoiceViewOrder, setInvoiceViewOrder] = useState(null)
   const [invoiceConfirm, setInvoiceConfirm] = useState(null)
   const [proformaConfirm, setProformaConfirm] = useState(null)
+  const [convertConfirm, setConvertConfirm] = useState(null)   // proforma order being converted straight to invoice, no payment required
   const [raiseCnOrder, setRaiseCnOrder] = useState(null)
   const [pendingCns, setPendingCns] = useState([])
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [deleteProformaOrder, setDeleteProformaOrder] = useState(null)
+  const [deletingProforma, setDeletingProforma] = useState(false)
 
   const canCancel = ['owner', 'super_admin', 'admin'].includes(currentRole)
 
@@ -2363,6 +2373,89 @@ export default function OrdersPage() {
     setActionLoading(null)
   }
 
+  // Admin decides to issue the real invoice on their own say-so, without
+  // waiting for a payment to land — reuses the same proforma -> invoiced
+  // transition trg_invoice_no fires on, just triggered directly instead of
+  // via the payment-sync path. Mirrors handleMarkInvoiced's capacity check
+  // and WhatsApp-notice flow.
+  async function handleConvertProforma(order, waOpts) {
+    setActionLoading(order.id + '_convert')
+
+    const { data: itemRows } = await sb
+      .from('order_items').select('sku_id, ordered_qty, rate').eq('order_id', order.id)
+
+    const kmap = await loadKitMap((itemRows || []).map(function (r) { return r.sku_id }))
+    const fit = invoiceFit((itemRows || []).map(function (r) {
+      return { kitCount: (kmap[r.sku_id] || []).length }
+    }))
+    if (fit.overflow > 0) {
+      showToast('Invoice is full — please create another invoice for the remaining items.', 'warn')
+      setActionLoading(null)
+      return
+    }
+
+    const itemsTotal = (itemRows || []).reduce(function (sum, it) {
+      return sum + (it.ordered_qty || 0) * (it.rate || 0)
+    }, 0)
+    const discount = Math.min(order.discount_amount || 0, itemsTotal)
+    const grandTotal = Math.max(0, itemsTotal + (order.courier_charges || 0) - discount)
+
+    const { error } = await sb
+      .from('orders')
+      .update({ status: 'invoiced', grand_total: grandTotal, subtotal: itemsTotal })
+      .eq('id', order.id)
+      .eq('status', 'proforma')
+
+    if (error) {
+      showToast('Failed to convert to invoice: ' + error.message)
+    } else {
+      const { data: refreshed } = await sb.from('orders').select('invoice_no').eq('id', order.id).single()
+      const invoiceNo = refreshed?.invoice_no || ''
+      showToast('Converted to Invoice ' + invoiceNo)
+      try {
+        await sendInvoiceEmail({ ...order, invoice_no: invoiceNo })
+      } catch (emailErr) {
+        console.warn('Invoice email failed:', emailErr.message)
+      }
+      const wantWA = waOpts ? waOpts.sendWA : !!order.placer?.phone
+      const waPhone = waOpts ? waOpts.waPhone : (order.placer?.phone || '')
+      await loadOrders()
+      if (wantWA && waPhone) {
+        setInvoiceViewOrder({ ...order, invoice_no: invoiceNo, grand_total: grandTotal, status: 'invoiced' })
+        showToast('Invoiced ' + invoiceNo + ' · tap 💬 WhatsApp to send it')
+      }
+    }
+    setActionLoading(null)
+  }
+
+  // Deleting a proforma (not a real invoice — no invoice_no was ever
+  // consumed, no numbering/audit-trail obligation) is preferable to
+  // "cancelling" it: Cancel Invoice only clears invoice_no, and running it
+  // on a proforma would leave a stale proforma_no behind that'd silently
+  // block ever generating a fresh proforma for this order again (see
+  // generate_proforma_no — it only fires when proforma_no is null).
+  // Blocked if a payment has already been recorded, as a safety check.
+  async function handleDeleteProforma() {
+    if (!deleteProformaOrder) return
+    if ((deleteProformaOrder.amount_paid || 0) > 0) {
+      showToast('This order has a payment recorded — cannot delete it.', 'err')
+      return
+    }
+    setDeletingProforma(true)
+    const { error: itemsErr } = await sb.from('order_items').delete().eq('order_id', deleteProformaOrder.id)
+    if (itemsErr) {
+      showToast('Failed to delete order items: ' + itemsErr.message, 'err')
+      setDeletingProforma(false)
+      return
+    }
+    const { error } = await sb.from('orders').delete().eq('id', deleteProformaOrder.id)
+    setDeletingProforma(false)
+    if (error) { showToast('Failed to delete proforma: ' + error.message, 'err'); return }
+    showToast('Proforma ' + (deleteProformaOrder.proforma_no || deleteProformaOrder.order_ref) + ' deleted')
+    setDeleteProformaOrder(null)
+    await loadOrders()
+  }
+
   async function handlePayOnline(order) {
     const balance = Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
     if (!balance) { showToast('No balance due', 'warn'); return }
@@ -2536,6 +2629,20 @@ export default function OrdersPage() {
                 {isActing(order.id, 'reminder') ? '…' : 'Remind'}
               </button>
               <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
+            </>
+          )}
+          {/* Proforma-only: issue the real invoice on admin's own say-so
+              without waiting for a payment, or delete it outright if the
+              deal isn't going ahead (no invoice_no was ever consumed, so
+              there's nothing to preserve — unlike Cancel, which is for a
+              real invoice's audit trail). */}
+          {order.status === 'proforma' && isAdmin && (
+            <>
+              <button className="row-action primary" disabled={busy} onClick={function () { setConvertConfirm(order) }}
+                title="Issue the real invoice now, without waiting for payment">
+                {isActing(order.id, 'convert') ? '…' : 'Convert to Invoice'}
+              </button>
+              <button className="row-action danger" onClick={function () { setDeleteProformaOrder(order) }}>Delete</button>
             </>
           )}
           {order.status === 'payment_submitted' && isAdmin && (
@@ -2815,6 +2922,44 @@ export default function OrdersPage() {
             handleMarkProforma(ord, waOpts)
           }}
         />
+      )}
+
+      {convertConfirm && (
+        <InvoiceConfirmModal
+          order={convertConfirm}
+          mode="convert"
+          onClose={function () { setConvertConfirm(null) }}
+          onConfirm={function (waOpts) {
+            const ord = convertConfirm
+            setConvertConfirm(null)
+            handleConvertProforma(ord, waOpts)
+          }}
+        />
+      )}
+
+      {deleteProformaOrder && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={function () { if (!deletingProforma) setDeleteProformaOrder(null) }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 28, maxWidth: 440, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}
+            onClick={function (e) { e.stopPropagation() }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 22 }}>🗑</span>
+              <div style={{ font: '700 16px "DM Sans",sans-serif', color: '#A32D2D' }}>Delete Proforma {deleteProformaOrder.proforma_no}?</div>
+            </div>
+            <p style={{ font: '400 13px "DM Sans",sans-serif', color: '#5C5A54', lineHeight: 1.6, marginBottom: 16 }}>
+              This <strong>permanently deletes</strong> order {deleteProformaOrder.order_ref} and its line items — no real invoice
+              number was ever consumed, so unlike Cancel there's nothing to preserve. This can't be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={function () { setDeleteProformaOrder(null) }} disabled={deletingProforma}
+                style={{ padding: '9px 20px', border: '1px solid #D0CEC6', borderRadius: 8, background: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', color: '#5C5A54' }}>Keep It</button>
+              <button onClick={handleDeleteProforma} disabled={deletingProforma}
+                style={{ padding: '9px 20px', border: 'none', borderRadius: 8, background: '#DC2626', color: '#fff', font: '600 13px "DM Sans",sans-serif', cursor: 'pointer', opacity: deletingProforma ? .7 : 1 }}>
+                {deletingProforma ? 'Deleting…' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {raiseCnOrder && (
