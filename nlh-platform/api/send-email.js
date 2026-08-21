@@ -365,8 +365,18 @@ function buildFranchiseeCert(fr, courseNames) {
     if (f.tier === 'CF')  return (f.city || '') + ' City Master Franchisee'
     return 'Unit Franchisee'
   }
+  // A school's authorization runs to the end of the current academic year
+  // (30 April), re-issued fresh each year it continues — not the multi-year
+  // franchise term every other tier gets (kept at +5y here, unchanged, to
+  // match this template's existing default for non-school tiers).
+  function schoolAcademicYearEnd() {
+    const now = new Date()
+    const aprilThisYear = new Date(now.getFullYear(), 3, 30)
+    return now <= aprilThisYear ? aprilThisYear : new Date(now.getFullYear() + 1, 3, 30)
+  }
   function mkValidTill(f) {
     if (f.valid_till) return dmyDate(f.valid_till)
+    if (f.tier === 'SCHOOL') return dmyDate(schoolAcademicYearEnd())
     const d = new Date(f.created_at || Date.now())
     d.setFullYear(d.getFullYear() + 5)
     return dmyDate(d)
@@ -375,26 +385,42 @@ function buildFranchiseeCert(fr, courseNames) {
     return [f.address, f.area, f.city, f.state,
       f.country && f.country !== 'India' ? f.country : null].filter(Boolean).join(', ')
   }
+  // "the X Program" / "the X & Y Programs" — matches the web preview and
+  // the printable certificate (franchise-cert.html) so all three agree.
+  function mkAuthorisationText(names) {
+    if (!names.length) return 'and is authorized to conduct programs at its school premises.'
+    const named = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1]
+    const word  = names.length === 1 ? 'Program' : 'Programs'
+    return 'and is authorized to conduct the ' + named + ' ' + word + ' at its school premises.'
+  }
 
   const label   = mkTierLabel(fr)
   const till    = mkValidTill(fr)
   const addr    = mkAddress(fr)
   const courses = courseNames.join(', ')
   const isSMF   = fr.tier === 'SMF'
+  const isSchool = fr.tier === 'SCHOOL'
   const loginUrl = BASE
 
   const certCard =
     '<table width="100%" cellpadding="0" cellspacing="0" style="border:2px solid #DDD9F9;border-radius:12px;background:#FAFAFA;margin:20px 0">' +
     '<tr><td style="padding:24px;text-align:center;font-family:Arial,sans-serif">' +
-    '<div style="font-size:13px;font-weight:900;letter-spacing:2px;color:#1A1916;margin-bottom:4px">FRANCHISE CERTIFICATE</div>' +
+    '<div style="font-size:13px;font-weight:900;letter-spacing:2px;color:#1A1916;margin-bottom:4px">' + (isSchool ? 'CERTIFICATE OF AUTHORISATION' : 'FRANCHISE CERTIFICATE') + '</div>' +
     '<div style="font-size:10px;color:#888;margin-bottom:12px">This is to Certify that</div>' +
-    '<div style="font-size:22px;font-weight:700;color:#CC0000;margin-bottom:' + (isSMF ? '2px' : '8px') + ';font-style:italic">' + name + '</div>' +
+    '<div style="font-size:22px;font-weight:700;color:#CC0000;margin-bottom:' + (isSMF ? '2px' : isSchool ? '4px' : '8px') + ';font-style:italic">' + name + '</div>' +
     (isSMF ? '<div style="font-size:14px;font-weight:700;color:#CC0000;margin-bottom:8px;font-style:italic">' + (fr.state || '') + '</div>' : '') +
-    '<div style="font-size:10px;color:#888;margin-bottom:2px">Is a Registered</div>' +
-    '<div style="font-size:12px;font-weight:700;color:#CC0000;margin-bottom:6px">' + label + ' of</div>' +
-    '<div style="font-size:13px;font-weight:700;color:#1A1916;margin-bottom:6px">New Learning Horizons at</div>' +
-    '<div style="font-size:10px;color:#555;margin-bottom:' + (courses ? '6px' : '0') + '">' + addr + '</div>' +
-    (courses ? '<div style="font-size:10px;color:#1A1916;line-height:1.5">for ' + courses + '</div>' : '') +
+    (isSchool ? '<div style="font-size:11px;color:#888;margin-bottom:8px">' + [fr.city, fr.state].filter(Boolean).join(', ') + '</div>' : '') +
+    (isSchool
+      ? '<div style="font-size:10px;color:#888;margin-bottom:2px">is an Authorized</div>' +
+        '<div style="font-size:12px;font-weight:700;color:#CC0000;margin-bottom:6px">Program Partner of</div>' +
+        '<div style="font-size:13px;font-weight:700;color:#1A1916;margin-bottom:6px">New Learning Horizons</div>' +
+        '<div style="font-size:10px;color:#1A1916;line-height:1.5">' + mkAuthorisationText(courseNames) + '</div>'
+      : '<div style="font-size:10px;color:#888;margin-bottom:2px">Is a Registered</div>' +
+        '<div style="font-size:12px;font-weight:700;color:#CC0000;margin-bottom:6px">' + label + ' of</div>' +
+        '<div style="font-size:13px;font-weight:700;color:#1A1916;margin-bottom:6px">New Learning Horizons at</div>' +
+        '<div style="font-size:10px;color:#555;margin-bottom:' + (courses ? '6px' : '0') + '">' + addr + '</div>' +
+        (courses ? '<div style="font-size:10px;color:#1A1916;line-height:1.5">for ' + courses + '</div>' : '')
+    ) +
     '<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;padding-top:10px;border-top:1px dashed #DDD9F9"><tr>' +
     '<td style="text-align:left;font-size:10px;color:#888"><div>Valid Till</div><div style="font-weight:700;color:#1A1916">' + till + '</div></td>' +
     '<td style="text-align:right;font-size:9px;color:#888;font-style:italic"><div>Dhiral Panchmatia</div><div>Director, NLH</div></td>' +
@@ -403,16 +429,23 @@ function buildFranchiseeCert(fr, courseNames) {
 
   const body =
     '<p>Dear ' + firstName + ',</p>' +
-    '<p style="margin:12px 0">Congratulations! Your franchise certificate from <strong>New Learning Horizons</strong> is ready. Log in to the NLH Platform to print or save a PDF copy.</p>' +
+    '<p style="margin:12px 0">' + (isSchool
+      ? 'Your <strong>Certificate of Authorisation</strong> from <strong>New Learning Horizons</strong> is ready. Log in to the NLH Platform to print or save a PDF copy.'
+      : 'Congratulations! Your franchise certificate from <strong>New Learning Horizons</strong> is ready. Log in to the NLH Platform to print or save a PDF copy.'
+    ) + '</p>' +
     certCard +
-    '<p style="font-size:12px;color:#555;margin:16px 0">To print your certificate, log in and open your franchise profile.</p>' +
+    '<p style="font-size:12px;color:#555;margin:16px 0">To print your certificate, log in and open your ' + (isSchool ? 'school' : 'franchise') + ' profile.</p>' +
     '<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
     '<a href="' + loginUrl + '" style="display:inline-block;background:#534AB7;color:#fff;text-decoration:none;font-size:13px;font-weight:700;padding:12px 28px;border-radius:8px">Log In to NLH Platform →</a>' +
     '</td></tr></table>'
 
   return {
-    subject: 'Your NLH Franchise Certificate — New Learning Horizons',
-    html: nlhTemplate('Your Franchise Certificate is Ready 🎉', body, 'Congratulations on joining the NLH family! We look forward to growing together.'),
+    subject: isSchool ? 'Your NLH Certificate of Authorisation — New Learning Horizons' : 'Your NLH Franchise Certificate — New Learning Horizons',
+    html: nlhTemplate(
+      isSchool ? 'Your Certificate of Authorisation is Ready 🎉' : 'Your Franchise Certificate is Ready 🎉',
+      body,
+      isSchool ? 'Thank you for partnering with NLH — we look forward to a great year together.' : 'Congratulations on joining the NLH family! We look forward to growing together.'
+    ),
   }
 }
 
