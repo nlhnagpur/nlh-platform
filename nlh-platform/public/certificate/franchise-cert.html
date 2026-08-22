@@ -96,13 +96,6 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
   padding: 12px 18px 16px; border-top: 1px solid var(--border); flex-shrink: 0;
   display: flex; flex-direction: column; gap: 7px;
 }
-.btn-print {
-  width: 100%; padding: 10px; background: var(--purple); color: #fff; border: none;
-  border-radius: 8px; font-family: var(--font); font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: background .1s; display: flex; align-items: center;
-  justify-content: center; gap: 7px;
-}
-.btn-print:hover { background: var(--purple2); }
 .btn-dl {
   width: 100%; padding: 9px; background: #fff; color: var(--purple);
   border: 1.5px solid var(--purple); border-radius: 8px;
@@ -111,7 +104,10 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
   justify-content: center; gap: 7px;
 }
 .btn-dl:hover { background: #EEEDFE; }
-.print-note { font-size: 10px; color: var(--text2); text-align: center; line-height: 1.4; }
+.btn-dl.btn-dl-primary {
+  background: var(--purple); color: #fff; border-color: var(--purple);
+}
+.btn-dl.btn-dl-primary:hover { background: var(--purple2); }
 
 /* ═══════════════════════════════════════
    Preview panel
@@ -385,16 +381,12 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
     </div>
 
     <div class="ffoot">
-      <button class="btn-print" onclick="window.print()">
-        🖨&nbsp; Print / Save as PDF
-      </button>
-      <button class="btn-dl" id="btn-download-pdf">
+      <button class="btn-dl btn-dl-primary" id="btn-download-pdf">
         ↓&nbsp; Download PDF
       </button>
       <button class="btn-dl" id="btn-download">
         ↓&nbsp; Download PNG
       </button>
-      <p class="print-note">Enable "Print backgrounds" in browser settings for best results.</p>
     </div>
   </aside>
 
@@ -703,6 +695,27 @@ function toast(msg) {
   toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
 }
 
+/* html-to-image's default font handling reads document.styleSheets to find
+   and inline the Google Fonts @font-face rules — but browsers refuse JS
+   read access to a cross-origin stylesheet's cssRules regardless of
+   crossorigin/CORS headers unless the response opts in in a way Google
+   Fonts doesn't, so that lookup throws (logged, harmless) and in some
+   browsers the whole render never settles. Fetching the font CSS text
+   ourselves and passing it via fontEmbedCSS sidesteps that lookup
+   entirely — this is fetched once and reused for every render. */
+var fontEmbedCSSPromise = fetch(
+  'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,900;1,9..40,400&family=DM+Mono:wght@400;500&display=swap'
+).then(function (r) { return r.text() }).catch(function () { return '' })
+
+function toPngWithTimeout(cert) {
+  return Promise.race([
+    fontEmbedCSSPromise.then(function (fontEmbedCSS) {
+      return htmlToImage.toPng(cert, { width: 1122, height: 794, pixelRatio: 2, cacheBust: true, fontEmbedCSS: fontEmbedCSS })
+    }),
+    new Promise(function (_, reject) { setTimeout(function () { reject(new Error('Rendering timed out')) }, 15000) }),
+  ])
+}
+
 /* ── Download PNG ─────────────────────────────────────── */
 document.getElementById('btn-download').addEventListener('click', async function () {
   const cert  = document.getElementById('certificate');
@@ -713,7 +726,7 @@ document.getElementById('btn-download').addEventListener('click', async function
   document.getElementById('certHolder').style.height = '794px';
   await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
   try {
-    const dataUrl = await htmlToImage.toPng(cert, { width: 1122, height: 794, pixelRatio: 2, cacheBust: true });
+    const dataUrl = await toPngWithTimeout(cert);
     const a = document.createElement('a');
     const safeName = (document.getElementById('fName').value || 'franchise')
       .replace(/[^a-z0-9 \-]/gi, '').trim().replace(/\s+/g, '-');
@@ -723,7 +736,7 @@ document.getElementById('btn-download').addEventListener('click', async function
     toast('Certificate saved as PNG ✓');
   } catch (err) {
     console.error(err);
-    toast('Download failed — use Print → Save as PDF instead');
+    toast('Download failed — please try again')
   } finally {
     outer.style.transform = prev;
     scaleCert();
@@ -742,7 +755,7 @@ document.getElementById('btn-download-pdf').addEventListener('click', async func
   document.getElementById('certHolder').style.height = '794px';
   await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
   try {
-    const dataUrl = await htmlToImage.toPng(cert, { width: 1122, height: 794, pixelRatio: 2, cacheBust: true });
+    const dataUrl = await toPngWithTimeout(cert);
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
     doc.addImage(dataUrl, 'PNG', 0, 0, 297, 210);
@@ -752,7 +765,7 @@ document.getElementById('btn-download-pdf').addEventListener('click', async func
     toast('Certificate saved as PDF ✓');
   } catch (err) {
     console.error(err);
-    toast('Download failed — use Print → Save as PDF instead');
+    toast('Download failed — please try again')
   } finally {
     outer.style.transform = prev;
     scaleCert();
