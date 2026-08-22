@@ -412,7 +412,7 @@ function buildFranchiseeCert(fr, courseNames) {
     '<div style="font-size:10px;color:#888;margin-bottom:12px">This is to Certify that</div>' +
     '<div style="font-size:22px;font-weight:700;color:#CC0000;margin-bottom:' + (isSMF ? '2px' : isSchool ? '4px' : '8px') + ';font-style:italic">' + name + '</div>' +
     (isSMF ? '<div style="font-size:14px;font-weight:700;color:#CC0000;margin-bottom:8px;font-style:italic">' + (fr.state || '') + '</div>' : '') +
-    (isSchool ? '<div style="font-size:11px;color:#888;margin-bottom:8px">' + [fr.city, fr.state].filter(Boolean).join(', ') + '</div>' : '') +
+    (isSchool ? '<div style="font-size:16px;font-weight:700;color:#1A1916;margin-bottom:8px">' + [fr.city, fr.state].filter(Boolean).join(', ') + '</div>' : '') +
     (isSchool
       ? '<div style="font-size:10px;color:#888;margin-bottom:2px">is an Authorized</div>' +
         '<div style="font-size:12px;font-weight:700;color:#CC0000;margin-bottom:6px">Program Partner of</div>' +

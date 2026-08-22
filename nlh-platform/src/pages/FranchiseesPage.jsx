@@ -1335,7 +1335,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     <div style={{ fontFamily: 'Georgia,serif', fontSize: 14, color: '#CC0000', marginBottom: 4 }}>{fr.state}</div>
                   )}
                   {isSchool && location && (
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{location}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1A1916', marginBottom: 4 }}>{location}</div>
                   )}
                   {isSchool ? (
                     <>

@@ -138,7 +138,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
                 </div>
               )}
               {isSchool && location && (
-                <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>{location}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1916', marginBottom: 3 }}>{location}</div>
               )}
 
               {isSchool ? (
