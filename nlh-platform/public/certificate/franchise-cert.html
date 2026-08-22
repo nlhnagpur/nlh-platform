@@ -291,6 +291,19 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
   @page { size: A4 landscape; margin: 0; }
   body * { visibility: hidden; }
   #certificate, #certificate * { visibility: visible; }
+  /* #certScaleOuter carries a JS-set `transform: scale(...)` for the
+     on-screen preview fit — a transformed ancestor becomes the containing
+     block for any `position: fixed` descendant, so without resetting it
+     here #certificate below prints positioned inside that tiny scaled box
+     instead of the page, i.e. blank. Reset every transformed/positioned
+     ancestor so #certificate's fixed positioning resolves against the
+     actual printed page. */
+  .app, .preview-panel, .cert-holder, #certScaleOuter {
+    position: static !important; transform: none !important;
+    width: auto !important; height: auto !important;
+    top: auto !important; left: auto !important;
+    overflow: visible !important; padding: 0 !important; margin: 0 !important;
+  }
   #certificate {
     position: fixed !important; top: 0 !important; left: 0 !important;
     width: 100% !important; height: 100% !important;
@@ -374,6 +387,9 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
     <div class="ffoot">
       <button class="btn-print" onclick="window.print()">
         🖨&nbsp; Print / Save as PDF
+      </button>
+      <button class="btn-dl" id="btn-download-pdf">
+        ↓&nbsp; Download PDF
       </button>
       <button class="btn-dl" id="btn-download">
         ↓&nbsp; Download PNG
@@ -466,6 +482,7 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
 <div class="toast" id="toast"><span id="toast-msg"></span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
 'use strict';
 
@@ -704,6 +721,35 @@ document.getElementById('btn-download').addEventListener('click', async function
     a.href = dataUrl;
     a.click();
     toast('Certificate saved as PNG ✓');
+  } catch (err) {
+    console.error(err);
+    toast('Download failed — use Print → Save as PDF instead');
+  } finally {
+    outer.style.transform = prev;
+    scaleCert();
+  }
+});
+
+/* ── Download PDF (real one-click file, no browser print dialog) ──────
+   Rasterises the certificate the same way the PNG button does, then
+   drops that image into a single-page A4-landscape jsPDF document. */
+document.getElementById('btn-download-pdf').addEventListener('click', async function () {
+  const cert  = document.getElementById('certificate');
+  const outer = document.getElementById('certScaleOuter');
+  const prev  = outer.style.transform;
+  outer.style.transform = 'scale(1)';
+  document.getElementById('certHolder').style.width  = '1122px';
+  document.getElementById('certHolder').style.height = '794px';
+  await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+  try {
+    const dataUrl = await htmlToImage.toPng(cert, { width: 1122, height: 794, pixelRatio: 2, cacheBust: true });
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+    doc.addImage(dataUrl, 'PNG', 0, 0, 297, 210);
+    const safeName = (document.getElementById('fName').value || 'franchise')
+      .replace(/[^a-z0-9 \-]/gi, '').trim().replace(/\s+/g, '-');
+    doc.save('NLH-Franchise-Certificate-' + safeName + '.pdf');
+    toast('Certificate saved as PDF ✓');
   } catch (err) {
     console.error(err);
     toast('Download failed — use Print → Save as PDF instead');
