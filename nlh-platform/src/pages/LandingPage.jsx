@@ -204,6 +204,7 @@ export default function LandingPage() {
                 src="/New Learning Horizons_GoogleQR & Social media.png"
                 alt="Find us on Google"
                 style={{width:130, borderRadius:8, boxShadow:'0 2px 8px rgba(0,0,0,0.15)'}}
+                onError={e => { e.target.style.display = 'none' }}
               />
             </div>
           </div>

@@ -2,6 +2,8 @@
 // GET  → Meta verification handshake
 // POST → Incoming messages + status updates
 
+import crypto from 'crypto'
+
 const SUPABASE_URL = 'https://frnnoxudtlvhyyoqdqzx.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybm5veHVkdGx2aHl5b3FkcXp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTY2NDUsImV4cCI6MjA5MjkzMjY0NX0.1OuqWuV-X09wEzWMp9_zjNRbWNDcSvR4TgYmu0373zE'
 
@@ -90,6 +92,32 @@ export default async function handler(req, res) {
 
   // ── POST: Incoming messages & status updates ─────────────────────────────────
   if (req.method === 'POST') {
+    // Meta signs every delivery with X-Hub-Signature-256 (HMAC-SHA256 of the
+    // raw body, keyed with the app secret). Without checking it, anyone who
+    // finds this URL can POST a fake "incoming message" payload — it would
+    // land straight in the admin WhatsApp inbox, and a spoofed msg.from
+    // would make autoReply() below send a real templated message to any
+    // number the attacker names, off NLH's business number. Only skips
+    // verification if the secret isn't configured yet, so this doesn't
+    // silently kill webhook delivery before the env var is set — check
+    // logs for the "signature verification skipped" warning and add
+    // WHATSAPP_APP_SECRET (Meta App → Settings → Basic → App Secret).
+    const appSecret = process.env.WHATSAPP_APP_SECRET
+    if (appSecret) {
+      const signature = req.headers['x-hub-signature-256'] || ''
+      const expected = 'sha256=' + crypto.createHmac('sha256', appSecret)
+        .update(JSON.stringify(req.body)).digest('hex')
+      const sigBuf = Buffer.from(signature)
+      const expBuf = Buffer.from(expected)
+      const valid = sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)
+      if (!valid) {
+        console.error('[wa-webhook] signature mismatch — rejecting')
+        return res.status(403).json({ error: 'Invalid signature' })
+      }
+    } else {
+      console.warn('[wa-webhook] WHATSAPP_APP_SECRET not set — signature verification skipped')
+    }
+
     try {
       const body = req.body
       const entry = body?.entry?.[0]
