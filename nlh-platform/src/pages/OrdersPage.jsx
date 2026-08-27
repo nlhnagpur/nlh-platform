@@ -1546,18 +1546,22 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     if (validLines.length === 0) { showToast('Add at least one SKU.'); return }
 
     setSaving(true)
-    const { data: refData } = await sb.rpc('next_order_ref')
-    const orderRef = refData || ('ORD-' + Date.now())
     const total = calcTotal()
     const discount = coupon ? Math.min(coupon.discount, total) : 0
 
     // Derive tier from loaded franchisees if not already set (e.g. admin didn't change selection)
     const resolvedTier = placerTier || (franchisees.find(function (f) { return f.id === fid })?.tier) || 'UF'
 
+    // order_ref is intentionally left unset here — trg_order_ref generates it
+    // atomically from order_seq on insert. This used to precompute it via the
+    // next_order_ref() RPC (a plain MAX(existing)+1 scan, not sequence-backed)
+    // and send it explicitly, which raced under concurrent submits: two
+    // inserts landing close together could both compute the same "next"
+    // number and the second would fail with a duplicate key error on
+    // orders_order_ref_key — reported live for Nexa Minds.
     const { data: orderData, error: orderErr } = await sb
       .from('orders')
       .insert({
-        order_ref: orderRef,
         placer_id: fid,
         placer_tier: resolvedTier,
         deliver_to: deliverTo.trim(),
@@ -1597,7 +1601,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
     if (itemsErr) {
       showToast('Order created but items failed: ' + itemsErr.message)
     } else {
-      showToast('Order placed: ' + orderRef)
+      showToast('Order placed: ' + orderData.order_ref)
       onSaved()
     }
     setSaving(false)
