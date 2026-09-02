@@ -2440,7 +2440,7 @@ export default function OrdersPage() {
               <thead>
                 <tr>
                   <th>Order Ref</th>
-                  <th className="hide-mobile">Invoice No</th>
+                  <th className="hide-mobile">Invoice / Proforma No</th>
                   {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && <th>Franchisee</th>}
                   <th className="hide-mobile">Date</th>
                   <th>Status</th>
@@ -2454,7 +2454,11 @@ export default function OrdersPage() {
                   return (
                     <tr key={order.id}>
                       <td className="mono" style={{ color: 'var(--purple)', fontWeight: 600 }}>{order.order_ref}</td>
-                      <td className="mono hide-mobile">{order.invoice_no || '—'}</td>
+                      <td className="mono hide-mobile">
+                        {order.invoice_no || (order.proforma_no
+                          ? <span style={{ color: 'var(--amber, #B45309)' }}>{order.proforma_no}</span>
+                          : '—')}
+                      </td>
                       {(isAdmin || currentRole === 'smf' || currentRole === 'cf') && (
                         <td>
                           {(() => {
