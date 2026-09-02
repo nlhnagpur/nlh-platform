@@ -398,7 +398,10 @@ export function printOrderReceipt(order, payment, ctx) {
   const total    = order.grand_total || 0
   const paid     = c.paidToDate != null ? c.paidToDate : (order.amount_paid || 0)
   const bal      = Math.max(0, total - paid)
-  const fr       = order.placer || {}
+  // bill_to_fr (a school, or any other bill_to_franchisee_id override) is who
+  // actually owes and pays this money — fall back to the placer only when
+  // there's no separate bill-to party. Same rule InvoiceView.jsx follows.
+  const fr       = order.bill_to_fr || order.placer || {}
   const againstT = order.invoice_no || order.order_ref || ''
 
   const body = `

@@ -117,6 +117,10 @@ function PaySubmitModal({ order, onClose, onSaved }) {
 // receipts, with no entry form — the only way into the history for an order
 // that is already closed.
 function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
+  // bill_to_fr (a school, or any other bill_to_franchisee_id override) is who
+  // actually owes and pays this money — every notification/receipt below
+  // must address them, not whichever CF/UF placed the order on their behalf.
+  const billFr = order.bill_to_fr || order.placer || {}
   const total = order.grand_total || 0
   const remaining = Math.max(0, total - (order.amount_paid || 0))
   const [amountPaid, setAmountPaid] = useState(remaining > 0 ? String(remaining) : '')
@@ -127,7 +131,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   )
   const [saving, setSaving]         = useState(false)
   const [sendWA,  setSendWA]        = useState(true)
-  const [waPhone, setWaPhone]       = useState(order.placer?.phone || '')
+  const [waPhone, setWaPhone]       = useState(billFr.phone || '')
   const [history, setHistory]       = useState([])
   const [waSendingId, setWaSendingId] = useState(null)
 
@@ -155,7 +159,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
 
   // Send (or re-send) one receipt on WhatsApp, with a PNG of the document.
   async function sendReceiptWA(p) {
-    const phone = waPhone || order.placer?.phone
+    const phone = waPhone || billFr.phone
     if (!phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
     setWaSendingId(p.id)
     try {
@@ -167,7 +171,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
       } catch (capErr) { /* falls back to the text receipt */ }
 
       const r = await sendWAPaymentReceived(phone, {
-        name:      order.placer?.business_name || 'Partner',
+        name:      billFr.business_name || 'Partner',
         amount:    fmtAmt(p.amount),
         balance:   fmtAmt(Math.max(0, total - asAt)),
         receiptNo: p.receipt_no || order.invoice_no || '—',
@@ -259,7 +263,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
 
         const r = await sendWAPaymentReceived(waPhone, {
           imageUrl:  imageUrl,
-          name:      order.placer?.business_name || 'Partner',
+          name:      billFr.business_name || 'Partner',
           amount:    fmtAmt(amt),
           balance:   fmtAmt(balanceAfter),
           // The receipt number, so it matches the printed receipt the
@@ -492,6 +496,9 @@ function saveCourier(name) {
 }
 
 function DispatchModal({ order, onClose, onSaved }) {
+  // bill_to_fr (a school, or any other bill_to_franchisee_id override) is who
+  // actually owes/receives this order — notify them, not just whoever placed it.
+  const billFr = order.bill_to_fr || order.placer || {}
   const today = new Date().toISOString().slice(0, 10)
   const [courier,  setCourier]  = useState(order.courier_partner  || '')
   const [awb,      setAwb]      = useState(order.awb_number       || '')
@@ -501,7 +508,7 @@ function DispatchModal({ order, onClose, onSaved }) {
   const [saved,    setSaved]    = useState(getSavedCouriers)
   const [saving,   setSaving]   = useState(false)
   const [sendWA,   setSendWA]   = useState(true)
-  const [waPhone,  setWaPhone]  = useState(order.placer?.phone || '')
+  const [waPhone,  setWaPhone]  = useState(billFr.phone || '')
 
   async function handleSave() {
     if (!awb.trim()) { showToast('Enter AWB / tracking number.', 'warn'); return }
@@ -525,7 +532,7 @@ function DispatchModal({ order, onClose, onSaved }) {
       if (sendWA && waPhone && awb.trim()) {
         try {
           const r = await sendWAOrderDispatched(waPhone, {
-            name:      order.placer?.business_name || 'Partner',
+            name:      billFr.business_name || 'Partner',
             invoiceNo: order.invoice_no || order.id,
             awb:       awb.trim(),
             courier:   courier.trim() || 'courier',
@@ -691,7 +698,7 @@ function InvoiceConfirmModal({ order, mode, onClose, onConfirm }) {
   const isProforma = mode === 'proforma'
   const isConvert  = mode === 'convert'
   const [sendWA, setSendWA] = useState(true)
-  const [waPhone, setWaPhone] = useState(order.placer?.phone || '')
+  const [waPhone, setWaPhone] = useState(order.bill_to_fr?.phone || order.placer?.phone || '')
   const billee = order.bill_to_fr?.business_name || order.placer?.business_name || 'the franchisee'
   const title = isProforma ? 'Generate Proforma' : isConvert ? 'Convert to Invoice' : 'Generate Invoice'
   return (
@@ -1925,8 +1932,9 @@ export default function OrdersPage() {
       // The invoice template carries an image header (a PNG of the invoice), so
       // the invoice has to be on screen to be captured. Open the invoice view —
       // its 💬 WhatsApp button does the capture, upload and send.
-      const wantWA = waOpts ? waOpts.sendWA : !!order.placer?.phone
-      const waPhone = waOpts ? waOpts.waPhone : (order.placer?.phone || '')
+      const billFrPhone = order.bill_to_fr?.phone || order.placer?.phone
+      const wantWA = waOpts ? waOpts.sendWA : !!billFrPhone
+      const waPhone = waOpts ? waOpts.waPhone : (billFrPhone || '')
       await loadOrders()
       if (wantWA && waPhone) {
         setInvoiceViewOrder({ ...order, invoice_no: invoiceNo, grand_total: grandTotal, status: 'invoiced' })
@@ -2071,8 +2079,9 @@ export default function OrdersPage() {
       } catch (emailErr) {
         console.warn('Invoice email failed:', emailErr.message)
       }
-      const wantWA = waOpts ? waOpts.sendWA : !!order.placer?.phone
-      const waPhone = waOpts ? waOpts.waPhone : (order.placer?.phone || '')
+      const billFrPhone = order.bill_to_fr?.phone || order.placer?.phone
+      const wantWA = waOpts ? waOpts.sendWA : !!billFrPhone
+      const waPhone = waOpts ? waOpts.waPhone : (billFrPhone || '')
       await loadOrders()
       if (wantWA && waPhone) {
         setInvoiceViewOrder({ ...order, invoice_no: invoiceNo, grand_total: grandTotal, status: 'invoiced' })
@@ -2133,8 +2142,8 @@ export default function OrdersPage() {
         description: 'Invoice ' + (order.invoice_no || order.order_ref),
         order_id:    data.rzpOrderId,
         prefill: {
-          name:  order.placer?.business_name || '',
-          email: order.placer?.email || '',
+          name:  order.bill_to_fr?.business_name || order.placer?.business_name || '',
+          email: order.bill_to_fr?.email || order.placer?.email || '',
         },
         theme: { color: '#534AB7' },
         handler: async function (response) {
