@@ -3620,7 +3620,12 @@ export default function StudentsPage() {
   }
 
   function handleAdded(st) {
-    setStudents(ss => [{ ...st, enrollments: [] }, ...ss])
+    // st already comes fully joined (franchisees + enrollments) from
+    // AddStudentModal's own post-save re-fetch — don't clobber that with a
+    // hardcoded empty array, or a student added with courses shows "No
+    // courses enrolled yet" / "No invoices yet" until the next page reload,
+    // even though the enrollment and invoice were created correctly.
+    setStudents(ss => [st, ...ss])
     setShowAdd(false)
   }
 
