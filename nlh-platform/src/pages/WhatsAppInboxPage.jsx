@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { sb } from '../supabase'
 import { showToast, fmtAmt, fmtDate } from '../utils'
 import { sendWAFeeReminder } from '../services/whatsapp'
+import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
 function timeAgo(ts) {
   const d = new Date(ts)
@@ -108,6 +109,7 @@ export default function WhatsAppInboxPage() {
   const [ctx, setCtx]           = useState(null)
   const [ctxLoading, setCtxLoad] = useState(false)
   const [ctxSending, setCtxSend] = useState(false)
+  const [waConfirm, setWaConfirm] = useState(null)
 
   useEffect(function () {
     const who = identify(selected)
@@ -140,7 +142,10 @@ export default function WhatsAppInboxPage() {
 
   // Send a balance reminder straight from the inbox. Reuses the approved
   // balance_reminder template (a template send — works outside the 24h window).
-  async function sendReminderFromInbox() {
+  // Goes through the WhatsAppSendConfirm modal (see waConfirm) first — even
+  // though this is already the number the admin is chatting with, a wrong
+  // number on file should still be catchable/fixable before it sends.
+  function openReminderConfirm() {
     if (!ctx) return
     let phone, name, bal, towards
     if (ctx.type === 'franchisee' && ctx.fr) {
@@ -156,13 +161,19 @@ export default function WhatsAppInboxPage() {
       towards = 'course fees for ' + (s.full_name || 'your child')
     } else { return }
     if (bal <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
-    setCtxSend(true)
-    try {
-      const r = await sendWAFeeReminder(phone, { name: name, balance: fmtAmt(bal), towards: towards })
-      if (r && r.success) { showToast('⏰ Balance reminder sent'); load() }
-      else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
-    } catch (e) { showToast('Reminder failed: ' + e.message, 'warn') }
-    setCtxSend(false)
+    setWaConfirm({
+      label: 'Send Balance Reminder',
+      phone: phone || '',
+      send: async function (toPhone) {
+        setCtxSend(true)
+        try {
+          const r = await sendWAFeeReminder(toPhone, { name: name, balance: fmtAmt(bal), towards: towards })
+          if (r && r.success) { showToast('⏰ Balance reminder sent'); load() }
+          else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+        } catch (e) { showToast('Reminder failed: ' + e.message, 'warn') }
+        setCtxSend(false)
+      },
+    })
   }
 
   useEffect(function () {
@@ -498,7 +509,7 @@ export default function WhatsAppInboxPage() {
                   </div>
                   {bal > 0 && (
                     <button className="btn-s" style={{ fontSize: 12, padding: '7px 10px' }}
-                      disabled={ctxSending} onClick={sendReminderFromInbox}>
+                      disabled={ctxSending} onClick={openReminderConfirm}>
                       {ctxSending ? 'Sending…' : '⏰ Send balance reminder'}
                     </button>
                   )}
@@ -576,7 +587,7 @@ export default function WhatsAppInboxPage() {
                   {/* Quick action — reuses the approved balance_reminder template */}
                   {bal > 0 && (
                     <button className="btn-s" style={{ fontSize: 12, padding: '7px 10px' }}
-                      disabled={ctxSending} onClick={sendReminderFromInbox}>
+                      disabled={ctxSending} onClick={openReminderConfirm}>
                       {ctxSending ? 'Sending…' : '⏰ Send balance reminder'}
                     </button>
                   )}
@@ -586,6 +597,7 @@ export default function WhatsAppInboxPage() {
           </div>
         )}
       </div>
+      {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
     </div>
   )
 }

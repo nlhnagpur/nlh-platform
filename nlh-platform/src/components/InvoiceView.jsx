@@ -4,6 +4,7 @@ import { fmtAmt, showToast } from '../utils'
 import { sendInvoiceEmail } from '../services/email'
 import { sendWAOrderInvoiced } from '../services/whatsapp'
 import { captureInvoicePng } from '../utils/captureInvoice'
+import WhatsAppSendConfirm from './WhatsAppSendConfirm'
 
 const CANCEL_ROLES = ['owner', 'super_admin', 'admin']
 const FR_FIELDS = 'id,business_name,tier,email,city,state,area,country,phone,address,parent_id,gstin'
@@ -81,6 +82,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const [loading,      setLoading]      = useState(true)
   const [sending,      setSending]      = useState(false)
   const [waSending,    setWaSending]    = useState(false)
+  const [waConfirm,    setWaConfirm]    = useState(null)
 
   // Edit — parties
   const [editBillToId,  setEditBillToId]  = useState(order.bill_to_franchisee_id || null)
@@ -381,15 +383,14 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   // Send this invoice to the franchisee on WhatsApp. The order_invoiced_v2
   // template has an image header, so we screenshot the rendered sheet, park the
   // PNG in the public chat-attachments bucket, and pass its URL as the header.
-  async function handleSendWhatsApp() {
-    // fr resolves to the school for a school order — the school is who
-    // should receive the invoice, not the CF who placed it on their behalf.
-    if (!fr.phone) { showToast('No phone number on file for ' + (school ? 'this school' : 'this franchisee'), 'warn'); return }
+  // Goes through WhatsAppSendConfirm first — see waConfirm below — so the
+  // number is always shown and editable before anything actually sends.
+  async function handleSendWhatsApp(phone) {
     setWaSending(true)
     try {
       const imageUrl = await captureInvoicePng(order.invoice_no)
       if (!imageUrl) { showToast('Could not prepare the invoice image', 'err'); setWaSending(false); return }
-      const r = await sendWAOrderInvoiced(fr.phone, {
+      const r = await sendWAOrderInvoiced(phone, {
         name:      fr.business_name || 'Partner',
         invoiceNo: order.invoice_no || order.order_ref || '',
         amount:    fmtAmt(liveGrandTotal),
@@ -462,13 +463,16 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           {sending?'Sending…':'📧 Email'}
         </button>
         <button onClick={handlePrint} style={{ ...tbBtn(false), background:'#534AB7', color:'#fff', border:'none' }}>🖨 PDF</button>
-        <button onClick={handleSendWhatsApp} disabled={waSending || !fr.phone}
-          title={fr.phone ? 'Send this invoice to the franchisee on WhatsApp' : 'No phone number on file'}
-          style={{ ...tbBtn(false), background:fr.phone?'#25D366':'#9C9A92', color:'#fff', border:'none', opacity:waSending?.7:1, cursor:fr.phone?'pointer':'not-allowed' }}>
+        <button onClick={function () { setWaConfirm({ label: 'Send Invoice on WhatsApp', phone: fr.phone || '', send: handleSendWhatsApp }) }}
+          disabled={waSending}
+          title="Send this invoice on WhatsApp"
+          style={{ ...tbBtn(false), background:'#25D366', color:'#fff', border:'none', opacity:waSending?.7:1, cursor:'pointer' }}>
           {waSending ? 'Sending…' : '💬 WhatsApp'}
         </button>
         <button onClick={onClose} style={tbBtn(false)}>← Back</button>
       </div>
+
+      {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
 
       {/* Cancel dialog */}
       {showCancelDlg && (

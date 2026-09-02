@@ -6,6 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { sendWelcomeEmail, sendFranchiseeWelcomeLetter, sendFranchiseeCertEmail } from '../services/email'
 import { sendWAPaymentReceived, sendWAFeeReminder } from '../services/whatsapp'
+import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice, printFranchiseeAgreement } from '../components/studentDocs'
@@ -386,6 +387,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [showPayModal, setShowPayModal] = useState(false)
   const [editPayId, setEditPayId] = useState(null)
   const [waSendingId, setWaSendingId] = useState(null)
+  const [waConfirm, setWaConfirm] = useState(null)
   const [editPay, setEditPay] = useState({ amount: '', payment_date: '', payment_mode: '', reference_no: '' })
   const [studentCount, setStudentCount] = useState(null)
   const [selectedStudent, setSelectedStudent] = useState(null)
@@ -465,8 +467,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   }
 
   // Send (or re-send) one receipt on WhatsApp, with a PNG of the document.
-  async function sendPaymentReceiptWA(p) {
-    if (!franchisee.phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+  // Goes through the WhatsAppSendConfirm modal (see waConfirm) first.
+  async function sendPaymentReceiptWA(p, phone) {
     setWaSendingId(p.id)
     try {
       const total = Number(form.enrollment_fee) || 0
@@ -477,7 +479,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         imageUrl = await captureDocPng(html, p.receipt_no || 'receipt')
       } catch (capErr) { /* falls back to the text receipt */ }
 
-      const r = await sendWAPaymentReceived(franchisee.phone, {
+      const r = await sendWAPaymentReceived(phone, {
         name:      franchisee.business_name || 'Partner',
         amount:    fmtAmt(p.amount),
         balance:   Math.max(0, total - asAt),
@@ -502,11 +504,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     showToast('Payment removed')
   }
 
-  async function sendFeeReminder() {
-    if (!franchisee.phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+  async function sendFeeReminder(phone) {
     const bal = (Number(form.enrollment_fee) || 0) - (Number(form.fee_paid) || 0)
     if (bal <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
-    const r = await sendWAFeeReminder(franchisee.phone, {
+    const r = await sendWAFeeReminder(phone, {
       name:    franchisee.business_name || 'Partner',
       balance: fmtAmt(bal),
       towards: 'your franchise enrolment fee',
@@ -902,7 +903,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </button>
                   {admin && balance > 0 && (
                     <>
-                      <button className="btn-s" onClick={sendFeeReminder} style={{ fontSize: 11 }} title="Send a WhatsApp fee reminder to the franchisee">
+                      <button className="btn-s" onClick={function () { setWaConfirm({ label: 'Send Fee Reminder', phone: franchisee.phone || '', send: sendFeeReminder }) }} style={{ fontSize: 11 }} title="Send a WhatsApp fee reminder to the franchisee">
                         💬 Send Reminder
                       </button>
                       <button className="btn-s" onClick={() => setShowPayModal(true)} style={{ fontSize: 11 }}>
@@ -989,7 +990,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                                 onClick={function () { printPaymentReceipt(p) }}>🧾 Receipt</button>
                               <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', color: 'var(--green,#1D7A4F)' }}
                                 title="Send this receipt on WhatsApp" disabled={waSendingId === p.id}
-                                onClick={function () { sendPaymentReceiptWA(p) }}>
+                                onClick={function () { setWaConfirm({ label: 'Send Payment Receipt', phone: franchisee.phone || '', send: function (phone) { return sendPaymentReceiptWA(p, phone) } }) }}>
                                 {waSendingId === p.id ? '…' : '💬'}</button>
                               <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} title="Edit date / method / amount"
                                 onClick={function () { startEditPay(p) }}>✎ Edit</button>
@@ -1565,6 +1566,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         onClose={function () { setShowPayModal(false) }}
       />
     )}
+
+    {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
     </>
   )
 }

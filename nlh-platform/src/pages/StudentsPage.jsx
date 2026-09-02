@@ -11,6 +11,7 @@ import { printStudentInvoice, printStudentReceipt } from '../components/studentD
 import { captureDocPng } from '../utils/captureReceipt'
 import ModalHeader from '../components/ModalHeader'
 import StudentCertModal from '../components/StudentCertModal'
+import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -157,6 +158,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
   const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
   const [remindSending,   setRemindSending]   = useState(false)
+  const [waConfirm,       setWaConfirm]       = useState(null)
   const [enrolWaSending,  setEnrolWaSending]  = useState(false)
   const [enrolWaPhone,    setEnrolWaPhone]    = useState(student.phone || '')
   // Only holds explicit overrides; anything absent falls back to "is this
@@ -373,10 +375,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }
   }
 
-  // ── Resend a receipt for a past payment ──
-  async function resendReceipt(p) {
-    const phone = receiptPhone || student.phone
-    if (!phone) { showToast('No parent phone on file', 'warn'); return }
+  // ── Resend a receipt for a past payment ── (goes through waConfirm first)
+  async function resendReceipt(p, phone) {
     const paidSoFar = payments.reduce(function (s, x) { return s + (x.amount || 0) }, 0)
     const bal = Math.max(0, (Number(form.fee_total) || 0) - paidSoFar)
     const r = await sendWAStudentReceipt(phone, {
@@ -467,10 +467,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setEnrolWaSending(false)
   }
 
-  // ── WhatsApp balance reminder to the parent ──
-  async function sendFeeReminderWA() {
-    const phone = receiptPhone || student.phone
-    if (!phone) { showToast('No parent phone on file', 'warn'); return }
+  // ── WhatsApp balance reminder to the parent ── (goes through waConfirm first)
+  async function sendFeeReminderWA(phone) {
     if (balance <= 0) { showToast('Nothing outstanding — no reminder needed', 'warn'); return }
     setRemindSending(true)
     const r = await sendWAFeeReminder(phone, {
@@ -1425,7 +1423,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 <div style={{ display: 'flex', gap: 6 }}>
                   {canManageFees && balance > 0 && (
                     <button className="btn-s" style={{ fontSize: 12, padding: '5px 12px' }}
-                      onClick={sendFeeReminderWA} disabled={remindSending}
+                      onClick={function () { setWaConfirm({ label: 'Send Balance Reminder', phone: receiptPhone || student.phone || '', send: sendFeeReminderWA }) }} disabled={remindSending}
                       title="Send a WhatsApp balance reminder to the parent">
                       {remindSending ? '…' : '⏰ Remind'}
                     </button>
@@ -1530,7 +1528,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           {canManageFees && (
                             <button className="btn-s" style={{ fontSize: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}
                               title="Resend WhatsApp receipt to parent"
-                              onClick={function () { resendReceipt(p) }}>
+                              onClick={function () { setWaConfirm({ label: 'Send Payment Receipt', phone: receiptPhone || student.phone || '', send: function (phone) { return resendReceipt(p, phone) } }) }}>
                               💬 Receipt
                             </button>
                           )}
@@ -2453,6 +2451,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             onClose={function () { setCertModal(null) }}
           />
         )}
+
+        {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
 
         {/* Course completion date modal */}
         {completingEnr && (

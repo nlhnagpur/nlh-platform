@@ -12,6 +12,7 @@ import { captureDocPng } from '../utils/captureReceipt'
 import InvoiceView from '../components/InvoiceView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
+import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
 // JSX badge components
 function StatusBadge({ status }) {
@@ -134,6 +135,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   const [waPhone, setWaPhone]       = useState(billFr.phone || '')
   const [history, setHistory]       = useState([])
   const [waSendingId, setWaSendingId] = useState(null)
+  const [waConfirm, setWaConfirm]   = useState(null)
 
   async function loadHistory() {
     const { data } = await sb.from('order_payments')
@@ -158,9 +160,8 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   }
 
   // Send (or re-send) one receipt on WhatsApp, with a PNG of the document.
-  async function sendReceiptWA(p) {
-    const phone = waPhone || billFr.phone
-    if (!phone) { showToast('No phone number on file for this franchisee', 'warn'); return }
+  // Goes through the WhatsAppSendConfirm modal (see waConfirm) first.
+  async function sendReceiptWA(p, phone) {
     setWaSendingId(p.id)
     try {
       const asAt = paidAsAt(p)
@@ -283,6 +284,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   }
 
   return (
+    <>
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
         <ModalHeader flush
@@ -440,7 +442,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
                       <button type="button" className="btn-s" title="Send this receipt on WhatsApp"
                         disabled={waSendingId === p.id}
                         style={{ fontSize:11, padding:'2px 8px', color:'var(--green,#1D7A4F)' }}
-                        onClick={function () { sendReceiptWA(p) }}>
+                        onClick={function () { setWaConfirm({ label: 'Send Payment Receipt', phone: waPhone || billFr.phone || '', send: function (phone) { return sendReceiptWA(p, phone) } }) }}>
                         {waSendingId === p.id ? 'Sending…' : '💬 WhatsApp'}
                       </button>
                       <button type="button" className="btn-s" title="Remove this payment"
@@ -477,6 +479,8 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
         </div>
       </div>
     </div>
+    {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
+    </>
   )
 }
 
