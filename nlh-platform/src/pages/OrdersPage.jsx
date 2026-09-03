@@ -593,9 +593,68 @@ function DispatchModal({ order, onClose, onSaved }) {
   const [saving,   setSaving]   = useState(false)
   const [sendWA,   setSendWA]   = useState(true)
   const [waPhone,  setWaPhone]  = useState(billFr.phone || '')
+  const [stockWarning, setStockWarning] = useState(null)   // [{ name, current, after }] or null
+  const [checkingStock, setCheckingStock] = useState(false)
+
+  // Same BOM-expansion this order's dispatch will actually deduct (see the
+  // stock_ledger insert further below) — run ahead of time so a dispatch
+  // that would take an item negative can be flagged before it happens,
+  // rather than silently landing at a negative balance nobody notices.
+  async function projectStockDeduction() {
+    const { data: oitems } = await sb.from('order_items')
+      .select('sku_id, item_id, ordered_qty, sent_qty, excluded_kit_items').eq('order_id', order.id)
+    const skuIds = (oitems || []).map(function (o) { return o.sku_id }).filter(Boolean)
+    const kitsRes = skuIds.length ? await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds) : { data: [] }
+    const kits = kitsRes.data || []
+    const need = {}   // item_id -> qty needed
+    ;(oitems || []).forEach(function (o) {
+      const units = (o.sent_qty && o.sent_qty > 0) ? o.sent_qty : (o.ordered_qty || 0)
+      if (o.item_id) {
+        if (units > 0) need[o.item_id] = (need[o.item_id] || 0) + units
+      } else {
+        const excluded = o.excluded_kit_items || []
+        kits.filter(function (k) { return k.sku_id === o.sku_id && !excluded.includes(k.item_id) }).forEach(function (k) {
+          const qn = units * Number(k.quantity || 1)
+          if (qn > 0) need[k.item_id] = (need[k.item_id] || 0) + qn
+        })
+      }
+    })
+    const itemIds = Object.keys(need)
+    if (!itemIds.length) return []
+    const [{ data: items }, { data: moves }] = await Promise.all([
+      sb.from('inventory_items').select('id, name').in('id', itemIds),
+      sb.from('stock_ledger').select('item_id, qty').eq('location_type', 'ho').in('item_id', itemIds),
+    ])
+    const currentById = {}
+    ;(moves || []).forEach(function (m) { currentById[m.item_id] = (currentById[m.item_id] || 0) + (m.qty || 0) })
+    const nameById = {}
+    ;(items || []).forEach(function (i) { nameById[i.id] = i.name })
+    return itemIds
+      .map(function (id) {
+        const current = currentById[id] || 0
+        const after = current - need[id]
+        return { name: nameById[id] || id, current: current, after: after }
+      })
+      .filter(function (r) { return r.after < 0 })
+  }
 
   async function handleSave() {
     if (!awb.trim()) { showToast('Enter AWB / tracking number.', 'warn'); return }
+    if (!stockWarning) {
+      setCheckingStock(true)
+      try {
+        const negatives = await projectStockDeduction()
+        setCheckingStock(false)
+        if (negatives.length) { setStockWarning(negatives); return }
+      } catch (e) {
+        setCheckingStock(false)
+        console.warn('Stock projection check failed, proceeding without it:', e.message)
+      }
+    }
+    doSave()
+  }
+
+  async function doSave() {
     setSaving(true)
     const { error } = await sb
       .from('orders')
@@ -766,12 +825,32 @@ function DispatchModal({ order, onClose, onSaved }) {
                 placeholder="Franchisee WhatsApp number" style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
             )}
           </div>
+
+          {stockWarning && (
+            <div style={{ gridColumn: '1 / -1', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
+              <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 4 }}>⚠ This will take HO stock negative</div>
+              {stockWarning.map(function (r) {
+                return (
+                  <div key={r.name} style={{ color: '#92400e' }}>
+                    {r.name}: {r.current} → <strong>{r.after}</strong>
+                  </div>
+                )
+              })}
+              <div style={{ color: '#92400e', marginTop: 4 }}>You can dispatch anyway, or cancel and top up stock first.</div>
+            </div>
+          )}
         </div>
         <div className="modal-actions">
           <button className="btn-s" onClick={onClose}>Cancel</button>
-          <button className="btn-p" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Mark Dispatched'}
-          </button>
+          {stockWarning ? (
+            <button className="btn-p" style={{ background: '#D97706' }} onClick={doSave} disabled={saving}>
+              {saving ? 'Saving…' : 'Dispatch Anyway'}
+            </button>
+          ) : (
+            <button className="btn-p" onClick={handleSave} disabled={saving || checkingStock}>
+              {checkingStock ? 'Checking stock…' : saving ? 'Saving…' : 'Mark Dispatched'}
+            </button>
+          )}
         </div>
       </div>
     </div>
