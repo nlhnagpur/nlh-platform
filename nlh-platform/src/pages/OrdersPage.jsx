@@ -46,7 +46,7 @@ async function mirrorOrderToTransactions(orderId) {
       courier_charges: o.courier_charges, deliver_to: o.deliver_to, ship_to: o.ship_to,
       ship_to_franchisee_id: o.ship_to_franchisee_id, dispatch_date: o.dispatch_date,
       dispatch_weight: o.dispatch_weight, dispatch_freight: o.dispatch_freight,
-      dispatched_at: o.dispatched_at, invoice_url: o.invoice_url,
+      dispatched_at: o.dispatched_at, invoice_url: o.invoice_url, invoiced_at: o.invoiced_at,
       invoice_cancelled_at: o.invoice_cancelled_at, invoice_cancelled_by: o.invoice_cancelled_by,
       last_reminded_at: o.last_reminded_at, reminder_count: o.reminder_count,
       supplier: o.supplier, bill_to_name: o.bill_to_name,
@@ -2586,7 +2586,7 @@ export default function OrdersPage() {
                           })()}
                         </td>
                       )}
-                      <td className="mono hide-mobile">{fmtDate(order.created_at)}</td>
+                      <td className="mono hide-mobile">{fmtDate(order.invoiced_at || order.created_at)}</td>
                       <td><StatusBadge status={order.status} /></td>
                       <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(order.grand_total || 0)}</div></td>
                       {/* What's still owed — the figure that actually needs chasing.
