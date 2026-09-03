@@ -177,7 +177,15 @@ Verified end-to-end live: recorded a real ₹1 test payment against Shirin Tuiti
 
 Verified live: recorded a real ₹1 test payment against ORD-2026-0018 (Angels' Park School) — old side went 12,500→12,501/28,200, new side matched exactly (12,501/28,200, `part_paid`), then deleted the test payment from both tables and confirmed a clean revert to 12,500/28,200 on both sides.
 
-**Still to do:** `course_fee` (Students — the per-student-not-per-invoice pooling from Phase 2). Same pattern next.
+**course_fee (done, verified live) — Phase 3 is now complete for all three types.** `StudentsPage.jsx` gained `mirrorStudentToTransaction(studentId)` (find-or-create by `person_id`, same as franchise_fee — course_fee has no natural 1:1 source id since it's pooled per student, not per invoice) and `mirrorStudentPayment`. Wired into every place `students`'/`student_invoices` financial fields or `student_payments` change: student creation, main profile save, discount apply, add-course (fee + new invoice), discontinue/restore course, close/reopen account, other-charges edit, record/delete payment, and student delete (removes the mirrored transaction too). 12 call sites, same best-effort try/catch discipline as the other two types.
+
+Verified live: recorded a real ₹1 test payment against Aarav Domle (fee_paid 4,000→4,001 via the existing `student_payments`→`students.fee_paid` trigger), confirmed the new side matched exactly (10,600/4,001, `part_paid` — correctly mapped from the old schema's `partial`), then deleted the test payment from both tables and confirmed a clean revert to 4,000/10,600 on both sides.
+
+## Phase 3 complete — where things stand
+
+All three transaction types (`kit_order`, `course_fee`, `franchise_fee`) now dual-write on every create/update/delete path, each verified live with a real test row and a clean revert. `commission_payout` has no write path yet (0 rows, feature not built) — nothing to dual-write there.
+
+Nothing downstream reads the new tables yet — every screen in the app still runs entirely on the six original tables, so all of Phase 3 remains fully reversible: if anything's ever found wrong with the mirror logic, the fix is confined to `mirrorOrderToTransactions`/`mirrorStudentToTransaction`/the franchise_fee payment block, never to the real data path. Phase 4 (cutting reads over, one screen at a time, behind the unified Ledger UI from the original blueprint) is next whenever you want it — that's the phase where the new tables start actually being *used*, not just kept in sync.
 
 ## What I need from you to proceed
 

@@ -13,6 +13,80 @@ import ModalHeader from '../components/ModalHeader'
 import StudentCertModal from '../components/StudentCertModal'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
+// ── Phase 3 dual-write (see docs/transaction-model-migration-plan.md) ──────
+// course_fee is pooled per STUDENT, not per invoice (settled in Phase 2 —
+// the app already tracks one running fee_total/fee_paid on the students
+// row, with payments recorded against the student, not any one invoice).
+// So unlike kit_order (which reuses orders.id 1:1), there's no natural
+// source id to key the transactions row on — find-or-create by
+// (type='course_fee', person_id), same as the franchise_fee pattern.
+// Full resync on every call: re-reads the student + all their
+// student_invoices fresh and upserts transactions/transaction_items to
+// match. Best-effort — every call site wraps this in try/catch and only
+// logs a warning; students/student_invoices/student_payments remain the
+// source of truth every screen actually reads.
+async function mirrorStudentToTransaction(studentId) {
+  const { data: s } = await sb.from('students')
+    .select('id, franchisee_id, fee_total, discount_amount, coupon_id, coupon_code, payment_status, created_at')
+    .eq('id', studentId).single()
+  if (!s) return null
+
+  const { data: invoices } = await sb.from('student_invoices')
+    .select('id, invoice_no, subtotal, items, created_at').eq('student_id', studentId).order('created_at')
+
+  const subtotalSum = (invoices || []).reduce(function (sum, inv) { return sum + (inv.subtotal || 0) }, 0)
+  const invoiceNos = (invoices || []).map(function (inv) { return inv.invoice_no }).filter(Boolean)
+  const invoiceIds = (invoices || []).map(function (inv) { return inv.id })
+  const statusMap = { paid: 'paid', partial: 'part_paid' }
+
+  const { data: existing } = await sb.from('transactions')
+    .select('id').eq('type', 'course_fee').eq('person_id', studentId).maybeSingle()
+
+  const txRow = {
+    type: 'course_fee', party_id: s.franchisee_id, person_id: studentId,
+    status: statusMap[s.payment_status] || 'confirmed',
+    subtotal: subtotalSum, discount_amount: s.discount_amount || 0,
+    coupon_id: s.coupon_id, coupon_code: s.coupon_code, total: s.fee_total || 0,
+    metadata: invoiceNos.length ? { invoice_nos: invoiceNos, invoice_ids: invoiceIds } : {},
+  }
+
+  let txId = existing?.id
+  if (txId) {
+    await sb.from('transactions').update(txRow).eq('id', txId)
+  } else {
+    const { data: created } = await sb.from('transactions')
+      .insert({ ...txRow, created_at: s.created_at }).select('id').single()
+    txId = created?.id
+  }
+  if (!txId) return null
+
+  await sb.from('transaction_items').delete().eq('transaction_id', txId)
+  const itemRows = []
+  ;(invoices || []).forEach(function (inv) {
+    (inv.items || []).forEach(function (li) {
+      itemRows.push({
+        transaction_id: txId,
+        sku_id: li.sku_id || null, item_id: li.item_id || null, enrollment_id: li.enrollment_id || null,
+        name: li.name || null, qty: li.qty ?? 1, rate: li.rate ?? 0, amount: li.amount ?? 0,
+      })
+    })
+  })
+  if (itemRows.length) await sb.from('transaction_items').insert(itemRows)
+  return txId
+}
+
+// Mirrors one student_payments row into transaction_payments, ensuring the
+// parent transactions row exists first.
+async function mirrorStudentPayment(studentId, payment) {
+  const txId = await mirrorStudentToTransaction(studentId)
+  if (!txId) return
+  await sb.from('transaction_payments').insert({
+    transaction_id: txId, amount: payment.amount, paid_on: payment.paid_on,
+    mode: payment.mode, reference: payment.reference, note: payment.note,
+    recorded_by: payment.recorded_by, receipt_no: payment.receipt_no,
+  })
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────────
 
 // Days remaining in the current calendar month (today = the last day → 0)
@@ -271,6 +345,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const { error } = await sb.from('students').update(payload).eq('id', student.id)
     if (error) { setSaving(false); showToast('Save failed: ' + error.message, 'err'); return }
 
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] student save mirror failed:', e.message) }
+
     // Sync batch joining date to match updated registration date
     if (form.registered_at && form.registered_at !== student.registered_at) {
       const enrIds = (student.enrollments || []).map(function (e) { return e.id })
@@ -333,6 +409,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }).select('id, amount, mode, reference, paid_at, note, receipt_no').single()
     setPaySaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    try {
+      await mirrorStudentPayment(student.id, {
+        amount: amt, paid_on: payForm.paid_at || new Date().toISOString().slice(0, 10),
+        mode: payForm.mode || null, reference: payForm.reference.trim() || null,
+        note: null, recorded_by: null, receipt_no: data && data.receipt_no,
+      })
+    } catch (e) { console.warn('[Phase 3 dual-write] student payment mirror failed:', e.message) }
     const next = [data, ...payments]
     setPayments(next)
     applyPaid(next)
@@ -429,6 +512,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 payment_status: deriveStatus(newTotal, Number(form.fee_paid) || 0) })
       .eq('id', student.id)
     if (error) { showToast('Could not save: ' + error.message, 'err'); return }
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] other-charges mirror failed:', e.message) }
     setForm(function (f) { return { ...f, other_charges: val, fee_total: newTotal } })
     setOtherEdit(false)
     onSaved({ ...student, other_charges: val, fee_total: newTotal })
@@ -544,8 +628,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   }
 
   async function deletePayment(id) {
+    const deleted = payments.find(function (p) { return p.id === id })
     const { error } = await sb.from('student_payments').delete().eq('id', id)
     if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    if (deleted && deleted.receipt_no) {
+      try {
+        const { data: tx } = await sb.from('transactions').select('id').eq('type', 'course_fee').eq('person_id', student.id).maybeSingle()
+        if (tx) await sb.from('transaction_payments').delete().eq('transaction_id', tx.id).eq('receipt_no', deleted.receipt_no)
+      } catch (e) { console.warn('[Phase 3 dual-write] student payment delete mirror failed:', e.message) }
+    }
     const next = payments.filter(function (p) { return p.id !== id })
     setPayments(next)
     applyPaid(next)
@@ -902,6 +993,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       payment_status: deriveStatus(newTotal, form.fee_paid),
     }).eq('id', student.id)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] discount mirror failed:', e.message) }
     // Coupon is applied to the fee but NOT locked yet — it redeems only when the
     // first fee payment is received (see recordPayment).
     setForm(function (f) { return { ...f, fee_total: newTotal } })
@@ -1054,6 +1146,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       if (!stkErr) setKitIssued(function (prev) { const n = { ...prev }; added.forEach(function (e) { n[e.id] = true }); return n })
     }
     if (newInv) showToast('🧾 Invoice ' + (newInv.invoice_no || '') + ' generated')
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] add-course mirror failed:', e.message) }
 
     // 4) Reflect batch assignments for the new courses immediately
     const newEnrIds = added.map(function (e) { return e.id })
@@ -1119,6 +1212,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }).eq('id', student.id)
     setCourseBusy(null)
     if (error) { showToast('Could not discontinue: ' + error.message, 'err'); return }
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] discontinue mirror failed:', e.message) }
     const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'dropped', fee_amount: newFee, waived: newWaived } : e })
     setLocalEnrollments(next)
     setForm(function (f) { return { ...f, fee_total: newTotal, waived_amount: (Number(f.waived_amount) || 0) + due } })
@@ -1141,6 +1235,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }).eq('id', student.id)
     setCourseBusy(null)
     if (error) { showToast('Could not restore: ' + error.message, 'err'); return }
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] restore-course mirror failed:', e.message) }
     const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, status: 'active', fee_amount: newFee, waived: 0 } : e })
     setLocalEnrollments(next)
     setForm(function (f) { return { ...f, fee_total: newTotal, waived_amount: Math.max(0, (Number(f.waived_amount) || 0) - back) } })
@@ -1186,6 +1281,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }).eq('id', student.id)
     setClosing(false)
     if (error) { showToast('Could not close the account: ' + error.message, 'err'); return }
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] close-account mirror failed:', e.message) }
 
     setLocalEnrollments(localEnrollments.map(function (e) { return nextById[e.id] || e }))
     setForm(function (f) { return { ...f, is_active: false, fee_total: newTotal, waived_amount: newWA, payment_status: status } })
@@ -1215,6 +1311,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     }).eq('id', student.id)
     setClosing(false)
     if (error) { showToast('Could not reopen: ' + error.message, 'err'); return }
+    try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] reopen-account mirror failed:', e.message) }
     setLocalEnrollments(localEnrollments.map(function (e) { return nextById[e.id] || e }))
     setForm(function (f) { return { ...f, is_active: true, fee_total: newTotal, waived_amount: 0, payment_status: status } })
     showToast('Account reopened')
@@ -1243,6 +1340,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const { error } = await sb.from('students').delete().eq('id', student.id)
     setDeleting(false)
     if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    try { await sb.from('transactions').delete().eq('type', 'course_fee').eq('person_id', student.id) } catch (e) { console.warn('[Phase 3 dual-write] student delete mirror failed:', e.message) }
     showToast(student.full_name + ' deleted')
     onSaved(null)   // null signals deletion to parent
     onClose()
@@ -3020,6 +3118,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           showToast('Student added · WhatsApp confirmation failed: ' + waErr.message, 'warn')
         }
       }
+      try { await mirrorStudentToTransaction(st.id) } catch (e) { console.warn('[Phase 3 dual-write] student create mirror failed:', e.message) }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
         .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
