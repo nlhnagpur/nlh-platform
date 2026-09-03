@@ -14,6 +14,74 @@ import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
+// ── Phase 3 dual-write (see docs/transaction-model-migration-plan.md) ──────
+// Mirrors an order into transactions/transaction_items, keyed on the SAME id
+// (matching the Phase 2 backfill convention). Full resync rather than a
+// delta patch — order/order_item volumes are tiny, and a full resync can't
+// drift out of sync the way a hand-maintained delta could. orders/
+// order_items/order_payments remain the source of truth every screen
+// actually reads; this is purely additive and best-effort — a failure here
+// must never surface as a failed order action, so every call site wraps
+// this in its own try/catch and only logs a warning.
+async function mirrorOrderToTransactions(orderId) {
+  const { data: o } = await sb.from('orders').select('*').eq('id', orderId).single()
+  if (!o) return
+  const statusMap = {
+    pending: 'draft', proforma: 'draft', invoiced: 'confirmed',
+    payment_submitted: 'confirmed', part_paid: 'part_paid', closed: 'paid',
+  }
+  const txRow = {
+    id: o.id, type: 'kit_order',
+    party_id: o.bill_to_franchisee_id || o.placer_id, bill_to_party_id: o.bill_to_franchisee_id,
+    placer_id: o.placer_id, placer_tier: o.placer_tier,
+    status: statusMap[o.status] || 'draft',
+    subtotal: o.subtotal || 0, discount_amount: o.discount_amount || 0,
+    coupon_id: o.coupon_id, coupon_code: o.coupon_code,
+    tax_amount: o.gst_amount || 0, total: o.grand_total || 0, amount_paid: o.amount_paid || 0,
+    document_type: o.invoice_no ? 'invoice' : o.proforma_no ? 'proforma' : null,
+    document_no: o.invoice_no || o.proforma_no || null,
+    paid_at: o.paid_at, payment_verified_at: o.payment_verified_at, payment_submitted_at: o.payment_submitted_at,
+    metadata: {
+      order_ref: o.order_ref, courier_partner: o.courier_partner, awb_number: o.awb_number,
+      courier_charges: o.courier_charges, deliver_to: o.deliver_to, ship_to: o.ship_to,
+      ship_to_franchisee_id: o.ship_to_franchisee_id, dispatch_date: o.dispatch_date,
+      dispatch_weight: o.dispatch_weight, dispatch_freight: o.dispatch_freight,
+      dispatched_at: o.dispatched_at, invoice_url: o.invoice_url,
+      invoice_cancelled_at: o.invoice_cancelled_at, invoice_cancelled_by: o.invoice_cancelled_by,
+      last_reminded_at: o.last_reminded_at, reminder_count: o.reminder_count,
+      supplier: o.supplier, bill_to_name: o.bill_to_name,
+    },
+    notes: o.notes,
+  }
+  await sb.from('transactions').upsert(txRow, { onConflict: 'id' })
+
+  const { data: items } = await sb.from('order_items').select('*').eq('order_id', orderId)
+  await sb.from('transaction_items').delete().eq('transaction_id', orderId)
+  if (items?.length) {
+    await sb.from('transaction_items').insert(items.map(function (i) {
+      return {
+        transaction_id: orderId, sku_id: i.sku_id, item_id: i.item_id,
+        qty: i.ordered_qty, sent_qty: i.sent_qty, rate: i.rate,
+        amount: i.line_total ?? (i.rate * i.ordered_qty),
+        excluded_kit_items: i.excluded_kit_items, cf_commission_rate: i.cf_commission_rate,
+      }
+    }))
+  }
+}
+
+// Mirrors one order_payments row into transaction_payments, ensuring the
+// parent transactions row exists first (an order created before this dual
+// write shipped won't have one yet — self-heals on its first payment, same
+// pattern as the franchise_fee mirror).
+async function mirrorOrderPayment(orderId, payment) {
+  await mirrorOrderToTransactions(orderId)
+  await sb.from('transaction_payments').insert({
+    transaction_id: orderId, amount: payment.amount, paid_on: payment.paid_on,
+    mode: payment.mode, reference: payment.reference, note: payment.note,
+    recorded_by: payment.recorded_by, receipt_no: payment.receipt_no,
+  })
+}
+
 // JSX badge components
 function StatusBadge({ status }) {
   const map = {
@@ -193,6 +261,10 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
     if (!window.confirm(`Remove the ₹${fmtAmt(p.amount)} payment dated ${fmtDate(p.paid_on)}?\n\nThe order total will be recalculated.`)) return
     const { error } = await sb.from('order_payments').delete().eq('id', p.id)
     if (error) { showToast('Could not remove it: ' + error.message, 'err'); return }
+    if (p.receipt_no) {
+      try { await sb.from('transaction_payments').delete().eq('transaction_id', order.id).eq('receipt_no', p.receipt_no) }
+      catch (e) { console.warn('[Phase 3 dual-write] payment delete mirror failed:', e.message) }
+    }
     showToast('Payment removed — order total recalculated.')
     await loadHistory()
     onSaved()
@@ -243,6 +315,14 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
       setSaving(false)
       return
     }
+
+    try {
+      await mirrorOrderPayment(order.id, {
+        amount: amt, paid_on: paidOn || new Date().toISOString().slice(0, 10),
+        mode: mode, reference: ref.trim() || null, note: null,
+        recorded_by: null, receipt_no: inserted && inserted.receipt_no,
+      })
+    } catch (e) { console.warn('[Phase 3 dual-write] order payment mirror failed:', e.message) }
 
     showToast(isFull ? '✓ Full payment recorded — order closed.' : `Part payment of ₹${fmtAmt(amt)} recorded.`)
 
@@ -531,6 +611,7 @@ function DispatchModal({ order, onClose, onSaved }) {
     if (error) {
       showToast('Failed to update dispatch: ' + error.message)
     } else {
+      try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] dispatch mirror failed:', e.message) }
       if (courier.trim()) { saveCourier(courier.trim()); setSaved(getSavedCouriers()) }
       showToast('Dispatched!')
       if (sendWA && waPhone && awb.trim()) {
@@ -1093,6 +1174,8 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       })
     }
 
+    try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] order edit mirror failed:', e.message) }
+
     showToast(order.invoice_no ? 'Invoice updated.' : order.proforma_no ? 'Proforma updated.' : 'Order updated.')
     onSaved()
     setSaving(false)
@@ -1613,6 +1696,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
       showToast('Order created but items failed: ' + itemsErr.message)
     } else {
       showToast('Order placed: ' + orderData.order_ref)
+      try { await mirrorOrderToTransactions(orderData.id) } catch (e) { console.warn('[Phase 3 dual-write] order create mirror failed:', e.message) }
       onSaved()
     }
     setSaving(false)
@@ -1927,6 +2011,7 @@ export default function OrdersPage() {
         .from('orders').select('invoice_no').eq('id', order.id).single()
       const invoiceNo = refreshed?.invoice_no || ''
       showToast('Invoiced as ' + invoiceNo)
+      try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] invoice mirror failed:', e.message) }
       try {
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
         await sendInvoiceEmail(invoicedOrder)
@@ -1986,6 +2071,7 @@ export default function OrdersPage() {
       const { data: refreshed } = await sb
         .from('orders').select('proforma_no').eq('id', order.id).single()
       showToast('Proforma generated: ' + (refreshed?.proforma_no || ''))
+      try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] proforma mirror failed:', e.message) }
       await loadOrders()
       // Deliberately no auto-email/WA-send of the proforma itself yet (unlike
       // the real invoice) — admin shares it manually via the PDF/print view
@@ -2016,6 +2102,7 @@ export default function OrdersPage() {
       showToast('Failed to verify payment: ' + error.message)
     } else {
       showToast('Payment verified. Order closed.')
+      try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] verify-payment mirror failed:', e.message) }
       try {
         await sendPaymentVerified(order)
       } catch (_) { /* non-fatal */ }
@@ -2034,6 +2121,7 @@ export default function OrdersPage() {
       showToast('Failed to reopen order: ' + error.message)
     } else {
       showToast('Order reopened to invoiced.')
+      try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] reopen mirror failed:', e.message) }
       await loadOrders()
     }
     setActionLoading(null)
@@ -2078,6 +2166,7 @@ export default function OrdersPage() {
       const { data: refreshed } = await sb.from('orders').select('invoice_no').eq('id', order.id).single()
       const invoiceNo = refreshed?.invoice_no || ''
       showToast('Converted to Invoice ' + invoiceNo)
+      try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] convert-proforma mirror failed:', e.message) }
       try {
         await sendInvoiceEmail({ ...order, invoice_no: invoiceNo })
       } catch (emailErr) {
@@ -2118,6 +2207,7 @@ export default function OrdersPage() {
     const { error } = await sb.from('orders').delete().eq('id', deleteProformaOrder.id)
     setDeletingProforma(false)
     if (error) { showToast('Failed to delete proforma: ' + error.message, 'err'); return }
+    try { await sb.from('transactions').delete().eq('id', deleteProformaOrder.id) } catch (e) { console.warn('[Phase 3 dual-write] proforma delete mirror failed:', e.message) }
     showToast('Proforma ' + (deleteProformaOrder.proforma_no || deleteProformaOrder.order_ref) + ' deleted')
     setDeleteProformaOrder(null)
     await loadOrders()
@@ -2222,6 +2312,7 @@ export default function OrdersPage() {
     }).eq('id', cancelOrder.id)
     setCancelling(false)
     if (error) { showToast('Failed to cancel: ' + error.message, 'err'); return }
+    try { await mirrorOrderToTransactions(cancelOrder.id) } catch (e) { console.warn('[Phase 3 dual-write] cancel-invoice mirror failed:', e.message) }
     showToast('Invoice ' + (cancelOrder.invoice_no || '') + ' cancelled · order returned to Pending')
     setCancelOrder(null)
     setCancelReason('')

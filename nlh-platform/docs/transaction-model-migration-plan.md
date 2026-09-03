@@ -173,7 +173,11 @@ No transactions row is created at franchisee *onboarding* — it's created lazil
 
 Verified end-to-end live: recorded a real ₹1 test payment against Shirin Tuition Classes (₹20,000/₹23,000 → ₹20,001/₹23,000, status correctly flipped to `part_paid` on both sides), confirmed `franchisees.fee_paid` and `transactions.amount_paid` matched exactly, then deleted the test payment from both tables and confirmed both reverted cleanly (trigger handles delete too, not just insert).
 
-**Still to do:** `kit_order` (Orders — the most complex path: proforma/invoice lifecycle, dispatch, coupons) and `course_fee` (Students — the per-student-not-per-invoice pooling from Phase 2). Doing these next, one at a time, same pattern: best-effort mirror write + verify live with a real test row + clean revert before moving on.
+**kit_order (done, verified live):** `OrdersPage.jsx` gained one shared helper, `mirrorOrderToTransactions(orderId)` — re-reads the order + its items fresh and does a full upsert/resync into `transactions`/`transaction_items` (delete + reinsert the items, since volumes are tiny and a full resync can't drift the way a hand-maintained delta could), plus `mirrorOrderPayment(orderId, payment)` for the append-only payment case. Wired into every place `orders`/`order_items`/`order_payments` actually change: order creation, record/delete payment, dispatch, invoice edit, mark-invoiced, mark-proforma, verify-payment, reopen, convert-proforma-to-invoice, delete-proforma, cancel-invoice — 11 call sites, each wrapped in its own try/catch so a mirror failure only logs a warning and never blocks the real action. No new DB migration needed — the existing `sync_transaction_payment_total()` trigger already handles `kit_order` correctly (it only special-cases `franchise_fee`'s `total`; every other type trusts whatever `total` the app last wrote).
+
+Verified live: recorded a real ₹1 test payment against ORD-2026-0018 (Angels' Park School) — old side went 12,500→12,501/28,200, new side matched exactly (12,501/28,200, `part_paid`), then deleted the test payment from both tables and confirmed a clean revert to 12,500/28,200 on both sides.
+
+**Still to do:** `course_fee` (Students — the per-student-not-per-invoice pooling from Phase 2). Same pattern next.
 
 ## What I need from you to proceed
 
