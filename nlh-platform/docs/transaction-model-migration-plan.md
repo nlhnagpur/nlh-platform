@@ -157,6 +157,14 @@ Caught by the reconciliation step itself (`course_fee_payments: 7` vs `student_p
 
 Every sum and count reconciles exactly. `franchisee_credit_notes` had 0 rows — nothing to migrate.
 
+## Business rule that must survive into Phase 3/4: franchisee student fees are not HO revenue
+
+Confirmed with the owner and checked against the live app: a franchisee's own student admissions exist in the platform **only to track kit/stock consumption against that franchisee** — the fee a franchisee charges their own students, and any invoice/receipt they issue for it, has **no financial effect on HO**. Of the 34 `course_fee` transactions backfilled in Phase 2, only 28 (tier `NLH`, i.e. Head Office's own direct students) are real HO revenue; the other 6 (4 under Dr. Manohar Gupta's CF, 1 under Pampi Roy's CF, 1 under Satej Gurukul's UF) are franchisee-local bookkeeping only.
+
+`AccountingPage.jsx` today already gets this right *by construction* — its income query never reads `student_payments`/`student_invoices`/`students.fee_total` at all, only `orders.amount_paid` (kit revenue, genuinely HO's) and `franchisees.fee_paid` (franchise enrollment fees, genuinely HO's). No live bug.
+
+**This is the constraint to carry forward once course_fee transactions live in the unified `transactions` table and a future "Ledger"/Accounting view queries across all types:** any HO-level revenue rollup must filter `course_fee` transactions to `party_id`'s franchisee tier = `NLH` — never sum `course_fee` across all tiers blindly. A franchisee-level view (a CF looking at their own students) legitimately shows their own `course_fee` transactions; an HO-level view must not. This wasn't a risk while course_fee data sat in `student_payments`/`student_invoices` untouched by Accounting's queries — it becomes a real risk the moment Phase 4 builds one aggregate Ledger view over `transactions` and someone reaches for `sum(total) where type = 'course_fee'` without the tier filter. Flagging now so that filter is deliberate, not an oversight, when that screen gets built.
+
 ## What I need from you to proceed
 
 Phase 1 and Phase 2 are both done, on production, verified. Nothing downstream reads the new tables yet, so this remains fully reversible — the six old tables are still the only source of truth for every screen. Phase 3 (dual-write) is next whenever you want to proceed; it starts touching app code, so I'd want to do it one write-path at a time (Orders, then Students, then Franchisees) rather than all at once.
