@@ -165,6 +165,16 @@ Confirmed with the owner and checked against the live app: a franchisee's own st
 
 **This is the constraint to carry forward once course_fee transactions live in the unified `transactions` table and a future "Ledger"/Accounting view queries across all types:** any HO-level revenue rollup must filter `course_fee` transactions to `party_id`'s franchisee tier = `NLH` — never sum `course_fee` across all tiers blindly. A franchisee-level view (a CF looking at their own students) legitimately shows their own `course_fee` transactions; an HO-level view must not. This wasn't a risk while course_fee data sat in `student_payments`/`student_invoices` untouched by Accounting's queries — it becomes a real risk the moment Phase 4 builds one aggregate Ledger view over `transactions` and someone reaches for `sum(total) where type = 'course_fee'` without the tier filter. Flagging now so that filter is deliberate, not an oversight, when that screen gets built.
 
+## Phase 3 — in progress, one write-path at a time
+
+**franchise_fee (done, verified live):** `RecordFranchiseePaymentModal.handleSave()` in `FranchiseesPage.jsx` now mirrors every payment into `transaction_payments` alongside the existing `franchisee_payments` write, best-effort (a mirror failure logs a warning but never blocks or fails the real payment — `franchisee_payments` stays the source of truth every screen reads from). Added a `sync_transaction_payment_total()` trigger (mirrors `sync_order_payment_total()`) that recomputes `amount_paid`/`status` on `transactions` from its `transaction_payments`, and — since `franchise_fee` has no per-transaction `total` of its own — re-pulls `total` live from `franchisees.enrollment_fee` on every sync rather than storing a second copy that could drift if the fee is edited later.
+
+No transactions row is created at franchisee *onboarding* — it's created lazily, find-or-create, the first time a payment is recorded. A franchisee with no payment yet simply has no transactions row until then, which is fine (nothing reads these tables yet) and self-heals on their first payment.
+
+Verified end-to-end live: recorded a real ₹1 test payment against Shirin Tuition Classes (₹20,000/₹23,000 → ₹20,001/₹23,000, status correctly flipped to `part_paid` on both sides), confirmed `franchisees.fee_paid` and `transactions.amount_paid` matched exactly, then deleted the test payment from both tables and confirmed both reverted cleanly (trigger handles delete too, not just insert).
+
+**Still to do:** `kit_order` (Orders — the most complex path: proforma/invoice lifecycle, dispatch, coupons) and `course_fee` (Students — the per-student-not-per-invoice pooling from Phase 2). Doing these next, one at a time, same pattern: best-effort mirror write + verify live with a real test row + clean revert before moving on.
+
 ## What I need from you to proceed
 
-Phase 1 and Phase 2 are both done, on production, verified. Nothing downstream reads the new tables yet, so this remains fully reversible — the six old tables are still the only source of truth for every screen. Phase 3 (dual-write) is next whenever you want to proceed; it starts touching app code, so I'd want to do it one write-path at a time (Orders, then Students, then Franchisees) rather than all at once.
+Phase 1, Phase 2, and the franchise_fee slice of Phase 3 are done, on production, verified. Nothing downstream reads the new tables yet, so this remains fully reversible.

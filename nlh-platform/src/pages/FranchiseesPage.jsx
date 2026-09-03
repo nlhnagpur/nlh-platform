@@ -186,6 +186,31 @@ function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSave
     }).select('receipt_no').single()
     if (insErr) { showToast('Failed: ' + insErr.message, 'err'); setSaving(false); return }
 
+    // Phase 3 dual-write (see docs/transaction-model-migration-plan.md) —
+    // mirror this payment into the new transactions/transaction_payments
+    // tables alongside the write above. Best-effort: franchisee_payments is
+    // still the source of truth every screen actually reads from, so a
+    // failure here must never surface as a failed payment.
+    try {
+      let { data: tx } = await sb.from('transactions')
+        .select('id').eq('type', 'franchise_fee').eq('party_id', franchisee.id).maybeSingle()
+      if (!tx) {
+        const { data: newTx, error: txErr } = await sb.from('transactions').insert({
+          type: 'franchise_fee', party_id: franchisee.id,
+          total: feeCap, status: 'confirmed',
+        }).select('id').single()
+        if (txErr) throw txErr
+        tx = newTx
+      }
+      await sb.from('transaction_payments').insert({
+        transaction_id: tx.id, amount: amt, paid_on: date, mode: mode,
+        reference: ref.trim() || null, note: notes.trim() || null,
+        recorded_by: currentUser || null, receipt_no: inserted && inserted.receipt_no,
+      })
+    } catch (dualWriteErr) {
+      console.warn('[Phase 3 dual-write] franchise_fee payment mirror failed:', dualWriteErr.message)
+    }
+
     // fee_paid is maintained by a DB trigger now — no manual update here.
     const newFeePaid = already + amt
     const newBalance = feeCap - newFeePaid
