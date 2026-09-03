@@ -82,6 +82,70 @@ async function mirrorOrderPayment(orderId, payment) {
   })
 }
 
+// ── HO stock deduction ──────────────────────────────────────────────────
+// Stock effect is tied to invoicing, not dispatch — deducted the moment an
+// order gets a real invoice_no (direct invoice, converted proforma, or the
+// DB-side proforma->invoiced auto-conversion on payment), not when it
+// physically ships. Idempotent (checked via stock_ledger rows already
+// present for this order) so it's safe to call from every place an order
+// might become invoiced without ever double-deducting. Per the owner: this
+// never blocks — an item going negative is a warning, not a stop.
+async function computeOrderStockNeed(orderId) {
+  const { data: oitems } = await sb.from('order_items')
+    .select('sku_id, item_id, ordered_qty, sent_qty, excluded_kit_items').eq('order_id', orderId)
+  const skuIds = (oitems || []).map(function (o) { return o.sku_id }).filter(Boolean)
+  const kitsRes = skuIds.length ? await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds) : { data: [] }
+  const kits = kitsRes.data || []
+  const need = {}   // item_id -> qty needed
+  ;(oitems || []).forEach(function (o) {
+    const units = (o.sent_qty && o.sent_qty > 0) ? o.sent_qty : (o.ordered_qty || 0)
+    if (o.item_id) {
+      if (units > 0) need[o.item_id] = (need[o.item_id] || 0) + units
+    } else {
+      const excluded = o.excluded_kit_items || []
+      kits.filter(function (k) { return k.sku_id === o.sku_id && !excluded.includes(k.item_id) }).forEach(function (k) {
+        const qn = units * Number(k.quantity || 1)
+        if (qn > 0) need[k.item_id] = (need[k.item_id] || 0) + qn
+      })
+    }
+  })
+  return need
+}
+
+// Deducts (once) and returns the list of items that went negative, so the
+// caller can show a warning — never blocks the actual invoice/payment/
+// dispatch action it's attached to.
+async function deductOrderStockIfNeeded(order, noteLabel) {
+  const { data: already } = await sb.from('stock_ledger').select('id').eq('ref_type', 'order').eq('ref_id', order.id).limit(1)
+  if (already && already.length > 0) return []
+
+  const need = await computeOrderStockNeed(order.id)
+  const itemIds = Object.keys(need)
+  if (!itemIds.length) return []
+
+  const { data: moves } = await sb.from('stock_ledger').select('item_id, qty').eq('location_type', 'ho').in('item_id', itemIds)
+  const currentById = {}
+  ;(moves || []).forEach(function (m) { currentById[m.item_id] = (currentById[m.item_id] || 0) + (m.qty || 0) })
+
+  const note = noteLabel + ' ' + (order.invoice_no || order.order_ref || '')
+  const rows = itemIds.map(function (id) {
+    return { item_id: id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -need[id], ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note }
+  })
+  await sb.from('stock_ledger').insert(rows)
+
+  const { data: items } = await sb.from('inventory_items').select('id, name').in('id', itemIds)
+  const nameById = {}
+  ;(items || []).forEach(function (i) { nameById[i.id] = i.name })
+  return itemIds
+    .map(function (id) { return { name: nameById[id] || id, after: (currentById[id] || 0) - need[id] } })
+    .filter(function (r) { return r.after < 0 })
+}
+
+function warnIfStockNegative(negatives) {
+  if (!negatives.length) return
+  showToast('⚠ Stock now negative: ' + negatives.map(function (r) { return r.name + ' (' + r.after + ')' }).join(', '), 'warn')
+}
+
 // JSX badge components
 function StatusBadge({ status }) {
   const map = {
@@ -323,6 +387,17 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
         recorded_by: null, receipt_no: inserted && inserted.receipt_no,
       })
     } catch (e) { console.warn('[Phase 3 dual-write] order payment mirror failed:', e.message) }
+
+    // A proforma order paying in full auto-converts to a real invoice via a
+    // DB trigger (sync_order_payment_total -> trg_invoice_no) with no
+    // client-side "mark invoiced" call anywhere — catch that here so stock
+    // still gets deducted the moment it actually becomes an invoice.
+    if (!order.invoice_no) {
+      try {
+        const { data: nowOrder } = await sb.from('orders').select('*').eq('id', order.id).single()
+        if (nowOrder && nowOrder.invoice_no) warnIfStockNegative(await deductOrderStockIfNeeded(nowOrder, 'Invoice'))
+      } catch (e) { console.warn('Stock deduction (auto-invoice) failed:', e.message) }
+    }
 
     showToast(isFull ? '✓ Full payment recorded — order closed.' : `Part payment of ₹${fmtAmt(amt)} recorded.`)
 
@@ -690,37 +765,12 @@ function DispatchModal({ order, onClose, onSaved }) {
           showToast('Dispatched · WhatsApp update failed: ' + waErr.message, 'warn')
         }
       }
-      // ── Auto-deduct HO stock for this dispatch (once per order, via each kit's BOM) ──
+      // ── HO stock: normally already deducted at invoice time — this is
+      // purely the fallback for an order that somehow reaches dispatch
+      // without that having happened yet (idempotent either way). ──
       try {
-        const { data: already } = await sb.from('stock_ledger').select('id').eq('ref_type', 'order').eq('ref_id', order.id).limit(1)
-        if (!already || already.length === 0) {
-          const { data: oitems } = await sb.from('order_items').select('sku_id, item_id, ordered_qty, sent_qty, excluded_kit_items').eq('order_id', order.id)
-          const skuIds = (oitems || []).map(function (o) { return o.sku_id }).filter(Boolean)
-          {
-            const kitsRes = skuIds.length ? await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds) : { data: [] }
-            const kits = kitsRes.data || []
-            const rows = []
-            ;(oitems || []).forEach(function (o) {
-              const units = (o.sent_qty && o.sent_qty > 0) ? o.sent_qty : (o.ordered_qty || 0)
-              const note = 'Dispatch ' + (order.invoice_no || order.order_ref || '')
-              if (o.item_id) {
-                // raw inventory-item line — deduct the item directly
-                if (units > 0) rows.push({ item_id: o.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -units, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note })
-              } else {
-                // kit/supply SKU line — expand its bill of materials, skipping components the biller marked not-sent
-                const excluded = o.excluded_kit_items || []
-                kits.filter(function (k) { return k.sku_id === o.sku_id && !excluded.includes(k.item_id) }).forEach(function (k) {
-                  const qn = units * Number(k.quantity || 1)
-                  if (qn > 0) rows.push({ item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -qn, ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note })
-                })
-              }
-            })
-            if (rows.length) {
-              await sb.from('stock_ledger').insert(rows)
-              showToast('HO stock deducted for ' + rows.length + ' item line' + (rows.length !== 1 ? 's' : ''))
-            }
-          }
-        }
+        const negatives = await deductOrderStockIfNeeded(order, 'Dispatch')
+        warnIfStockNegative(negatives)
       } catch (stkErr) { console.warn('Stock deduction skipped:', stkErr.message) }
 
       // ── Lock (redeem) the coupon now that the order is dispatched ──
@@ -2091,6 +2141,7 @@ export default function OrdersPage() {
       const invoiceNo = refreshed?.invoice_no || ''
       showToast('Invoiced as ' + invoiceNo)
       try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] invoice mirror failed:', e.message) }
+      try { warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice')) } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
         await sendInvoiceEmail(invoicedOrder)
@@ -2246,6 +2297,7 @@ export default function OrdersPage() {
       const invoiceNo = refreshed?.invoice_no || ''
       showToast('Converted to Invoice ' + invoiceNo)
       try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] convert-proforma mirror failed:', e.message) }
+      try { warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice')) } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         await sendInvoiceEmail({ ...order, invoice_no: invoiceNo })
       } catch (emailErr) {
