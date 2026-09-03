@@ -119,7 +119,9 @@ Numbering sequences (`invoice_seq`, `proforma_seq`, the three separate receipt-n
 
 **Phase 1 — Additive.** Create `transactions`, `transaction_items`, `transaction_payments` alongside the existing six tables. Nothing reads or writes them yet. Zero risk — this phase alone changes nothing observable.
 
-**Phase 2 — Backfill.** One-time `insert ... select` from each of the six old tables into the new ones, preserving `id`, `created_at`, and every receipt/invoice number as-is (so a document already sent to a franchisee or parent keeps the exact same number if it's ever reprinted). Verify with a reconciliation query: `sum(transactions.total) by type` must equal `sum` of the corresponding old tables, and `count(transaction_payments)` must equal `6 + 34 + 27` exactly. Run this on a Supabase **branch**, not production, first.
+**Phase 2 — Backfill.** One-time `insert ... select` from each of the six old tables into the new ones, preserving `id`, `created_at`, and every receipt/invoice number as-is (so a document already sent to a franchisee or parent keeps the exact same number if it's ever reprinted). Verify with a reconciliation query: `sum(transactions.total) by type` must equal `sum` of the corresponding old tables, and every payment count/sum must match exactly.
+
+*Ran directly against production, not a branch* — Supabase branches don't copy production data ("production data will not carry over" per the branching tool itself), so a branch would only have tested that the SQL runs without a syntax error, not that the mapping is actually correct against real rows. Safe to do directly because this phase is still purely additive: it only ever writes to the three new, still-unused tables — it never updates or deletes anything in the six old ones, and nothing downstream reads the new tables yet. Fully re-runnable (wipe the new tables, redo the insert) if the reconciliation had turned up wrong — which it did once, see below.
 
 **Phase 3 — Dual-write.** Update the app's write paths (`OrdersPage.jsx`, `StudentsPage.jsx`, `FranchiseesPage.jsx`) to write to both old and new tables in the same transaction, while every screen still *reads* from the old tables. Run for a soak period (a couple of weeks of real usage is enough at this volume) with a scheduled reconciliation check comparing old vs. new. This is the phase that catches anything the backfill/mapping missed, with zero user-facing risk — if dual-write ever disagrees, the old tables are still the source of truth and nothing downstream is affected yet.
 
@@ -127,12 +129,34 @@ Numbering sequences (`invoice_seq`, `proforma_seq`, the three separate receipt-n
 
 **Phase 5 — Retire the old tables.** Once every screen reads and writes only the new tables and a safety window has passed (I'd suggest one full month of clean dual-write agreement before this), drop the dual-write code, then drop the old six tables. Keep a final SQL dump of them in `supabase/migrations/` history regardless — dropped, not destroyed.
 
-## Open questions before Phase 1 starts
+## Decisions made during Phase 1 + 2 (superseding the "open questions" below)
 
-1. **`franchise_fee` today has no `orders`-style item lines** — it's a single running balance. Does it get one `transactions` row per franchisee (matching today), or one row per payment (matching `kit_order`'s shape)? I'd default to *one row per franchisee*, created at onboarding, to match current behavior — but flagging it since it's the one type that doesn't naturally fit the "one transaction = one invoice" pattern the other three do.
-2. **`student_invoices.items` is a jsonb blob today** (kit + course lines mixed in one array) — migrating it into real `transaction_items` rows is the one non-mechanical part of the backfill and needs a bit of parsing logic, not a straight column copy. Only 9 rows currently, so worth doing properly rather than keeping the jsonb shape.
-3. **Confirm the `metadata` jsonb approach** for dispatch/courier fields is acceptable, versus keeping them as real nullable columns on `transactions` (simpler queries, but brings back the "columns that are null 90% of the time" problem this migration is meant to fix for the type-specific stuff). I'd default to `metadata` for anything not shared across all four types.
+- **`franchise_fee`: one `transactions` row per franchisee**, matching today's single running-balance model. Confirmed correct — going per-payment would have meant re-deriving a balance the app already tracks natively on the `franchisees` row.
+- **`student_invoices.items` jsonb → real `transaction_items` rows**: mechanical after all — the jsonb shape is consistent (`{kind, sku_id, item_id, enrollment_id, name, qty, rate, amount}`), unpacked with `jsonb_array_elements`. No custom parsing needed beyond that.
+- **`metadata` jsonb for kit_order-only fields** (courier/dispatch/AWB/etc.) — went with this as planned; kept `order_ref` there too rather than in `document_no`, since `document_no` is reserved for invoice/proforma/credit-note numbers specifically.
+- **New decision, not anticipated in the original plan: `course_fee` is one `transactions` row per STUDENT, not per invoice.** The app already pools a student's balance on the `students` row (`fee_total`/`fee_paid`), with payments recorded against the *student*, not any one invoice — a student can have multiple invoices (e.g. one per add-on course) all feeding the same balance. A per-invoice Transaction would have fragmented a balance the app treats as one thing. Individual invoice numbers are preserved in `metadata.invoice_nos` since `document_no` can only hold one value.
+
+### A real gap the backfill caught, and how it was fixed
+
+The first backfill pass joined `students` to `student_invoices` with an inner join — 9 students had an invoice row, so only 9 `course_fee` transactions were created. But **34 students have a non-zero `fee_total`**: most students' fees were set directly on the student record without a formal invoice ever being generated (older data, or fee set without the invoice step). That left 25 students, and 27 of their 34 payment rows, un-migrated.
+
+Caught by the reconciliation step itself (`course_fee_payments: 7` vs `student_payments_count: 34` didn't match) before anything downstream depended on it. Fixed with a follow-up migration (`20260903071934_fix_course_fee_backfill_coverage.sql`) that wipes and redoes only the `course_fee` slice, this time including any student with an invoice, a payment, *or* a non-zero fee. Re-reconciled clean:
+
+| Check | Old tables | `transactions` | Match |
+|---|---|---|---|
+| kit_order count | 21 orders | 21 | ✓ |
+| kit_order total / paid | ₹77,295 / ₹22,895 | same | ✓ |
+| order_items → transaction_items | 104 | 104 | ✓ |
+| order_payments → transaction_payments | 6, ₹22,895 | same | ✓ |
+| course_fee count | 34 students w/ activity | 34 | ✓ |
+| course_fee total / paid | ₹1,85,400 / ₹1,62,000 | same | ✓ |
+| student_payments → transaction_payments | 34, ₹1,62,000 | same | ✓ |
+| franchise_fee count | 27 franchisees w/ payments | 23 (one row per franchisee, not per payment) | ✓ |
+| franchise_fee total / paid | ₹27,06,500 / ₹25,98,500 | same | ✓ |
+| franchisee_payments → transaction_payments | 27 | 27 | ✓ |
+
+Every sum and count reconciles exactly. `franchisee_credit_notes` had 0 rows — nothing to migrate.
 
 ## What I need from you to proceed
 
-Nothing yet for Phase 1 (it's additive and reversible — I can start on it once you say go). Before Phase 2 (backfill), I'd want to run it against a Supabase **branch** first and show you the reconciliation numbers, not production directly.
+Phase 1 and Phase 2 are both done, on production, verified. Nothing downstream reads the new tables yet, so this remains fully reversible — the six old tables are still the only source of truth for every screen. Phase 3 (dual-write) is next whenever you want to proceed; it starts touching app code, so I'd want to do it one write-path at a time (Orders, then Students, then Franchisees) rather than all at once.
