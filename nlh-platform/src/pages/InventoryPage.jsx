@@ -51,18 +51,24 @@ function ItemModal({ item, currentUserId, currentQty, onClose, onSaved }) {
     // Opening stock — update the existing ledger entry if one exists,
     // otherwise create it (only when a positive value was entered).
     const openQ = f.opening === '' ? 0 : Math.round(Number(f.opening))
+    let openingErr = null
     if (saved?.id) {
       if (openingEntry) {
-        if (openQ !== openingEntry.qty) await sb.from('stock_ledger').update({ qty: openQ }).eq('id', openingEntry.id)
+        if (openQ !== openingEntry.qty) {
+          const { error: updErr } = await sb.from('stock_ledger').update({ qty: openQ }).eq('id', openingEntry.id)
+          if (updErr) openingErr = updErr
+        }
       } else if (openQ > 0) {
-        await sb.from('stock_ledger').insert({
+        const { error: insErr } = await sb.from('stock_ledger').insert({
           item_id: saved.id, location_type: 'ho', movement_type: 'receipt', qty: openQ,
           unit_cost: row.default_cost || null, ref_type: 'manual', note: 'Opening stock', created_by: currentUserId || null,
         })
+        if (insErr) openingErr = insErr
       }
     }
     setSaving(false)
-    showToast(editing ? 'Item updated' : 'Item added')
+    if (openingErr) showToast('Item saved, but opening stock could not be updated: ' + openingErr.message, 'err')
+    else showToast(editing ? 'Item updated' : 'Item added')
     onSaved()
   }
   return (
