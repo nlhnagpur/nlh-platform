@@ -91,8 +91,13 @@ async function mirrorOrderPayment(orderId, payment) {
 // might become invoiced without ever double-deducting. Per the owner: this
 // never blocks — an item going negative is a warning, not a stop.
 async function computeOrderStockNeed(orderId) {
-  const { data: oitems } = await sb.from('order_items')
-    .select('sku_id, item_id, ordered_qty, sent_qty, excluded_kit_items').eq('order_id', orderId)
+  const { data: allItems } = await sb.from('order_items')
+    .select('sku_id, item_id, ordered_qty, sent_qty, excluded_kit_items, fulfilled_by_franchisee_id').eq('order_id', orderId)
+  // Lines fulfilled from another franchisee's own stock (a Sale Return —
+  // see createPendingStockReturns) never touch HO's stock at all; HO
+  // already deducted these components when that franchisee originally
+  // bought them.
+  const oitems = (allItems || []).filter(function (o) { return !o.fulfilled_by_franchisee_id })
   const skuIds = (oitems || []).map(function (o) { return o.sku_id }).filter(Boolean)
   const kitsRes = skuIds.length ? await sb.from('kit_items').select('sku_id, item_id, quantity').in('sku_id', skuIds) : { data: [] }
   const kits = kitsRes.data || []
@@ -148,6 +153,46 @@ async function deductOrderStockIfNeeded(order, noteLabel) {
   return itemIds
     .map(function (id) { return { name: nameById[id] || id, after: (currentById[id] || 0) - need[id] } })
     .filter(function (r) { return r.after < 0 })
+}
+
+// Sale Return — for every order_items line marked fulfilled_by_franchisee_id
+// (that franchisee supplied it from their own stock instead of HO), raises
+// a pending franchisee_stock_returns credit valued at what they actually
+// paid HO for it (their own most recent purchase of that SKU). Admin
+// approves separately (see the pending-returns panel). Idempotent per
+// order, same as the stock deduction it runs alongside — never blocks the
+// invoice action itself.
+async function createPendingStockReturns(order) {
+  const { data: already } = await sb.from('franchisee_stock_returns').select('id').eq('fulfills_order_id', order.id).limit(1)
+  if (already && already.length > 0) return
+
+  const { data: lines } = await sb.from('order_items')
+    .select('id, sku_id, ordered_qty, fulfilled_by_franchisee_id').eq('order_id', order.id)
+    .not('fulfilled_by_franchisee_id', 'is', null)
+  if (!lines || !lines.length) return
+
+  for (const line of lines) {
+    // What this franchisee actually paid HO for this SKU — their own most
+    // recent order line for it, so the credit reflects a real transaction,
+    // not a rate that may have since changed.
+    // Excludes the order being processed itself — the fulfilling
+    // franchisee can also be that order's own placer (a CF ordering on a
+    // school's behalf, same as this exact case), which would otherwise
+    // let the lookup circularly reference the very line it's crediting.
+    const { data: source } = await sb.from('order_items')
+      .select('id, order_id, rate, orders!inner(placer_id, created_at)')
+      .eq('sku_id', line.sku_id).eq('orders.placer_id', line.fulfilled_by_franchisee_id)
+      .neq('order_id', order.id)
+      .order('created_at', { foreignTable: 'orders', ascending: false }).limit(1).maybeSingle()
+    const unitValue = source?.rate || 0
+    await sb.from('franchisee_stock_returns').insert({
+      returning_franchisee_id: line.fulfilled_by_franchisee_id,
+      sku_id: line.sku_id, qty: line.ordered_qty, unit_value: unitValue,
+      total_credit: unitValue * line.ordered_qty,
+      source_order_id: source?.order_id || null, source_order_item_id: source?.id || null,
+      fulfills_order_id: order.id,
+    })
+  }
 }
 
 function warnIfStockNegative(negatives) {
@@ -432,7 +477,10 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
     if (!order.invoice_no) {
       try {
         const { data: nowOrder } = await sb.from('orders').select('*').eq('id', order.id).single()
-        if (nowOrder && nowOrder.invoice_no) warnIfStockNegative(await deductOrderStockIfNeeded(nowOrder, 'Invoice'))
+        if (nowOrder && nowOrder.invoice_no) {
+          warnIfStockNegative(await deductOrderStockIfNeeded(nowOrder, 'Invoice'))
+          await createPendingStockReturns(nowOrder)
+        }
       } catch (e) { console.warn('Stock deduction (auto-invoice) failed:', e.message) }
     }
 
@@ -809,6 +857,7 @@ function DispatchModal({ order, onClose, onSaved }) {
       try {
         const negatives = await deductOrderStockIfNeeded(order, 'Dispatch')
         warnIfStockNegative(negatives)
+        await createPendingStockReturns(order)
       } catch (stkErr) { console.warn('Stock deduction skipped:', stkErr.message) }
 
       // ── Lock (redeem) the coupon now that the order is dispatched ──
@@ -1156,6 +1205,16 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   // uf_rate/cf_rate/smf_rate columns, same as NewOrderModal already does.
   const isSchoolOrder = order.bill_to_fr?.tier === 'SCHOOL'
   const [schoolRates, setSchoolRates] = useState({})   // { [sku_id]: { rate, cf_cut } }
+  // For the "Fulfilled by" picker — a franchisee can supply a line from
+  // their own stock instead of HO (a Sale Return, see
+  // createPendingStockReturns). Any active franchisee can fulfil, not
+  // just ones related to this order, so this is the full list.
+  const [fulfillOptions, setFulfillOptions] = useState([])
+  useEffect(function () {
+    if (!isAdmin) return
+    sb.from('franchisees').select('id, business_name, tier').eq('status', 'active').neq('tier', 'NLH').order('business_name')
+      .then(function (res) { setFulfillOptions(res.data || []) })
+  }, [isAdmin])
 
   useEffect(function () {
     if (!isSchoolOrder) return
@@ -1300,7 +1359,7 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       if (item.id) {
         const { error } = await sb
           .from('order_items')
-          .update({ sent_qty: item.sent_qty, rate: item.rate, ordered_qty: item.ordered_qty, excluded_kit_items: item.sku_id ? (item.excluded_kit_items || []) : [] })
+          .update({ sent_qty: item.sent_qty, rate: item.rate, ordered_qty: item.ordered_qty, excluded_kit_items: item.sku_id ? (item.excluded_kit_items || []) : [], fulfilled_by_franchisee_id: item.fulfilled_by_franchisee_id || null })
           .eq('id', item.id)
         if (error) { showToast('Error saving item: ' + error.message); setSaving(false); return }
       } else {
@@ -1314,6 +1373,7 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
           rate: item.rate || 0,
           excluded_kit_items: item.sku_id ? (item.excluded_kit_items || []) : [],
           cf_commission_rate: item.cf_commission_rate != null ? item.cf_commission_rate : null,
+          fulfilled_by_franchisee_id: item.fulfilled_by_franchisee_id || null,
         })
         if (error) { showToast('Error adding item: ' + error.message); setSaving(false); return }
       }
@@ -1478,6 +1538,28 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                         <tr key={rowKey + '-kit'}>
                           <td colSpan={isAdmin ? 6 : 5} style={{ paddingTop: 0, borderTop: 'none' }}>
                             <KitChecklist components={kitComps} excluded={item.excluded_kit_items} onToggle={function (id) { toggleKitItem(idx, id) }} />
+                          </td>
+                        </tr>
+                      ) : null,
+                      isAdmin && item.sku_id ? (
+                        <tr key={rowKey + '-fulfil'}>
+                          <td colSpan={6} style={{ paddingTop: 0, paddingBottom: 8, borderTop: 'none' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text3)' }}>
+                              Fulfilled by:
+                              <select
+                                value={item.fulfilled_by_franchisee_id || ''}
+                                onChange={function (e) { updateField(idx, 'fulfilled_by_franchisee_id', e.target.value || null) }}
+                                style={{ fontSize: 12, padding: '3px 6px' }}
+                              >
+                                <option value="">HO stock (normal)</option>
+                                {fulfillOptions.map(function (f) {
+                                  return <option key={f.id} value={f.id}>{f.business_name} ({f.tier}) — their own stock</option>
+                                })}
+                              </select>
+                              {item.fulfilled_by_franchisee_id && (
+                                <span style={{ color: '#D97706' }}>⚠ won't deduct HO stock — raises a Sale Return credit for them instead</span>
+                              )}
+                            </label>
                           </td>
                         </tr>
                       ) : null,
@@ -2063,6 +2145,7 @@ export default function OrdersPage() {
   const [convertConfirm, setConvertConfirm] = useState(null)   // proforma order being converted straight to invoice, no payment required
   const [raiseCnOrder, setRaiseCnOrder] = useState(null)
   const [pendingCns, setPendingCns] = useState([])
+  const [pendingReturns, setPendingReturns] = useState([])
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -2074,8 +2157,36 @@ export default function OrdersPage() {
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
     loadOrders()
-    if (isAdminRole(currentRole)) loadPendingCns()
+    if (isAdminRole(currentRole)) { loadPendingCns(); loadPendingReturns() }
   }, [currentRole, currentFranchiseeId])
+
+  async function loadPendingReturns() {
+    const { data } = await sb.from('franchisee_stock_returns')
+      .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no)')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+    setPendingReturns(data || [])
+  }
+
+  async function approveStockReturn(r) {
+    setActionLoading('sr_' + r.id)
+    const { error } = await sb.from('franchisee_stock_returns')
+      .update({ status: 'approved', approved_by: currentUser?.email || null })
+      .eq('id', r.id)
+    if (error) { showToast('Failed to approve: ' + error.message, 'err') }
+    else { showToast('Sale return approved ✓ — ₹' + fmtAmt(r.total_credit) + ' credited to ' + (r.franchisees?.business_name || 'franchisee')); await loadPendingReturns() }
+    setActionLoading(null)
+  }
+
+  async function rejectStockReturn(r) {
+    setActionLoading('sr_' + r.id)
+    const { error } = await sb.from('franchisee_stock_returns')
+      .update({ status: 'rejected', approved_by: currentUser?.email || null, approved_at: new Date().toISOString() })
+      .eq('id', r.id)
+    if (error) { showToast('Failed to reject: ' + error.message, 'err') }
+    else { showToast('Sale return rejected'); await loadPendingReturns() }
+    setActionLoading(null)
+  }
 
   async function loadPendingCns() {
     const { data } = await sb.from('franchisee_credit_notes')
@@ -2181,7 +2292,11 @@ export default function OrdersPage() {
       const invoiceNo = refreshed?.invoice_no || ''
       showToast('Invoiced as ' + invoiceNo)
       try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] invoice mirror failed:', e.message) }
-      try { warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice')) } catch (e) { console.warn('Stock deduction failed:', e.message) }
+      try {
+        warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
+        await createPendingStockReturns(order)
+        await loadPendingReturns()
+      } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
         await sendInvoiceEmail(invoicedOrder)
@@ -2337,7 +2452,11 @@ export default function OrdersPage() {
       const invoiceNo = refreshed?.invoice_no || ''
       showToast('Converted to Invoice ' + invoiceNo)
       try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] convert-proforma mirror failed:', e.message) }
-      try { warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice')) } catch (e) { console.warn('Stock deduction failed:', e.message) }
+      try {
+        warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
+        await createPendingStockReturns(order)
+        await loadPendingReturns()
+      } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         await sendInvoiceEmail({ ...order, invoice_no: invoiceNo })
       } catch (emailErr) {
@@ -2685,6 +2804,30 @@ export default function OrdersPage() {
                     {busy ? '…' : 'Approve'}
                   </button>
                   <button className="row-action danger" disabled={busy} onClick={function () { rejectCreditNote(cn) }}>Reject</button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {isAdmin && pendingReturns.length > 0 && (
+          <div style={{ background: '#EFF6FF', border: '1px solid #2563EB', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+            <div style={{ font: '700 11px var(--mono)', color: '#1E40AF', textTransform: 'uppercase', marginBottom: 8 }}>
+              ↩ {pendingReturns.length} sale return{pendingReturns.length !== 1 ? 's' : ''} awaiting approval
+            </div>
+            {pendingReturns.map(function (r) {
+              const busy = actionLoading === 'sr_' + r.id
+              const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
+              return (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid #DBEAFE', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, flex: 1, minWidth: 240 }}>
+                    <b>{r.franchisees?.business_name || '—'}</b> ({r.franchisees?.tier}) supplied <b>{r.qty}× {skuName}</b> for {r.orders?.order_ref || 'an order'}
+                    {' '}· credit ₹{fmtAmt(r.total_credit)} (₹{fmtAmt(r.unit_value)}/kit)
+                  </span>
+                  <button className="row-action green" disabled={busy} onClick={function () { approveStockReturn(r) }}>
+                    {busy ? '…' : 'Approve'}
+                  </button>
+                  <button className="row-action danger" disabled={busy} onClick={function () { rejectStockReturn(r) }}>Reject</button>
                 </div>
               )
             })}
