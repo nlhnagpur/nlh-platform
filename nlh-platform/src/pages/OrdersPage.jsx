@@ -127,7 +127,16 @@ async function deductOrderStockIfNeeded(order, noteLabel) {
   const currentById = {}
   ;(moves || []).forEach(function (m) { currentById[m.item_id] = (currentById[m.item_id] || 0) + (m.qty || 0) })
 
-  const note = noteLabel + ' ' + (order.invoice_no || order.order_ref || '')
+  // Look the receiver's name up directly by id rather than trust an
+  // embedded placer/bill_to_fr object — not every caller has one (the
+  // proforma-auto-conversion path re-fetches the order with a plain
+  // select('*')), so this works regardless of what was passed in.
+  const receiverId = order.bill_to_franchisee_id || order.placer_id
+  const { data: receiverFr } = receiverId
+    ? await sb.from('franchisees').select('business_name').eq('id', receiverId).maybeSingle()
+    : { data: null }
+  const note = noteLabel + ' ' + (order.invoice_no || order.order_ref || '') +
+    (receiverFr?.business_name ? ' — ' + receiverFr.business_name : '')
   const rows = itemIds.map(function (id) {
     return { item_id: id, location_type: 'ho', movement_type: 'issue_to_franchisee', qty: -need[id], ref_type: 'order', ref_id: order.id, franchisee_id: order.placer_id, note: note }
   })
