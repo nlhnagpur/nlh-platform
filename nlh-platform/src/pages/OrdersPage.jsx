@@ -1100,7 +1100,7 @@ function KitChecklist({ components, excluded, onToggle }) {
 // ---------------------------------------------------------------------------
 // InvoiceEditModal — admin edits items (add/delete/change), sent_qty, rate, courier
 // ---------------------------------------------------------------------------
-function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
+export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const [items, setItems] = useState([])
   const [allSkus, setAllSkus] = useState([])
   const [allItems, setAllItems] = useState([])
@@ -1323,6 +1323,29 @@ function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
             <div className="muted">Loading items…</div>
           ) : (
             <>
+              {(() => {
+                // Who this invoice/order is actually for — bill_to_fr for a
+                // school billed through its CF, otherwise the placer.
+                const receiver = order.bill_to_fr || order.placer
+                if (!receiver) return null
+                const addr = [receiver.address, receiver.city, receiver.state].filter(Boolean).join(', ')
+                return (
+                  <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+                    <div style={{ font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Receiver</div>
+                    <div style={{ font: '700 14px "DM Sans",sans-serif', color: 'var(--text)' }}>{receiver.business_name}</div>
+                    <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text2)', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      {receiver.phone && <span>📞 {receiver.phone}</span>}
+                      {receiver.email && <span>✉ {receiver.email}</span>}
+                    </div>
+                    {addr && <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text3)', marginTop: 2 }}>{addr}</div>}
+                    {order.deliver_to && (
+                      <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text3)', marginTop: 4 }}>
+                        <strong style={{ color: 'var(--text2)' }}>Deliver to:</strong> {order.deliver_to}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               <table className="tbl" style={{ marginBottom: 0 }}>
                 <thead>
                   <tr>

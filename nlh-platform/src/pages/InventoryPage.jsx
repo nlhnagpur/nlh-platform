@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
-import { isManagerOrAbove } from '../constants/roles'
+import { isManagerOrAbove, isAdminRole } from '../constants/roles'
+import { InvoiceEditModal } from './OrdersPage'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import ModalHeader from '../components/ModalHeader'
 import KitEditorModal from '../components/KitEditorModal'
@@ -357,6 +358,36 @@ export default function InventoryPage() {
   const [ledgerPage, setLedgerPage] = useState(0)
   const LEDGER_PAGE_SIZE = 25
   const [editEntry, setEditEntry] = useState(null)   // stock_ledger row being edited
+  const [viewOrder, setViewOrder] = useState(null)   // order opened via a ledger row's "Invoice ..." note
+  const isAdmin = isAdminRole(currentRole)
+
+  // A ledger row's note links to its order/invoice — same fields
+  // InvoiceEditModal/InvoiceView already rely on (bill_to_fr/placer).
+  const PLACER_FIELDS = 'business_name, tier, email, city, state, phone, address'
+  async function openOrderFromLedger(refId) {
+    const { data, error } = await sb.from('orders')
+      .select('*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + PLACER_FIELDS + ', gstin)')
+      .eq('id', refId).single()
+    if (error) { showToast('Could not load that order: ' + error.message, 'err'); return }
+    setViewOrder(data)
+  }
+
+  // A note referencing an order ("Invoice INV-... " / "Dispatch ORD-...")
+  // opens that order's invoice editor instead of the row's own
+  // edit-this-ledger-entry click — stopPropagation so it doesn't also
+  // trigger that.
+  function renderNoteCell(l, fallback) {
+    const text = l.note || fallback
+    if (l.ref_type === 'order' && l.ref_id) {
+      return (
+        <button type="button"
+          onClick={function (e) { e.stopPropagation(); openOrderFromLedger(l.ref_id) }}
+          style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--purple)', textDecoration: 'underline', cursor: 'pointer' }}
+        >{text}</button>
+      )
+    }
+    return text
+  }
 
   const [itemModal, setItemModal] = useState(null)   // 'new' | item
   const [supplyModal, setSupplyModal] = useState(false)
@@ -669,7 +700,7 @@ export default function InventoryPage() {
                                 <td style={{ fontSize: 12 }}>{l.note === 'Opening stock' ? '🏁 Opening' : (MOVE_LABEL[l.movement_type] || l.movement_type)}</td>
                                 <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
                                 <td style={{ textAlign: 'right', font: '600 12px var(--mono)', color: 'var(--text2)' }}>{x.bal}</td>
-                                <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note && l.note !== 'Opening stock' ? l.note : (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
+                                <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note === 'Opening stock' ? '' : renderNoteCell(l, 'Order dispatch')}</td>
                               </tr>
                             )
                           })}
@@ -739,7 +770,7 @@ export default function InventoryPage() {
                               <td style={{ fontSize: 12 }}>{it ? it.name : '—'}</td>
                               <td style={{ fontSize: 12 }}>{MOVE_LABEL[l.movement_type] || l.movement_type}</td>
                               <td style={{ textAlign: 'right', font: '700 13px var(--mono)', color: l.qty < 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>{l.qty > 0 ? '+' : ''}{l.qty}</td>
-                              <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{l.note || (l.ref_type === 'order' ? 'Order dispatch' : '')}</td>
+                              <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text3)' }}>{renderNoteCell(l, 'Order dispatch')}</td>
                             </tr>
                           )
                         })}
@@ -768,6 +799,12 @@ export default function InventoryPage() {
       {receiptModal && <ReceiptModal items={items} currentUserId={currentUser?.id} onClose={function () { setReceiptModal(false) }} onSaved={function () { setReceiptModal(false); load(); if (stockItemId) loadItemLedger(stockItemId) }} />}
       {issueModal && <IssueModal items={items} currentUserId={currentUser?.id} onClose={function () { setIssueModal(false) }} onSaved={function () { setIssueModal(false); load(); if (stockItemId) loadItemLedger(stockItemId) }} />}
       {kitSku && <KitEditorModal sku={kitSku} items={items} onClose={function () { setKitSku(null) }} onSaved={function () { setKitSku(null); load() }} />}
+      {viewOrder && (
+        <InvoiceEditModal order={viewOrder} isAdmin={isAdmin}
+          onClose={function () { setViewOrder(null) }}
+          onSaved={function () { setViewOrder(null); load(); if (stockItemId) loadItemLedger(stockItemId) }}
+        />
+      )}
     </div>
   )
 }
