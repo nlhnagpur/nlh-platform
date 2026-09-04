@@ -146,6 +146,34 @@ function warnIfStockNegative(negatives) {
   showToast('⚠ Stock now negative: ' + negatives.map(function (r) { return r.name + ' (' + r.after + ')' }).join(', '), 'warn')
 }
 
+// Who this order/invoice/dispatch is actually for — bill_to_fr when a
+// school is billed through its introducing CF, otherwise the placer. Shown
+// on every modal that acts on an order (payment, dispatch, invoice edit) so
+// an admin can see at a glance who they're addressing, not just an order
+// ref number. Compact by default (name + phone on one line); full shows
+// email/address/deliver-to too.
+function OrderReceiverInfo({ order, full }) {
+  const receiver = order.bill_to_fr || order.placer
+  if (!receiver) return null
+  const addr = [receiver.address, receiver.city, receiver.state].filter(Boolean).join(', ')
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+      <div style={{ font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Receiver</div>
+      <div style={{ font: '700 14px "DM Sans",sans-serif', color: 'var(--text)' }}>{receiver.business_name}</div>
+      <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text2)', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {receiver.phone && <span>📞 {receiver.phone}</span>}
+        {full && receiver.email && <span>✉ {receiver.email}</span>}
+      </div>
+      {full && addr && <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text3)', marginTop: 2 }}>{addr}</div>}
+      {full && order.deliver_to && (
+        <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text3)', marginTop: 4 }}>
+          <strong style={{ color: 'var(--text2)' }}>Deliver to:</strong> {order.deliver_to}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // JSX badge components
 function StatusBadge({ status }) {
   const map = {
@@ -447,6 +475,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
           subtitle={'New Learning Horizons · ' + (order.invoice_no || order.order_ref || 'Payment')}
           onClose={onClose} />
         <div>
+          <OrderReceiverInfo order={order} full />
           {/* Order total summary */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
             background:'var(--bg2)', borderRadius:8, padding:'10px 14px', marginBottom:14 }}>
@@ -793,7 +822,8 @@ function DispatchModal({ order, onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={function (e) { e.stopPropagation() }}>
-        <ModalHeader flush title="Mark Dispatched" subtitle="New Learning Horizons · Dispatch" onClose={onClose} />
+        <ModalHeader flush title="Mark Dispatched" subtitle={'New Learning Horizons · ' + (order.order_ref || 'Dispatch')} onClose={onClose} />
+        <div style={{ padding: '14px 22px 0' }}><OrderReceiverInfo order={order} full /></div>
         <div className="form-grid">
           {/* Courier — with saved-vendor datalist */}
           <label className="col-span-2">Courier / Vendor
@@ -1323,29 +1353,7 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
             <div className="muted">Loading items…</div>
           ) : (
             <>
-              {(() => {
-                // Who this invoice/order is actually for — bill_to_fr for a
-                // school billed through its CF, otherwise the placer.
-                const receiver = order.bill_to_fr || order.placer
-                if (!receiver) return null
-                const addr = [receiver.address, receiver.city, receiver.state].filter(Boolean).join(', ')
-                return (
-                  <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
-                    <div style={{ font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Receiver</div>
-                    <div style={{ font: '700 14px "DM Sans",sans-serif', color: 'var(--text)' }}>{receiver.business_name}</div>
-                    <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text2)', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      {receiver.phone && <span>📞 {receiver.phone}</span>}
-                      {receiver.email && <span>✉ {receiver.email}</span>}
-                    </div>
-                    {addr && <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text3)', marginTop: 2 }}>{addr}</div>}
-                    {order.deliver_to && (
-                      <div style={{ font: '500 12px "DM Sans",sans-serif', color: 'var(--text3)', marginTop: 4 }}>
-                        <strong style={{ color: 'var(--text2)' }}>Deliver to:</strong> {order.deliver_to}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
+              <OrderReceiverInfo order={order} full />
               <table className="tbl" style={{ marginBottom: 0 }}>
                 <thead>
                   <tr>
