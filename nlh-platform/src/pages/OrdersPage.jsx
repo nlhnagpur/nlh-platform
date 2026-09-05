@@ -1211,12 +1211,13 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const [schoolRates, setSchoolRates] = useState({})   // { [sku_id]: { rate, cf_cut } }
   // For the "Fulfilled by" picker — a franchisee can supply a line from
   // their own stock instead of HO (a Sale Return, see
-  // createPendingStockReturns). Any active franchisee can fulfil, not
-  // just ones related to this order, so this is the full list.
+  // createPendingStockReturns). Only CF/SMF tiers hold their own bulk
+  // stock worth crediting back this way — UF and SCHOOL don't, so they're
+  // excluded to keep the list short and relevant.
   const [fulfillOptions, setFulfillOptions] = useState([])
   useEffect(function () {
     if (!isAdmin) return
-    sb.from('franchisees').select('id, business_name, tier').eq('status', 'active').neq('tier', 'NLH').order('business_name')
+    sb.from('franchisees').select('id, business_name, tier').eq('status', 'active').in('tier', ['CF', 'SMF']).order('business_name')
       .then(function (res) { setFulfillOptions(res.data || []) })
   }, [isAdmin])
 
