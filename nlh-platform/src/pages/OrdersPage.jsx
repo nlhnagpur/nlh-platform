@@ -2604,13 +2604,22 @@ export default function OrdersPage() {
     return actionLoading === orderId + '_' + action
   }
 
+  // "Invoiced" also covers part_paid — it's still an invoiced order, just
+  // one that's received a partial payment. It only leaves this bucket once
+  // fully paid (closed). payment_submitted is its own bucket (a payment
+  // proof was submitted but not yet verified) and stays separate.
+  const FILTER_STATUSES = { invoiced: ['invoiced', 'part_paid'] }
+  function matchesFilter(o, f) {
+    return (FILTER_STATUSES[f] || [f]).includes(o.status)
+  }
+
   const filtered = orders.filter(function (o) {
     if (orderFilter === 'all') return true
-    return o.status === orderFilter
+    return matchesFilter(o, orderFilter)
   })
 
   const filterCounts = ORDER_FILTERS.reduce(function (acc, f) {
-    acc[f] = f === 'all' ? orders.length : orders.filter(function (o) { return o.status === f }).length
+    acc[f] = f === 'all' ? orders.length : orders.filter(function (o) { return matchesFilter(o, f) }).length
     return acc
   }, {})
 
