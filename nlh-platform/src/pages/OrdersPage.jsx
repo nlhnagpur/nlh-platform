@@ -2127,7 +2127,12 @@ const fldSm  = { width: '100%', font: '500 12.5px var(--font)', padding: '7px 9p
 // ---------------------------------------------------------------------------
 // OrdersPage — main component
 // ---------------------------------------------------------------------------
-const ORDER_FILTERS = ['all', 'pending', 'proforma', 'invoiced', 'payment_submitted', 'closed']
+// 'balance_due' isn't a real order.status — it's a computed filter (see
+// matchesFilter) for any non-closed invoiced order still owed money. It
+// replaces the old payment_submitted pill, which just showed how many
+// orders had a payment proof awaiting verification (usually near-zero and
+// not very actionable) — balance owed is the number worth watching.
+const ORDER_FILTERS = ['all', 'pending', 'proforma', 'invoiced', 'balance_due', 'closed']
 
 export default function OrdersPage() {
   const { currentRole, currentFranchiseeId, currentUser } = useAuth()
@@ -2606,10 +2611,16 @@ export default function OrdersPage() {
 
   // "Invoiced" also covers part_paid — it's still an invoiced order, just
   // one that's received a partial payment. It only leaves this bucket once
-  // fully paid (closed). payment_submitted is its own bucket (a payment
-  // proof was submitted but not yet verified) and stays separate.
+  // fully paid (closed). "Balance due" is computed, not a real status — any
+  // real invoice (invoiced/part_paid/payment_submitted) that still has
+  // money outstanding, regardless of where it sits in the payment-proof
+  // workflow.
   const FILTER_STATUSES = { invoiced: ['invoiced', 'part_paid'] }
   function matchesFilter(o, f) {
+    if (f === 'balance_due') {
+      return ['invoiced', 'part_paid', 'payment_submitted'].includes(o.status)
+        && Math.max(0, (o.grand_total || 0) - (o.amount_paid || 0)) > 0
+    }
     return (FILTER_STATUSES[f] || [f]).includes(o.status)
   }
 
@@ -2754,7 +2765,7 @@ export default function OrdersPage() {
     { id: 'pending',           l: 'Pending',        cls: 'pending' },
     { id: 'proforma',          l: 'Proforma',       cls: 'pending' },
     { id: 'invoiced',          l: 'Invoiced',       cls: 'inv' },
-    { id: 'payment_submitted', l: 'Pmt Submitted',  cls: 'pmt' },
+    { id: 'balance_due',       l: 'Balance Due',    cls: 'pmt' },
     { id: 'closed',            l: 'Closed',         cls: 'closed' },
   ]
 
