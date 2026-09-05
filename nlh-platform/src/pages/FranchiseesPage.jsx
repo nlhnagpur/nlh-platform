@@ -380,6 +380,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     status: franchisee.status || 'active',
     enrollment_fee: franchisee.enrollment_fee ?? '',
     fee_paid: franchisee.fee_paid ?? '',
+    // Defaults to the day access was granted (the franchisee record's own
+    // created_at) unless contract_start is already set or the admin changes
+    // it while entering the fee — see save() and viewEnrollmentInvoice below.
+    enrollment_date: franchisee.contract_start || (franchisee.created_at ? franchisee.created_at.slice(0, 10) : ''),
     valid_till: franchisee.valid_till || '',
     renewal_fee: franchisee.renewal_fee ?? '',
     date_of_birth: franchisee.date_of_birth || '',
@@ -557,7 +561,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
         .filter(Boolean)
     )).sort()
     printFranchiseeEnrollmentInvoice(
-      Object.assign({}, franchisee, form, { enrollment_fee: Number(form.enrollment_fee) || 0 }),
+      Object.assign({}, franchisee, form, {
+        enrollment_fee: Number(form.enrollment_fee) || 0,
+        contract_start: form.enrollment_date || franchisee.contract_start || null,
+      }),
       courseNames
     )
   }
@@ -683,6 +690,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       status: form.status,
       enrollment_fee: form.enrollment_fee === '' ? null : Number(form.enrollment_fee),
       fee_paid: form.fee_paid === '' ? null : Number(form.fee_paid),
+      contract_start: form.enrollment_date || null,
       valid_till: form.valid_till || null,
       renewal_fee: form.renewal_fee === '' ? null : Number(form.renewal_fee),
       date_of_birth: form.date_of_birth || null,
@@ -953,6 +961,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 <input value={'₹' + fmtAmt(Number(form.fee_paid) || 0)} disabled
                   style={{ color: 'var(--green)' }}
                   title="Maintained automatically from recorded payments — use “Record Payment” to add one" />
+              </label>
+              <label>Enrollment Date
+                <input type="date" value={form.enrollment_date} onChange={field('enrollment_date')} disabled={!admin}
+                  title="Defaults to the day access was granted — change it if the actual enrollment date differs" />
               </label>
               <label>Balance
                 <input value={'₹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />
@@ -2283,6 +2295,7 @@ export default function FranchiseesPage() {
                     <th>Invoice No</th>
                     <th>Franchisee</th>
                     <th>Tier</th>
+                    <th>Enrollment Date</th>
                     <th style={{ textAlign: 'right' }}>Fee</th>
                     <th style={{ textAlign: 'right' }}>Paid</th>
                     <th style={{ textAlign: 'right' }}>Balance</th>
@@ -2297,6 +2310,7 @@ export default function FranchiseesPage() {
                         <td style={{ fontFamily: 'var(--mono)', color: 'var(--purple)', fontWeight: 600 }}>{f.enrollment_invoice_no || '—'}</td>
                         <td>{f.business_name}</td>
                         <td><TierBadge tier={f.tier} /></td>
+                        <td className="mono">{fmtDate(f.contract_start || f.created_at)}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>₹{fmtAmt(f.enrollment_fee || 0)}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--green)' }}>₹{fmtAmt(f.fee_paid || 0)}</td>
                         <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: bal > 0 ? 'var(--red)' : 'var(--green)', fontWeight: bal > 0 ? 700 : 500 }}>
