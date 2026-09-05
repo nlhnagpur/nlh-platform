@@ -923,17 +923,19 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               <label className="col-span-2">Street / Building Address
                 <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Shop no., building name, street" />
               </label>
-              <label>Status
-                <select value={form.status} onChange={field('status')} disabled={!admin}>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </label>
-              <label>Date of Birth
-                <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} disabled={!admin} />
-              </label>
-              <label>Qualification
+              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ width: 140 }}>Status
+                  <select value={form.status} onChange={field('status')} disabled={!admin}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </label>
+                <label style={{ width: 150 }}>Date of Birth
+                  <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} disabled={!admin} />
+                </label>
+              </div>
+              <label className="col-span-2">Qualification
                 <input value={form.qualification} onChange={field('qualification')} disabled={!admin} placeholder="e.g. B.Ed, M.A. Education" />
               </label>
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
