@@ -157,11 +157,14 @@ async function deductOrderStockIfNeeded(order, noteLabel) {
 
 // Sale Return — for every order_items line marked fulfilled_by_franchisee_id
 // (that franchisee supplied it from their own stock instead of HO), raises
-// a pending franchisee_stock_returns credit valued at what they actually
-// paid HO for it (their own most recent purchase of that SKU). Admin
-// approves separately (see the pending-returns panel). Idempotent per
-// order, same as the stock deduction it runs alongside — never blocks the
-// invoice action itself.
+// an already-approved franchisee_stock_returns credit valued at what they
+// actually paid HO for it (their own most recent purchase of that SKU).
+// Fully automated end to end — no manual approval step; the DB trigger
+// assigns the SR-YYYY-NNNN number immediately since the row is inserted
+// pre-approved. If a value on a voucher needs correcting, that's a direct
+// manual edit to the franchisee_stock_returns row, not an approval action
+// here. Idempotent per order, same as the stock deduction it runs
+// alongside — never blocks the invoice action itself.
 async function createPendingStockReturns(order) {
   const { data: already } = await sb.from('franchisee_stock_returns').select('id').eq('fulfills_order_id', order.id).limit(1)
   if (already && already.length > 0) return
@@ -191,6 +194,7 @@ async function createPendingStockReturns(order) {
       total_credit: unitValue * line.ordered_qty,
       source_order_id: source?.order_id || null, source_order_item_id: source?.id || null,
       fulfills_order_id: order.id,
+      status: 'approved', requested_by: 'system (auto)', approved_by: 'system (auto)',
     })
   }
 }
@@ -2145,7 +2149,7 @@ export default function OrdersPage() {
   const [convertConfirm, setConvertConfirm] = useState(null)   // proforma order being converted straight to invoice, no payment required
   const [raiseCnOrder, setRaiseCnOrder] = useState(null)
   const [pendingCns, setPendingCns] = useState([])
-  const [pendingReturns, setPendingReturns] = useState([])
+  const [recentReturns, setRecentReturns] = useState([])
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -2157,35 +2161,19 @@ export default function OrdersPage() {
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
     loadOrders()
-    if (isAdminRole(currentRole)) { loadPendingCns(); loadPendingReturns() }
+    if (isAdminRole(currentRole)) { loadPendingCns(); loadRecentReturns() }
   }, [currentRole, currentFranchiseeId])
 
-  async function loadPendingReturns() {
+  // Sale returns are fully automated (raised pre-approved by
+  // createPendingStockReturns) — this is a read-only recent-activity list,
+  // not an approval queue. To correct one, edit the franchisee_stock_returns
+  // row directly.
+  async function loadRecentReturns() {
     const { data } = await sb.from('franchisee_stock_returns')
       .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no)')
-      .eq('status', 'pending')
-      .order('requested_at', { ascending: false })
-    setPendingReturns(data || [])
-  }
-
-  async function approveStockReturn(r) {
-    setActionLoading('sr_' + r.id)
-    const { error } = await sb.from('franchisee_stock_returns')
-      .update({ status: 'approved', approved_by: currentUser?.email || null })
-      .eq('id', r.id)
-    if (error) { showToast('Failed to approve: ' + error.message, 'err') }
-    else { showToast('Sale return approved ✓ — ₹' + fmtAmt(r.total_credit) + ' credited to ' + (r.franchisees?.business_name || 'franchisee')); await loadPendingReturns() }
-    setActionLoading(null)
-  }
-
-  async function rejectStockReturn(r) {
-    setActionLoading('sr_' + r.id)
-    const { error } = await sb.from('franchisee_stock_returns')
-      .update({ status: 'rejected', approved_by: currentUser?.email || null, approved_at: new Date().toISOString() })
-      .eq('id', r.id)
-    if (error) { showToast('Failed to reject: ' + error.message, 'err') }
-    else { showToast('Sale return rejected'); await loadPendingReturns() }
-    setActionLoading(null)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    setRecentReturns(data || [])
   }
 
   async function loadPendingCns() {
@@ -2295,7 +2283,7 @@ export default function OrdersPage() {
       try {
         warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
         await createPendingStockReturns(order)
-        await loadPendingReturns()
+        await loadRecentReturns()
       } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
@@ -2455,7 +2443,7 @@ export default function OrdersPage() {
       try {
         warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
         await createPendingStockReturns(order)
-        await loadPendingReturns()
+        await loadRecentReturns()
       } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         await sendInvoiceEmail({ ...order, invoice_no: invoiceNo })
@@ -2810,24 +2798,19 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {isAdmin && pendingReturns.length > 0 && (
+        {isAdmin && recentReturns.length > 0 && (
           <div style={{ background: '#EFF6FF', border: '1px solid #2563EB', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
             <div style={{ font: '700 11px var(--mono)', color: '#1E40AF', textTransform: 'uppercase', marginBottom: 8 }}>
-              ↩ {pendingReturns.length} sale return{pendingReturns.length !== 1 ? 's' : ''} awaiting approval
+              ↩ Recent sale returns — auto-credited (edit the voucher directly to correct one)
             </div>
-            {pendingReturns.map(function (r) {
-              const busy = actionLoading === 'sr_' + r.id
+            {recentReturns.map(function (r) {
               const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
               return (
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid #DBEAFE', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, flex: 1, minWidth: 240 }}>
-                    <b>{r.franchisees?.business_name || '—'}</b> ({r.franchisees?.tier}) supplied <b>{r.qty}× {skuName}</b> for {r.orders?.order_ref || 'an order'}
+                    <b>{r.return_no || '—'}</b> · <b>{r.franchisees?.business_name || '—'}</b> ({r.franchisees?.tier}) supplied <b>{r.qty}× {skuName}</b> for {r.orders?.order_ref || 'an order'}
                     {' '}· credit ₹{fmtAmt(r.total_credit)} (₹{fmtAmt(r.unit_value)}/kit)
                   </span>
-                  <button className="row-action green" disabled={busy} onClick={function () { approveStockReturn(r) }}>
-                    {busy ? '…' : 'Approve'}
-                  </button>
-                  <button className="row-action danger" disabled={busy} onClick={function () { rejectStockReturn(r) }}>Reject</button>
                 </div>
               )
             })}
