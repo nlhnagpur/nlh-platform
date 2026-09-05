@@ -541,7 +541,15 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     else showToast('Reminder failed' + (r && r.error ? ': ' + r.error : ''), 'err')
   }
 
-  function viewEnrollmentInvoice() {
+  // Reported live: admin typed an Enrollment Fee, clicked Invoice, the
+  // printed document showed it correctly (it reads live `form` state) — but
+  // the value was never actually written to the database, since this only
+  // ever printed and the separate page-level Save button is what persists
+  // `form`. Reopening the record later showed Enrollment Fee back at 0.
+  // Generating the invoice now saves first, so what's on the printed
+  // invoice is always what's actually on record.
+  async function viewEnrollmentInvoice() {
+    if (admin) await save()
     const courseNames = Array.from(new Set(
       allCourses
         .filter(function (c) { return registeredCourses.includes(c.id) })
@@ -923,8 +931,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>💰 Fee Tracking</span>
                 <span style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn-s" onClick={viewEnrollmentInvoice} style={{ fontSize: 11 }} title="View / print the franchise enrollment invoice">
-                    🧾 Invoice
+                  <button className="btn-s" onClick={viewEnrollmentInvoice} disabled={saving} style={{ fontSize: 11 }} title="Saves and prints the franchise enrollment invoice">
+                    {saving ? 'Saving…' : '🧾 Invoice'}
                   </button>
                   {admin && balance > 0 && (
                     <>
@@ -2045,6 +2053,7 @@ export default function FranchiseesPage() {
     return EXPORT_FIELDS.filter(function (f) { return f.checkedByDefault }).map(function (f) { return f.key })
   })
   const [exportTiers, setExportTiers] = useState(['NLH', 'SMF', 'CF', 'UF'])
+  const [pageTab, setPageTab] = useState('list')   // 'list' | 'invoices'
 
   useEffect(() => {
     if (currentRole === null) return  // wait until auth resolves
@@ -2120,6 +2129,23 @@ export default function FranchiseesPage() {
     const bal = (Number(f.enrollment_fee) || 0) - (Number(f.fee_paid) || 0)
     return sum + (bal > 0 ? bal : 0)
   }, 0)
+
+  // Enrollment invoices list (see "Enrollment Invoices" tab) — every
+  // franchisee that's actually been charged an enrollment fee, newest first.
+  const enrollmentInvoices = franchisees
+    .filter(function (f) { return (Number(f.enrollment_fee) || 0) > 0 })
+    .slice()
+    .sort(function (a, b) { return (b.enrollment_invoice_no || '').localeCompare(a.enrollment_invoice_no || '') })
+
+  function printEnrollmentInvoiceFor(f) {
+    const courseNames = Array.from(new Set(
+      allCourses
+        .filter(function (c) { return (f.registered_courses || []).includes(c.id) })
+        .map(function (c) { return c.group_name || c.name })
+        .filter(Boolean)
+    )).sort()
+    printFranchiseeEnrollmentInvoice(f, courseNames)
+  }
 
   // Avatar color by tier
   function tierColor(tier) {
@@ -2237,7 +2263,58 @@ export default function FranchiseesPage() {
           )}
         </div>
 
-        {selected ? (
+        {admin && (
+          <div className="tabs">
+            <button className={'tab' + (pageTab === 'list' ? ' active' : '')} onClick={function () { setPageTab('list') }}>👥 Franchisees</button>
+            <button className={'tab' + (pageTab === 'invoices' ? ' active' : '')} onClick={function () { setPageTab('invoices') }}>
+              🧾 Enrollment Invoices{enrollmentInvoices.length > 0 ? ' (' + enrollmentInvoices.length + ')' : ''}
+            </button>
+          </div>
+        )}
+
+        {pageTab === 'invoices' ? (
+          <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
+            {enrollmentInvoices.length === 0 ? (
+              <div className="empty">No enrollment invoices yet.</div>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Invoice No</th>
+                    <th>Franchisee</th>
+                    <th>Tier</th>
+                    <th style={{ textAlign: 'right' }}>Fee</th>
+                    <th style={{ textAlign: 'right' }}>Paid</th>
+                    <th style={{ textAlign: 'right' }}>Balance</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrollmentInvoices.map(function (f) {
+                    const bal = (Number(f.enrollment_fee) || 0) - (Number(f.fee_paid) || 0)
+                    return (
+                      <tr key={f.id}>
+                        <td style={{ fontFamily: 'var(--mono)', color: 'var(--purple)', fontWeight: 600 }}>{f.enrollment_invoice_no || '—'}</td>
+                        <td>{f.business_name}</td>
+                        <td><TierBadge tier={f.tier} /></td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>₹{fmtAmt(f.enrollment_fee || 0)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--green)' }}>₹{fmtAmt(f.fee_paid || 0)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: bal > 0 ? 'var(--red)' : 'var(--green)', fontWeight: bal > 0 ? 700 : 500 }}>
+                          {bal > 0 ? '₹' + fmtAmt(bal) : '₹0'}
+                        </td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button className="row-action" onClick={function () { printEnrollmentInvoiceFor(f) }}>View / Print</button>
+                          {' '}
+                          <button className="row-action" onClick={function () { setPageTab('list'); setSelected(f) }}>Open</button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ) : selected ? (
           <div style={{ marginTop: 4 }}>
             <button className="btn" style={{ marginBottom: 12, fontSize: 13 }}
               onClick={function () { setSelected(null) }}>← Back to franchisees</button>
