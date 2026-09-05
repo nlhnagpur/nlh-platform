@@ -1056,23 +1056,25 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>📅 Validity &amp; Renewal</span>
               </div>
-              <label>Valid Till (date)
-                <input
-                  type="date"
-                  value={form.valid_till}
-                  onChange={field('valid_till')}
-                  disabled={!admin}
-                />
-              </label>
-              <label>Custom Renewal Fee (₹)
-                <input
-                  type="number"
-                  value={form.renewal_fee}
-                  onChange={field('renewal_fee')}
-                  disabled={!admin}
-                  placeholder={'Default: ₹' + (rs.fee != null ? fmtAmt(rs.fee) : '25% of fee paid')}
-                />
-              </label>
+              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ width: 150 }}>Valid Till (date)
+                  <input
+                    type="date"
+                    value={form.valid_till}
+                    onChange={field('valid_till')}
+                    disabled={!admin}
+                  />
+                </label>
+                <label style={{ width: 170 }}>Custom Renewal Fee (₹)
+                  <input
+                    type="number"
+                    value={form.renewal_fee}
+                    onChange={field('renewal_fee')}
+                    disabled={!admin}
+                    placeholder={'Default: ₹' + (rs.fee != null ? fmtAmt(rs.fee) : '25% of fee paid')}
+                  />
+                </label>
+              </div>
               <div className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
                 {/* Status badge */}
                 <span style={{

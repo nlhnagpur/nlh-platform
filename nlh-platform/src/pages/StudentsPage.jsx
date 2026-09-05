@@ -1437,12 +1437,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   <option value="female">Female</option>
                 </select>
               </label>
-              <label>Date of Birth
-                <input type="date" value={form.dob} onChange={field('dob')} disabled={!canEdit} />
-              </label>
-              <label>Date of Registration
-                <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!canEdit} />
-              </label>
+              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ width: 150 }}>Date of Birth
+                  <input type="date" value={form.dob} onChange={field('dob')} disabled={!canEdit} />
+                </label>
+                <label style={{ width: 150 }}>Date of Registration
+                  <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!canEdit} />
+                </label>
+              </div>
               <label>Phone
                 <input value={form.phone}
                   onChange={function (e) { setForm(function (f) { return { ...f, phone: to10Digit(e.target.value) } }) }}
@@ -1537,8 +1539,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   )}
                 </div>
               </div>
-              <div className="form-grid" style={{ marginTop: 8 }}>
-                <label>Agreed Fee (₹)
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+                <label style={{ width: 220 }}>Agreed Fee (₹)
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!canManageFees}
                       placeholder="Type agreed amount" style={{ flex: 1 }} title="The total fee agreed with the parent — edit freely" />
@@ -1547,11 +1549,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     )}
                   </div>
                 </label>
-                <label>Fee Paid (₹)
+                <label style={{ width: 130 }}>Fee Paid (₹)
                   <input value={'₹' + fmtAmt(form.fee_paid || 0)} disabled
                     style={{ color: 'var(--green)' }} title="Sum of recorded payments — record a payment to change this" />
                 </label>
-                <label>Balance
+                <label style={{ width: 130 }}>Balance
                   <input
                     value={balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared'}
                     disabled
@@ -3268,12 +3270,14 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                 <option value="female">Female</option>
               </select>
             </label>
-            <label>Date of Birth
-              <input type="date" value={form.dob} onChange={field('dob')} />
-            </label>
-            <label>Date of Registration
-              <input type="date" value={form.registered_at} onChange={field('registered_at')} />
-            </label>
+            <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <label style={{ width: 150 }}>Date of Birth
+                <input type="date" value={form.dob} onChange={field('dob')} />
+              </label>
+              <label style={{ width: 150 }}>Date of Registration
+                <input type="date" value={form.registered_at} onChange={field('registered_at')} />
+              </label>
+            </div>
             <label>Parent Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
