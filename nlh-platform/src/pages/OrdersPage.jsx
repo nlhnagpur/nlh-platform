@@ -2173,7 +2173,7 @@ export default function OrdersPage() {
   // queue. To correct one, edit the franchisee_stock_returns row directly.
   async function loadReturns() {
     const { data } = await sb.from('franchisee_stock_returns')
-      .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier, phone, email, address, area, city, state), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no)')
+      .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier, phone, email, address, area, city, state), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no, invoiced_at, created_at, placer:franchisees!orders_placer_id_fkey(business_name), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name))')
       .order('created_at', { ascending: false })
       .limit(500)
     setReturns(data || [])
@@ -2954,7 +2954,8 @@ export default function OrdersPage() {
       </div>
 
       {viewReturn && (
-        <SaleReturnView saleReturn={viewReturn} onClose={function () { setViewReturn(null) }} />
+        <SaleReturnView saleReturn={viewReturn} onClose={function () { setViewReturn(null) }}
+          onSaved={async function () { await loadReturns() }} />
       )}
 
       {/* Modals */}

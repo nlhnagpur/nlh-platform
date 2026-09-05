@@ -1,11 +1,16 @@
-import React from 'react'
-import { fmtAmt } from '../utils'
+import React, { useState } from 'react'
+import { sb } from '../supabase'
+import { fmtAmt, showToast } from '../utils'
 
 // Printable Sale Return voucher — a franchisee (CF/SMF) supplied part of
 // another party's order from their own previously-purchased stock, and this
 // document is the credit record for it (see franchisee_stock_returns and
 // createPendingStockReturns in OrdersPage.jsx). Always a single line — one
 // SKU, one qty — so unlike InvoiceView this never needs page-pack logic.
+// Auto-generated and auto-approved, but the rate (or qty) can be corrected
+// here by hand — e.g. if the franchisee's original purchase rate needs
+// adjusting — same "automated, manually correctable" model the user asked
+// for the whole sale-return process to follow.
 
 function fmtDateLong(d) {
   if (!d) return '—'
@@ -20,10 +25,38 @@ function tbBtn(active, color) {
   }
 }
 
-export default function SaleReturnView({ saleReturn: r, onClose }) {
+export default function SaleReturnView({ saleReturn: r, onClose, onSaved }) {
   const fr = r.franchisees || {}
   const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
   const forOrder = r.orders?.invoice_no || r.orders?.order_ref || '—'
+  // Who actually received the goods — a school billed through its CF shows
+  // as the school, same bill_to_fr-else-placer resolution used everywhere
+  // else (OrderReceiverInfo, InvoiceView, stock ledger notes).
+  const receiver = r.orders?.bill_to_fr?.business_name || r.orders?.placer?.business_name || '—'
+  const orderDate = fmtDateLong(r.orders?.invoiced_at || r.orders?.created_at)
+
+  const [editing, setEditing] = useState(false)
+  const [qty, setQty] = useState(r.qty)
+  const [unitValue, setUnitValue] = useState(r.unit_value)
+  const [saving, setSaving] = useState(false)
+  const liveCredit = (parseInt(qty, 10) || 0) * (parseInt(unitValue, 10) || 0)
+
+  function startEdit() { setQty(r.qty); setUnitValue(r.unit_value); setEditing(true) }
+  function cancelEdit() { setQty(r.qty); setUnitValue(r.unit_value); setEditing(false) }
+
+  async function saveEdit() {
+    const q = parseInt(qty, 10) || 0
+    const uv = parseInt(unitValue, 10) || 0
+    setSaving(true)
+    const { error } = await sb.from('franchisee_stock_returns')
+      .update({ qty: q, unit_value: uv, total_credit: q * uv })
+      .eq('id', r.id)
+    setSaving(false)
+    if (error) { showToast('Failed to save: ' + error.message, 'err'); return }
+    showToast('Sale return voucher updated ✓')
+    setEditing(false)
+    if (onSaved) onSaved()
+  }
 
   function handlePrint() {
     const node = document.getElementById('sr-sheet')
@@ -51,8 +84,18 @@ export default function SaleReturnView({ saleReturn: r, onClose }) {
         <span style={{ font: '600 11px "DM Mono",monospace', color: '#5C5A54', marginRight: 4, textTransform: 'uppercase', letterSpacing: '.05em' }}>
           <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#2563EB', marginRight: 5, verticalAlign: 'middle' }} />{r.return_no || 'Sale Return'}
         </span>
-        <button onClick={handlePrint} style={{ ...tbBtn(false), background: '#534AB7', color: '#fff', border: 'none' }}>🖨 PDF</button>
-        <button onClick={onClose} style={tbBtn(false)}>← Back</button>
+        {editing ? (
+          <>
+            <button onClick={saveEdit} disabled={saving} style={{ ...tbBtn(false), background: '#16A34A', color: '#fff', border: 'none', opacity: saving ? .7 : 1 }}>{saving ? 'Saving…' : '✓ Save'}</button>
+            <button onClick={cancelEdit} disabled={saving} style={tbBtn(false)}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <button onClick={startEdit} style={{ ...tbBtn(false), background: '#D97706', color: '#fff', border: 'none' }}>✏ Edit</button>
+            <button onClick={handlePrint} style={{ ...tbBtn(false), background: '#534AB7', color: '#fff', border: 'none' }}>🖨 PDF</button>
+            <button onClick={onClose} style={tbBtn(false)}>← Back</button>
+          </>
+        )}
       </div>
 
       {/* ══════════ VOUCHER ══════════ */}
@@ -118,7 +161,6 @@ export default function SaleReturnView({ saleReturn: r, onClose }) {
               <div style={{ font: '500 9px "DM Mono",monospace', color: '#5C5A54', lineHeight: 1.55 }}>9, Anjuman Shopping Complex, Residency Rd, Sadar, Nagpur 440 001</div>
             </div>
             <div style={{ borderRadius: 10, padding: '9px 12px 24px', background: 'linear-gradient(135deg,#FFF7DA,#FFEAA0)', position: 'relative', overflow: 'hidden', minHeight: 104 }}>
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 3, background: '#F59E0B' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                 <span style={{ font: '700 7.5px "DM Mono",monospace', color: '#D97706', textTransform: 'uppercase', letterSpacing: '.1em' }}>Credited to</span>
                 {fr.phone && <span style={{ font: '700 11px "DM Sans",sans-serif', color: '#1A1916', whiteSpace: 'nowrap' }}>☎ {fr.phone}</span>}
@@ -134,7 +176,7 @@ export default function SaleReturnView({ saleReturn: r, onClose }) {
             </div>
           </div>
 
-          {/* item table — one line */}
+          {/* item table — one line, editable qty/rate */}
           <div style={{ border: '1px solid #E2E0D8', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ background: 'linear-gradient(90deg,#1E40AF,#2563EB)', color: '#fff', padding: '9px 14px', display: 'grid', gridTemplateColumns: '1fr 70px 90px 110px', gap: 10, font: '700 10px "DM Mono",monospace', textTransform: 'uppercase', letterSpacing: '.07em' }}>
               <div>SKU / Item</div>
@@ -144,10 +186,25 @@ export default function SaleReturnView({ saleReturn: r, onClose }) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 110px', gap: 10, padding: '11px 14px', alignItems: 'center' }}>
               <div style={{ font: '600 13px "DM Sans",sans-serif', color: '#1A1916' }}>{skuName || '—'}</div>
-              <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>{r.qty}</div>
-              <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>₹{fmtAmt(r.unit_value)}</div>
-              <div style={{ textAlign: 'right', font: '700 13.5px "DM Mono",monospace', color: '#1A1916' }}>₹{fmtAmt(r.total_credit)}</div>
+              {editing ? (
+                <input type="number" min="1" value={qty} onChange={function (e) { setQty(e.target.value) }}
+                  style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
+              ) : (
+                <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>{qty}</div>
+              )}
+              {editing ? (
+                <input type="number" min="0" value={unitValue} onChange={function (e) { setUnitValue(e.target.value) }}
+                  style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
+              ) : (
+                <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>₹{fmtAmt(unitValue)}</div>
+              )}
+              <div style={{ textAlign: 'right', font: '700 13.5px "DM Mono",monospace', color: '#1A1916' }}>₹{fmtAmt(liveCredit)}</div>
             </div>
+          </div>
+
+          {/* who it was supplied to — short, one line */}
+          <div style={{ font: '500 10px "DM Mono",monospace', color: '#5C5A54' }}>
+            Supplied to <b style={{ color: '#1A1916' }}>{receiver}</b> · {forOrder} · {orderDate}
           </div>
 
           {/* credit total */}
@@ -156,18 +213,8 @@ export default function SaleReturnView({ saleReturn: r, onClose }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <div style={{ font: '700 10px "DM Mono",monospace', color: '#1E40AF', textTransform: 'uppercase', letterSpacing: '.12em' }}>Total Credit Due to {fr.business_name || 'Franchisee'}</div>
               <div style={{ font: '800 23px "DM Sans",sans-serif', color: '#1A1916', letterSpacing: '-.01em', lineHeight: 1 }}>
-                <span style={{ font: '700 12px "DM Sans",sans-serif', marginRight: 3, opacity: .7 }}>₹</span>{fmtAmt(r.total_credit)}
+                <span style={{ font: '700 12px "DM Sans",sans-serif', marginRight: 3, opacity: .7 }}>₹</span>{fmtAmt(liveCredit)}
               </div>
-            </div>
-          </div>
-
-          {/* explanation note */}
-          <div style={{ border: '1.5px solid #E2E0D8', borderRadius: 9, padding: '9px 12px', background: '#FAFAF8', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 3, background: '#9C9A92' }} />
-            <div style={{ font: '700 7.5px "DM Mono",monospace', color: '#9C9A92', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 4 }}>What this voucher means</div>
-            <div style={{ font: '500 10px "DM Sans",sans-serif', color: '#3D3B35', lineHeight: 1.6 }}>
-              {fr.business_name || 'This franchisee'} supplied <b>{r.qty} × {skuName}</b> for order <b>{forOrder}</b> directly from their own previously-purchased stock, instead of Head Office shipping fresh units.
-              Head Office's stock was not deducted again for this quantity. This voucher records the credit owed back at what {fr.business_name || 'the franchisee'} originally paid Head Office for these units — not a fresh purchase or commission.
             </div>
           </div>
 
