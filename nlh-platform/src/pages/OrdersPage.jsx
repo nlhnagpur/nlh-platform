@@ -1923,6 +1923,11 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
         coupon_code: coupon?.code || null,
         status: 'pending',
         bill_to_franchisee_id: schoolId || null,
+        // A school order bills the school but the CF who placed it is who
+        // actually delivers and follows up on the ground — default Ship To
+        // to them so the printed invoice shows it, instead of leaving it
+        // blank and only two columns (From/Bill To) printing.
+        ship_to_franchisee_id: schoolId ? fid : null,
       })
       .select().single()
 
