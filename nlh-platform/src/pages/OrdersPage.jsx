@@ -10,6 +10,7 @@ import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsa
 import { printOrderReceipt } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
 import InvoiceView from '../components/InvoiceView'
+import SaleReturnView from '../components/SaleReturnView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
@@ -2150,7 +2151,9 @@ export default function OrdersPage() {
   const [convertConfirm, setConvertConfirm] = useState(null)   // proforma order being converted straight to invoice, no payment required
   const [raiseCnOrder, setRaiseCnOrder] = useState(null)
   const [pendingCns, setPendingCns] = useState([])
-  const [recentReturns, setRecentReturns] = useState([])
+  const [returns, setReturns] = useState([])
+  const [viewReturn, setViewReturn] = useState(null)
+  const [pageTab, setPageTab] = useState('orders')   // 'orders' | 'returns'
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -2162,19 +2165,18 @@ export default function OrdersPage() {
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
     loadOrders()
-    if (isAdminRole(currentRole)) { loadPendingCns(); loadRecentReturns() }
+    if (isAdminRole(currentRole)) { loadPendingCns(); loadReturns() }
   }, [currentRole, currentFranchiseeId])
 
   // Sale returns are fully automated (raised pre-approved by
-  // createPendingStockReturns) — this is a read-only recent-activity list,
-  // not an approval queue. To correct one, edit the franchisee_stock_returns
-  // row directly.
-  async function loadRecentReturns() {
+  // createPendingStockReturns) — this is a read-only list, not an approval
+  // queue. To correct one, edit the franchisee_stock_returns row directly.
+  async function loadReturns() {
     const { data } = await sb.from('franchisee_stock_returns')
-      .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no)')
+      .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier, phone, email, address, area, city, state), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no)')
       .order('created_at', { ascending: false })
-      .limit(10)
-    setRecentReturns(data || [])
+      .limit(500)
+    setReturns(data || [])
   }
 
   async function loadPendingCns() {
@@ -2284,7 +2286,7 @@ export default function OrdersPage() {
       try {
         warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
         await createPendingStockReturns(order)
-        await loadRecentReturns()
+        await loadReturns()
       } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         const invoicedOrder = { ...order, invoice_no: invoiceNo }
@@ -2444,7 +2446,7 @@ export default function OrdersPage() {
       try {
         warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
         await createPendingStockReturns(order)
-        await loadRecentReturns()
+        await loadReturns()
       } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
         await sendInvoiceEmail({ ...order, invoice_no: invoiceNo })
@@ -2772,6 +2774,62 @@ export default function OrdersPage() {
           </div>
         </div>
 
+        {isAdmin && (
+          <div className="tabs">
+            <button className={'tab' + (pageTab === 'orders' ? ' active' : '')} onClick={function () { setPageTab('orders') }}>📦 Orders</button>
+            <button className={'tab' + (pageTab === 'returns' ? ' active' : '')} onClick={function () { setPageTab('returns') }}>
+              ↩ Sale Returns{returns.length > 0 ? ' (' + returns.length + ')' : ''}
+            </button>
+          </div>
+        )}
+
+        {pageTab === 'returns' ? (
+          <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
+            {returns.length === 0 ? (
+              <div className="empty">No sale returns yet.</div>
+            ) : (
+              <table className="big-tbl">
+                <thead>
+                  <tr>
+                    <th>Voucher No</th>
+                    <th className="hide-mobile">Date</th>
+                    <th>Franchisee</th>
+                    <th>Item</th>
+                    <th style={{ textAlign: 'right' }}>Qty</th>
+                    <th className="hide-mobile" style={{ textAlign: 'right' }}>Rate</th>
+                    <th style={{ textAlign: 'right' }}>Credit</th>
+                    <th className="hide-mobile">For Order</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returns.map(function (r) {
+                    const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
+                    return (
+                      <tr key={r.id}>
+                        <td className="mono" style={{ color: '#2563EB', fontWeight: 600 }}>{r.return_no || '—'}</td>
+                        <td className="mono hide-mobile">{fmtDate(r.approved_at || r.created_at)}</td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{r.franchisees?.business_name || '—'}</div>
+                          <TierBadge tier={r.franchisees?.tier} />
+                        </td>
+                        <td>{skuName || '—'}</td>
+                        <td style={{ textAlign: 'right' }} className="mono">{r.qty}</td>
+                        <td className="hide-mobile mono" style={{ textAlign: 'right' }}>₹{fmtAmt(r.unit_value)}</td>
+                        <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(r.total_credit)}</div></td>
+                        <td className="mono hide-mobile">{r.orders?.invoice_no || r.orders?.order_ref || '—'}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button className="row-action" onClick={function () { setViewReturn(r) }}>View / Print</button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ) : (
+        <>
         {/* CF commission credit notes awaiting approval — admin-only, raised
             only by admin, so this is purely a review/approve queue. Approving
             is what makes it show up in the CF's ledger (loadFranchiseeLedger). */}
@@ -2793,25 +2851,6 @@ export default function OrdersPage() {
                     {busy ? '…' : 'Approve'}
                   </button>
                   <button className="row-action danger" disabled={busy} onClick={function () { rejectCreditNote(cn) }}>Reject</button>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {isAdmin && recentReturns.length > 0 && (
-          <div style={{ background: '#EFF6FF', border: '1px solid #2563EB', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
-            <div style={{ font: '700 11px var(--mono)', color: '#1E40AF', textTransform: 'uppercase', marginBottom: 8 }}>
-              ↩ Recent sale returns — auto-credited (edit the voucher directly to correct one)
-            </div>
-            {recentReturns.map(function (r) {
-              const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
-              return (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid #DBEAFE', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, flex: 1, minWidth: 240 }}>
-                    <b>{r.return_no || '—'}</b> · <b>{r.franchisees?.business_name || '—'}</b> ({r.franchisees?.tier}) supplied <b>{r.qty}× {skuName}</b> for {r.orders?.order_ref || 'an order'}
-                    {' '}· credit ₹{fmtAmt(r.total_credit)} (₹{fmtAmt(r.unit_value)}/kit)
-                  </span>
                 </div>
               )
             })}
@@ -2910,7 +2949,13 @@ export default function OrdersPage() {
             </table>
           </div>
         )}
+        </>
+        )}
       </div>
+
+      {viewReturn && (
+        <SaleReturnView saleReturn={viewReturn} onClose={function () { setViewReturn(null) }} />
+      )}
 
       {/* Modals */}
       {paySubmitOrder && (
