@@ -128,32 +128,36 @@ function CouponModal({ coupon, currentUserId, onClose, onSaved }) {
               placeholder="0" style={inp} />
           </label>
 
-          {isPct && (
-            <label>
-              <span style={lbl}>Max discount cap (₹)</span>
-              <input type="number" value={f.max_discount} onChange={function (e) { set('max_discount', e.target.value) }}
-                placeholder="no cap" style={inp} />
+          <div className="col-span-2" style={{ gridColumn: 'span 2', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {isPct && (
+              <label style={{ width: 130 }}>
+                <span style={lbl}>Max discount cap (₹)</span>
+                <input type="number" value={f.max_discount} onChange={function (e) { set('max_discount', e.target.value) }}
+                  placeholder="no cap" style={inp} />
+              </label>
+            )}
+            <label style={{ width: 130 }}>
+              <span style={lbl}>Total usage limit</span>
+              <input type="number" value={f.usage_limit} onChange={function (e) { set('usage_limit', e.target.value) }}
+                placeholder="unlimited" style={inp} />
             </label>
-          )}
-          <label>
-            <span style={lbl}>Total usage limit</span>
-            <input type="number" value={f.usage_limit} onChange={function (e) { set('usage_limit', e.target.value) }}
-              placeholder="unlimited" style={inp} />
-          </label>
-          <label>
-            <span style={lbl}>Per-franchisee limit</span>
-            <input type="number" value={f.per_franchisee_limit} onChange={function (e) { set('per_franchisee_limit', e.target.value) }}
-              placeholder="unlimited" style={inp} />
-          </label>
+            <label style={{ width: 150 }}>
+              <span style={lbl}>Per-franchisee limit</span>
+              <input type="number" value={f.per_franchisee_limit} onChange={function (e) { set('per_franchisee_limit', e.target.value) }}
+                placeholder="unlimited" style={inp} />
+            </label>
+          </div>
 
-          <label>
-            <span style={lbl}>Valid from</span>
-            <input type="date" value={f.valid_from} onChange={function (e) { set('valid_from', e.target.value) }} style={inp} />
-          </label>
-          <label>
-            <span style={lbl}>Valid until</span>
-            <input type="date" value={f.valid_until} onChange={function (e) { set('valid_until', e.target.value) }} style={inp} />
-          </label>
+          <div className="col-span-2" style={{ gridColumn: 'span 2', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <label style={{ width: 150 }}>
+              <span style={lbl}>Valid from</span>
+              <input type="date" value={f.valid_from} onChange={function (e) { set('valid_from', e.target.value) }} style={inp} />
+            </label>
+            <label style={{ width: 150 }}>
+              <span style={lbl}>Valid until</span>
+              <input type="date" value={f.valid_until} onChange={function (e) { set('valid_until', e.target.value) }} style={inp} />
+            </label>
+          </div>
 
           <label className="col-span-2" style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
             <input type="checkbox" checked={f.active} onChange={function (e) { set('active', e.target.checked) }} />

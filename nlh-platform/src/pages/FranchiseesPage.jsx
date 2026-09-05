@@ -955,6 +955,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 </span>
               </div>
               <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ width: 150 }}>Enrollment Date
+                  <input type="date" value={form.enrollment_date} onChange={field('enrollment_date')} disabled={!admin}
+                    title="Defaults to the day access was granted — change it if the actual enrollment date differs" />
+                </label>
                 <label style={{ width: 130 }}>Enrollment Fee (₹)
                   <input type="number" value={form.enrollment_fee} onChange={field('enrollment_fee')} disabled={!admin} />
                 </label>
@@ -962,10 +966,6 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   <input value={'₹' + fmtAmt(Number(form.fee_paid) || 0)} disabled
                     style={{ color: 'var(--green)' }}
                     title="Maintained automatically from recorded payments — use “Record Payment” to add one" />
-                </label>
-                <label style={{ width: 150 }}>Enrollment Date
-                  <input type="date" value={form.enrollment_date} onChange={field('enrollment_date')} disabled={!admin}
-                    title="Defaults to the day access was granted — change it if the actual enrollment date differs" />
                 </label>
                 <label style={{ width: 130 }}>Balance
                   <input value={'₹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />

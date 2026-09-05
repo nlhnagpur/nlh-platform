@@ -1205,14 +1205,16 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       onChange={function (e) { setBatchForm(function (f) { return { ...f, name: e.target.value } }) }}
                       placeholder="e.g. Morning Batch A, 1-on-1 Riya" />
                   </label>
-                  <label>Start Date
-                    <input type="date" value={batchForm.start_date}
-                      onChange={function (e) { setBatchForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
-                  </label>
-                  <label>Time
-                    <input type="time" value={batchForm.time}
-                      onChange={function (e) { setBatchForm(function (f) { return { ...f, time: e.target.value } }) }} />
-                  </label>
+                  <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <label style={{ width: 150 }}>Start Date
+                      <input type="date" value={batchForm.start_date}
+                        onChange={function (e) { setBatchForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
+                    </label>
+                    <label style={{ width: 130 }}>Time
+                      <input type="time" value={batchForm.time}
+                        onChange={function (e) { setBatchForm(function (f) { return { ...f, time: e.target.value } }) }} />
+                    </label>
+                  </div>
                   <label className="col-span-2">Schedule Days
                     <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
                       {DAYS.map(function (d) {
@@ -1677,15 +1679,17 @@ function EditBatchModal({ batch, onClose, onSaved }) {
                 })}
               </div>
             </label>
-            <label>Start Time
-              <input type="time" value={form.time}
-                onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
-              {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
-            </label>
-            <label>Start Date
-              <input type="date" value={form.start_date}
-                onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
-            </label>
+            <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <label style={{ width: 150 }}>Start Date
+                <input type="date" value={form.start_date}
+                  onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
+              </label>
+              <label style={{ width: 130 }}>Start Time
+                <input type="time" value={form.time}
+                  onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
+                {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
+              </label>
+            </div>
             <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={form.is_individual}
                 onChange={function (e) { setForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />

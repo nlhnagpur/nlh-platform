@@ -927,35 +927,35 @@ function DispatchModal({ order, onClose, onSaved }) {
             />
           </label>
 
-          <label>Dispatch Date
-            <input
-              type="date"
-              value={date}
-              onChange={function (e) { setDate(e.target.value) }}
-            />
-          </label>
-
-          <label>Weight (kg)
-            <input
-              type="number"
-              min="0"
-              step="0.001"
-              placeholder="e.g. 2.5"
-              value={weight}
-              onChange={function (e) { setWeight(e.target.value) }}
-            />
-          </label>
-
-          <label>Freight Charges (₹)
-            <input
-              type="number"
-              min="0"
-              step="1"
-              placeholder="e.g. 150"
-              value={freight}
-              onChange={function (e) { setFreight(e.target.value) }}
-            />
-          </label>
+          <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <label style={{ width: 150 }}>Dispatch Date
+              <input
+                type="date"
+                value={date}
+                onChange={function (e) { setDate(e.target.value) }}
+              />
+            </label>
+            <label style={{ width: 110 }}>Weight (kg)
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                placeholder="e.g. 2.5"
+                value={weight}
+                onChange={function (e) { setWeight(e.target.value) }}
+              />
+            </label>
+            <label style={{ width: 130 }}>Freight Charges (₹)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="e.g. 150"
+                value={freight}
+                onChange={function (e) { setFreight(e.target.value) }}
+              />
+            </label>
+          </div>
 
           {/* WhatsApp dispatch update to franchisee */}
           <div className="col-span-2" style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
