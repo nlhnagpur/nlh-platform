@@ -371,6 +371,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     owner_name: franchisee.owner_name || '',
     email: franchisee.email || '',
     phone: franchisee.phone || '',
+    phone2: franchisee.phone2 || '',
     country: franchisee.country || 'India',
     state: franchisee.state || '',
     city: franchisee.city || '',
@@ -391,6 +392,26 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   })
   const [registeredCourses, setRegisteredCourses] = useState(franchisee.registered_courses || [])
   const [saving, setSaving] = useState(false)
+
+  // Country/State/City — same logic as the shared LocationFields component,
+  // but inlined here so this form can lay them out in its own row order
+  // (City, State, PIN, Country) instead of LocationFields' fixed
+  // Country/State/City sequence, which the Add Franchisee / Add School
+  // modals still use unchanged.
+  const isIndia = (form.country || 'India').toLowerCase() === 'india'
+  const presetCities = isIndia ? (STATE_CITIES[form.state] || []) : []
+  const cityList = (form.city && !presetCities.includes(form.city))
+    ? [form.city, ...presetCities]
+    : presetCities
+  function handleCountryChange(e) {
+    setForm(function (f) { return { ...f, country: e.target.value, state: '', city: '' } })
+  }
+  function handleStateChange(e) {
+    setForm(function (f) { return { ...f, state: e.target.value, city: '' } })
+  }
+  function handleCityChange(e) {
+    setForm(function (f) { return { ...f, city: e.target.value } })
+  }
   const [orders, setOrders] = useState([])
   const [students, setStudents] = useState([])
   const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended session count }
@@ -681,6 +702,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       owner_name: form.owner_name.trim(),
       business_name: form.name.trim() || form.owner_name.trim(),
       phone: form.phone.trim(),
+      phone2: form.phone2.trim() || null,
       country: form.country.trim(),
       state: form.state.trim(),
       city: form.city.trim(),
@@ -860,39 +882,50 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
 
           {tab === 'info' && (
             <div className="form-grid">
+              {/* Row 1 — Owner Name / Business Name */}
               <label>Owner Name *
                 <input value={form.owner_name} onChange={field('owner_name')} disabled={!admin} placeholder="Owner's full name" />
               </label>
               <label>Business / Centre Name
                 <input value={form.name} onChange={field('name')} disabled={!admin} placeholder="Optional — e.g. Bright Minds Academy" />
               </label>
-              <label>Email
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input value={form.email} disabled style={{ flex: 1 }} />
-                  {admin && !changingEmail && (
-                    <button type="button" className="btn-s" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                      onClick={function () { setNewEmail(form.email || ''); setChangingEmail(true) }}>✎ Change</button>
+
+              {/* Row 2 — Email / Phone 1 / Phone 2 */}
+              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <label style={{ width: 300 }}>Email
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input value={form.email} disabled style={{ flex: 1 }} />
+                    {admin && !changingEmail && (
+                      <button type="button" className="btn-s" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                        onClick={function () { setNewEmail(form.email || ''); setChangingEmail(true) }}>✎ Change</button>
+                    )}
+                  </div>
+                  {admin && changingEmail && (
+                    <>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+                        <input type="email" value={newEmail} onChange={function (e) { setNewEmail(e.target.value) }}
+                          placeholder="new@email.com" style={{ flex: 1 }} autoFocus />
+                        <button type="button" className="btn-p" style={{ fontSize: 11 }} onClick={changeEmail} disabled={savingEmail}>
+                          {savingEmail ? 'Saving…' : 'Save'}
+                        </button>
+                        <button type="button" className="btn" style={{ fontSize: 11 }} disabled={savingEmail}
+                          onClick={function () { setChangingEmail(false); setNewEmail('') }}>Cancel</button>
+                      </div>
+                      <p className="hint" style={{ marginTop: 4 }}>
+                        Updates their login email everywhere (login, profile, certificates). They sign in with the new email next time; their password is unchanged.
+                      </p>
+                    </>
                   )}
-                </div>
-                {admin && changingEmail && (
-                  <>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-                      <input type="email" value={newEmail} onChange={function (e) { setNewEmail(e.target.value) }}
-                        placeholder="new@email.com" style={{ flex: 1 }} autoFocus />
-                      <button type="button" className="btn-p" style={{ fontSize: 11 }} onClick={changeEmail} disabled={savingEmail}>
-                        {savingEmail ? 'Saving…' : 'Save'}
-                      </button>
-                      <button type="button" className="btn" style={{ fontSize: 11 }} disabled={savingEmail}
-                        onClick={function () { setChangingEmail(false); setNewEmail('') }}>Cancel</button>
-                    </div>
-                    <p className="hint" style={{ marginTop: 4 }}>
-                      Updates their login email everywhere (login, profile, certificates). They sign in with the new email next time; their password is unchanged.
-                    </p>
-                  </>
-                )}
-              </label>
+                </label>
+                <label style={{ width: 190 }}>Phone 1
+                  <input value={form.phone} onChange={field('phone')} disabled={!admin} />
+                </label>
+                <label style={{ width: 190 }}>Phone 2
+                  <input value={form.phone2} onChange={field('phone2')} disabled={!admin} placeholder="Optional — alternate number" />
+                </label>
+              </div>
               {admin && franchisee.tier !== 'SCHOOL' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button
                     className="btn-s"
                     onClick={resendAccess}
@@ -906,24 +939,55 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </span>
                 </div>
               )}
-              <label>Phone
-                <input value={form.phone} onChange={field('phone')} disabled={!admin} style={{ alignSelf: 'flex-start', width: 200 }} />
+
+              {/* Row 3 — Building/Street Address / Area-Locality */}
+              <label>Street / Building Address
+                <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Shop no., building name, street" />
               </label>
-              <LocationFields
-                form={form}
-                onChange={function(k, v) { setForm(function(f) { return { ...f, [k]: v } }) }}
-                disabled={!admin}
-              />
               <label>Area / Locality
                 <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampeth…" />
               </label>
-              <label>PIN Code
-                <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" style={{ alignSelf: 'flex-start', width: 140 }} />
-              </label>
-              <label className="col-span-2">Street / Building Address
-                <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Shop no., building name, street" />
-              </label>
+
+              {/* Row 4 — City / State / PIN / Country */}
               <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ width: 200 }}>City
+                  {isIndia ? (
+                    <select value={form.city || ''} onChange={handleCityChange} disabled={!admin || !form.state}>
+                      <option value="">— Select City —</option>
+                      {cityList.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  ) : (
+                    <input value={form.city || ''} onChange={handleCityChange} disabled={!admin} placeholder="City" />
+                  )}
+                </label>
+                <label style={{ width: 220 }}>{isIndia ? 'State' : 'State / Province'}
+                  {isIndia ? (
+                    <select value={form.state || ''} onChange={handleStateChange} disabled={!admin}>
+                      <option value="">— Select State —</option>
+                      {INDIA_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : (
+                    <input value={form.state || ''} onChange={handleStateChange} disabled={!admin} placeholder="State / Province / Region" />
+                  )}
+                </label>
+                <label style={{ width: 130 }}>PIN Code
+                  <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
+                </label>
+                <label style={{ width: 200 }}>Country
+                  <select value={form.country || 'India'} onChange={handleCountryChange} disabled={!admin}>
+                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              {/* Row 5 — Qualification / Date of Birth / Status */}
+              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ width: 250 }}>Qualification
+                  <input value={form.qualification} onChange={field('qualification')} disabled={!admin} placeholder="e.g. B.Ed, M.A. Education" />
+                </label>
+                <label style={{ width: 150 }}>Date of Birth
+                  <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} disabled={!admin} />
+                </label>
                 <label style={{ width: 140 }}>Status
                   <select value={form.status} onChange={field('status')} disabled={!admin}>
                     <option value="active">Active</option>
@@ -931,13 +995,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     <option value="pending">Pending</option>
                   </select>
                 </label>
-                <label style={{ width: 150 }}>Date of Birth
-                  <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} disabled={!admin} />
-                </label>
               </div>
-              <label className="col-span-2">Qualification
-                <input value={form.qualification} onChange={field('qualification')} disabled={!admin} placeholder="e.g. B.Ed, M.A. Education" />
-              </label>
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>💰 Fee Tracking</span>
                 <span style={{ display: 'flex', gap: 6 }}>
