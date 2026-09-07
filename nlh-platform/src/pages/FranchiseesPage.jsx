@@ -892,12 +892,18 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
 
               {/* Row 2 — Email / Phone 1 / Phone 2 */}
               <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <label style={{ width: 300 }}>Email
+                <label style={{ width: 460 }}>Email
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <input value={form.email} disabled style={{ flex: 1 }} />
                     {admin && !changingEmail && (
                       <button type="button" className="btn-s" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
                         onClick={function () { setNewEmail(form.email || ''); setChangingEmail(true) }}>✎ Change</button>
+                    )}
+                    {admin && franchisee.tier !== 'SCHOOL' && !changingEmail && (
+                      <button type="button" className="btn-s" onClick={resendAccess} disabled={resending}
+                        style={{ fontSize: 11, whiteSpace: 'nowrap' }} title="Sends a password reset link to the franchisee's email">
+                        {resending ? 'Sending…' : '📧 Resend Login Access'}
+                      </button>
                     )}
                   </div>
                   {admin && changingEmail && (
@@ -924,21 +930,6 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   <input value={form.phone2} onChange={field('phone2')} disabled={!admin} placeholder="Optional — alternate number" />
                 </label>
               </div>
-              {admin && franchisee.tier !== 'SCHOOL' && (
-                <div className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button
-                    className="btn-s"
-                    onClick={resendAccess}
-                    disabled={resending}
-                    style={{ fontSize: 12, whiteSpace: 'nowrap' }}
-                  >
-                    {resending ? 'Sending…' : '📧 Resend Login Access'}
-                  </button>
-                  <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    Sends a password reset link to the franchisee's email
-                  </span>
-                </div>
-              )}
 
               {/* Row 3 — Building/Street Address / Area-Locality */}
               <label>Street / Building Address
