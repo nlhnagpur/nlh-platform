@@ -890,44 +890,44 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 <input value={form.name} onChange={field('name')} disabled={!admin} placeholder="Optional — e.g. Bright Minds Academy" />
               </label>
 
-              {/* Row 2 — Email / Phone 1 / Phone 2 */}
-              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <label style={{ width: 460 }}>Email
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input value={form.email} disabled style={{ flex: 1 }} />
-                    {admin && !changingEmail && (
-                      <button type="button" className="btn-s" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-                        onClick={function () { setNewEmail(form.email || ''); setChangingEmail(true) }}>✎ Change</button>
-                    )}
-                    {admin && franchisee.tier !== 'SCHOOL' && !changingEmail && (
-                      <button type="button" className="btn-s" onClick={resendAccess} disabled={resending}
-                        style={{ fontSize: 11, whiteSpace: 'nowrap' }} title="Sends a password reset link to the franchisee's email">
-                        {resending ? 'Sending…' : '📧 Resend Login Access'}
-                      </button>
-                    )}
-                  </div>
-                  {admin && changingEmail && (
-                    <>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-                        <input type="email" value={newEmail} onChange={function (e) { setNewEmail(e.target.value) }}
-                          placeholder="new@email.com" style={{ flex: 1 }} autoFocus />
-                        <button type="button" className="btn-p" style={{ fontSize: 11 }} onClick={changeEmail} disabled={savingEmail}>
-                          {savingEmail ? 'Saving…' : 'Save'}
-                        </button>
-                        <button type="button" className="btn" style={{ fontSize: 11 }} disabled={savingEmail}
-                          onClick={function () { setChangingEmail(false); setNewEmail('') }}>Cancel</button>
-                      </div>
-                      <p className="hint" style={{ marginTop: 4 }}>
-                        Updates their login email everywhere (login, profile, certificates). They sign in with the new email next time; their password is unchanged.
-                      </p>
-                    </>
+              {/* Row 2 — Email (left half) / Phone 1 + Phone 2 (right half) */}
+              <label>Email
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input value={form.email} disabled style={{ flex: 1 }} />
+                  {admin && !changingEmail && (
+                    <button type="button" className="btn-s" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                      onClick={function () { setNewEmail(form.email || ''); setChangingEmail(true) }}>✎ Change</button>
                   )}
-                </label>
-                <label style={{ width: 190 }}>Phone 1
+                  {admin && franchisee.tier !== 'SCHOOL' && !changingEmail && (
+                    <button type="button" className="btn-s" onClick={resendAccess} disabled={resending}
+                      style={{ fontSize: 11, whiteSpace: 'nowrap' }} title="Sends a password reset link to the franchisee's email">
+                      {resending ? 'Sending…' : '📧 Resend Login Access'}
+                    </button>
+                  )}
+                </div>
+                {admin && changingEmail && (
+                  <>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+                      <input type="email" value={newEmail} onChange={function (e) { setNewEmail(e.target.value) }}
+                        placeholder="new@email.com" style={{ flex: 1 }} autoFocus />
+                      <button type="button" className="btn-p" style={{ fontSize: 11 }} onClick={changeEmail} disabled={savingEmail}>
+                        {savingEmail ? 'Saving…' : 'Save'}
+                      </button>
+                      <button type="button" className="btn" style={{ fontSize: 11 }} disabled={savingEmail}
+                        onClick={function () { setChangingEmail(false); setNewEmail('') }}>Cancel</button>
+                    </div>
+                    <p className="hint" style={{ marginTop: 4 }}>
+                      Updates their login email everywhere (login, profile, certificates). They sign in with the new email next time; their password is unchanged.
+                    </p>
+                  </>
+                )}
+              </label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>Phone 1
                   <input value={form.phone} onChange={field('phone')} disabled={!admin} />
                 </label>
-                <label style={{ width: 190 }}>Phone 2
-                  <input value={form.phone2} onChange={field('phone2')} disabled={!admin} placeholder="Optional — alternate number" />
+                <label style={{ flex: 1 }}>Phone 2
+                  <input value={form.phone2} onChange={field('phone2')} disabled={!admin} placeholder="Optional" />
                 </label>
               </div>
 
@@ -939,9 +939,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampeth…" />
               </label>
 
-              {/* Row 4 — City / State / PIN / Country */}
-              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <label style={{ width: 200 }}>City
+              {/* Row 4 — City + State (left half) / PIN + Country (right half) */}
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>City
                   {isIndia ? (
                     <select value={form.city || ''} onChange={handleCityChange} disabled={!admin || !form.state}>
                       <option value="">— Select City —</option>
@@ -951,7 +951,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     <input value={form.city || ''} onChange={handleCityChange} disabled={!admin} placeholder="City" />
                   )}
                 </label>
-                <label style={{ width: 220 }}>{isIndia ? 'State' : 'State / Province'}
+                <label style={{ flex: 1 }}>{isIndia ? 'State' : 'State / Province'}
                   {isIndia ? (
                     <select value={form.state || ''} onChange={handleStateChange} disabled={!admin}>
                       <option value="">— Select State —</option>
@@ -961,25 +961,27 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     <input value={form.state || ''} onChange={handleStateChange} disabled={!admin} placeholder="State / Province / Region" />
                   )}
                 </label>
-                <label style={{ width: 130 }}>PIN Code
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>PIN Code
                   <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
                 </label>
-                <label style={{ width: 200 }}>Country
+                <label style={{ flex: 1 }}>Country
                   <select value={form.country || 'India'} onChange={handleCountryChange} disabled={!admin}>
                     {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </label>
               </div>
 
-              {/* Row 5 — Qualification / Date of Birth / Status */}
-              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <label style={{ width: 250 }}>Qualification
-                  <input value={form.qualification} onChange={field('qualification')} disabled={!admin} placeholder="e.g. B.Ed, M.A. Education" />
-                </label>
-                <label style={{ width: 150 }}>Date of Birth
+              {/* Row 5 — Qualification (left half) / Date of Birth + Status (right half) */}
+              <label>Qualification
+                <input value={form.qualification} onChange={field('qualification')} disabled={!admin} placeholder="e.g. B.Ed, M.A. Education" />
+              </label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>Date of Birth
                   <input type="date" value={form.date_of_birth} onChange={field('date_of_birth')} disabled={!admin} />
                 </label>
-                <label style={{ width: 140 }}>Status
+                <label style={{ flex: 1 }}>Status
                   <select value={form.status} onChange={field('status')} disabled={!admin}>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
@@ -1005,20 +1007,22 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   )}
                 </span>
               </div>
-              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <label style={{ width: 150 }}>Enrollment Date
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>Enrollment Date
                   <input type="date" value={form.enrollment_date} onChange={field('enrollment_date')} disabled={!admin}
                     title="Defaults to the day access was granted — change it if the actual enrollment date differs" />
                 </label>
-                <label style={{ width: 130 }}>Enrollment Fee (₹)
+                <label style={{ flex: 1 }}>Enrollment Fee (₹)
                   <input type="number" value={form.enrollment_fee} onChange={field('enrollment_fee')} disabled={!admin} />
                 </label>
-                <label style={{ width: 130 }}>Fee Paid (₹)
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>Fee Paid (₹)
                   <input value={'₹' + fmtAmt(Number(form.fee_paid) || 0)} disabled
                     style={{ color: 'var(--green)' }}
                     title="Maintained automatically from recorded payments — use “Record Payment” to add one" />
                 </label>
-                <label style={{ width: 130 }}>Balance
+                <label style={{ flex: 1 }}>Balance
                   <input value={'₹' + fmtAmt(balance)} disabled style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }} />
                 </label>
               </div>
@@ -1107,25 +1111,23 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>📅 Validity &amp; Renewal</span>
               </div>
-              <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <label style={{ width: 150 }}>Valid Till (date)
-                  <input
-                    type="date"
-                    value={form.valid_till}
-                    onChange={field('valid_till')}
-                    disabled={!admin}
-                  />
-                </label>
-                <label style={{ width: 170 }}>Custom Renewal Fee (₹)
-                  <input
-                    type="number"
-                    value={form.renewal_fee}
-                    onChange={field('renewal_fee')}
-                    disabled={!admin}
-                    placeholder={'Default: ₹' + (rs.fee != null ? fmtAmt(rs.fee) : '25% of fee paid')}
-                  />
-                </label>
-              </div>
+              <label>Valid Till (date)
+                <input
+                  type="date"
+                  value={form.valid_till}
+                  onChange={field('valid_till')}
+                  disabled={!admin}
+                />
+              </label>
+              <label>Custom Renewal Fee (₹)
+                <input
+                  type="number"
+                  value={form.renewal_fee}
+                  onChange={field('renewal_fee')}
+                  disabled={!admin}
+                  placeholder={'Default: ₹' + (rs.fee != null ? fmtAmt(rs.fee) : '25% of fee paid')}
+                />
+              </label>
               <div className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
                 {/* Status badge */}
                 <span style={{
