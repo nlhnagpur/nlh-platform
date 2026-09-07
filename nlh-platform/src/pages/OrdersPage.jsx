@@ -261,14 +261,16 @@ function TierBadge({ tier }) {
   return <span className={'tier ' + cls}>{tier}</span>
 }
 
-// Edit and PDF are both "look at/change the invoice document" actions that
-// were sitting side by side as two separate row buttons — clubbed into one
-// button that opens a small menu when both are available for this order's
-// status; falls back to a single plain button when only one applies (e.g.
-// a pending order has no PDF yet, a closed one is no longer editable).
-// Module-level (not nested in OrdersPage) so its own `open` state survives
-// unrelated re-renders of the orders table.
-function EditPdfMenu({ canEdit, canPdf, onEdit, onPdf }) {
+// Every per-order row action (Record Pmt, Remind, Edit, PDF, Dispatch,
+// Cancel, Invoice, Proforma, Verify, Reopen, Receipts, Raise Credit Note…)
+// used to be its own always-visible button — up to 6 at once. Folded into
+// one "Actions ▾" button with a dropdown menu; the button itself is only
+// highlighted (purple) when a "primary" item is in the list, so the single
+// most urgent next step is still visible at a glance without a wall of
+// buttons. Module-level (not nested in OrdersPage) so its own open/closed
+// state survives unrelated re-renders of the orders table.
+// items: [{ key, label, onClick, cls?: 'primary'|'green'|'danger', disabled?, title? }]
+function ActionsMenu({ items }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(function () {
@@ -278,18 +280,27 @@ function EditPdfMenu({ canEdit, canPdf, onEdit, onPdf }) {
     return function () { document.removeEventListener('mousedown', onDocClick) }
   }, [open])
 
-  if (!canEdit && !canPdf) return null
-  if (canEdit && !canPdf) return <button className="row-action" onClick={onEdit}>Edit</button>
-  if (canPdf && !canEdit) return <button className="row-action" onClick={onPdf}>PDF</button>
+  const clsColor = { primary: 'var(--purple)', green: 'var(--green)', danger: '#dc2626' }
+  const list = (items || []).filter(Boolean)
+  if (list.length === 0) return null
+  const hasPrimary = list.some(function (it) { return it.cls === 'primary' })
+
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button className="row-action" onClick={function () { setOpen(function (o) { return !o }) }}>Edit / PDF ▾</button>
+      <button className={'row-action' + (hasPrimary ? ' primary' : '')} onClick={function () { setOpen(function (o) { return !o }) }}>
+        Actions ▾
+      </button>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 14px rgba(0,0,0,.12)', zIndex: 20, minWidth: 110, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <button className="row-action" style={{ border: 'none', borderRadius: 0, textAlign: 'left' }}
-            onClick={function () { setOpen(false); onEdit() }}>✎ Edit</button>
-          <button className="row-action" style={{ border: 'none', borderRadius: 0, textAlign: 'left' }}
-            onClick={function () { setOpen(false); onPdf() }}>🖨 PDF</button>
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 14px rgba(0,0,0,.12)', zIndex: 20, minWidth: 160, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {list.map(function (it) {
+            return (
+              <button key={it.key} className="row-action" disabled={it.disabled} title={it.title}
+                style={{ border: 'none', borderRadius: 0, textAlign: 'left', color: clsColor[it.cls] || 'var(--text2)', fontWeight: it.cls ? 700 : 600 }}
+                onClick={function () { setOpen(false); it.onClick() }}>
+                {it.label}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -2685,94 +2696,89 @@ export default function OrdersPage() {
       order.dispatch_weight != null ? order.dispatch_weight + ' kg' : null,
       order.dispatch_freight > 0 ? '₹' + fmtAmt(order.dispatch_freight) : null,
     ].filter(Boolean).join(' · ') : ''
+    const canDispatch = !(order.proforma_no && !order.invoice_no)
+    const items = [
+      order.status === 'pending' && isAdmin && {
+        key: 'invoice', cls: 'primary', disabled: busy,
+        label: isActing(order.id, 'invoice') ? 'Invoicing…' : 'Invoice',
+        onClick: function () { setInvoiceConfirm(order) },
+      },
+      order.status === 'pending' && isAdmin && {
+        key: 'proforma', disabled: busy,
+        label: isActing(order.id, 'proforma') ? '…' : 'Proforma',
+        title: 'Preliminary, non-tax document — no dispatch until payment is verified',
+        onClick: function () { setProformaConfirm(order) },
+      },
+      ['invoiced', 'part_paid', 'proforma'].includes(order.status) && !isAdmin && {
+        key: 'submitpmt', cls: 'green', label: 'Submit Payment',
+        onClick: function () { setPaySubmitOrder(order) },
+      },
+      // part_paid and proforma get the same actions as invoiced — Edit
+      // included: InvoiceEditModal only touches order_items/subtotal/
+      // grand_total/courier/coupon, never invoice_no or proforma_no, so
+      // re-pricing a proforma before it's converted is exactly as safe
+      // as editing a pending order.
+      ['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && {
+        key: 'recordpmt', cls: 'green', label: 'Record Payment',
+        onClick: function () { setRecordPayOrder(order) },
+      },
+      ['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && {
+        key: 'remind', disabled: busy,
+        label: isActing(order.id, 'reminder') ? 'Reminding…' : 'Remind',
+        onClick: function () { handleSendReminder(order) },
+      },
+      // Proforma-only: issue the real invoice on admin's own say-so without
+      // waiting for a payment, or delete it outright if the deal isn't
+      // going ahead (no invoice_no was ever consumed, so there's nothing
+      // to preserve — unlike Cancel, which is for a real invoice's audit
+      // trail).
+      order.status === 'proforma' && isAdmin && {
+        key: 'convert', cls: 'primary', disabled: busy,
+        label: isActing(order.id, 'convert') ? 'Converting…' : 'Convert to Invoice',
+        title: 'Issue the real invoice now, without waiting for payment',
+        onClick: function () { setConvertConfirm(order) },
+      },
+      order.status === 'proforma' && isAdmin && {
+        key: 'delete', cls: 'danger', label: 'Delete',
+        onClick: function () { setDeleteProformaOrder(order) },
+      },
+      order.status === 'payment_submitted' && isAdmin && {
+        key: 'verify', cls: 'primary', disabled: busy,
+        label: isActing(order.id, 'verify') ? 'Verifying…' : 'Verify Payment',
+        onClick: function () { handleVerifyPayment(order) },
+      },
+      order.status === 'closed' && isAdmin && {
+        key: 'reopen', disabled: busy,
+        label: isActing(order.id, 'reopen') ? '…' : 'Reopen',
+        onClick: function () { handleReopen(order) },
+      },
+      // Receipts live in the payment history, which used to be reachable
+      // only through Record Pmt — so a closed order had no way in.
+      order.amount_paid > 0 && {
+        key: 'receipts', label: 'Receipts', title: 'View payments and print receipts',
+        onClick: function () { setViewPayOrder(order) },
+      },
+      canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { setEditInvoiceOrder(order) } },
+      canPdfOrder && { key: 'pdf', label: 'PDF', onClick: function () { setInvoiceViewOrder(order) } },
+      // A proforma order with no real invoice yet can't dispatch — payment
+      // has to be verified first (which converts it to a real invoice).
+      canDispatch && {
+        key: 'dispatch', label: order.dispatched_at ? 'Dispatch (edit)' : 'Dispatch',
+        onClick: function () { setDispatchOrder(order) },
+      },
+      canCancel && ['invoiced', 'payment_submitted'].includes(order.status) && {
+        key: 'cancel', cls: 'danger', label: 'Cancel', onClick: function () { setCancelOrder(order) },
+      },
+      // CF commission payout — admin-only, never available to the CF
+      // themselves. Only makes sense once the school order is actually
+      // settled (closed) so the commission is on real, paid business.
+      isAdmin && order.bill_to_fr?.tier === 'SCHOOL' && order.status === 'closed' && {
+        key: 'raisecn', label: '🧾 Raise Credit Note', onClick: function () { setRaiseCnOrder(order) },
+      },
+    ]
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, minWidth: 0 }}>
-        {/* ── action buttons: one clean aligned row ── */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-          {order.status === 'pending' && isAdmin && (
-            <>
-              <button className="row-action primary" disabled={busy} onClick={function () { setInvoiceConfirm(order) }}>
-                {isActing(order.id, 'invoice') ? '…' : 'Invoice'}
-              </button>
-              <button className="row-action" disabled={busy} onClick={function () { setProformaConfirm(order) }}
-                title="Preliminary, non-tax document — no dispatch until payment is verified">
-                {isActing(order.id, 'proforma') ? '…' : 'Proforma'}
-              </button>
-            </>
-          )}
-          {['invoiced', 'part_paid', 'proforma'].includes(order.status) && !isAdmin && (
-            <button className="row-action green" onClick={function () { setPaySubmitOrder(order) }}>Submit Pmt</button>
-          )}
-          {/* part_paid and proforma get the same actions as invoiced — Edit
-              included: InvoiceEditModal only touches order_items/subtotal/
-              grand_total/courier/coupon, never invoice_no or proforma_no, so
-              re-pricing a proforma before it's converted is exactly as safe
-              as editing a pending order. */}
-          {['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && (
-            <>
-              <button className="row-action green" onClick={function () { setRecordPayOrder(order) }}>Record Pmt</button>
-              <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
-                {isActing(order.id, 'reminder') ? '…' : 'Remind'}
-              </button>
-            </>
-          )}
-          {/* Proforma-only: issue the real invoice on admin's own say-so
-              without waiting for a payment, or delete it outright if the
-              deal isn't going ahead (no invoice_no was ever consumed, so
-              there's nothing to preserve — unlike Cancel, which is for a
-              real invoice's audit trail). */}
-          {order.status === 'proforma' && isAdmin && (
-            <>
-              <button className="row-action primary" disabled={busy} onClick={function () { setConvertConfirm(order) }}
-                title="Issue the real invoice now, without waiting for payment">
-                {isActing(order.id, 'convert') ? '…' : 'Convert to Invoice'}
-              </button>
-              <button className="row-action danger" onClick={function () { setDeleteProformaOrder(order) }}>Delete</button>
-            </>
-          )}
-          {order.status === 'payment_submitted' && isAdmin && (
-            <button className="row-action primary" disabled={busy} onClick={function () { handleVerifyPayment(order) }}>
-              {isActing(order.id, 'verify') ? '…' : 'Verify'}
-            </button>
-          )}
-          {order.status === 'closed' && isAdmin && (
-            <button className="row-action" disabled={busy} onClick={function () { handleReopen(order) }}>
-              {isActing(order.id, 'reopen') ? '…' : 'Reopen'}
-            </button>
-          )}
-          {/* Receipts live in the payment history, which used to be reachable
-              only through Record Pmt — so a closed order had no way in. */}
-          {order.amount_paid > 0 && (
-            <button className="row-action" title="View payments and print receipts"
-              onClick={function () { setViewPayOrder(order) }}>Receipts</button>
-          )}
-          <EditPdfMenu canEdit={canEditOrder} canPdf={canPdfOrder}
-            onEdit={function () { setEditInvoiceOrder(order) }}
-            onPdf={function () { setInvoiceViewOrder(order) }} />
-          {/* A proforma order with no real invoice yet can't dispatch — payment
-              has to be verified first (which converts it to a real invoice). */}
-          {order.proforma_no && !order.invoice_no ? (
-            <button className="row-action" disabled title="Verify payment first — this order is still on a proforma, not a real invoice">
-              🔒 Dispatch
-            </button>
-          ) : (
-            <button className="row-action" onClick={function () { setDispatchOrder(order) }}>
-              {order.dispatched_at ? 'Dispatch ✎' : 'Dispatch'}
-            </button>
-          )}
-          {canCancel && ['invoiced', 'payment_submitted'].includes(order.status) && (
-            <button className="row-action danger" onClick={function () { setCancelOrder(order) }}>Cancel</button>
-          )}
-          {/* CF commission payout — admin-only, never available to the CF
-              themselves. Only makes sense once the school order is actually
-              settled (closed) so the commission is on real, paid business. */}
-          {isAdmin && order.bill_to_fr?.tier === 'SCHOOL' && order.status === 'closed' && (
-            <button className="row-action" style={{ color: 'var(--purple)', borderColor: 'var(--purple)' }}
-              onClick={function () { setRaiseCnOrder(order) }}>
-              🧾 Raise Credit Note
-            </button>
-          )}
-        </div>
+        <ActionsMenu items={items} />
 
         {/* ── metadata, muted, on their own lines below ── */}
         {order.paid_at && order.amount_paid > 0 && (
