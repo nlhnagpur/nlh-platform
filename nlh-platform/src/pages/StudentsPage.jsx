@@ -1555,7 +1555,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                <label style={{ flex: 1 }}>Agreed Fee (₹)
+                <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>Agreed Fee (₹)
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input type="number" value={form.fee_total} onChange={field('fee_total')} disabled={!canManageFees}
                       placeholder="Type agreed amount" style={{ flex: 1 }} title="The total fee agreed with the parent — edit freely" />
@@ -1565,11 +1565,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   </div>
                 </label>
                 <div style={{ flex: 1, display: 'flex', gap: 12 }}>
-                <label style={{ flex: 1 }}>Fee Paid (₹)
+                <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>Fee Paid (₹)
                   <input value={'₹' + fmtAmt(form.fee_paid || 0)} disabled
                     style={{ color: 'var(--green)' }} title="Sum of recorded payments — record a payment to change this" />
                 </label>
-                <label style={{ flex: 1 }}>Balance
+                <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>Balance
                   <input
                     value={balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared'}
                     disabled
