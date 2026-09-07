@@ -1424,12 +1424,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {tab === 'profile' && (
           <div>
             <div className="form-grid">
+              {/* Row 1 — Student Name / Parent-Guardian */}
               <label>Student Name *
                 <input value={form.full_name} onChange={field('full_name')} disabled={!canEdit} />
               </label>
               <label>Parent / Guardian
                 <input value={form.parent_name} onChange={field('parent_name')} disabled={!canEdit} />
               </label>
+
+              {/* Row 2 — Gender (left) / Date of Birth + Date of Registration (right) */}
               <label>Gender
                 <select value={form.gender} onChange={field('gender')} disabled={!canEdit}>
                   <option value="">— Select —</option>
@@ -1437,11 +1440,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   <option value="female">Female</option>
                 </select>
               </label>
-              <label>Date of Birth
-                <input type="date" value={form.dob} onChange={field('dob')} disabled={!canEdit} />
-              </label>
-              <label>Date of Registration
-                <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!canEdit} />
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>Date of Birth
+                  <input type="date" value={form.dob} onChange={field('dob')} disabled={!canEdit} />
+                </label>
+                <label style={{ flex: 1 }}>Date of Registration
+                  <input type="date" value={form.registered_at} onChange={field('registered_at')} disabled={!canEdit} />
+                </label>
+              </div>
+
+              {/* Row 3 — Parent Email / Phone */}
+              <label>Parent Email
+                <input type="email" value={form.email} onChange={field('email')} disabled={!canEdit} placeholder="parent@email.com" />
               </label>
               <label>Phone
                 <input value={form.phone}
@@ -1450,27 +1460,34 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   placeholder="10-digit mobile — no country code"
                   disabled={!canEdit} />
               </label>
-              <label>Parent Email
-                <input type="email" value={form.email} onChange={field('email')} disabled={!canEdit} placeholder="parent@email.com" />
-              </label>
-              <label>PIN Code
-                <input value={form.pincode} onChange={field('pincode')} disabled={!canEdit} placeholder="e.g. 440001" />
-              </label>
-              <label>City
-                <input value={form.city} onChange={field('city')} disabled={!canEdit} placeholder="Nagpur" />
+
+              {/* Row 4 — Street/Building Address / Area-Locality */}
+              <label>Street / Building Address
+                <input value={form.address} onChange={field('address')} disabled={!canEdit} placeholder="Flat/Shop no., building, street" />
               </label>
               <label>Area / Locality
                 <input value={form.area} onChange={field('area')} disabled={!canEdit} placeholder="Neighbourhood / Area" />
               </label>
-              <label>State
-                <input value={form.state} onChange={field('state')} disabled={!canEdit} placeholder="Maharashtra" />
-              </label>
-              <label>Country
-                <input value={form.country} onChange={field('country')} disabled={!canEdit} placeholder="India" />
-              </label>
-              <label className="col-span-2">Street / Building Address
-                <input value={form.address} onChange={field('address')} disabled={!canEdit} placeholder="Flat/Shop no., building, street" />
-              </label>
+
+              {/* Row 5 — City + State (left) / PIN + Country (right) */}
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>City
+                  <input value={form.city} onChange={field('city')} disabled={!canEdit} placeholder="Nagpur" />
+                </label>
+                <label style={{ flex: 1 }}>State
+                  <input value={form.state} onChange={field('state')} disabled={!canEdit} placeholder="Maharashtra" />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <label style={{ flex: 1 }}>PIN Code
+                  <input value={form.pincode} onChange={field('pincode')} disabled={!canEdit} placeholder="e.g. 440001" />
+                </label>
+                <label style={{ flex: 1 }}>Country
+                  <input value={form.country} onChange={field('country')} disabled={!canEdit} placeholder="India" />
+                </label>
+              </div>
+
+              {/* Row 6 — Enrolment Channel / Payment Status */}
               <label>Enrolment Channel
                 <select
                   value={form.channel}
@@ -3270,12 +3287,14 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                 <option value="female">Female</option>
               </select>
             </label>
-            <label>Date of Birth
-              <input type="date" value={form.dob} onChange={field('dob')} />
-            </label>
-            <label>Date of Registration
-              <input type="date" value={form.registered_at} onChange={field('registered_at')} />
-            </label>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <label style={{ flex: 1 }}>Date of Birth
+                <input type="date" value={form.dob} onChange={field('dob')} />
+              </label>
+              <label style={{ flex: 1 }}>Date of Registration
+                <input type="date" value={form.registered_at} onChange={field('registered_at')} />
+              </label>
+            </div>
             <label>Parent Email *
               <input type="email" value={form.email} onChange={field('email')} placeholder="parent@email.com" />
             </label>
@@ -3514,24 +3533,28 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
             {showAddress && (
               <div className="form-grid" style={{ marginTop:10 }}>
-                <label>PIN Code
-                  <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
-                </label>
-                <label>City
-                  <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
+                <label>Street / Building Address
+                  <input value={form.address} onChange={field('address')} placeholder="Flat/Shop no., building, street" />
                 </label>
                 <label>Area / Locality
                   <input value={form.area} onChange={field('area')} placeholder="Sadar, Dharampeth…" />
                 </label>
-                <label>State
-                  <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
-                </label>
-                <label>Country
-                  <input value={form.country} onChange={field('country')} placeholder="India" />
-                </label>
-                <label className="col-span-2">Street / Building Address
-                  <input value={form.address} onChange={field('address')} placeholder="Flat/Shop no., building, street" />
-                </label>
+                <div style={{ display:'flex', gap:12 }}>
+                  <label style={{ flex:1 }}>City
+                    <input value={form.city} onChange={field('city')} placeholder="Nagpur" />
+                  </label>
+                  <label style={{ flex:1 }}>State
+                    <input value={form.state} onChange={field('state')} placeholder="Maharashtra" />
+                  </label>
+                </div>
+                <div style={{ display:'flex', gap:12 }}>
+                  <label style={{ flex:1 }}>PIN Code
+                    <input value={form.pincode} onChange={field('pincode')} placeholder="e.g. 440001" />
+                  </label>
+                  <label style={{ flex:1 }}>Country
+                    <input value={form.country} onChange={field('country')} placeholder="India" />
+                  </label>
+                </div>
                 <label>Enrolment Channel
                   <select
                     value={form.channel}
