@@ -167,6 +167,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13
 .form-grid input:focus,.form-grid select:focus{border-color:var(--purple)}
 .form-grid input:disabled,.form-grid select:disabled{background:var(--bg3);color:var(--text2)}
 .col-span-2{grid-column:span 2}
+/* .lbl/.inp — used ~100x across AccountingPage.jsx and UsersPage.jsx
+   (label + sibling input/select, not label-wraps-input) but never had
+   matching rules, so every label there rendered inline right next to its
+   field instead of stacked above it. Same convention as .form-row label /
+   .fr label elsewhere. */
+.lbl{display:block;font-size:11px;color:var(--text2);margin-bottom:5px;font-weight:500}
+.inp{width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r2);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:var(--font);outline:none;box-sizing:border-box}
+.inp:focus{border-color:var(--purple)}
+.inp:disabled{background:var(--bg3);color:var(--text2)}
 .course-group-header{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:6px}
 .checkbox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px;margin-top:4px}
 .checkbox-item{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:3px 0}
