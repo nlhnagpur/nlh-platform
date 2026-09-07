@@ -267,7 +267,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [batchPanelEnrId, setBatchPanelEnrId] = useState(null)  // enrollment.id whose panel is open
   const [panelData,       setPanelData]       = useState({ batches: [], loading: false })
   const [panelSaving,     setPanelSaving]     = useState(false)
-  const [assignJoinDate,  setAssignJoinDate]  = useState(new Date().toISOString().slice(0, 10))
+  // "When did they join this batch" isn't a separate question from "when did
+  // they join the course" — enrollments.enrolled_at is the one date anyone
+  // edits; batch_students.assigned_at is just a system timestamp, set once,
+  // never shown as an editable field.
+  const [newBatchOpen,    setNewBatchOpen]    = useState(false)  // inline "+ create batch" form, within the assign panel
+  const [newBatchForm,    setNewBatchForm]    = useState({ instructor_id: '', name: '', days: [], time: '', is_individual: false })
+  const [eligibleCIs,     setEligibleCIs]     = useState([])   // instructors certified for the open enrollment's sku
   const [completingEnr,   setCompletingEnr]   = useState(null)  // enrollment pending completion-date entry
   const [completeDate,    setCompleteDate]    = useState(new Date().toISOString().slice(0, 10))
   const [reviewingEn,     setReviewingEn]     = useState(null)  // enrollment pending review-send
@@ -768,11 +774,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   async function openBatchPanel(enrollment) {
     if (batchPanelEnrId === enrollment.id) { setBatchPanelEnrId(null); return }
     setBatchPanelEnrId(enrollment.id)
-    // Default the joining-date field to the current batch's date (if assigned), else the registration date
-    const curBs = batchAssignments[enrollment.id]
-    const curDate = curBs && curBs.assigned_at ? String(curBs.assigned_at).slice(0, 10) : null
-    setAssignJoinDate(curDate || student.registered_at || new Date().toISOString().slice(0, 10))
+    setNewBatchOpen(false)
+    setNewBatchForm({ instructor_id: '', name: '', days: [], time: '', is_individual: false })
     setPanelData({ batches: [], loading: true })
+
+    // Instructors certified to teach this exact level — offered as the
+    // "+ create batch" picker below, so a course with no batch yet never
+    // dead-ends this panel into "go find the right instructor yourself".
+    const { data: cis } = await sb.from('instructor_courses')
+      .select('instructor_id, instructors(id, full_name, franchisee_id)')
+      .eq('sku_id', enrollment.sku_id).eq('status', 'active')
+    setEligibleCIs((cis || [])
+      .map(function (c) { return c.instructors })
+      .filter(function (i) { return i && i.franchisee_id === student.franchisee_id }))
 
     // Get the course_id for this enrollment's SKU
     const { data: skuRow } = await sb.from('skus').select('course_id').eq('id', enrollment.sku_id).single()
@@ -795,13 +809,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setPanelData({ batches: batches || [], loading: false })
   }
 
-  // ── Assign student to an existing batch ──
+  // ── Assign (or switch) a student to a batch ──
+  // assigned_at is a system timestamp only — set once, on assignment, and
+  // never re-edited. The one date anyone actually manages is the course's
+  // own enrolled_at (see the enrollment record itself).
   async function assignToBatch(batchId, enrollmentId) {
     setPanelSaving(true)
-    const assignedAt = assignJoinDate + 'T00:00:00+00:00'
+    const assignedAt = new Date().toISOString()
     const selectFields = 'id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))'
 
-    // Remove from any existing (different) batch first
+    // Remove from any existing (different) batch first — this is the
+    // "switch batch" path, same action whether it's the first assignment
+    // or a change.
     const existing = batchAssignments[enrollmentId]
     if (existing && existing.batch_id !== batchId) {
       await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
@@ -836,20 +855,23 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     showToast('Assigned to batch ✓')
   }
 
-  // ── Update only the joining date of the current batch (no batch change) ──
-  async function updateJoinDate(enrollmentId) {
-    const existing = batchAssignments[enrollmentId]
-    if (!existing) { showToast('Assign a batch first to set a joining date', 'warn'); return }
+  // ── Create a new batch inline (right from the assign panel) and assign
+  // this student to it in one step — no more leaving the student's page to
+  // go create a batch on the instructor's page first. ──
+  async function createBatchAndAssign(enrollment) {
+    const nbf = newBatchForm
+    if (!nbf.instructor_id) { showToast('Select an instructor', 'warn'); return }
+    if (!nbf.name.trim()) { showToast('Name the batch', 'warn'); return }
     setPanelSaving(true)
-    const assignedAt = assignJoinDate + 'T00:00:00+00:00'
-    const selectFields = 'id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))'
-    const { data, error } = await sb.from('batch_students')
-      .update({ assigned_at: assignedAt }).eq('id', existing.id).select(selectFields).single()
-    setPanelSaving(false)
-    if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    setBatchAssignments(function (prev) { return { ...prev, [enrollmentId]: data } })
-    setBatchPanelEnrId(null)
-    showToast('Joining date updated ✓')
+    const { data: nb, error } = await sb.from('batches').insert({
+      instructor_id: nbf.instructor_id, franchisee_id: student.franchisee_id, sku_id: enrollment.sku_id,
+      name: nbf.name.trim(), is_individual: nbf.is_individual,
+      schedule_days: nbf.days.length ? nbf.days.join(', ') : null,
+      schedule_time: nbf.time || null, is_active: true, sessions_done: 0,
+      start_date: new Date().toISOString().slice(0, 10),
+    }).select('id').single()
+    if (error) { setPanelSaving(false); showToast('Batch create failed: ' + error.message, 'err'); return }
+    await assignToBatch(nb.id, enrollment.id)   // sets panelSaving(false) itself
   }
 
   // ── Remove student from current batch ──
@@ -2117,7 +2139,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}
                             onClick={function () { openBatchPanel(en) }}
                           >
-                            {isOpen ? 'Close' : bs ? '✏️ Batch' : '+ Batch'}
+                            {isOpen ? 'Close' : bs ? '✏️ Change Batch' : '+ Assign Batch'}
                           </button>
                         )}
 
@@ -2163,14 +2185,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             <div className="hint">Loading batches…</div>
                           ) : (
                             <>
-                              {/* Joining date */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                                <span style={{ font: '600 11px var(--font)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>Joining date:</span>
-                                <input type="date" value={assignJoinDate}
-                                  onChange={function (e) { setAssignJoinDate(e.target.value) }}
-                                  style={{ fontSize: 12, padding: '4px 8px' }} />
-                              </div>
-                              {/* Existing batches */}
+                              {/* Existing batches — pick one, or switch away from the current one */}
                               {panelData.batches.length > 0 && (
                                 <div style={{ marginBottom: 16 }}>
                                   <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
@@ -2196,26 +2211,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                               {b.schedule_days ? ' · ' + b.schedule_days : ''}
                                               {b.schedule_time ? ' ' + b.schedule_time : ''}
                                               {b.is_individual ? ' · Individual' : ' · Group'}
+                                              {isCurrent && bs?.assigned_at ? ' · in this batch since ' + fmtDate(String(bs.assigned_at).slice(0, 10)) : ''}
                                             </div>
                                           </div>
-                                          {!isCurrent ? (
+                                          {!isCurrent && (
                                             <button
                                               className="btn-s"
                                               style={{ fontSize: 11, padding: '3px 12px', flexShrink: 0 }}
                                               disabled={panelSaving}
                                               onClick={function () { assignToBatch(b.id, en.id) }}
                                             >
-                                              Assign
-                                            </button>
-                                          ) : (
-                                            <button
-                                              className="btn-s"
-                                              style={{ fontSize: 11, padding: '3px 12px', flexShrink: 0 }}
-                                              disabled={panelSaving}
-                                              onClick={function () { updateJoinDate(en.id) }}
-                                              title="Save the joining date above for this batch"
-                                            >
-                                              📅 Save date
+                                              {bs ? 'Switch here' : 'Assign'}
                                             </button>
                                           )}
                                         </div>
@@ -2225,6 +2231,71 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 </div>
                               )}
 
+                              {/* Create a new batch right here — a course with no
+                                  matching batch yet never dead-ends this panel
+                                  into "go create one on the instructor's page". */}
+                              {!newBatchOpen ? (
+                                <button className="btn-s" style={{ fontSize: 11 }}
+                                  onClick={function () { setNewBatchOpen(true) }}>
+                                  + Create new batch
+                                </button>
+                              ) : (
+                                <div style={{ border: '1px dashed var(--purple)', borderRadius: 8, padding: 12 }}>
+                                  <div style={{ font: '600 11px var(--font)', color: 'var(--purple)', marginBottom: 8 }}>New batch for this level</div>
+                                  {eligibleCIs.length === 0 ? (
+                                    <p className="hint" style={{ color: 'var(--red)' }}>No instructor is appointed for this course level yet — appoint one on the Instructors page first.</p>
+                                  ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      <select value={newBatchForm.instructor_id}
+                                        onChange={function (e) { setNewBatchForm(function (f) { return { ...f, instructor_id: e.target.value } }) }}
+                                        style={{ fontSize: 12 }}>
+                                        <option value="">— Select instructor —</option>
+                                        {eligibleCIs.map(function (ci) { return <option key={ci.id} value={ci.id}>{ci.full_name}</option> })}
+                                      </select>
+                                      <input value={newBatchForm.name} placeholder="Batch name — e.g. Morning Batch A"
+                                        onChange={function (e) { setNewBatchForm(function (f) { return { ...f, name: e.target.value } }) }}
+                                        style={{ fontSize: 12 }} />
+                                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        {DAYS.map(function (d) {
+                                          const on = newBatchForm.days.includes(d)
+                                          return (
+                                            <button key={d} type="button"
+                                              onClick={function () {
+                                                setNewBatchForm(function (f) {
+                                                  return { ...f, days: on ? f.days.filter(function (x) { return x !== d }) : [...f.days, d] }
+                                                })
+                                              }}
+                                              style={{
+                                                padding: '3px 9px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                                                border: on ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                                                background: on ? 'var(--purple-bg)' : 'var(--bg2)',
+                                                color: on ? 'var(--purple)' : 'var(--text2)',
+                                              }}>{d}</button>
+                                          )
+                                        })}
+                                      </div>
+                                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <input type="time" value={newBatchForm.time}
+                                          onChange={function (e) { setNewBatchForm(function (f) { return { ...f, time: e.target.value } }) }}
+                                          style={{ fontSize: 12 }} />
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, font: '500 11px var(--font)' }}>
+                                          <input type="checkbox" checked={newBatchForm.is_individual}
+                                            onChange={function (e) { setNewBatchForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
+                                          Individual (1-on-1)
+                                        </label>
+                                      </div>
+                                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                        <button className="btn-s" style={{ fontSize: 11 }} disabled={panelSaving}
+                                          onClick={function () { setNewBatchOpen(false) }}>Cancel</button>
+                                        <button className="btn-p" style={{ fontSize: 11 }} disabled={panelSaving}
+                                          onClick={function () { createBatchAndAssign(en) }}>
+                                          {panelSaving ? 'Creating…' : 'Create & assign'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
