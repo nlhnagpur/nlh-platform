@@ -123,28 +123,28 @@ function LocationFields({ form, onChange, disabled }) {
   return (
     <>
       <label>Country
-        <select value={form.country || 'India'} onChange={handleCountryChange} disabled={disabled}>
+        <select value={form.country || 'India'} onChange={handleCountryChange} disabled={disabled} style={{ alignSelf: 'flex-start', width: 240 }}>
           {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </label>
       <label>{isIndia ? 'State' : 'State / Province'}
         {isIndia ? (
-          <select value={form.state || ''} onChange={handleStateChange} disabled={disabled}>
+          <select value={form.state || ''} onChange={handleStateChange} disabled={disabled} style={{ alignSelf: 'flex-start', width: 260 }}>
             <option value="">— Select State —</option>
             {INDIA_STATES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         ) : (
-          <input value={form.state || ''} onChange={handleStateChange} disabled={disabled} placeholder="State / Province / Region" />
+          <input value={form.state || ''} onChange={handleStateChange} disabled={disabled} placeholder="State / Province / Region" style={{ alignSelf: 'flex-start', width: 260 }} />
         )}
       </label>
       <label>City
         {isIndia ? (
-          <select value={form.city || ''} onChange={handleCityChange} disabled={disabled || !form.state}>
+          <select value={form.city || ''} onChange={handleCityChange} disabled={disabled || !form.state} style={{ alignSelf: 'flex-start', width: 240 }}>
             <option value="">— Select City —</option>
             {cityList.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         ) : (
-          <input value={form.city || ''} onChange={handleCityChange} disabled={disabled} placeholder="City" />
+          <input value={form.city || ''} onChange={handleCityChange} disabled={disabled} placeholder="City" style={{ alignSelf: 'flex-start', width: 240 }} />
         )}
       </label>
     </>
@@ -907,7 +907,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 </div>
               )}
               <label>Phone
-                <input value={form.phone} onChange={field('phone')} disabled={!admin} />
+                <input value={form.phone} onChange={field('phone')} disabled={!admin} style={{ alignSelf: 'flex-start', width: 200 }} />
               </label>
               <LocationFields
                 form={form}
@@ -918,7 +918,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 <input value={form.area} onChange={field('area')} disabled={!admin} placeholder="Sadar, Dharampeth…" />
               </label>
               <label>PIN Code
-                <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" />
+                <input value={form.pincode} onChange={field('pincode')} disabled={!admin} placeholder="e.g. 440001" style={{ alignSelf: 'flex-start', width: 140 }} />
               </label>
               <label className="col-span-2">Street / Building Address
                 <input value={form.address} onChange={field('address')} disabled={!admin} placeholder="Shop no., building name, street" />
