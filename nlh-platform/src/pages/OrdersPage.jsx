@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
@@ -259,6 +259,41 @@ function TierBadge({ tier }) {
   if (!tier) return null
   const cls = { NLH: 't-nlh', SMF: 't-smf', CF: 't-cf', UF: 't-uf' }[tier] || ''
   return <span className={'tier ' + cls}>{tier}</span>
+}
+
+// Edit and PDF are both "look at/change the invoice document" actions that
+// were sitting side by side as two separate row buttons — clubbed into one
+// button that opens a small menu when both are available for this order's
+// status; falls back to a single plain button when only one applies (e.g.
+// a pending order has no PDF yet, a closed one is no longer editable).
+// Module-level (not nested in OrdersPage) so its own `open` state survives
+// unrelated re-renders of the orders table.
+function EditPdfMenu({ canEdit, canPdf, onEdit, onPdf }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(function () {
+    if (!open) return
+    function onDocClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    return function () { document.removeEventListener('mousedown', onDocClick) }
+  }, [open])
+
+  if (!canEdit && !canPdf) return null
+  if (canEdit && !canPdf) return <button className="row-action" onClick={onEdit}>Edit</button>
+  if (canPdf && !canEdit) return <button className="row-action" onClick={onPdf}>PDF</button>
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button className="row-action" onClick={function () { setOpen(function (o) { return !o }) }}>Edit / PDF ▾</button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 14px rgba(0,0,0,.12)', zIndex: 20, minWidth: 110, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <button className="row-action" style={{ border: 'none', borderRadius: 0, textAlign: 'left' }}
+            onClick={function () { setOpen(false); onEdit() }}>✎ Edit</button>
+          <button className="row-action" style={{ border: 'none', borderRadius: 0, textAlign: 'left' }}
+            onClick={function () { setOpen(false); onPdf() }}>🖨 PDF</button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const FILTER_LABELS = {
@@ -2641,6 +2676,8 @@ export default function OrdersPage() {
 
   function renderActions(order) {
     const busy = actionLoading && actionLoading.startsWith(order.id)
+    const canEditOrder = order.status === 'pending' || (['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin)
+    const canPdfOrder = ['invoiced', 'part_paid', 'payment_submitted', 'closed', 'proforma'].includes(order.status)
     const dispInfo = order.dispatched_at ? [
       order.awb_number ? 'AWB ' + order.awb_number : null,
       order.courier_partner,
@@ -2652,9 +2689,6 @@ export default function OrdersPage() {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, minWidth: 0 }}>
         {/* ── action buttons: one clean aligned row ── */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-          {order.status === 'pending' && (
-            <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
-          )}
           {order.status === 'pending' && isAdmin && (
             <>
               <button className="row-action primary" disabled={busy} onClick={function () { setInvoiceConfirm(order) }}>
@@ -2680,7 +2714,6 @@ export default function OrdersPage() {
               <button className="row-action" disabled={busy} onClick={function () { handleSendReminder(order) }}>
                 {isActing(order.id, 'reminder') ? '…' : 'Remind'}
               </button>
-              <button className="row-action" onClick={function () { setEditInvoiceOrder(order) }}>Edit</button>
             </>
           )}
           {/* Proforma-only: issue the real invoice on admin's own say-so
@@ -2713,9 +2746,9 @@ export default function OrdersPage() {
             <button className="row-action" title="View payments and print receipts"
               onClick={function () { setViewPayOrder(order) }}>Receipts</button>
           )}
-          {['invoiced', 'part_paid', 'payment_submitted', 'closed', 'proforma'].includes(order.status) && (
-            <button className="row-action" onClick={function () { setInvoiceViewOrder(order) }}>PDF</button>
-          )}
+          <EditPdfMenu canEdit={canEditOrder} canPdf={canPdfOrder}
+            onEdit={function () { setEditInvoiceOrder(order) }}
+            onPdf={function () { setInvoiceViewOrder(order) }} />
           {/* A proforma order with no real invoice yet can't dispatch — payment
               has to be verified first (which converts it to a real invoice). */}
           {order.proforma_no && !order.invoice_no ? (
