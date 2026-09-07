@@ -584,34 +584,36 @@ function LevelModal({ spec, existingGroups, onClose, onSaved }) {
                 <option value="one_time">One-time</option>
               </select>
             </label>
-            <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <label style={{ width: 110 }}>Total sessions
-                <input type="number" value={f.total_sessions} onChange={set('total_sessions')} placeholder="e.g. 24" />
-              </label>
-              <label style={{ width: 90 }}>Age min
+            <label>Total sessions
+              <input type="number" value={f.total_sessions} onChange={set('total_sessions')} placeholder="e.g. 24" />
+            </label>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <label style={{ flex: 1 }}>Age min
                 <input type="number" value={f.age_min} onChange={set('age_min')} placeholder="e.g. 5" />
               </label>
-              <label style={{ width: 90 }}>Age max
+              <label style={{ flex: 1 }}>Age max
                 <input type="number" value={f.age_max} onChange={set('age_max')} placeholder="e.g. 14" />
               </label>
-              <label style={{ width: 100 }}>Min qty
-                <input type="number" value={f.min_qty} onChange={set('min_qty')} />
-              </label>
-              <label style={{ width: 110 }}>Sort order
-                <input type="number" value={f.sort_order} onChange={set('sort_order')} placeholder="catalogue order" />
-              </label>
             </div>
-            <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <label style={{ width: 110 }}>UF rate (₹)
+            <label>Min qty
+              <input type="number" value={f.min_qty} onChange={set('min_qty')} />
+            </label>
+            <label>Sort order
+              <input type="number" value={f.sort_order} onChange={set('sort_order')} placeholder="catalogue order" />
+            </label>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <label style={{ flex: 1 }}>UF rate (₹)
                 <input type="number" value={f.uf_rate} onChange={set('uf_rate')} />
               </label>
-              <label style={{ width: 110 }}>CF rate (₹)
+              <label style={{ flex: 1 }}>CF rate (₹)
                 <input type="number" value={f.cf_rate} onChange={set('cf_rate')} />
               </label>
-              <label style={{ width: 110 }}>SMF rate (₹)
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <label style={{ flex: 1 }}>SMF rate (₹)
                 <input type="number" value={f.smf_rate} onChange={set('smf_rate')} />
               </label>
-              <label style={{ width: 120 }}>Student fee (₹)
+              <label style={{ flex: 1 }}>Student fee (₹)
                 <input type="number" value={f.student_fee} onChange={set('student_fee')} />
               </label>
             </div>

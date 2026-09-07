@@ -1081,17 +1081,15 @@ function EditBatchModal({ batch, onClose, onSaved }) {
                 })}
               </div>
             </label>
-            <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <label style={{ width: 150 }}>Start Date
-                <input type="date" value={form.start_date}
-                  onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
-              </label>
-              <label style={{ width: 130 }}>Start Time
-                <input type="time" value={form.time}
-                  onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
-                {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
-              </label>
-            </div>
+            <label>Start Date
+              <input type="date" value={form.start_date}
+                onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
+            </label>
+            <label>Start Time
+              <input type="time" value={form.time}
+                onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
+              {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
+            </label>
             <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={form.is_individual}
                 onChange={function (e) { setForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
@@ -1184,14 +1182,12 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
               </div>
             </label>
 
-            <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <label style={{ width: 150 }}>Start Date
-                <input type="date" value={form.start_date} onChange={fd('start_date')} />
-              </label>
-              <label style={{ width: 130 }}>Time
-                <input type="time" value={form.time} onChange={fd('time')} />
-              </label>
-            </div>
+            <label>Start Date
+              <input type="date" value={form.start_date} onChange={fd('start_date')} />
+            </label>
+            <label>Time
+              <input type="time" value={form.time} onChange={fd('time')} />
+            </label>
 
             <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={form.is_individual}

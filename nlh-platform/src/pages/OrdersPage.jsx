@@ -927,15 +927,15 @@ function DispatchModal({ order, onClose, onSaved }) {
             />
           </label>
 
-          <div className="col-span-2" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <label style={{ width: 150 }}>Dispatch Date
-              <input
-                type="date"
-                value={date}
-                onChange={function (e) { setDate(e.target.value) }}
-              />
-            </label>
-            <label style={{ width: 110 }}>Weight (kg)
+          <label>Dispatch Date
+            <input
+              type="date"
+              value={date}
+              onChange={function (e) { setDate(e.target.value) }}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <label style={{ flex: 1 }}>Weight (kg)
               <input
                 type="number"
                 min="0"
@@ -945,7 +945,7 @@ function DispatchModal({ order, onClose, onSaved }) {
                 onChange={function (e) { setWeight(e.target.value) }}
               />
             </label>
-            <label style={{ width: 130 }}>Freight Charges (₹)
+            <label style={{ flex: 1 }}>Freight Charges (₹)
               <input
                 type="number"
                 min="0"
