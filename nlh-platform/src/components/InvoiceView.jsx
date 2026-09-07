@@ -4,6 +4,7 @@ import { fmtAmt, showToast } from '../utils'
 import { sendInvoiceEmail } from '../services/email'
 import { sendWAOrderInvoiced } from '../services/whatsapp'
 import { captureInvoicePng } from '../utils/captureInvoice'
+import { createPendingStockReturns } from '../utils/saleReturns'
 import WhatsAppSendConfirm from './WhatsAppSendConfirm'
 
 const CANCEL_ROLES = ['owner', 'super_admin', 'admin']
@@ -100,6 +101,16 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   const [allSkus,      setAllSkus]      = useState([])
   const [deletedIds,   setDeletedIds]   = useState([])
   const [kitMap,       setKitMap]       = useState({})   // sku_id -> [{ name, quantity }] kit composition
+  // For the "Fulfilled by" picker — same feature as InvoiceEditModal
+  // (OrdersPage.jsx): a CF/SMF can supply a line from their own stock
+  // instead of HO, raising a Sale Return credit (see ../utils/saleReturns).
+  // Only CF/SMF hold their own bulk stock worth crediting back this way.
+  const [fulfillOptions, setFulfillOptions] = useState([])
+  useEffect(function () {
+    if (!isAdmin) return
+    sb.from('franchisees').select('id, business_name, tier').eq('status', 'active').in('tier', ['CF', 'SMF']).order('business_name')
+      .then(function (res) { setFulfillOptions(res.data || []) })
+  }, [isAdmin])
 
   // Live display (updated after save)
   const [liveCourier, setLiveCourier] = useState(order.courier_charges || 0)
@@ -214,6 +225,24 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
   function addItem() {
     setEditItems(function(prev) { return [...prev, { sku_id: '', ordered_qty: 1, sent_qty: 0, rate: 0, skus: null, _new: true }] })
   }
+  // Generic setter for non-numeric fields (updateItem above always parses
+  // as a float) — used by the "Fulfilled by" picker (a franchisee id or
+  // null).
+  function setItemField(idx, field, val) {
+    setEditItems(function (prev) {
+      return prev.map(function (it, i) { return i === idx ? { ...it, [field]: val } : it })
+    })
+  }
+  function toggleKitItem(idx, itemId) {
+    setEditItems(function (prev) {
+      return prev.map(function (it, i) {
+        if (i !== idx) return it
+        const excluded = it.excluded_kit_items || []
+        const next = excluded.includes(itemId) ? excluded.filter(function (x) { return x !== itemId }) : [...excluded, itemId]
+        return { ...it, excluded_kit_items: next }
+      })
+    })
+  }
   function removeItem(idx) {
     const item = editItems[idx]
     if (item.id) setDeletedIds(function(prev) { return [...prev, item.id] })
@@ -232,11 +261,22 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
     for (const item of editItems) {
       if (!item.sku_id) continue
       if (item.id) {
-        await sb.from('order_items').update({ ordered_qty: item.ordered_qty, sent_qty: item.sent_qty || 0, rate: item.rate }).eq('id', item.id)
+        await sb.from('order_items').update({
+          ordered_qty: item.ordered_qty, sent_qty: item.sent_qty || 0, rate: item.rate,
+          excluded_kit_items: item.excluded_kit_items || [],
+          fulfilled_by_franchisee_id: item.fulfilled_by_franchisee_id || null,
+        }).eq('id', item.id)
       } else {
-        await sb.from('order_items').insert({ order_id: order.id, sku_id: item.sku_id, ordered_qty: item.ordered_qty || 1, sent_qty: item.sent_qty || 0, rate: item.rate || 0 })
+        await sb.from('order_items').insert({
+          order_id: order.id, sku_id: item.sku_id, ordered_qty: item.ordered_qty || 1, sent_qty: item.sent_qty || 0, rate: item.rate || 0,
+          excluded_kit_items: item.excluded_kit_items || [],
+          fulfilled_by_franchisee_id: item.fulfilled_by_franchisee_id || null,
+        })
       }
     }
+    // Same automated Sale Return credit as InvoiceEditModal — idempotent
+    // per order, so re-saving with no new "Fulfilled by" lines is a no-op.
+    try { await createPendingStockReturns(order) } catch (e) { console.warn('[InvoiceView] createPendingStockReturns failed:', e.message) }
 
     const subTotal = editItems.reduce(function(s, it) { return s + (it.ordered_qty||0)*(it.rate||0) }, 0)
     // Preserve any coupon discount already applied at checkout (re-clamp to new subtotal)
@@ -522,8 +562,11 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                 {editItems.map(function(item, idx) {
                   const courseName = item.skus?.courses?.group_name || ''
                   const levelName  = item.skus?.level_name || item.inventory_items?.name || ''
+                  const kitComps = item.sku_id ? kitMap[item.sku_id] : null
+                  const excluded = item.excluded_kit_items || []
                   return (
-                    <div key={idx} style={{ display:'grid', gridTemplateColumns:'1fr 70px 70px 90px 32px', gap:8, padding:'7px 12px', borderBottom:'1px solid #F0EEE9', background: idx%2===1?'#FAFAF8':'#fff', alignItems:'center' }}>
+                    <div key={idx} style={{ borderBottom:'1px solid #F0EEE9', background: idx%2===1?'#FAFAF8':'#fff' }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 70px 70px 90px 32px', gap:8, padding:'7px 12px', alignItems:'center' }}>
                       {item._new || !item.id ? (
                         <select value={item.sku_id} onChange={function(e){updateItemSku(idx,e.target.value)}}
                           style={{ font:'12px "DM Sans",sans-serif', border:'1px solid #D0CEC6', borderRadius:6, padding:'4px 6px', width:'100%', color:'#1A1916' }}>
@@ -542,6 +585,39 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                       <input type="number" min="0" value={item.rate||''} onChange={function(e){updateItem(idx,'rate',e.target.value)}}
                         style={{ textAlign:'right', font:'600 12px "DM Mono",monospace', border:'1px solid #D0CEC6', borderRadius:6, padding:'4px 6px', width:'100%', color:'#534AB7' }} />
                       <button onClick={function(){removeItem(idx)}} style={{ background:'rgba(220,38,38,.1)', color:'#DC2626', border:'none', borderRadius:5, width:26, height:26, cursor:'pointer', font:'700 13px sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+                    </div>
+                    {kitComps && kitComps.length > 0 && (
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 10px', padding:'0 12px 8px' }}>
+                        <span style={{ font:'700 9px "DM Mono",monospace', color:'#534AB7', textTransform:'uppercase', letterSpacing:'.05em', alignSelf:'center', marginRight:2 }}>Kit contents</span>
+                        {kitComps.map(function (c) {
+                          const checked = !excluded.includes(c.item_id)
+                          return (
+                            <label key={c.item_id} style={{ display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer', font:'500 11px "DM Sans",sans-serif', color: checked?'#1A1916':'#9C9A92', textDecoration: checked?'none':'line-through' }}>
+                              <input type="checkbox" checked={checked} onChange={function(){toggleKitItem(idx, c.item_id)}} style={{ cursor:'pointer', accentColor:'#534AB7' }} />
+                              {c.name}{c.quantity > 1 ? ' ×'+c.quantity : ''}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {isAdmin && item.sku_id && (
+                      <div style={{ padding:'0 12px 8px' }}>
+                        <label style={{ display:'flex', alignItems:'center', gap:6, font:'500 11px "DM Sans",sans-serif', color:'#9C9A92' }}>
+                          Fulfilled by:
+                          <select value={item.fulfilled_by_franchisee_id || ''}
+                            onChange={function(e){setItemField(idx, 'fulfilled_by_franchisee_id', e.target.value || null)}}
+                            style={{ font:'12px "DM Sans",sans-serif', padding:'3px 6px', border:'1px solid #D0CEC6', borderRadius:6 }}>
+                            <option value="">HO stock (normal)</option>
+                            {fulfillOptions.map(function (f) {
+                              return <option key={f.id} value={f.id}>{f.business_name} ({f.tier}) — their own stock</option>
+                            })}
+                          </select>
+                          {item.fulfilled_by_franchisee_id && (
+                            <span style={{ color:'#D97706', font:'600 10px "DM Mono",monospace' }}>won't deduct HO stock — raises a Sale Return credit for them instead</span>
+                          )}
+                        </label>
+                      </div>
+                    )}
                     </div>
                   )
                 })}
