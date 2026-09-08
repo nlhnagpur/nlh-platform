@@ -2799,6 +2799,38 @@ export default function OrdersPage() {
           </div>
         </div>
 
+        {/* Stats — same mini-stats pattern as Students */}
+        {(function () {
+          const invoiced = orders.filter(function (o) { return o.status !== 'pending' && !o.invoice_cancelled_at })
+          const totalInvoiced = invoiced.reduce(function (s, o) { return s + (Number(o.grand_total) || 0) }, 0)
+          const totalReceived = invoiced.reduce(function (s, o) { return s + (Number(o.amount_paid) || 0) }, 0)
+          const totalBalance = Math.max(0, totalInvoiced - totalReceived)
+          return (
+            <div className="mini-stats">
+              <div className="mini">
+                <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>📦</div>
+                <div className="mini-num">{orders.length}</div>
+                <div className="mini-lbl">Total orders</div>
+              </div>
+              <div className="mini">
+                <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>🧾</div>
+                <div className="mini-num" style={{ fontSize: totalInvoiced >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalInvoiced)}</div>
+                <div className="mini-lbl">Total invoiced</div>
+              </div>
+              <div className="mini">
+                <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
+                <div className="mini-num" style={{ fontSize: totalReceived >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalReceived)}</div>
+                <div className="mini-lbl">Amount received</div>
+              </div>
+              <div className="mini">
+                <div className="mini-ic" style={{ background: totalBalance > 0 ? 'var(--red-bg)' : 'var(--green-bg)' }}>⏳</div>
+                <div className="mini-num" style={{ color: totalBalance > 0 ? 'var(--red, #dc2626)' : undefined, fontSize: totalBalance >= 100000 ? 18 : undefined }}>₹{fmtAmt(totalBalance)}</div>
+                <div className="mini-lbl">Balance due</div>
+              </div>
+            </div>
+          )
+        })()}
+
         {isAdmin && (
           <div className="tabs">
             <button className={'tab' + (pageTab === 'orders' ? ' active' : '')} onClick={function () { setPageTab('orders') }}>📦 Orders</button>
