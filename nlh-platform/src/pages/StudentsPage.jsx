@@ -962,6 +962,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       const perWeek = Number(renewPerWeek) || 0
       patch.sessions_per_week = perWeek || null
       patch.sessions_per_cycle = perWeek ? Math.round(perWeek * 4) : null
+    } else {
+      // Ran short (holidays, a schedule gap) → the missed classes are owed,
+      // not lost — carry them into next cycle's target. Ran over → those
+      // extra classes were complimentary; nothing carries the other way.
+      const held = cycleProgress[en.id] || 0
+      const target = en.sessions_per_cycle || 0
+      const shortfall = Math.max(0, target - held)
+      const baseTarget = en.sessions_per_week ? Math.round(en.sessions_per_week * 4) : target
+      patch.sessions_per_cycle = baseTarget + shortfall
     }
     const { error: enrErr } = await sb.from('enrollments').update(patch).eq('id', en.id)
     if (enrErr) { setRenewSaving(false); showToast('Failed: ' + enrErr.message, 'err'); return }
@@ -2004,9 +2013,21 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   // sessions/week target agreed at enrollment. Replaces the old
                   // "days left in the calendar month" check, which was the same
                   // for every student regardless of when they actually started.
+                  //
+                  // The renew prompt itself is date-driven, not session-count-
+                  // driven — "the month has to be counted date to date": a
+                  // student who happened to get more classes in than the target
+                  // isn't force-renewed early (those extra ones are just
+                  // complimentary), and a student who got fewer (holidays, a
+                  // schedule gap) still gets prompted once the month's actually
+                  // up rather than waiting forever for a count that may never
+                  // arrive — the shortfall carries into the next cycle instead.
                   const cycleHeld    = cycleProgress[en.id] || 0
                   const cycleTarget  = en.sessions_per_cycle || 0
-                  const monthEnding  = !isCompleted && billingType === 'monthly' && cycleTarget > 0 && cycleHeld >= cycleTarget
+                  const daysSinceCycleStart = en.cycle_started_at
+                    ? Math.floor((Date.now() - new Date(en.cycle_started_at + 'T00:00:00').getTime()) / 86400000)
+                    : 0
+                  const monthEnding  = !isCompleted && billingType === 'monthly' && cycleTarget > 0 && daysSinceCycleStart >= 28
 
                   return (
                     <div key={en.id} style={{
@@ -2081,7 +2102,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             {monthEnding && (
                               <button
                                 onClick={function () { openRenewCycle(en) }}
-                                title="Cycle complete — collect the next month's fee and start a new cycle"
+                                title={"About a month since this cycle started — " + cycleHeld + " of " + cycleTarget + " classes held. Collect the next fee and start a new cycle."}
                                 style={{ font: '600 10px var(--font)', color: '#1D4ED8', background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                                 📅 Renew cycle
                               </button>
@@ -2798,6 +2819,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             this feature existed, set its weekly schedule for the first time. */}
         {renewingEn && (function () {
           const isFirstSetup = !renewingEn.sessions_per_cycle
+          const held = cycleProgress[renewingEn.id] || 0
+          const target = renewingEn.sessions_per_cycle || 0
+          const shortfall = Math.max(0, target - held)
+          const surplus = Math.max(0, held - target)
+          const baseTarget = renewingEn.sessions_per_week ? Math.round(renewingEn.sessions_per_week * 4) : target
+          const nextTarget = baseTarget + shortfall
           return (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setRenewingEn(null) }}>
             <div className="modal" style={{ maxWidth: 380 }}>
@@ -2805,11 +2832,21 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 subtitle={(renewingEn.skus?.courses?.group_name || 'Course') + (renewingEn.skus?.level_name ? ' · ' + renewingEn.skus.level_name : '')}
                 onClose={function () { setRenewingEn(null) }} />
               <div style={{ padding: '4px 20px 16px' }}>
-                <p className="hint" style={{ marginBottom: 12 }}>
-                  {isFirstSetup
-                    ? 'This enrollment predates cycle tracking — set the agreed weekly frequency to start tracking it.'
-                    : (cycleProgress[renewingEn.id] || 0) + ' classes were held in the cycle that started ' + fmtDate(renewingEn.cycle_started_at) + '. Set where the next cycle starts — nudge it a day or two either way to fold in a session that ran early or late.'}
-                </p>
+                {isFirstSetup ? (
+                  <p className="hint" style={{ marginBottom: 12 }}>
+                    This enrollment predates cycle tracking — set the agreed weekly frequency to start tracking it.
+                  </p>
+                ) : (
+                  <p className="hint" style={{ marginBottom: 12 }}>
+                    {held} of {target} classes were held in the cycle that started {fmtDate(renewingEn.cycle_started_at)}.{' '}
+                    {shortfall > 0
+                      ? <b style={{ color: 'var(--text2)' }}>{shortfall} short — carried into next cycle's target ({nextTarget} classes).</b>
+                      : surplus > 0
+                        ? <b style={{ color: 'var(--text2)' }}>{surplus} extra — complimentary, nothing carries forward.</b>
+                        : 'Right on target.'}
+                    {' '}Set where the next cycle starts — nudge it a day or two either way to fold in a session that ran early or late.
+                  </p>
+                )}
                 {isFirstSetup && (
                   <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginBottom: 12 }}>
                     Classes per week
@@ -4273,7 +4310,15 @@ export default function StudentsPage() {
                               else if (bt === 'monthly') {
                                 const held = cycleMap[e.id] || 0
                                 const target = e.sessions_per_cycle || 0
-                                if (target > 0 && held >= target) { txt = '📅 renew'; color = '#1D4ED8'; bg = '#DBEAFE' }
+                                // Date-driven, same as the detail view — not
+                                // gated on hitting the session count, since a
+                                // short cycle (holidays, a schedule gap) should
+                                // still prompt renewal instead of never
+                                // reaching its target.
+                                const daysSince = e.cycle_started_at
+                                  ? Math.floor((Date.now() - new Date(e.cycle_started_at + 'T00:00:00').getTime()) / 86400000)
+                                  : 0
+                                if (target > 0 && daysSince >= 28) { txt = '📅 renew'; color = '#1D4ED8'; bg = '#DBEAFE' }
                                 else if (target > 0) { txt = held + '/' + target; color = 'var(--text2)'; bg = 'var(--bg2)' }
                                 else { txt = 'monthly'; color = 'var(--text2)'; bg = 'var(--bg2)' }
                               }
