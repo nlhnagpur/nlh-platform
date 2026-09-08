@@ -4,6 +4,7 @@ import { fmtDate, fmtAmt } from '../utils'
 import { loadFranchiseeLedger } from '../utils/franchiseeLedger'
 import { printFranchiseeEnrollmentInvoice, printFranchiseeReceipt, printOrderReceipt, printFranchiseeStatement } from './studentDocs'
 import InvoiceView from './InvoiceView'
+import SaleReturnView from './SaleReturnView'
 
 const PAGE_SIZE = 25
 
@@ -41,6 +42,7 @@ const DOC_LABEL = {
   order_invoice:      'Invoice',
   fee_receipt:         'Receipt',
   order_receipt:       'Receipt',
+  sale_return:         'Voucher',
 }
 
 // Combined "Accounts" ledger — every debit (franchise fee assessed, orders
@@ -57,6 +59,7 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
   const [to, setTo] = useState('')
   const [page, setPage] = useState(0)
   const [viewOrder, setViewOrder] = useState(null)
+  const [viewSaleReturn, setViewSaleReturn] = useState(null)
 
   // Opens the real document behind a ledger row — the enrollment invoice,
   // a franchise fee/order receipt (studentDocs.js, same generator used
@@ -72,6 +75,8 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
       printOrderReceipt(Object.assign({}, doc.order, { placer: doc.franchisee }), doc.payment, { paidToDate: doc.paidToDate })
     } else if (doc.type === 'order_invoice') {
       setViewOrder(doc.order)
+    } else if (doc.type === 'sale_return') {
+      setViewSaleReturn(doc.saleReturn)
     }
   }
 
@@ -238,6 +243,14 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
           onCancelled={function () { setViewOrder(null); loadFranchiseeLedger(franchiseeId).then(setData) }}
           currentRole={currentRole}
           currentUser={currentUser}
+        />
+      )}
+
+      {viewSaleReturn && (
+        <SaleReturnView
+          saleReturn={viewSaleReturn}
+          onClose={function () { setViewSaleReturn(null) }}
+          onSaved={function () { setViewSaleReturn(null); loadFranchiseeLedger(franchiseeId).then(setData) }}
         />
       )}
     </div>

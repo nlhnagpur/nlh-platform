@@ -16,7 +16,7 @@ import { sb } from '../supabase'
 // InvoiceView modal, same one Orders uses) — never a bespoke rendering
 // just for this table.
 export async function loadFranchiseeLedger(franchiseeId) {
-  const [frRes, fpRes, ordRes, cnRes] = await Promise.all([
+  const [frRes, fpRes, ordRes, cnRes, srRes] = await Promise.all([
     sb.from('franchisees')
       .select('id, business_name, owner_name, tier, city, state, phone, email, centre_code, registered_courses, enrollment_fee, enrollment_invoice_no, contract_start, created_at')
       .eq('id', franchiseeId).single(),
@@ -36,12 +36,25 @@ export async function loadFranchiseeLedger(franchiseeId) {
       .select('id, order_id, amount, reason, credit_note_no, approved_at')
       .eq('franchisee_id', franchiseeId)
       .eq('status', 'approved'),
+    // Sale Return credits — a franchisee supplied part of another party's
+    // order from their own stock (see createPendingStockReturns /
+    // SaleReturnView). Auto-approved, so every row here is real money owed
+    // back — this was missing entirely before, the ledger just never
+    // queried franchisee_stock_returns.
+    sb.from('franchisee_stock_returns')
+      .select('id, return_no, qty, unit_value, total_credit, status, created_at, approved_at, ' +
+        'franchisees:returning_franchisee_id(business_name, tier, phone, email, address, area, city, state), ' +
+        'skus(level_name, courses(group_name)), ' +
+        'orders:fulfills_order_id(order_ref, invoice_no, invoiced_at, created_at, placer:franchisees!orders_placer_id_fkey(business_name), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name))')
+      .eq('returning_franchisee_id', franchiseeId)
+      .eq('status', 'approved'),
   ])
 
   const franchisee = frRes.data || null
   const feePayments = fpRes.data || []
   const orders = ordRes.data || []
   const creditNotes = cnRes.data || []
+  const saleReturns = srRes.data || []
   const orderIds = orders.map(function (o) { return o.id })
 
   const [opRes, courseRes] = await Promise.all([
@@ -148,6 +161,20 @@ export async function loadFranchiseeLedger(franchiseeId) {
       // No dedicated printable document for a credit note yet — the row
       // shows in the ledger like any other line, just isn't clickable.
       doc: null,
+    })
+  })
+
+  saleReturns.forEach(function (sr) {
+    const skuName = (sr.skus?.courses?.group_name ? sr.skus.courses.group_name + ' — ' : '') + (sr.skus?.level_name || '')
+    txns.push({
+      id: 'sale-return-' + sr.id,
+      date: sr.approved_at || sr.created_at,
+      category: 'sale_return',
+      desc: 'Sale Return' + (skuName ? ' — ' + skuName : ''),
+      ref: sr.return_no || null,
+      debit: 0,
+      credit: Number(sr.total_credit) || 0,
+      doc: { type: 'sale_return', saleReturn: sr },
     })
   })
 
