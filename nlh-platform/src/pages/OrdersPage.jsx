@@ -2940,6 +2940,7 @@ export default function OrdersPage() {
                                   <div className="placer-name">{displayFr.business_name}</div>
                                   <div className="placer-loc">
                                     <TierBadge tier={displayFr.tier} />
+                                    {displayFr.city && <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 5 }}>{displayFr.city}</span>}
                                     {isBillDiff && <span style={{ fontSize: 9, color: '#D97706', marginLeft: 4 }}>billed to</span>}
                                   </div>
                                 </div>
