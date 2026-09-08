@@ -227,6 +227,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // ── Courses / Batch state ──
   const [localEnrollments, setLocalEnrollments] = useState(student.enrollments || [])
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
+  const [cycleProgress,   setCycleProgress]   = useState({})   // { [enrollment_id]: sessions held since cycle_started_at }
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
   const [lastAttendedDate,setLastAttendedDate]= useState({})   // { [enrollment_id]: latest attended session_date (YYYY-MM-DD) }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
@@ -276,6 +277,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [eligibleCIs,     setEligibleCIs]     = useState([])   // instructors certified for the open enrollment's sku
   const [completingEnr,   setCompletingEnr]   = useState(null)  // enrollment pending completion-date entry
   const [completeDate,    setCompleteDate]    = useState(new Date().toISOString().slice(0, 10))
+  const [renewingEn,      setRenewingEn]      = useState(null)  // monthly enrollment pending cycle renewal
+  const [renewDate,       setRenewDate]       = useState(new Date().toISOString().slice(0, 10))
+  const [renewFee,        setRenewFee]        = useState('')
+  const [renewPerWeek,    setRenewPerWeek]    = useState('')   // only asked when no target is set yet
+  const [renewSaving,     setRenewSaving]     = useState(false)
   const [reviewingEn,     setReviewingEn]     = useState(null)  // enrollment pending review-send
   const [reviewPhone,     setReviewPhone]     = useState('')
   const [reviewSending,   setReviewSending]   = useState(false)
@@ -306,6 +312,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [addFeeOverride,    setAddFeeOverride]    = useState({})     // { skuId: editable fee }
   const [addKitData,        setAddKitData]        = useState({})     // { skuId: [{ item_id, name, quantity }] }
   const [addKitExcluded,    setAddKitExcluded]    = useState({})     // { skuId: { item_id: true } } unchecked kit items
+  const [addSessionsPerWeek, setAddSessionsPerWeek] = useState({})   // { skuId: sessions/week } — monthly-billing courses only
 
   // ── Delete state ──
   const [deleting, setDeleting] = useState(false)
@@ -693,6 +700,29 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
       setBatchAssignments(map)
 
+      // Monthly-billing cycle progress — actual class dates held for this
+      // enrollment's assigned batch since ITS OWN cycle_started_at (not the
+      // calendar month, not attendance) — a class that ran counts toward
+      // the cycle whether or not this particular student showed up, since
+      // the schedule itself (not this student's presence) is what a month
+      // of fees is paying for.
+      const cycleBatchIds = Array.from(new Set(Object.values(map).map(function (bs) { return bs.batch_id }).filter(Boolean)))
+      if (cycleBatchIds.length > 0) {
+        const { data: sessRows } = await sb.from('batch_sessions')
+          .select('batch_id, session_date, is_holiday')
+          .in('batch_id', cycleBatchIds)
+          .lte('session_date', new Date().toISOString().slice(0, 10))
+        const progress = {}
+        localEnrollments.forEach(function (en) {
+          const bsRow = map[en.id]
+          if (!bsRow || !en.cycle_started_at) return
+          progress[en.id] = (sessRows || []).filter(function (s) {
+            return s.batch_id === bsRow.batch_id && !s.is_holiday && s.session_date >= en.cycle_started_at
+          }).length
+        })
+        setCycleProgress(progress)
+      }
+
       // Which enrollments have had their kit issued (HO stock deducted)
       const { data: kitLedger } = await sb.from('stock_ledger')
         .select('ref_id').eq('ref_type', 'enrollment').in('ref_id', enrIds)
@@ -746,7 +776,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // Load available SKUs for the "+ Add Course" panel
     const [{ data: fr }, { data: allSkuRows }] = await Promise.all([
       sb.from('franchisees').select('tier, registered_skus, registered_courses').eq('id', student.franchisee_id).single(),
-      sb.from('skus').select('id, level_name, student_fee, course_id, courses(group_name)').order('sort_order'),
+      sb.from('skus').select('id, level_name, student_fee, course_id, courses(group_name, billing_type)').order('sort_order'),
     ])
     const filter = deriveFilter(fr)
     const enrolledSkuIds = localEnrollments.map(function (e) { return e.sku_id })
@@ -908,6 +938,54 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (onSaved) onSaved({ ...student, ...form, enrollments: next })
   }
 
+  // ── Renew a monthly billing cycle ──
+  // Not a rigid "+30 days" — the admin sets the new cycle start by hand,
+  // so a session or two either side of the old cycle's boundary can be
+  // folded into where the next cycle actually begins, same as the old
+  // cycle's progress was counted strictly from its own start date.
+  function openRenewCycle(en) {
+    setRenewDate(new Date().toISOString().slice(0, 10))
+    setRenewFee(en.sessions_per_cycle ? String(en.fee_amount || 0) : '0')
+    setRenewPerWeek(en.sessions_per_week ? String(en.sessions_per_week) : '3')
+    setRenewingEn(en)
+  }
+
+  async function renewCycle() {
+    if (!renewingEn) return
+    const en = renewingEn
+    const fee = Number(renewFee) || 0
+    const isFirstSetup = !en.sessions_per_cycle   // no target yet — this is "set schedule", not a real renewal
+    setRenewSaving(true)
+
+    const patch = { cycle_started_at: renewDate }
+    if (isFirstSetup) {
+      const perWeek = Number(renewPerWeek) || 0
+      patch.sessions_per_week = perWeek || null
+      patch.sessions_per_cycle = perWeek ? Math.round(perWeek * 4) : null
+    }
+    const { error: enrErr } = await sb.from('enrollments').update(patch).eq('id', en.id)
+    if (enrErr) { setRenewSaving(false); showToast('Failed: ' + enrErr.message, 'err'); return }
+
+    // Same pattern as adding a new course's fee — bump the account's Fee
+    // Total; the DB trigger logs it to student_fee_events automatically.
+    if (fee > 0) {
+      const newTotal = (Number(form.fee_total) || 0) + fee
+      const { error: stuErr } = await sb.from('students').update({ fee_total: newTotal }).eq('id', student.id)
+      if (stuErr) { setRenewSaving(false); showToast('Cycle date saved, but fee update failed: ' + stuErr.message, 'err'); return }
+      setForm(function (f) { return { ...f, fee_total: newTotal } })
+    }
+
+    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, ...patch } : e })
+    setLocalEnrollments(next)
+    setCycleProgress(function (prev) { return { ...prev, [en.id]: 0 } })
+    setRenewSaving(false)
+    setRenewingEn(null)
+    showToast(isFirstSetup
+      ? 'Schedule set — tracking from ' + fmtDate(renewDate) + ' ✓'
+      : 'Cycle renewed from ' + fmtDate(renewDate) + (fee > 0 ? ' · ₹' + fmtAmt(fee) + ' added to Fee Total ✓' : ' ✓'))
+    if (onSaved) onSaved({ ...student, ...form, fee_total: fee > 0 ? (Number(form.fee_total) || 0) + fee : form.fee_total, enrollments: next })
+  }
+
   function openReview(en) {
     setReviewPhone(student.phone || '')
     setReviewingEn(en)
@@ -986,7 +1064,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1069,14 +1147,21 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
     // 1) Insert the enrollments (with chosen enrollment date)
     const enrolledAt = (addEnrollDate || new Date().toISOString().slice(0, 10)) + 'T00:00:00+00:00'
-    const rows = selectedNewSkus.map(function (sku) { return {
-      student_id:    student.id,
-      sku_id:        sku.id,
-      franchisee_id: student.franchisee_id,
-      enrolled_at:   enrolledAt,
-    } })
+    const rows = selectedNewSkus.map(function (sku) {
+      const isMonthly = sku.courses?.billing_type === 'monthly'
+      const perWeek = isMonthly ? (addSessionsPerWeek[sku.id] != null ? Number(addSessionsPerWeek[sku.id]) : 3) : null
+      return {
+        student_id:    student.id,
+        sku_id:        sku.id,
+        franchisee_id: student.franchisee_id,
+        enrolled_at:   enrolledAt,
+        sessions_per_week:  isMonthly ? perWeek : null,
+        sessions_per_cycle: isMonthly ? Math.round((perWeek || 0) * 4) : null,
+        cycle_started_at:   isMonthly ? addEnrollDate : null,
+      }
+    })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
@@ -1205,7 +1290,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1913,8 +1998,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   const billingType  = skuBilling[en.sku_id] || null
                   // Session-based course finished its sessions but not marked complete → follow up
                   const sessionsDone = !isCompleted && totalSess > 0 && attended >= totalSess
-                  // Monthly course nearing month-end → collect next month's fee if continuing
-                  const monthEnding  = !isCompleted && billingType === 'monthly' && daysLeftInMonth() <= 5
+                  // Monthly course — cycle progress is real held classes for this
+                  // enrollment's own batch since ITS cycle_started_at (a
+                  // per-student date, not the calendar month), against the
+                  // sessions/week target agreed at enrollment. Replaces the old
+                  // "days left in the calendar month" check, which was the same
+                  // for every student regardless of when they actually started.
+                  const cycleHeld    = cycleProgress[en.id] || 0
+                  const cycleTarget  = en.sessions_per_cycle || 0
+                  const monthEnding  = !isCompleted && billingType === 'monthly' && cycleTarget > 0 && cycleHeld >= cycleTarget
 
                   return (
                     <div key={en.id} style={{
@@ -1969,11 +2061,30 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 ⚠ Sessions done — review
                               </span>
                             )}
-                            {monthEnding && (
-                              <span title="Monthly course — month ending, collect next month's fee if continuing"
-                                style={{ font: '600 10px var(--font)', color: '#1D4ED8', background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                📅 Renew — month ending
+                            {!isCompleted && billingType === 'monthly' && cycleTarget > 0 && (
+                              <span title={'This billing cycle: ' + cycleHeld + ' of ' + cycleTarget + ' classes held since ' + fmtDate(en.cycle_started_at)}
+                                style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                {cycleHeld} / {cycleTarget} this cycle
                               </span>
+                            )}
+                            {/* Older enrollments (from before this feature existed) have no
+                                sessions/week target set yet — offer to set one instead of
+                                silently showing nothing. */}
+                            {!isCompleted && billingType === 'monthly' && !cycleTarget && (
+                              <button
+                                onClick={function () { openRenewCycle(en) }}
+                                title="No weekly schedule set for this enrollment yet — set it to start tracking cycle progress"
+                                style={{ font: '600 10px var(--font)', color: 'var(--text3)', background: 'var(--bg2)', border: '1px dashed var(--border)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                                📅 Set schedule
+                              </button>
+                            )}
+                            {monthEnding && (
+                              <button
+                                onClick={function () { openRenewCycle(en) }}
+                                title="Cycle complete — collect the next month's fee and start a new cycle"
+                                style={{ font: '600 10px var(--font)', color: '#1D4ED8', background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                                📅 Renew cycle
+                              </button>
                             )}
                           </div>
                           {bs ? (
@@ -2504,6 +2615,23 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                         </div>
                                       )}
 
+                                      {/* Monthly-billing cycle target — captured per student, since the
+                                          agreed weekly frequency (and so the sessions/month it works
+                                          out to) can differ student to student even for the same course. */}
+                                      {sku.courses?.billing_type === 'monthly' && (function () {
+                                        const perWeek = addSessionsPerWeek[sku.id] != null ? addSessionsPerWeek[sku.id] : 3
+                                        const perCycle = Math.round((Number(perWeek) || 0) * 4)
+                                        return (
+                                          <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                            <span style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Classes / week</span>
+                                            <input type="number" min={1} max={7} value={perWeek}
+                                              onChange={function (e) { setAddSessionsPerWeek(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
+                                              style={{ width: 60, fontSize: 12, padding: '4px 6px' }} />
+                                            <span className="hint">≈ {perCycle} classes make up one billing cycle</span>
+                                          </div>
+                                        )
+                                      })()}
+
                                       {/* Assign to batch — right under this course */}
                                       <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
                                         <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
@@ -2665,6 +2793,67 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             </div>
           </div>
         )}
+
+        {/* Renew a monthly billing cycle — or, for an enrollment made before
+            this feature existed, set its weekly schedule for the first time. */}
+        {renewingEn && (function () {
+          const isFirstSetup = !renewingEn.sessions_per_cycle
+          return (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setRenewingEn(null) }}>
+            <div className="modal" style={{ maxWidth: 380 }}>
+              <ModalHeader flush title={isFirstSetup ? 'Set Class Schedule' : 'Renew Cycle'}
+                subtitle={(renewingEn.skus?.courses?.group_name || 'Course') + (renewingEn.skus?.level_name ? ' · ' + renewingEn.skus.level_name : '')}
+                onClose={function () { setRenewingEn(null) }} />
+              <div style={{ padding: '4px 20px 16px' }}>
+                <p className="hint" style={{ marginBottom: 12 }}>
+                  {isFirstSetup
+                    ? 'This enrollment predates cycle tracking — set the agreed weekly frequency to start tracking it.'
+                    : (cycleProgress[renewingEn.id] || 0) + ' classes were held in the cycle that started ' + fmtDate(renewingEn.cycle_started_at) + '. Set where the next cycle starts — nudge it a day or two either way to fold in a session that ran early or late.'}
+                </p>
+                {isFirstSetup && (
+                  <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginBottom: 12 }}>
+                    Classes per week
+                    <input
+                      type="number" min={1} max={7}
+                      value={renewPerWeek}
+                      onChange={function (e) { setRenewPerWeek(e.target.value) }}
+                      style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                    />
+                    <span className="hint" style={{ display: 'block', marginTop: 4 }}>≈ {Math.round((Number(renewPerWeek) || 0) * 4)} classes make up one billing cycle</span>
+                  </label>
+                )}
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                  {isFirstSetup ? 'Cycle start date' : 'New cycle start date'}
+                  <input
+                    type="date"
+                    value={renewDate}
+                    onChange={function (e) { setRenewDate(e.target.value) }}
+                    style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                  />
+                </label>
+                {!isFirstSetup && (
+                  <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>
+                    Fee to add for the next cycle (₹)
+                    <input
+                      type="number" min={0}
+                      value={renewFee}
+                      onChange={function (e) { setRenewFee(e.target.value) }}
+                      style={{ marginTop: 6, fontSize: 13, width: '100%' }}
+                    />
+                    <span className="hint" style={{ display: 'block', marginTop: 4 }}>Added to Fee Total — leave 0 to only reset the cycle date without changing the fee.</span>
+                  </label>
+                )}
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={function () { setRenewingEn(null) }} disabled={renewSaving}>Cancel</button>
+                <button className="btn-p" disabled={!renewDate || renewSaving} onClick={renewCycle}>
+                  {renewSaving ? 'Saving…' : isFirstSetup ? 'Set Schedule' : 'Renew Cycle'}
+                </button>
+              </div>
+            </div>
+          </div>
+          )
+        })()}
 
         {/* Send-review modal (editable recipient number) */}
         {reviewingEn && (
@@ -3201,7 +3390,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       try { await mirrorStudentToTransaction(st.id) } catch (e) { console.warn('[Phase 3 dual-write] student create mirror failed:', e.message) }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -3688,6 +3877,7 @@ export default function StudentsPage() {
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
   const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended count }
+  const [cycleMap, setCycleMap] = useState({})   // { [enrollment_id]: sessions held since its own cycle_started_at }
 
   // Centre filter dropdown still available to multi-centre roles; the column
   // itself is replaced by a Sessions/Billing summary.
@@ -3698,7 +3888,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -3731,6 +3921,42 @@ export default function StudentsPage() {
         setAttMap(m)
       } else {
         setAttMap({})
+      }
+
+      // Monthly-billing cycle progress for the whole list — same logic as
+      // the student detail view: actual class dates held for each
+      // enrollment's assigned batch since ITS OWN cycle_started_at, not
+      // the calendar month. One batched query, not one per row.
+      const monthlyEnrIds = (data || []).flatMap(function (s) {
+        return (s.enrollments || []).filter(function (e) {
+          return !e.completed_at && e.skus?.courses?.billing_type === 'monthly' && e.cycle_started_at
+        }).map(function (e) { return e.id })
+      })
+      if (monthlyEnrIds.length > 0) {
+        const { data: bsRows } = await sb.from('batch_students')
+          .select('enrollment_id, batch_id').in('enrollment_id', monthlyEnrIds).is('removed_at', null)
+        const batchByEnr = {}
+        ;(bsRows || []).forEach(function (bs) { batchByEnr[bs.enrollment_id] = bs.batch_id })
+        const batchIds = Array.from(new Set(Object.values(batchByEnr)))
+        if (batchIds.length > 0) {
+          const { data: sessRows } = await sb.from('batch_sessions')
+            .select('batch_id, session_date, is_holiday')
+            .in('batch_id', batchIds)
+            .lte('session_date', new Date().toISOString().slice(0, 10))
+          const cm = {}
+          ;(data || []).forEach(function (s) {
+            (s.enrollments || []).forEach(function (e) {
+              const bId = batchByEnr[e.id]
+              if (!bId || !e.cycle_started_at) return
+              cm[e.id] = (sessRows || []).filter(function (r) {
+                return r.batch_id === bId && !r.is_holiday && r.session_date >= e.cycle_started_at
+              }).length
+            })
+          })
+          setCycleMap(cm)
+        }
+      } else {
+        setCycleMap({})
       }
     }
     load()
@@ -3822,7 +4048,7 @@ export default function StudentsPage() {
     const loaded = students.find(function (s) { return s.id === st.id })
     if (loaded) { setSelected(loaded); return }
     const { data } = await sb.from('students')
-      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
       .eq('id', st.id).single()
     setSelected(data || st)
   }
@@ -4001,7 +4227,6 @@ export default function StudentsPage() {
                 {filtered.map(function (s) {
                   // Waivers already reduced fee_total, so this is the true owed.
                   const balance = Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
-                  const monthEnd = daysLeftInMonth() <= 5
                   return (
                     <tr key={s.id} style={{ cursor: 'pointer' }} onClick={function () { setSelected(s) }}>
                       <td>
@@ -4046,7 +4271,10 @@ export default function StudentsPage() {
                               let txt, color, bg
                               if (e.completed_at) { txt = '✓ done'; color = 'var(--green)'; bg = 'var(--green-bg)' }
                               else if (bt === 'monthly') {
-                                if (monthEnd) { txt = '📅 renew'; color = '#1D4ED8'; bg = '#DBEAFE' }
+                                const held = cycleMap[e.id] || 0
+                                const target = e.sessions_per_cycle || 0
+                                if (target > 0 && held >= target) { txt = '📅 renew'; color = '#1D4ED8'; bg = '#DBEAFE' }
+                                else if (target > 0) { txt = held + '/' + target; color = 'var(--text2)'; bg = 'var(--bg2)' }
                                 else { txt = 'monthly'; color = 'var(--text2)'; bg = 'var(--bg2)' }
                               }
                               else if (tot > 0) { txt = att + '/' + tot; color = done ? '#B45309' : 'var(--text2)'; bg = done ? '#FEF3C7' : 'var(--bg2)' }
