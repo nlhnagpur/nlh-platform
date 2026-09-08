@@ -2466,6 +2466,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 {selectedNewSkus.map(function (sku) {
                                   const kits = addKitData[sku.id]
                                   const ex = addKitExcluded[sku.id] || {}
+                                  // Batch assignment lives right under its own course now
+                                  // (was a separate repeated section further down the form).
+                                  const bd  = addBatchData[sku.id] || { batches: [], eligibleCIs: [], loading: true }
+                                  const sel = addBatchSel[sku.id] || ''
+                                  const nbf = addNewBatch[sku.id] || { ci: '', name: '', days: [], time: '', is_individual: false }
+                                  function updateNbf(patch) { setAddNewBatch(function (prev) { return { ...prev, [sku.id]: { ...nbf, ...patch } } }) }
                                   return (
                                     <div key={sku.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2497,58 +2503,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                           </div>
                                         </div>
                                       )}
-                                    </div>
-                                  )
-                                })}
-                              </div>
 
-                              {/* Enrollment date for the new courses */}
-                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
-                                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>
-                                  📅 Start date
-                                  <span style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
-                                    (course start &amp; batch joining date — one date for both)
-                                  </span>
-                                  <input type="date" value={addEnrollDate}
-                                    onChange={function (e) { setAddEnrollDate(e.target.value) }}
-                                    style={{ marginTop: 5, fontSize: 13, width: '100%', maxWidth: 220 }} />
-                                </label>
-                              </div>
-
-                              {/* Fee + coupon for the new courses */}
-                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Coupon</span>
-                                  <CouponField context="student" amount={addedFee} franchiseeId={student.franchisee_id}
-                                    applied={addCoupon} onApply={setAddCoupon} onClear={function () { setAddCoupon(null) }} excludeRef={student.id} compact />
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>New course fees</div>
-                                  <div style={{ font: '700 16px var(--font)', color: 'var(--purple)' }}>
-                                    ₹{fmtAmt(netAdded)}
-                                    {discount > 0 && <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', textDecoration: 'line-through', marginLeft: 6 }}>₹{fmtAmt(addedFee)}</span>}
-                                  </div>
-                                  <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>Fee Total becomes ₹{fmtAmt(newTotal)}</div>
-                                </div>
-                              </div>
-
-                              {/* Batch assignment per new course */}
-                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
-                                <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
-                                  📋 Assign to batch <span style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>(optional — can be done later)</span>
-                                </div>
-                                {selectedNewSkus.map(function (sku) {
-                                  const bd  = addBatchData[sku.id] || { batches: [], eligibleCIs: [], loading: true }
-                                  const sel = addBatchSel[sku.id] || ''
-                                  const nbf = addNewBatch[sku.id] || { ci: '', name: '', days: [], time: '', is_individual: false }
-                                  function updateNbf(patch) { setAddNewBatch(function (prev) { return { ...prev, [sku.id]: { ...nbf, ...patch } } }) }
-                                  return (
-                                    <div key={sku.id} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 8 }}>
-                                      <div style={{ background: 'var(--bg3)', padding: '7px 12px', font: '600 12px var(--font)', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span>{sku.courses?.group_name || '—'}</span>
-                                        <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{sku.level_name}</span>
-                                      </div>
-                                      <div style={{ padding: '10px 12px' }}>
+                                      {/* Assign to batch — right under this course */}
+                                      <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                                        <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
+                                          Assign to batch <span style={{ textTransform: 'none', fontWeight: 400 }}>(optional — can be done later)</span>
+                                        </div>
                                         {bd.loading ? <span className="hint">Loading batches…</span> : (
                                           <>
                                             <select value={sel}
@@ -2603,6 +2563,36 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                     </div>
                                   )
                                 })}
+                              </div>
+
+                              {/* Enrollment date for the new courses */}
+                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
+                                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>
+                                  📅 Start date
+                                  <span style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
+                                    (course start &amp; batch joining date — one date for both)
+                                  </span>
+                                  <input type="date" value={addEnrollDate}
+                                    onChange={function (e) { setAddEnrollDate(e.target.value) }}
+                                    style={{ marginTop: 5, fontSize: 13, width: '100%', maxWidth: 220 }} />
+                                </label>
+                              </div>
+
+                              {/* Fee + coupon for the new courses */}
+                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Coupon</span>
+                                  <CouponField context="student" amount={addedFee} franchiseeId={student.franchisee_id}
+                                    applied={addCoupon} onApply={setAddCoupon} onClear={function () { setAddCoupon(null) }} excludeRef={student.id} compact />
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>New course fees</div>
+                                  <div style={{ font: '700 16px var(--font)', color: 'var(--purple)' }}>
+                                    ₹{fmtAmt(netAdded)}
+                                    {discount > 0 && <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', textDecoration: 'line-through', marginLeft: 6 }}>₹{fmtAmt(addedFee)}</span>}
+                                  </div>
+                                  <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>Fee Total becomes ₹{fmtAmt(newTotal)}</div>
+                                </div>
                               </div>
                             </>
                           )
