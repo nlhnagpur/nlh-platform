@@ -487,6 +487,29 @@ export default function InventoryPage() {
           </div>
         </div>
 
+        <div className="mini-stats">
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>📦</div>
+            <div className="mini-num">{items.length}</div>
+            <div className="mini-lbl">Total items</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>🎒</div>
+            <div className="mini-num">{courseKits.length}</div>
+            <div className="mini-lbl">Course kits</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--blue-bg)' }}>🧰</div>
+            <div className="mini-num">{supplies.length}</div>
+            <div className="mini-lbl">Supplies</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: lowStock > 0 ? 'var(--red-bg)' : 'var(--green-bg)' }}>⚠️</div>
+            <div className="mini-num" style={{ color: lowStock > 0 ? 'var(--red, #dc2626)' : undefined }}>{lowStock}</div>
+            <div className="mini-lbl">Low on stock</div>
+          </div>
+        </div>
+
         <div className="status-pills" style={{ marginBottom: 14 }}>
           {[['items', '📦 Item stock & Supplies'], ['kits', '🧰 Course kits'], ['stock', '📜 Stock ledger']].map(function (t) {
             return <button key={t[0]} className={'sp' + (tab === t[0] ? ' on on-pend' : '')} onClick={function () { setTab(t[0]) }}>{t[1]}</button>

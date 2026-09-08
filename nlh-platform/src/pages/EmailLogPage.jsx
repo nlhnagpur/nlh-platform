@@ -84,6 +84,24 @@ export default function EmailLogPage() {
           </div>
         </div>
 
+        <div className="mini-stats">
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>✉️</div>
+            <div className="mini-num">{rows.length}</div>
+            <div className="mini-lbl">Total emails</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
+            <div className="mini-num">{sentCount}</div>
+            <div className="mini-lbl">Sent</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: failedCount > 0 ? 'var(--red-bg)' : 'var(--green-bg)' }}>⚠️</div>
+            <div className="mini-num" style={{ color: failedCount > 0 ? 'var(--red, #dc2626)' : undefined }}>{failedCount}</div>
+            <div className="mini-lbl">Failed</div>
+          </div>
+        </div>
+
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
           <select value={typeF} onChange={function (e) { setTypeF(e.target.value) }} style={{ fontSize: 13, minWidth: 160 }}>
             <option value="">All types</option>

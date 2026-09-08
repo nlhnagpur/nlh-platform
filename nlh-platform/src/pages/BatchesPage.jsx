@@ -1670,6 +1670,38 @@ export default function BatchesPage() {
         </button>
       </div>
 
+      {(function () {
+        const activeBatches = batches.filter(function (b) { return b.is_active })
+        const totalStudents = batches.reduce(function (s, b) {
+          return s + (b.batch_students || []).filter(function (bs) { return !bs.removed_at }).length
+        }, 0)
+        const individualBatches = batches.filter(function (b) { return b.is_individual }).length
+        return (
+          <div className="mini-stats">
+            <div className="mini">
+              <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>📚</div>
+              <div className="mini-num">{batches.length}</div>
+              <div className="mini-lbl">Total batches</div>
+            </div>
+            <div className="mini">
+              <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
+              <div className="mini-num">{activeBatches.length}</div>
+              <div className="mini-lbl">Active batches</div>
+            </div>
+            <div className="mini">
+              <div className="mini-ic" style={{ background: 'var(--blue-bg)' }}>🎓</div>
+              <div className="mini-num">{totalStudents}</div>
+              <div className="mini-lbl">Students in batches</div>
+            </div>
+            <div className="mini">
+              <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>👤</div>
+              <div className="mini-num">{individualBatches}</div>
+              <div className="mini-lbl">Individual (1-on-1)</div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ── Filters ── */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <select value={filterStatus} onChange={function (e) { setFilterStatus(e.target.value) }}

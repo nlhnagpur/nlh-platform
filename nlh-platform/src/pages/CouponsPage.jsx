@@ -258,6 +258,24 @@ export default function CouponsPage() {
           </div>
         </div>
 
+        <div className="mini-stats">
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🎟️</div>
+            <div className="mini-num">{rows.length}</div>
+            <div className="mini-lbl">Total coupons</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--green-bg)' }}>✅</div>
+            <div className="mini-num">{activeCount}</div>
+            <div className="mini-lbl">Active</div>
+          </div>
+          <div className="mini">
+            <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>🔁</div>
+            <div className="mini-num">{totalRedeems}</div>
+            <div className="mini-lbl">Redemptions</div>
+          </div>
+        </div>
+
         {loading ? (
           <div className="loading"><span className="spinner" />Loading coupons…</div>
         ) : filtered.length === 0 ? (
