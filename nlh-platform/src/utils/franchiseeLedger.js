@@ -27,8 +27,12 @@ export async function loadFranchiseeLedger(franchiseeId) {
     // "My orders" already scopes a franchisee's own orders. Full row (not a
     // narrow column list) — InvoiceView, opened straight from a ledger row,
     // needs the rest (bill_to/ship_to ids, courier/payment fields, etc.).
+    // + bill_to_fr name — a CF often places an order billed to a school it
+    // introduced (bill_to_franchisee_id != placer_id); without the name the
+    // row reads as if this franchisee owes it themselves, when really it's
+    // the school's bill and this franchisee just placed/routed it.
     sb.from('orders')
-      .select('*')
+      .select('*, bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name)')
       .eq('placer_id', franchiseeId),
     // CF commission payouts — only approved ones count; pending/rejected
     // never touch the ledger (see franchisee_credit_notes RLS/workflow).
@@ -124,11 +128,15 @@ export async function loadFranchiseeLedger(franchiseeId) {
   orders.forEach(function (o) {
     if (o.status === 'pending') return       // not invoiced yet — nothing owed
     if (o.invoice_cancelled_at) return       // cancelled invoice — doesn't count
+    // Billed to someone other than this franchisee (a school this CF
+    // introduced) — say so right in the description, so it's clear whose
+    // bill this actually is, not this franchisee's own.
+    const billedTo = (o.bill_to_franchisee_id && o.bill_to_franchisee_id !== franchiseeId && o.bill_to_fr?.business_name) || null
     txns.push({
       id: 'order-debit-' + o.id,
       date: o.created_at,
       category: 'order',
-      desc: 'Order Invoice',
+      desc: 'Order Invoice' + (billedTo ? ' — billed to ' + billedTo : ''),
       ref: o.invoice_no || o.order_ref || null,
       debit: Number(o.grand_total) || 0,
       credit: 0,
@@ -137,11 +145,12 @@ export async function loadFranchiseeLedger(franchiseeId) {
   })
   orderPayments.forEach(function (p) {
     const o = orderById[p.order_id]
+    const billedTo = o && o.bill_to_franchisee_id && o.bill_to_franchisee_id !== franchiseeId && o.bill_to_fr?.business_name || null
     txns.push({
       id: 'order-payment-' + p.id,
       date: p.paid_on,
       category: 'order',
-      desc: 'Order Payment',
+      desc: 'Order Payment' + (billedTo ? ' — billed to ' + billedTo : ''),
       ref: p.receipt_no || p.reference || null,
       debit: 0,
       credit: Number(p.amount) || 0,
