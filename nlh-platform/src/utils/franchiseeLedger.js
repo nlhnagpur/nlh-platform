@@ -23,17 +23,18 @@ export async function loadFranchiseeLedger(franchiseeId) {
     sb.from('franchisee_payments')
       .select('id, amount, payment_date, payment_mode, reference_no, notes, receipt_no')
       .eq('franchisee_id', franchiseeId),
-    // placer_id, not bill_to_franchisee_id — matches RLS and matches how
-    // "My orders" already scopes a franchisee's own orders. Full row (not a
-    // narrow column list) — InvoiceView, opened straight from a ledger row,
-    // needs the rest (bill_to/ship_to ids, courier/payment fields, etc.).
-    // + bill_to_fr name — a CF often places an order billed to a school it
-    // introduced (bill_to_franchisee_id != placer_id); without the name the
-    // row reads as if this franchisee owes it themselves, when really it's
-    // the school's bill and this franchisee just placed/routed it.
+    // An order belongs to whoever is actually BILLED, not whoever placed
+    // it — a CF often places an order on behalf of a school it introduced
+    // (bill_to_franchisee_id = the school, placer_id = the CF). That
+    // order's debt is the school's, so it belongs on the school's own
+    // ledger, not the CF's. Matches: this franchisee is the explicit
+    // bill-to party, OR this franchisee placed it with no bill-to override
+    // (billed to themselves by default). Full row (not a narrow column
+    // list) — InvoiceView, opened straight from a ledger row, needs the
+    // rest (bill_to/ship_to ids, courier/payment fields, etc.).
     sb.from('orders')
-      .select('*, bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name)')
-      .eq('placer_id', franchiseeId),
+      .select('*, bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name), placer:franchisees!orders_placer_id_fkey(business_name)')
+      .or('bill_to_franchisee_id.eq.' + franchiseeId + ',and(placer_id.eq.' + franchiseeId + ',bill_to_franchisee_id.is.null)'),
     // CF commission payouts — only approved ones count; pending/rejected
     // never touch the ledger (see franchisee_credit_notes RLS/workflow).
     sb.from('franchisee_credit_notes')
@@ -125,18 +126,26 @@ export async function loadFranchiseeLedger(franchiseeId) {
     })
   })
 
+  // This order's own query already guarantees this franchisee is the
+  // bill-to party (explicitly, or by default as the placer with no
+  // override) — so the only remaining ambiguity is who actually placed it
+  // when that's someone else (a CF placing on a school's behalf). Surface
+  // that as "placed via <name>" so it's clear through whom the bill was
+  // routed, without re-stating who it's billed to (that's always "this
+  // franchisee" now).
+  function placedViaSuffix(o) {
+    if (!o || !o.placer_id || o.placer_id === franchiseeId) return ''
+    return o.placer?.business_name ? ' — placed via ' + o.placer.business_name : ''
+  }
+
   orders.forEach(function (o) {
     if (o.status === 'pending') return       // not invoiced yet — nothing owed
     if (o.invoice_cancelled_at) return       // cancelled invoice — doesn't count
-    // Billed to someone other than this franchisee (a school this CF
-    // introduced) — say so right in the description, so it's clear whose
-    // bill this actually is, not this franchisee's own.
-    const billedTo = (o.bill_to_franchisee_id && o.bill_to_franchisee_id !== franchiseeId && o.bill_to_fr?.business_name) || null
     txns.push({
       id: 'order-debit-' + o.id,
       date: o.created_at,
       category: 'order',
-      desc: 'Order Invoice' + (billedTo ? ' — billed to ' + billedTo : ''),
+      desc: 'Order Invoice' + placedViaSuffix(o),
       ref: o.invoice_no || o.order_ref || null,
       debit: Number(o.grand_total) || 0,
       credit: 0,
@@ -145,12 +154,11 @@ export async function loadFranchiseeLedger(franchiseeId) {
   })
   orderPayments.forEach(function (p) {
     const o = orderById[p.order_id]
-    const billedTo = o && o.bill_to_franchisee_id && o.bill_to_franchisee_id !== franchiseeId && o.bill_to_fr?.business_name || null
     txns.push({
       id: 'order-payment-' + p.id,
       date: p.paid_on,
       category: 'order',
-      desc: 'Order Payment' + (billedTo ? ' — billed to ' + billedTo : ''),
+      desc: 'Order Payment' + placedViaSuffix(o),
       ref: p.receipt_no || p.reference || null,
       debit: 0,
       credit: Number(p.amount) || 0,
