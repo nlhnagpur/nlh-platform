@@ -3218,6 +3218,26 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   // { [sku_id]: { ci, name, days, time, is_individual } }
   const [newBatchForms, setNewBatchForms] = useState({})
 
+  // ── Kit-issuance confirmation state (same pattern as the Add-Course flow
+  // on an existing student — this initial enrollment used to skip it
+  // entirely and just deduct the full kit with no confirmation step). ──
+  const [kitData,     setKitData]     = useState({})   // { [sku_id]: [{ item_id, name, quantity }] }
+  const [kitExcluded, setKitExcluded] = useState({})   // { [sku_id]: { [item_id]: true } } — unchecked = not actually given
+
+  async function loadKit(sku) {
+    if (kitData[sku.id]) return
+    const { data } = await sb.from('kit_items')
+      .select('item_id, quantity, inventory_items(name)').eq('sku_id', sku.id)
+    setKitData(function (prev) { return { ...prev, [sku.id]: (data || []).map(function (k) { return { item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', quantity: Number(k.quantity || 1) } } ) } })
+  }
+  function toggleKitItem(skuId, itemId) {
+    setKitExcluded(function (prev) {
+      const cur = { ...(prev[skuId] || {}) }
+      if (cur[itemId]) delete cur[itemId]; else cur[itemId] = true
+      return { ...prev, [skuId]: cur }
+    })
+  }
+
   const FR_FIELDS = 'id,business_name,city,area,country,tier,registered_courses,registered_skus'
 
   useEffect(() => {
@@ -3297,6 +3317,8 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
     setBatchData({})
     setBatchSel({})
     setNewBatchForms({})
+    setKitData({})
+    setKitExcluded({})
     if (!fid) { setRegFilter(null); return }
     const fr = centreList.find(function (c) { return c.id === fid })
     setRegFilter(deriveFilter(fr))
@@ -3330,12 +3352,14 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       setFeeTotal(next.reduce(function (sum, s) { return sum + (s.student_fee || 0) }, 0))
       setCoupon(null)  // fee changed — re-apply coupon against the new total
       if (!exists) {
-        // selecting — load batch data for this SKU
+        // selecting — load batch data + kit items for this SKU
         loadBatchData(sku.id)
+        loadKit(sku)
       } else {
-        // deselecting — clear its batch selection
+        // deselecting — clear its batch selection and kit exclusions
         setBatchSel(function (p) { const n = { ...p }; delete n[sku.id]; return n })
         setNewBatchForms(function (p) { const n = { ...p }; delete n[sku.id]; return n })
+        setKitExcluded(function (p) { const n = { ...p }; delete n[sku.id]; return n })
       }
       return next
     })
@@ -3399,13 +3423,12 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
         enrData = inserted || []
       }
 
-      // Raise the admission's fee invoice (courses + their kit items) and deduct
-      // HO stock for the issued kit. (Per-item kit selection is available on the
-      // Courses tab's Add-Course invoicing screen for later add-ons.)
+      // Raise the admission's fee invoice (courses + their confirmed kit
+      // items) and deduct HO stock only for what was actually confirmed as
+      // given — kitData/kitExcluded were already loaded per SKU when it was
+      // checked in Section 3, same "uncheck any not handed over" pattern the
+      // Add-Course flow already used for an existing student.
       if (enrData.length > 0) {
-        const skuIds = enrData.map(function (e) { return e.sku_id })
-        const { data: kits } = await sb.from('kit_items')
-          .select('sku_id, item_id, quantity, inventory_items(name)').in('sku_id', skuIds)
         const lines = []
         const stockRows = []
         enrData.forEach(function (e) {
@@ -3413,9 +3436,10 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
           const cname = (sku?.courses?.group_name ? sku.courses.group_name + ' — ' : '') + (sku?.level_name || '')
           const fee = sku?.student_fee || 0
           lines.push({ kind: 'course', sku_id: e.sku_id, enrollment_id: e.id, name: cname, qty: 1, rate: fee, amount: fee })
-          ;(kits || []).filter(function (k) { return k.sku_id === e.sku_id }).forEach(function (k) {
+          const ex = kitExcluded[e.sku_id] || {}
+          ;(kitData[e.sku_id] || []).filter(function (k) { return !ex[k.item_id] }).forEach(function (k) {
             const qn = Number(k.quantity || 1)
-            lines.push({ kind: 'kit', sku_id: e.sku_id, item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', qty: qn, rate: 0, amount: 0 })
+            lines.push({ kind: 'kit', sku_id: e.sku_id, item_id: k.item_id, name: k.name, qty: qn, rate: 0, amount: 0 })
             if (qn > 0) stockRows.push({ item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student', qty: -qn, ref_type: 'enrollment', ref_id: e.id, franchisee_id: form.franchisee_id || null, note: 'Kit · ' + form.full_name.trim() })
           })
         })
@@ -3790,6 +3814,33 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                     </div>
 
                     <div style={{ padding:'10px 12px' }}>
+                      {/* Kit items — confirm what was actually handed over at
+                          admission (previously deducted blindly with no check). */}
+                      {(function () {
+                        const kits = kitData[sku.id]
+                        const ex = kitExcluded[sku.id] || {}
+                        if (kits == null) return <div className="hint" style={{ marginBottom:10 }}>Loading kit…</div>
+                        if (kits.length === 0) return <div className="hint" style={{ marginBottom:10 }}>No kit defined for this course.</div>
+                        return (
+                          <div style={{ marginBottom:10 }}>
+                            <div style={{ font:'600 9.5px var(--mono)', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:5 }}>
+                              Kit items given <span style={{ textTransform:'none', fontWeight:400 }}>— uncheck any not handed over</span>
+                            </div>
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                              {kits.map(function (k) {
+                                const on = !ex[k.item_id]
+                                return (
+                                  <label key={k.item_id} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:20, cursor:'pointer', font:'500 11px var(--font)', border:'1px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : 'var(--bg)', color: on ? 'var(--purple)' : 'var(--text3)', textDecoration: on ? 'none' : 'line-through' }}>
+                                    <input type="checkbox" checked={on} onChange={function () { toggleKitItem(sku.id, k.item_id) }} style={{ accentColor:'var(--purple)' }} />
+                                    {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
                       {bd.loading ? (
                         <span className="hint">Loading batches…</span>
                       ) : (
