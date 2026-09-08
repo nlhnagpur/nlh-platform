@@ -231,6 +231,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
   const [lastAttendedDate,setLastAttendedDate]= useState({})   // { [enrollment_id]: latest attended session_date (YYYY-MM-DD) }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
+  const [kitDefs,         setKitDefs]         = useState({})   // { [sku_id]: [{item_id, name, quantity}] } — full kit definition
+  const [kitGiven,        setKitGiven]        = useState({})   // { [enrollment_id]: { [item_id]: stock_ledger row } } — what's actually been deducted, per item
+  const [kitPanelEnrId,   setKitPanelEnrId]   = useState(null) // enrollment whose kit-confirm panel is open
+  const [kitSaving,       setKitSaving]       = useState(false)
   const [certWaStatus,    setCertWaStatus]    = useState({})   // { [enrollment_id]: 'sent'|'delivered'|'read'|'failed' }
   const [remindSending,   setRemindSending]   = useState(false)
   const [waConfirm,       setWaConfirm]       = useState(null)
@@ -723,12 +727,35 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         setCycleProgress(progress)
       }
 
-      // Which enrollments have had their kit issued (HO stock deducted)
+      // Which enrollments have had their kit issued (HO stock deducted) —
+      // and specifically which items, so "Kit issued" can be confirmed or
+      // corrected per item instead of being a fire-and-forget badge. A new
+      // enrollment auto-deducts the full kit with no confirmation step
+      // (see addStudent/addEnrollments) — this is what lets an admin catch
+      // and fix a "nothing was actually handed over yet" case afterward.
       const { data: kitLedger } = await sb.from('stock_ledger')
-        .select('ref_id').eq('ref_type', 'enrollment').in('ref_id', enrIds)
+        .select('id, item_id, ref_id, qty').eq('ref_type', 'enrollment').eq('movement_type', 'issue_to_student').in('ref_id', enrIds)
       const ki = {}
-      ;(kitLedger || []).forEach(function (r) { ki[r.ref_id] = true })
+      const kg = {}
+      ;(kitLedger || []).forEach(function (r) {
+        ki[r.ref_id] = true
+        if (!kg[r.ref_id]) kg[r.ref_id] = {}
+        kg[r.ref_id][r.item_id] = r
+      })
       setKitIssued(ki)
+      setKitGiven(kg)
+
+      const kitSkuIds = Array.from(new Set(localEnrollments.map(function (e) { return e.sku_id }).filter(Boolean)))
+      if (kitSkuIds.length > 0) {
+        const { data: kitRows } = await sb.from('kit_items')
+          .select('sku_id, item_id, quantity, inventory_items(name)').in('sku_id', kitSkuIds)
+        const kd = {}
+        ;(kitRows || []).forEach(function (k) {
+          if (!kd[k.sku_id]) kd[k.sku_id] = []
+          kd[k.sku_id].push({ item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', quantity: Number(k.quantity) || 1 })
+        })
+        setKitDefs(kd)
+      }
 
       // Certificate WhatsApp status — read straight off the enrollment (kept in
       // sync by the webhook) so franchisees see it without whatsapp_messages access
@@ -993,6 +1020,34 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       ? 'Schedule set — tracking from ' + fmtDate(renewDate) + ' ✓'
       : 'Cycle renewed from ' + fmtDate(renewDate) + (fee > 0 ? ' · ₹' + fmtAmt(fee) + ' added to Fee Total ✓' : ' ✓'))
     if (onSaved) onSaved({ ...student, ...form, fee_total: fee > 0 ? (Number(form.fee_total) || 0) + fee : form.fee_total, enrollments: next })
+  }
+
+  // ── Confirm / correct kit issuance, per item ──
+  // New enrollments auto-deduct the full kit with no confirmation step
+  // (see addEnrollments / AddStudentModal) — this is the "actually, nothing
+  // was handed over yet" fix: unchecking an item reverses its stock
+  // deduction (deletes the wrongful ledger row, doesn't just log a return —
+  // it was never really issued), checking one deducts it for real.
+  async function toggleKitGiven(en, item) {
+    setKitSaving(true)
+    const existing = (kitGiven[en.id] || {})[item.item_id]
+    let forEnr = { ...(kitGiven[en.id] || {}) }
+    if (existing) {
+      const { error } = await sb.from('stock_ledger').delete().eq('id', existing.id)
+      if (error) { setKitSaving(false); showToast('Failed: ' + error.message, 'err'); return }
+      delete forEnr[item.item_id]
+    } else {
+      const { data, error } = await sb.from('stock_ledger').insert({
+        item_id: item.item_id, location_type: 'ho', movement_type: 'issue_to_student',
+        qty: -item.quantity, ref_type: 'enrollment', ref_id: en.id,
+        franchisee_id: student.franchisee_id || null, note: 'Kit · ' + (student.full_name || 'student'),
+      }).select('id, item_id, ref_id, qty').single()
+      if (error) { setKitSaving(false); showToast('Failed: ' + error.message, 'err'); return }
+      forEnr[item.item_id] = data
+    }
+    setKitGiven(function (prev) { return { ...prev, [en.id]: forEnr } })
+    setKitIssued(function (prev) { return { ...prev, [en.id]: Object.keys(forEnr).length > 0 } })
+    setKitSaving(false)
   }
 
   function openReview(en) {
@@ -2028,6 +2083,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     ? Math.floor((Date.now() - new Date(en.cycle_started_at + 'T00:00:00').getTime()) / 86400000)
                     : 0
                   const monthEnding  = !isCompleted && billingType === 'monthly' && cycleTarget > 0 && daysSinceCycleStart >= 28
+                  const kitItems     = kitDefs[en.sku_id] || []
+                  const kitGivenForEnr = kitGiven[en.id] || {}
+                  const kitPanelOpen = kitPanelEnrId === en.id
 
                   return (
                     <div key={en.id} style={{
@@ -2056,11 +2114,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             <span style={{ font: '600 10px var(--mono)', color: sessionsDone ? '#B45309' : 'var(--purple)', background: sessionsDone ? '#FEF3C7' : 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                               {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
                             </span>
-                            {kitIssued[en.id] && (
-                              <span title="Kit issued — HO stock deducted"
-                                style={{ font: '600 10px var(--font)', color: '#0E7490', background: '#CFFAFE', border: '1px solid #67E8F9', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                🧰 Kit issued
-                              </span>
+                            {kitItems.length > 0 && (
+                              <button
+                                onClick={function () { setKitPanelEnrId(kitPanelOpen ? null : en.id) }}
+                                title={kitIssued[en.id] ? 'Confirm exactly which kit items were handed over' : 'No kit items confirmed as given yet — click to check them off'}
+                                style={{
+                                  font: '600 10px var(--font)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer',
+                                  color: kitIssued[en.id] ? '#0E7490' : 'var(--text3)',
+                                  background: kitIssued[en.id] ? '#CFFAFE' : 'var(--bg2)',
+                                  border: '1px solid ' + (kitIssued[en.id] ? '#67E8F9' : 'var(--border)'),
+                                }}>
+                                🧰 {kitIssued[en.id] ? Object.keys(kitGivenForEnr).length + '/' + kitItems.length + ' kit given' : 'Confirm kit'}
+                              </button>
                             )}
                             {(en.cert_wa_sent_at || certWaStatus[en.id]) && (function () {
                               const st = certWaStatus[en.id] || 'sent'
@@ -2125,6 +2190,36 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           ) : (
                             <div style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginTop: 3 }}>
                               Not assigned to a batch
+                            </div>
+                          )}
+
+                          {en.enrolled_at && (
+                            <div style={{ font: '500 11px var(--mono)', color: 'var(--text3)', marginTop: 3 }}>
+                              Enrolled {fmtDate(String(en.enrolled_at).slice(0, 10))}
+                            </div>
+                          )}
+
+                          {/* Kit confirmation — new enrollments auto-deduct the
+                              full kit with no confirmation, so this is where an
+                              admin actually confirms (or corrects) what was
+                              handed over, item by item. */}
+                          {kitPanelOpen && kitItems.length > 0 && (
+                            <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                              <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>
+                                Kit items given <span style={{ textTransform: 'none', fontWeight: 400 }}>— confirm what was actually handed over</span>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {kitItems.map(function (k) {
+                                  const given = !!kitGivenForEnr[k.item_id]
+                                  return (
+                                    <label key={k.item_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, cursor: kitSaving ? 'default' : 'pointer', font: '500 11px var(--font)', border: '1px solid ' + (given ? 'var(--purple)' : 'var(--border)'), background: given ? 'var(--purple-bg)' : 'var(--bg)', color: given ? 'var(--purple)' : 'var(--text3)', textDecoration: given ? 'none' : 'line-through' }}>
+                                      <input type="checkbox" checked={given} disabled={kitSaving}
+                                        onChange={function () { toggleKitGiven(en, k) }} style={{ accentColor: 'var(--purple)' }} />
+                                      {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}
+                                    </label>
+                                  )
+                                })}
+                              </div>
                             </div>
                           )}
 
