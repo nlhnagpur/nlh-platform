@@ -31,15 +31,17 @@ function avatar(name) {
 }
 
 const REMUN_LABELS = {
-  per_student: 'Per Student (on completion)',
-  per_session: 'Per Session (1 hr)',
-  monthly:     'Monthly Fixed',
+  per_student:       'Per Student (on completion)',
+  per_student_month: 'Per Student / Month',
+  per_session:       'Per Session (1 hr)',
+  monthly:           'Monthly Fixed',
 }
 
 const REMUN_SUFFIX = {
-  per_student: '/ student',
-  per_session: '/ session',
-  monthly:     '/ month',
+  per_student:       '/ student',
+  per_student_month: '/ student / month',
+  per_session:       '/ session',
+  monthly:           '/ month',
 }
 
 // ── InstructorDetailModal ──────────────────────────────────────────────────────
@@ -68,6 +70,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollAppts,       setPayrollAppts]       = useState([])
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
+  const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
   const [overrideEdit,       setOverrideEdit]       = useState(false) // editing override inline
   const [overrideForm,       setOverrideForm]       = useState({ amount: '', notes: '' })
@@ -189,13 +192,16 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
       // ── Per-student completions: count enrollments completed this month per batch ──
       var batchIds = [...new Set((sessRes.data || []).map(function (s) { return s.batch_id }))]
-      var completionMap = {}
-      var totalSessMap  = {}
+      var completionMap   = {}
+      var totalSessMap    = {}
+      var activeStudentMap = {}   // batchId → students on the batch at any point this month (for per_student_month)
 
       if (batchIds.length > 0) {
-        // Completions in month
+        // Completions in month, and this month's active roster in one query —
+        // the "active" side is anyone whose membership overlapped the month at
+        // all (assigned before month-end, not removed before month-start).
         var { data: bsRows } = await sb.from('batch_students')
-          .select('batch_id, enrollments(id, completed_at)')
+          .select('batch_id, assigned_at, removed_at, enrollments(id, completed_at)')
           .in('batch_id', batchIds)
         ;(bsRows || []).forEach(function (bs) {
           var ca = bs.enrollments?.completed_at
@@ -204,6 +210,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             if (caDate >= startDate && caDate <= endDate) {
               completionMap[bs.batch_id] = (completionMap[bs.batch_id] || 0) + 1
             }
+          }
+          var assignedBy = (bs.assigned_at || '').slice(0, 10)
+          var removedAt  = bs.removed_at ? bs.removed_at.slice(0, 10) : null
+          if (assignedBy && assignedBy <= endDate && (!removedAt || removedAt >= startDate)) {
+            activeStudentMap[bs.batch_id] = (activeStudentMap[bs.batch_id] || 0) + 1
           }
         })
 
@@ -231,6 +242,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       setPayrollAppts(apptRes.data || [])
       setPayrollCompletions(completionMap)
       setPayrollTotalSess(totalSessMap)
+      setPayrollActiveStudents(activeStudentMap)
       setPayrollOverride(ovRow || null)
       setOverrideEdit(false)
       setPayrollLoading(false)
@@ -802,6 +814,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                         onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_mode: e.target.value } }) }}>
                                         <option value="per_session">Per Session (₹ / hr)</option>
                                         <option value="per_student">Per Student (₹ on completion)</option>
+                                        <option value="per_student_month">Per Student / Month (₹)</option>
                                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                                       </select>
                                     </label>
@@ -948,6 +961,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     <label>Remuneration Mode *
                       <select value={newAppt.remuneration_mode} onChange={nfd('remuneration_mode')}>
                         <option value="per_student">Per Student (₹ on completion)</option>
+                        <option value="per_student_month">Per Student / Month (₹)</option>
                         <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
@@ -957,7 +971,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         onChange={nfd('remuneration_rate')}
                         placeholder={
                           newAppt.remuneration_mode === 'per_session' ? 'e.g. 150' :
-                          newAppt.remuneration_mode === 'monthly'     ? 'e.g. 5000' : 'e.g. 750'
+                          newAppt.remuneration_mode === 'monthly'     ? 'e.g. 5000' :
+                          newAppt.remuneration_mode === 'per_student_month' ? 'e.g. 300' : 'e.g. 750'
                         } />
                     </label>
                     <label>Appointed From
@@ -1298,9 +1313,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               })
 
               // Build per-batch payment rows
-              var perSessionRows = []
-              var perStudentRows = []
-              var monthlyRows    = []
+              var perSessionRows      = []
+              var perStudentRows      = []
+              var perStudentMonthRows = []
+              var monthlyRows         = []
 
               Object.entries(batchMap).forEach(function (entry) {
                 var batchId = entry[0]
@@ -1311,7 +1327,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var rate    = appt?.remuneration_rate || 0
                 var course  = data.batch?.skus?.courses?.group_name || data.batch?.name || '—'
                 var level   = data.batch?.skus?.level_name || ''
-                var completions  = mode === 'per_student' ? (payrollCompletions[batchId] || 0) : 0
+                var completions   = mode === 'per_student' ? (payrollCompletions[batchId] || 0) : 0
+                var activeStudents = mode === 'per_student_month' ? (payrollActiveStudents[batchId] || 0) : 0
                 var ciSessions   = data.sessions.length
                 var totalSessions = payrollTotalSess[batchId] || ciSessions
                 var subSessions  = Math.max(0, totalSessions - ciSessions)
@@ -1326,12 +1343,15 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   proration,
                   mode, rate,
                   completions,
+                  activeStudents,
                   amount: mode === 'per_session' ? ciSessions * rate
                         : mode === 'per_student' ? Math.round(completions * rate * proration)
+                        : mode === 'per_student_month' ? Math.round(activeStudents * rate * proration)
                         : 0,
                 }
                 if (mode === 'per_session') perSessionRows.push(row)
                 else if (mode === 'per_student') perStudentRows.push(row)
+                else if (mode === 'per_student_month') perStudentMonthRows.push(row)
               })
 
               // Monthly appointments (not per-batch)
@@ -1339,12 +1359,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 if (a.remuneration_mode === 'monthly') monthlyRows.push(a)
               })
 
-              var sessionTotal  = perSessionRows.reduce(function (s, r) { return s + r.amount }, 0)
-              var studentTotal  = perStudentRows.reduce(function (s, r) { return s + r.amount }, 0)
-              var monthlyTotal  = monthlyRows.reduce(function (s, a) { return s + (a.remuneration_rate || 0) }, 0)
-              var grandTotal    = sessionTotal + studentTotal + monthlyTotal
+              var sessionTotal      = perSessionRows.reduce(function (s, r) { return s + r.amount }, 0)
+              var studentTotal      = perStudentRows.reduce(function (s, r) { return s + r.amount }, 0)
+              var studentMonthTotal = perStudentMonthRows.reduce(function (s, r) { return s + r.amount }, 0)
+              var monthlyTotal      = monthlyRows.reduce(function (s, a) { return s + (a.remuneration_rate || 0) }, 0)
+              var grandTotal        = sessionTotal + studentTotal + studentMonthTotal + monthlyTotal
 
-              if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0) {
+              if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0 && perStudentMonthRows.length === 0) {
                 return (
                   <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text3)', fontSize: 13 }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>💰</div>
@@ -1487,6 +1508,80 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         }}>
                           <span style={{ font: '600 12px var(--font)', color: 'var(--green)' }}>Completion Sub-total</span>
                           <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>₹{studentTotal.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Per-student / month (recurring roster-based) */}
+                  {perStudentMonthRows.length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Per Student / Month
+                      </div>
+                      {perStudentMonthRows.map(function (row, i) {
+                        var hasSubs = row.subSessions > 0
+                        var pct     = Math.round(row.proration * 100)
+                        return (
+                          <div key={i} style={{
+                            padding: '10px 14px',
+                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
+                                <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                                  {row.course}{row.level ? ' · ' + row.level : ''}
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
+                                  <span style={{
+                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
+                                    background: 'var(--purple-bg)', color: 'var(--purple)',
+                                  }}>
+                                    {row.sessionCount} sessions by CI
+                                  </span>
+                                  {hasSubs && (
+                                    <span style={{
+                                      font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
+                                      background: '#fff3cd', color: '#92400e',
+                                    }}>
+                                      {row.subSessions} by substitute
+                                    </span>
+                                  )}
+                                  <span style={{
+                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
+                                    background: row.activeStudents > 0 ? 'var(--green-bg)' : 'var(--bg3)',
+                                    color: row.activeStudents > 0 ? 'var(--green)' : 'var(--text3)',
+                                  }}>
+                                    {row.activeStudents} student{row.activeStudents !== 1 ? 's' : ''} on roster
+                                  </span>
+                                </div>
+                                <div style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
+                                  {row.activeStudents} × ₹{row.rate.toLocaleString('en-IN')}
+                                  {hasSubs
+                                    ? <> × <span style={{ color: '#92400e', fontWeight: 700 }}>{pct}%</span> (CI taught {pct}% of sessions)</>
+                                    : null
+                                  }
+                                  {' = '}
+                                  <strong style={{ color: row.amount > 0 ? 'var(--text)' : 'var(--text3)' }}>
+                                    ₹{row.amount.toLocaleString('en-IN')}
+                                  </strong>
+                                </div>
+                              </div>
+                              <div style={{ font: '700 16px var(--font)', color: row.amount > 0 ? 'var(--text)' : 'var(--text3)', marginLeft: 12, marginTop: 2 }}>
+                                {row.amount > 0 ? '₹' + row.amount.toLocaleString('en-IN') : '—'}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {studentMonthTotal > 0 && (
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between', padding: '8px 14px',
+                          borderTop: '1px solid var(--border)', background: 'var(--green-bg)',
+                        }}>
+                          <span style={{ font: '600 12px var(--font)', color: 'var(--green)' }}>Roster Sub-total</span>
+                          <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>₹{studentMonthTotal.toLocaleString('en-IN')}</span>
                         </div>
                       )}
                     </div>
@@ -2076,8 +2171,9 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
               const takenNames = usedCourseNames(idx)
               const levels     = block.group_name ? getLevels(block.group_name) : []
               const ratePlaceholder =
-                block.remuneration_mode === 'per_session' ? '₹ per session' :
-                block.remuneration_mode === 'monthly'     ? '₹ per month'   : '₹ per student'
+                block.remuneration_mode === 'per_session'       ? '₹ per session' :
+                block.remuneration_mode === 'monthly'           ? '₹ per month' :
+                block.remuneration_mode === 'per_student_month' ? '₹ per student / month' : '₹ per student'
 
               return (
                 <div key={idx} style={{
@@ -2099,7 +2195,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
 
                   {/* Course selector */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                    <label>Course *
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>Course *
                       <select value={block.group_name}
                         onChange={function (e) { updateBlock(idx, 'group_name', e.target.value) }}>
                         <option value="">— Select course —</option>
@@ -2109,11 +2205,12 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                         }
                       </select>
                     </label>
-                    <label>Remuneration Mode
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>Remuneration Mode
                       <select value={block.remuneration_mode}
                         onChange={function (e) { updateBlock(idx, 'remuneration_mode', e.target.value) }}>
                         <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="per_student">Per Student (₹ on completion)</option>
+                        <option value="per_student_month">Per Student / Month (₹)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
                     </label>
