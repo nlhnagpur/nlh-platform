@@ -137,9 +137,12 @@ export function AuthProvider({ children }) {
         await sb.auth.signOut()
       }
 
-      // No session — show landing or login based on URL
+      // No session — show landing, login, or the access-request form based on
+      // URL. /apply is the shareable link handed to prospective franchisees —
+      // it drops them straight on the "Request platform access" form instead
+      // of routing them through the landing page first.
       const path = window.location.pathname
-      setScreen(path === '/login' ? 'login' : 'landing')
+      setScreen(path === '/login' ? 'login' : path === '/apply' ? 'request' : 'landing')
       setLoading(false)
     }
 
