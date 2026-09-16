@@ -281,6 +281,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [eligibleCIs,     setEligibleCIs]     = useState([])   // instructors certified for the open enrollment's sku
   const [completingEnr,   setCompletingEnr]   = useState(null)  // enrollment pending completion-date entry
   const [completeDate,    setCompleteDate]    = useState(new Date().toISOString().slice(0, 10))
+  // ── School-only marks → HO certify gate ──────────────────────────────────
+  // Only School-tier franchisees go through this; regular UF/CF/SMF centres
+  // keep self-certifying (completing a course there makes the certificate
+  // available immediately, same as always). centreTier is filled in once the
+  // student's own franchisee row loads (see loadCourseData below).
+  const [centreTier,      setCentreTier]      = useState(null)
+  const isSchool = centreTier === 'SCHOOL'
+  const [marksObtained,   setMarksObtained]   = useState('')
+  const [marksTotal,      setMarksTotal]      = useState('')
+  const [marksRemarks,    setMarksRemarks]    = useState('')
+  const [certifyingEn,    setCertifyingEn]    = useState(null)  // admin reviewing a school's pending-review enrollment
+  const [certifySaving,   setCertifySaving]   = useState(false)
+  const [certifyRejectNote, setCertifyRejectNote] = useState('')
   const [renewingEn,      setRenewingEn]      = useState(null)  // monthly enrollment pending cycle renewal
   const [renewDate,       setRenewDate]       = useState(new Date().toISOString().slice(0, 10))
   const [renewFee,        setRenewFee]        = useState('')
@@ -805,6 +818,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       sb.from('franchisees').select('tier, registered_skus, registered_courses').eq('id', student.franchisee_id).single(),
       sb.from('skus').select('id, level_name, student_fee, course_id, courses(group_name, billing_type)').order('sort_order'),
     ])
+    setCentreTier(fr?.tier || null)
     const filter = deriveFilter(fr)
     const enrolledSkuIds = localEnrollments.map(function (e) { return e.sku_id })
     let candidates = []
@@ -948,20 +962,53 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // endDate is 'YYYY-MM-DD' (course end date chosen by the user); default to today.
     var dateStr = endDate || new Date().toISOString().slice(0, 10)
     var completed_at = dateStr + 'T12:00:00+00:00'
+    var patch = { completed_at, status: 'completed' }
+    // School-tier centres submit marks at completion and wait for HO to
+    // certify before the certificate can be issued — regular franchisee
+    // tiers (UF/CF/SMF) are trusted to self-certify, same as before.
+    if (isSchool) {
+      patch.marks_obtained = marksObtained === '' ? null : Number(marksObtained)
+      patch.marks_total = marksTotal === '' ? null : Number(marksTotal)
+      patch.marks_remarks = marksRemarks.trim() || null
+      patch.marks_submitted_at = new Date().toISOString()
+      patch.marks_submitted_by = currentUser?.email || currentRole || null
+      patch.cert_status = 'pending_review'
+      patch.cert_reviewed_at = null
+      patch.cert_reviewed_by = null
+      patch.cert_reject_note = null
+    }
     var { error } = await sb.from('enrollments')
-      .update({ completed_at, status: 'completed' })
+      .update(patch)
       .eq('id', en.id)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     const next = localEnrollments.map(function (e) {
-      return e.id === en.id ? { ...e, completed_at, status: 'completed' } : e
+      return e.id === en.id ? { ...e, ...patch } : e
     })
     setLocalEnrollments(next)
     setCompletingEnr(null)
-    showToast('Marked as completed on ' + fmtDate(dateStr) + ' ✓')
+    showToast(isSchool
+      ? 'Marks submitted for ' + fmtDate(dateStr) + ' — awaiting HO certification ✓'
+      : 'Marked as completed on ' + fmtDate(dateStr) + ' ✓')
     // Sync the outer student list too — this modal's localEnrollments is a
     // separate copy from the parent's cached row, so without this the table's
     // Courses column keeps showing the pre-completion state until a full
     // page reload (the bug reported: chip showed "0/10" instead of "✓ done").
+    if (onSaved) onSaved({ ...student, ...form, enrollments: next })
+  }
+
+  // ── HO certify / reject a school's submitted marks ──
+  async function certifyEnrollment(en, approve, rejectNote) {
+    setCertifySaving(true)
+    const patch = approve
+      ? { cert_status: 'certified', cert_reviewed_at: new Date().toISOString(), cert_reviewed_by: currentUser?.email || currentRole || null, cert_reject_note: null }
+      : { cert_status: 'rejected', cert_reviewed_at: new Date().toISOString(), cert_reviewed_by: currentUser?.email || currentRole || null, cert_reject_note: (rejectNote || '').trim() || null }
+    const { error } = await sb.from('enrollments').update(patch).eq('id', en.id)
+    setCertifySaving(false)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, ...patch } : e })
+    setLocalEnrollments(next)
+    setCertifyingEn(null)
+    showToast(approve ? 'Certified — the certificate is now available ✓' : 'Marks rejected — sent back to the school ✓')
     if (onSaved) onSaved({ ...student, ...form, enrollments: next })
   }
 
@@ -1128,7 +1175,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1225,7 +1272,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       }
     })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
@@ -1354,7 +1401,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -2307,6 +2354,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
                             onClick={function () {
                               setCompleteDate(lastAttendedDate[en.id] || new Date().toISOString().slice(0, 10))
+                              setMarksObtained(en.marks_obtained != null ? String(en.marks_obtained) : '')
+                              setMarksTotal(en.marks_total != null ? String(en.marks_total) : '')
+                              setMarksRemarks(en.marks_remarks || '')
                               setCompletingEnr(en)
                             }}>
                             ✓ Complete
@@ -2339,7 +2389,44 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             💬 Review
                           </button>
                         )}
-                        {!isDiscontinued && (
+                        {/* School-tier: certificate is gated behind HO review of the
+                            submitted marks. Every other tier keeps self-certifying —
+                            the plain 🎓 Cert button below, unchanged. */}
+                        {!isDiscontinued && isSchool && en.cert_status === 'pending_review' && (
+                          admin ? (
+                            <button className="btn-s"
+                              style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: '#92400e', borderColor: '#fbbf24', background: '#fffbeb' }}
+                              onClick={function () { setCertifyingEn(en); setCertifyRejectNote('') }}
+                              title="Review submitted marks and certify or reject">
+                              ⏳ Review marks
+                            </button>
+                          ) : (
+                            <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' }}>
+                              ⏳ Pending HO review
+                            </span>
+                          )
+                        )}
+                        {!isDiscontinued && isSchool && en.cert_status === 'rejected' && (
+                          <>
+                            <span title={en.cert_reject_note || 'Marks were rejected'} style={{ font: '600 11px var(--font)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' }}>
+                              ✖ Rejected{en.cert_reject_note ? ': ' + en.cert_reject_note : ''}
+                            </span>
+                            {canEdit && (
+                              <button className="btn-s"
+                                style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
+                                onClick={function () {
+                                  setCompleteDate(en.completed_at ? en.completed_at.slice(0, 10) : new Date().toISOString().slice(0, 10))
+                                  setMarksObtained(en.marks_obtained != null ? String(en.marks_obtained) : '')
+                                  setMarksTotal(en.marks_total != null ? String(en.marks_total) : '')
+                                  setMarksRemarks(en.marks_remarks || '')
+                                  setCompletingEnr(en)
+                                }}>
+                                ✎ Resubmit marks
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {!isDiscontinued && (!isSchool || en.cert_status === 'certified') && (
                           <button
                             className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
@@ -2876,6 +2963,59 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
         {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
 
+        {/* HO review of a school's submitted marks — certify unlocks the
+            certificate, reject sends it back with a note for the school
+            to fix and resubmit. */}
+        {certifyingEn && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setCertifyingEn(null) }}>
+            <div className="modal" style={{ maxWidth: 420 }}>
+              <ModalHeader flush title="Review Marks"
+                subtitle={(certifyingEn.skus?.courses?.group_name || 'Course') + (certifyingEn.skus?.level_name ? ' · ' + certifyingEn.skus.level_name : '')}
+                onClose={function () { setCertifyingEn(null) }} />
+              <div style={{ padding: '4px 20px 16px' }}>
+                <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Marks</div>
+                    <div style={{ font: '700 18px var(--mono)', color: 'var(--text)' }}>
+                      {certifyingEn.marks_obtained != null ? certifyingEn.marks_obtained : '—'}
+                      {certifyingEn.marks_total != null ? ' / ' + certifyingEn.marks_total : ''}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Submitted</div>
+                    <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>
+                      {certifyingEn.marks_submitted_at ? fmtDate(certifyingEn.marks_submitted_at.slice(0, 10)) : '—'}
+                    </div>
+                  </div>
+                </div>
+                {certifyingEn.marks_remarks && (
+                  <p className="hint" style={{ marginBottom: 10 }}>“{certifyingEn.marks_remarks}”</p>
+                )}
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                  Rejection note <span style={{ fontWeight: 400, color: 'var(--text3)' }}>(only needed if rejecting)</span>
+                  <textarea value={certifyRejectNote}
+                    onChange={function (e) { setCertifyRejectNote(e.target.value) }}
+                    rows={2} placeholder="e.g. marks look inconsistent with attendance — please recheck"
+                    style={{ marginTop: 6, fontSize: 13, width: '100%', resize: 'vertical' }} />
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button className="btn" onClick={function () { setCertifyingEn(null) }}>Cancel</button>
+                <button className="btn-s" style={{ color: '#991b1b', borderColor: '#fca5a5' }}
+                  disabled={certifySaving}
+                  onClick={function () { certifyEnrollment(certifyingEn, false, certifyRejectNote) }}>
+                  {certifySaving ? '…' : '✖ Reject'}
+                </button>
+                <button className="btn-p"
+                  disabled={certifySaving}
+                  onClick={function () { certifyEnrollment(certifyingEn, true, '') }}>
+                  {certifySaving ? '…' : '✓ Certify'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Course completion date modal */}
         {completingEnr && (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setCompletingEnr(null) }}>
@@ -2897,13 +3037,44 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 <p className="hint" style={{ marginTop: 8 }}>
                   Defaults to the last attended class. The student stays on sessions up to this date and drops off any sessions after it.
                 </p>
+                {isSchool && (
+                  <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
+                    <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>
+                      📝 Marks — required before HO can certify
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', flex: 1 }}>
+                        Marks obtained
+                        <input type="number" min={0} value={marksObtained}
+                          onChange={function (e) { setMarksObtained(e.target.value) }}
+                          style={{ marginTop: 4, fontSize: 13, width: '100%' }} />
+                      </label>
+                      <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', flex: 1 }}>
+                        Out of
+                        <input type="number" min={0} value={marksTotal}
+                          onChange={function (e) { setMarksTotal(e.target.value) }}
+                          style={{ marginTop: 4, fontSize: 13, width: '100%' }} />
+                      </label>
+                    </div>
+                    <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 8 }}>
+                      Remarks (optional)
+                      <textarea value={marksRemarks}
+                        onChange={function (e) { setMarksRemarks(e.target.value) }}
+                        rows={2}
+                        style={{ marginTop: 4, fontSize: 13, width: '100%', resize: 'vertical' }} />
+                    </label>
+                    <p className="hint" style={{ marginTop: 6 }}>
+                      This goes to HO for review — the certificate won't be available until it's certified.
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="modal-actions">
                 <button className="btn" onClick={function () { setCompletingEnr(null) }}>Cancel</button>
                 <button className="btn-p"
-                  disabled={!completeDate}
+                  disabled={!completeDate || (isSchool && (marksObtained === '' || marksTotal === ''))}
                   onClick={function () { markCourseComplete(completingEnr, completeDate) }}>
-                  Mark Complete
+                  {isSchool ? 'Submit for HO Review' : 'Mark Complete'}
                 </button>
               </div>
             </div>
@@ -3546,7 +3717,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       try { await mirrorStudentToTransaction(st.id) } catch (e) { console.warn('[Phase 3 dual-write] student create mirror failed:', e.message) }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -4071,7 +4242,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -4231,7 +4402,7 @@ export default function StudentsPage() {
     const loaded = students.find(function (s) { return s.id === st.id })
     if (loaded) { setSelected(loaded); return }
     const { data } = await sb.from('students')
-      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
       .eq('id', st.id).single()
     setSelected(data || st)
   }
