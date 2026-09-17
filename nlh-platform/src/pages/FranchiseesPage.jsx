@@ -600,7 +600,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     setTabLoaded(tl => ({ ...tl, [t]: true }))
 
     if (t === 'orders') {
-      const { data } = await sb.from('orders').select('id,invoice_no,created_at,status,amount_paid').eq('placer_id', franchisee.id).order('created_at', { ascending: false }).limit(20)
+      // Same placer_id-only gap fixed elsewhere (ledger, Orders page,
+      // Dashboard) — an order placed by a CF but billed to this school
+      // only ever shows up via bill_to_franchisee_id.
+      const { data } = await sb.from('orders').select('id,invoice_no,created_at,status,amount_paid')
+        .or('placer_id.eq.' + franchisee.id + ',bill_to_franchisee_id.eq.' + franchisee.id)
+        .order('created_at', { ascending: false }).limit(20)
       setOrders(data || [])
     }
     if (t === 'students') {

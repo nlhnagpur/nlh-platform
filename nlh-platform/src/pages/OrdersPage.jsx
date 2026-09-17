@@ -2235,18 +2235,20 @@ export default function OrdersPage() {
         .from('orders')
         .select(SELECT)
         .order('created_at', { ascending: false }))
-    } else if (currentRole === 'smf' || currentRole === 'cf') {
-      const treeIds = await getTreeIds(currentFranchiseeId)
-      ;({ data, error } = await sb
-        .from('orders')
-        .select(SELECT)
-        .in('placer_id', treeIds.length > 0 ? treeIds : [currentFranchiseeId])
-        .order('created_at', { ascending: false }))
     } else {
+      // Orders this centre (or, for CF/SMF, anyone in its tree) either
+      // placed OR is actually billed to — a CF/SMF placing and paying on a
+      // school's behalf means the order's placer_id is the CF, not the
+      // school, so the school only ever shows up via bill_to_franchisee_id.
+      // Same gap the ledger and its RLS policies already got fixed for.
+      const treeIds = (currentRole === 'smf' || currentRole === 'cf')
+        ? await getTreeIds(currentFranchiseeId)
+        : [currentFranchiseeId]
+      const ids = (treeIds.length > 0 ? treeIds : [currentFranchiseeId]).join(',')
       ;({ data, error } = await sb
         .from('orders')
         .select(SELECT)
-        .eq('placer_id', currentFranchiseeId)
+        .or('placer_id.in.(' + ids + '),bill_to_franchisee_id.in.(' + ids + ')')
         .order('created_at', { ascending: false }))
     }
 

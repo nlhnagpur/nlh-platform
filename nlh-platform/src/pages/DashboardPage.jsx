@@ -958,9 +958,12 @@ export default function DashboardPage({ onNavigate }) {
   }
 
   async function loadFranchiseeData() {
+    // Same placer_id-only gap fixed on the Orders page and the ledger — an
+    // order billed to this centre but placed by someone else on its behalf
+    // (a CF placing/paying for a school) never showed up here otherwise.
     const { data: ownOrds } = await sb.from('orders')
       .select('id, status, grand_total, amount_paid, created_at, invoice_no')
-      .eq('placer_id', currentFranchiseeId)
+      .or('placer_id.eq.' + currentFranchiseeId + ',bill_to_franchisee_id.eq.' + currentFranchiseeId)
     const orders = ownOrds || []
     setOwnOrderCount(orders.length)
     setOwnOrders([...orders].sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at) }).slice(0, 8))
