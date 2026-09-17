@@ -54,8 +54,12 @@ function authorisationText(courseNames) {
 // a clean two-line address regardless of how long either half is.
 function buildAddress(fr) {
   const line1 = fr.address || ''
-  const line2 = [fr.area, fr.city, fr.state, fr.pincode,
-    fr.country && fr.country !== 'India' ? fr.country : null].filter(Boolean).join(', ')
+  // Pincode reads as "State - Pincode", not "State, Pincode" — everything
+  // else (area, city, state, and an optional non-India country) stays
+  // comma-joined as usual.
+  let line2 = [fr.area, fr.city, fr.state].filter(Boolean).join(', ')
+  if (fr.pincode) line2 = [line2, fr.pincode].filter(Boolean).join(' - ')
+  if (fr.country && fr.country !== 'India') line2 = [line2, fr.country].filter(Boolean).join(', ')
   return [line1, line2].filter(Boolean).join('\n')
 }
 
