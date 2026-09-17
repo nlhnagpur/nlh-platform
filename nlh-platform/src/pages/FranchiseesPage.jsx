@@ -775,7 +775,11 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
       if (error) throw error
 
       const displayName = franchisee.owner_name || franchisee.business_name || 'Partner'
-      const tierMap = { SMF: 'State Master Franchisee', CF: 'City Franchisee', UF: 'Unit Franchisee' }
+      // Schools log in with the same platform access as any other centre
+      // (role resolves to 'uf' — see AuthContext) even though they're not a
+      // franchise business in their own right, so they get their own label
+      // here rather than falling through to the raw tier string "SCHOOL".
+      const tierMap = { SMF: 'State Master Franchisee', CF: 'City Franchisee', UF: 'Unit Franchisee', SCHOOL: 'Authorized Program Partner' }
       const roleLabel = tierMap[franchisee.tier] || franchisee.tier
 
       // 1. Platform access email (password reset notice)
@@ -898,7 +902,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     <button type="button" className="btn-s" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
                       onClick={function () { setNewEmail(form.email || ''); setChangingEmail(true) }}>✎ Change</button>
                   )}
-                  {admin && franchisee.tier !== 'SCHOOL' && !changingEmail && (
+                  {/* Schools get a real platform login too (Students, Orders,
+                      etc. — same as a UF) even though they don't sign a
+                      Unit Franchise Agreement, so this isn't gated on tier. */}
+                  {admin && !changingEmail && (
                     <button type="button" className="btn-s" onClick={resendAccess} disabled={resending}
                       style={{ fontSize: 11, whiteSpace: 'nowrap' }} title="Sends a password reset link to the franchisee's email">
                       {resending ? 'Sending…' : '📧 Resend Login Access'}

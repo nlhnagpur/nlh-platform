@@ -32,6 +32,7 @@ const ROLE_LABEL = {
   manager: 'Manager', staff: 'Staff',
   smf: 'State Master Franchisee', cf: 'City Franchisee',
   uf: 'Unit Franchisee', student: 'Student',
+  authorized_program_partner: 'Authorized Program Partner',
 }
 
 function fmtAmt(n) {
@@ -298,9 +299,10 @@ function buildFranchiseeWelcomeLetter(fr, courseNames) {
   const firstName  = ownerName.split(' ')[0]
   const centreName = fr.business_name && fr.business_name !== ownerName ? fr.business_name : null
   const TIER = {
-    SMF: { label: 'State Master Franchisee', short: 'SMF' },
-    CF:  { label: 'City Franchisee',          short: 'CF'  },
-    UF:  { label: 'Unit Franchisee',           short: 'UF'  },
+    SMF:    { label: 'State Master Franchisee',   short: 'SMF' },
+    CF:     { label: 'City Franchisee',            short: 'CF'  },
+    UF:     { label: 'Unit Franchisee',            short: 'UF'  },
+    SCHOOL: { label: 'Authorized Program Partner', short: 'School' },
   }
   const tierInfo  = TIER[fr.tier] || { label: fr.tier, short: fr.tier }
   const territory = fr.tier === 'SMF'
@@ -314,9 +316,10 @@ function buildFranchiseeWelcomeLetter(fr, courseNames) {
     : (fr.tier === 'SMF' || fr.tier === 'CF') ? 'All NLH Programs' : 'To be assigned'
 
   const tierOpenings = {
-    SMF: 'You are now the <strong>State Master Franchisee</strong> for <strong>' + (fr.state || fr.country) + '</strong> — responsible for growing the NLH family across your entire state.',
-    CF:  'You are now the <strong>City Franchisee</strong> for <strong>' + (fr.city || territory) + '</strong> — a key pillar in expanding NLH&rsquo;s reach in your city.',
-    UF:  'You are now an authorised <strong>Unit Franchisee</strong>' + (fr.city ? ' in <strong>' + fr.city + '</strong>' : '') + ' — at the heart of our mission to enrich children&rsquo;s lives every day.',
+    SMF:    'You are now the <strong>State Master Franchisee</strong> for <strong>' + (fr.state || fr.country) + '</strong> — responsible for growing the NLH family across your entire state.',
+    CF:     'You are now the <strong>City Franchisee</strong> for <strong>' + (fr.city || territory) + '</strong> — a key pillar in expanding NLH&rsquo;s reach in your city.',
+    UF:     'You are now an authorised <strong>Unit Franchisee</strong>' + (fr.city ? ' in <strong>' + fr.city + '</strong>' : '') + ' — at the heart of our mission to enrich children&rsquo;s lives every day.',
+    SCHOOL: 'Your school is now an <strong>Authorized Program Partner</strong> of New Learning Horizons' + (fr.city ? ' in <strong>' + fr.city + '</strong>' : '') + ' — bringing our skill-based programs directly to your students.',
   }
   const tierOpening = tierOpenings[fr.tier] || tierOpenings.UF
 
@@ -384,9 +387,15 @@ function buildFranchiseeCert(fr, courseNames) {
     d.setFullYear(d.getFullYear() + 3)
     return dmyDate(d)
   }
+  // Matches FranchiseeCertModal.jsx's buildAddress() — street on its own
+  // line, then area/city/state joined with commas but "State - Pincode"
+  // (a dash, not a comma) before an optional non-India country.
   function mkAddress(f) {
-    return [f.address, f.area, f.city, f.state,
-      f.country && f.country !== 'India' ? f.country : null].filter(Boolean).join(', ')
+    const line1 = f.address || ''
+    let line2 = [f.area, f.city, f.state].filter(Boolean).join(', ')
+    if (f.pincode) line2 = [line2, f.pincode].filter(Boolean).join(' - ')
+    if (f.country && f.country !== 'India') line2 = [line2, f.country].filter(Boolean).join(', ')
+    return [line1, line2].filter(Boolean).join('<br>')
   }
   // "the X Program" / "the X & Y Programs" — matches the web preview and
   // the printable certificate (franchise-cert.html) so all three agree.
