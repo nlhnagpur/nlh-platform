@@ -47,7 +47,7 @@ function authorisationText(courseNames) {
 }
 
 function buildAddress(fr) {
-  return [fr.address, fr.area, fr.city, fr.state,
+  return [fr.address, fr.area, fr.city, fr.state, fr.pincode,
     fr.country && fr.country !== 'India' ? fr.country : null]
     .filter(Boolean).join(', ')
 }
