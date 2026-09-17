@@ -868,12 +868,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       : { data: [] }
     const courseSkuIds = (courseSkus || []).map(function (s) { return s.id })
 
-    // Fetch all active batches for this course (any level)
+    // Fetch this centre's own active batches for this course (any level) —
+    // a franchisee's students can only join a batch run by their own centre,
+    // never HO's or another franchisee's (CIs teach on-site, in person).
     const { data: batches } = courseSkuIds.length
       ? await sb.from('batches')
           .select('id, name, sku_id, schedule_days, schedule_time, is_individual, sessions_done, instructor_id, instructors(id, full_name)')
           .in('sku_id', courseSkuIds)
           .eq('is_active', true)
+          .eq('franchisee_id', student.franchisee_id)
           .order('schedule_time')
       : { data: [] }
 
@@ -1215,18 +1218,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   async function loadAddBatchData(skuId) {
     if (addBatchData[skuId]) return
     setAddBatchData(function (prev) { return { ...prev, [skuId]: { batches: [], eligibleCIs: [], loading: true } } })
+    // Certified CIs AND existing batches are both scoped to this student's own
+    // centre — an instructor teaches in person, so HO's or another centre's
+    // roster/batches are never relevant here (see openBatchPanel above, the
+    // same scoping applied to the course-card panel).
     const { data: ciRows } = await sb.from('instructor_courses')
-      .select('instructor_id, instructors(id, full_name, status)')
+      .select('instructor_id, instructors(id, full_name, status, franchisee_id)')
       .eq('sku_id', skuId).eq('status', 'active')
     const eligibleCIs = (ciRows || [])
       .map(function (r) { return r.instructors })
-      .filter(function (i) { return i && i.status === 'active' })
+      .filter(function (i) { return i && i.status === 'active' && i.franchisee_id === student.franchisee_id })
       .filter(function (i, idx, arr) { return arr.findIndex(function (x) { return x.id === i.id }) === idx })
     const eligibleCIIds = eligibleCIs.map(function (ci) { return ci.id })
     const { data: batches } = eligibleCIIds.length
       ? await sb.from('batches')
           .select('id, name, schedule_days, schedule_time, is_individual, instructor_id, instructors(id, full_name)')
-          .in('instructor_id', eligibleCIIds).eq('is_active', true).order('created_at')
+          .in('instructor_id', eligibleCIIds).eq('is_active', true).eq('franchisee_id', student.franchisee_id).order('created_at')
       : { data: [] }
     setAddBatchData(function (prev) { return { ...prev, [skuId]: { batches: batches || [], eligibleCIs: eligibleCIs, loading: false } } })
   }
@@ -3498,20 +3505,21 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   async function loadBatchData(skuId) {
     if (batchData[skuId]) return   // already loaded or loading
     setBatchData(function (prev) { return { ...prev, [skuId]: { batches: [], eligibleCIs: [], loading: true } } })
-    // Get CIs certified for this SKU
+    // Get CIs certified for this SKU at this centre — the selected franchisee
+    // (form.franchisee_id), never HO's or another centre's roster.
     const { data: ciRows } = await sb.from('instructor_courses')
-      .select('instructor_id, instructors(id, full_name, status)')
+      .select('instructor_id, instructors(id, full_name, status, franchisee_id)')
       .eq('sku_id', skuId).eq('status', 'active')
     const eligibleCIs = (ciRows || [])
       .map(function (r) { return r.instructors })
-      .filter(function (i) { return i && i.status === 'active' })
+      .filter(function (i) { return i && i.status === 'active' && i.franchisee_id === form.franchisee_id })
       .filter(function (i, idx, arr) { return arr.findIndex(function (x) { return x.id === i.id }) === idx })
     const eligibleCIIds = eligibleCIs.map(function (ci) { return ci.id })
     // Batches whose instructor is certified for this SKU
     const { data: batches } = eligibleCIIds.length
       ? await sb.from('batches')
           .select('id, name, schedule_days, schedule_time, is_individual, instructor_id, instructors(id, full_name)')
-          .in('instructor_id', eligibleCIIds).eq('is_active', true).order('created_at')
+          .in('instructor_id', eligibleCIIds).eq('is_active', true).eq('franchisee_id', form.franchisee_id).order('created_at')
       : { data: [] }
     setBatchData(function (prev) { return { ...prev, [skuId]: { batches: batches || [], eligibleCIs, loading: false } } })
   }
