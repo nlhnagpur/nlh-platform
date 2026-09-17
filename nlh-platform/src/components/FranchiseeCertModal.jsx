@@ -46,10 +46,17 @@ function authorisationText(courseNames) {
   return `and is authorized to conduct the ${named} ${word} at its school premises.`
 }
 
+// Two logical lines — street/area, then city/state/pincode — joined with a
+// real newline rather than left to CSS word-wrap. Wrapping this as one long
+// comma-joined string let the browser break wherever it liked, which could
+// land mid-phrase (e.g. "...Tamil" / "Nadu, 621212" on its own line). A
+// deliberate break at the one place that always reads naturally guarantees
+// a clean two-line address regardless of how long either half is.
 function buildAddress(fr) {
-  return [fr.address, fr.area, fr.city, fr.state, fr.pincode,
-    fr.country && fr.country !== 'India' ? fr.country : null]
-    .filter(Boolean).join(', ')
+  const line1 = fr.address || ''
+  const line2 = [fr.area, fr.city, fr.state, fr.pincode,
+    fr.country && fr.country !== 'India' ? fr.country : null].filter(Boolean).join(', ')
+  return [line1, line2].filter(Boolean).join('\n')
 }
 
 // ── print window ───────────────────────────────────────────────────────────────
@@ -153,7 +160,7 @@ export default function FranchiseeCertModal({ franchisee, courseNames, onClose }
                   <div style={{ fontSize: 9, color: '#555', marginTop: 6, marginBottom: 1 }}>Is a Registered</div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#CC0000', marginBottom: 4 }}>{label}</div>
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#1A1916', marginBottom: 2 }}>New Learning Horizons at</div>
-                  <div style={{ fontSize: 9, color: '#3A3830', marginBottom: courses ? 3 : 0, lineHeight: 1.4 }}>{address}</div>
+                  <div style={{ fontSize: 9, color: '#3A3830', marginBottom: courses ? 3 : 0, lineHeight: 1.4, whiteSpace: 'pre-line' }}>{address}</div>
                   {courses && (
                     <div style={{ fontSize: 9, color: '#1A1916', lineHeight: 1.4 }}>for {courses}</div>
                   )}

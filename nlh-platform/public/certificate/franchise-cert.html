@@ -197,6 +197,12 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
 .c-addr {
   font-size: 16px; color: #1A1916; text-align: center;
   line-height: 1.55; margin-bottom: 13px; max-width: 640px;
+  /* The app sends a deliberate street/area \n city,state,pincode break
+     (see FranchiseeCertModal.jsx buildAddress) instead of one long
+     comma-joined line left to wrap wherever the browser likes — pre-line
+     honours that explicit break while still wrapping normally within
+     each half if either one is long. */
+  white-space: pre-line;
 }
 .c-courses {
   font-size: 22px; font-weight: 700; color: #1A1916;
