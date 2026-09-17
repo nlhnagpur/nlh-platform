@@ -769,12 +769,44 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     if (!franchisee.email) { showToast('No email on record', 'warn'); return }
     setResending(true)
     try {
+      const displayName = franchisee.owner_name || franchisee.business_name || 'Partner'
+
+      // Supabase's resetPasswordForEmail never errors for an email with no
+      // account (anti-enumeration by design) — it just silently sends
+      // nothing useful, which is exactly how Angels' Park School (and any
+      // other franchisee whose account was never provisioned, e.g. a school
+      // added before AddSchoolModal created logins) ended up stuck on
+      // "No account found for this email" with no way to fix it from here.
+      // Check for a real users row first and create the account if it's
+      // missing, instead of assuming "resend" always has something to
+      // resend.
+      const { data: existingUser } = await sb.from('users')
+        .select('id').ilike('email', franchisee.email).maybeSingle()
+
+      const roleMap = { SMF: 'smf', CF: 'cf', UF: 'uf', SCHOOL: 'uf' }
+      const role = roleMap[franchisee.tier] || 'uf'
+
+      if (!existingUser) {
+        const tempPass = genTempPass()
+        const { data: { session: admSess } } = await sb.auth.getSession()
+        const createRes = await fetch('/api/create-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(admSess ? { Authorization: `Bearer ${admSess.access_token}` } : {}) },
+          body: JSON.stringify({ email: franchisee.email, password: tempPass, fullName: displayName, role, franchiseeId: franchisee.id }),
+        })
+        const createData = await createRes.json()
+        if (!createData.success && !createData.error?.includes('already registered')) {
+          throw new Error('Account creation failed: ' + (createData.error || 'Unknown error'))
+        }
+        await sb.from('users').upsert({
+          email: franchisee.email, full_name: displayName, role, franchisee_id: franchisee.id,
+        }, { onConflict: 'email' })
+      }
+
       const { error } = await sb.auth.resetPasswordForEmail(franchisee.email, {
         redirectTo: 'https://nlh-platform.vercel.app',
       })
       if (error) throw error
-
-      const displayName = franchisee.owner_name || franchisee.business_name || 'Partner'
       // Schools log in with the same platform access as any other centre
       // (role resolves to 'uf' — see AuthContext) even though they're not a
       // franchise business in their own right, so they get their own label
@@ -1941,18 +1973,23 @@ function AddSchoolModal({ cfFranchiseeId, onClose, onSaved }) {
     if (!form.state.trim()) { showToast('State is required', 'warn'); return }
     setSaving(true)
     // A school is a real franchisee row (tier SCHOOL, parented under this CF)
-    // so it gets students/enrollments/courses/orders for free — no login is
-    // created (the CF manages it), no enrollment_fee (schools don't pay a
-    // franchise fee — see the ledger, which only debits a fee line when
-    // enrollment_fee > 0), and it starts with no registered_courses, same
-    // as a fresh UF, so admin/CF has to explicitly enable levels for it.
-    const { error } = await sb.from('franchisees').insert({
+    // so it gets students/enrollments/courses/orders for free — no
+    // enrollment_fee (schools don't pay a franchise fee — see the ledger,
+    // which only debits a fee line when enrollment_fee > 0), and it starts
+    // with no registered_courses, same as a fresh UF, so admin/CF has to
+    // explicitly enable levels for it. It DOES get its own login (role
+    // 'uf' — same Students/Orders/Courses/My Account access as any centre,
+    // plus the school-only marks-review certificate gate) — this used to
+    // skip account creation entirely on the assumption the CF would manage
+    // it, which just left every school unable to ever log in.
+    const email = form.email.trim().toLowerCase()
+    const { data: fr, error } = await sb.from('franchisees').insert({
       tier: 'SCHOOL',
       parent_id: cfFranchiseeId,
       business_name: form.name.trim(),
       owner_name: form.contact_name.trim() || form.name.trim(),
       phone: form.phone.trim() || null,
-      email: form.email.trim() || null,
+      email: email || null,
       address: form.address.trim() || null,
       area: form.area.trim() || null,
       city: form.city.trim() || null,
@@ -1962,10 +1999,31 @@ function AddSchoolModal({ cfFranchiseeId, onClose, onSaved }) {
       gstin: form.gstin.trim() || null,
       status: 'active',
       registered_courses: [],
+    }).select().single()
+    if (error) { setSaving(false); showToast('Failed to add school: ' + error.message, 'err'); return }
+
+    const tempPass = genTempPass()
+    const { data: { session: admSess } } = await sb.auth.getSession()
+    const createRes = await fetch('/api/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(admSess ? { Authorization: `Bearer ${admSess.access_token}` } : {}) },
+      body: JSON.stringify({ email, password: tempPass, fullName: fr.owner_name, role: 'uf', franchiseeId: fr.id }),
     })
+    const createData = await createRes.json()
     setSaving(false)
-    if (error) { showToast('Failed to add school: ' + error.message, 'err'); return }
-    showToast('School added ✓')
+    if (!createData.success && !createData.error?.includes('already registered')) {
+      showToast('School added, but login account creation failed: ' + (createData.error || 'Unknown error') + '. Use "Resend Login Access" on the school’s Info tab to retry.', 'warn')
+      onSaved()
+      return
+    }
+    await sb.from('users').upsert({
+      email, full_name: fr.owner_name, role: 'uf', franchisee_id: fr.id,
+    }, { onConflict: 'email' })
+
+    await sendWelcomeEmail(email, fr.owner_name, 'authorized_program_partner', tempPass)
+    await sendFranchiseeWelcomeLetter(fr)
+
+    showToast('School added — login credentials sent to ' + email + ' ✓')
     onSaved()
   }
 
