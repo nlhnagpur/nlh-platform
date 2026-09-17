@@ -33,7 +33,12 @@ export default function MyAccountPage() {
       <p className="hint" style={{ marginTop: -8, marginBottom: 18 }}>
         Statement of account for {franchisee?.business_name || franchisee?.owner_name || 'your centre'} — franchise fee and every order, debits, credits, and running balance.
       </p>
-      <FranchiseeAgreementView franchisee={franchisee} />
+      {/* A school never signs a Unit Franchise Agreement (it's a CF's B2B
+          customer, not a franchise business in its own right — same reason
+          the admin side hides the Agreement tab for schools) — showing this
+          card here just confused a school login with agreement language
+          that will never apply to them. */}
+      {franchisee?.tier !== 'SCHOOL' && <FranchiseeAgreementView franchisee={franchisee} />}
       <FranchiseeLedgerView franchiseeId={currentFranchiseeId} franchiseeName={franchisee?.business_name || franchisee?.owner_name} />
     </div>
   )
