@@ -2341,11 +2341,16 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
 // ── InstructorsPage ────────────────────────────────────────────────────────────
 
 export default function InstructorsPage() {
-  const { currentRole } = useAuth()
+  const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
 
   const [instructors,   setInstructors]   = useState([])
   const [allSkus,       setAllSkus]       = useState([])
+  // Despite the name (kept as-is through the file to avoid a much larger
+  // rename), this is "the centre whose instructor roster we're managing" —
+  // NLH's own centre for admins, or the logged-in franchisee's own centre
+  // for a UF/CF/SMF login. A CI teaches in person, so every franchisee only
+  // ever sees and manages their own roster, never HO's or another centre's.
   const [nlhCentreId,   setNlhCentreId]   = useState(null)
   const [loading,       setLoading]        = useState(true)
   const [search,        setSearch]         = useState('')
@@ -2358,15 +2363,20 @@ export default function InstructorsPage() {
     async function load() {
       setLoading(true)
 
-      // NLH Own Centre
-      const { data: nlh } = await sb.from('franchisees').select('id').eq('tier', 'NLH').single()
-      if (!nlh) { setLoading(false); return }
-      setNlhCentreId(nlh.id)
+      // Whose roster: NLH's own centre for admins, else the logged-in
+      // franchisee's own centre.
+      let myCentreId = currentFranchiseeId
+      if (admin) {
+        const { data: nlh } = await sb.from('franchisees').select('id').eq('tier', 'NLH').single()
+        myCentreId = nlh?.id || null
+      }
+      if (!myCentreId) { setLoading(false); return }
+      setNlhCentreId(myCentreId)
 
       // Instructors with their active course appointments
       const { data: ins, error } = await sb.from('instructors')
         .select('*, instructor_courses(id,status,remuneration_mode,remuneration_rate,skus(level_name,courses(group_name)))')
-        .eq('franchisee_id', nlh.id)
+        .eq('franchisee_id', myCentreId)
         .order('full_name')
       if (error) showToast('Load failed: ' + error.message, 'err')
       setInstructors(ins || [])
