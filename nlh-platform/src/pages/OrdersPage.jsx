@@ -2721,11 +2721,14 @@ export default function OrdersPage() {
         key: 'receipts', label: 'Receipts', title: 'View payments and print receipts',
         onClick: function () { setViewPayOrder(order) },
       },
-      canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { setEditInvoiceOrder(order) } },
+      // Edit and Dispatch are HO-only actions — a franchisee's own side of
+      // this menu is just "see the paperwork" (PDF, Receipts), never edit
+      // pricing or mark something dispatched.
+      isAdmin && canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { setEditInvoiceOrder(order) } },
       canPdfOrder && { key: 'pdf', label: 'PDF', onClick: function () { setInvoiceViewOrder(order) } },
       // A proforma order with no real invoice yet can't dispatch — payment
       // has to be verified first (which converts it to a real invoice).
-      canDispatch && {
+      isAdmin && canDispatch && {
         key: 'dispatch', label: order.dispatched_at ? 'Dispatch (edit)' : 'Dispatch',
         onClick: function () { setDispatchOrder(order) },
       },
