@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
+import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -2381,11 +2382,20 @@ export default function InstructorsPage() {
       if (error) showToast('Load failed: ' + error.message, 'err')
       setInstructors(ins || [])
 
-      // All SKUs for appointment dropdowns (sorted by curriculum order)
+      // All SKUs for appointment dropdowns (sorted by curriculum order) — a
+      // franchisee only ever gets to appoint instructors for courses HO has
+      // actually registered them for, same rule as Students/Orders. Admins
+      // (managing HO's own roster) see the full catalogue.
       const { data: skus } = await sb.from('skus')
         .select('id,level_name,total_sessions,course_id,courses(group_name)')
         .order('sort_order')
-      setAllSkus(skus || [])
+      let mySkus = skus || []
+      if (!admin) {
+        const { data: fr } = await sb.from('franchisees')
+          .select('tier, registered_skus, registered_courses').eq('id', myCentreId).single()
+        mySkus = filterSkusForFranchisee(mySkus, fr)
+      }
+      setAllSkus(mySkus)
 
       setLoading(false)
     }

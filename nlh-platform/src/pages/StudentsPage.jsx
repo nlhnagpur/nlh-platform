@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
+import { deriveFilter } from '../utils/courseAccess'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -2453,8 +2454,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           </button>
                         )}
 
-                        {/* Assign batch toggle */}
-                        {canEdit && (
+                        {/* Assign batch toggle — HO-only for now: batch/instructor
+                            scheduling isn't something franchisees manage yet, they
+                            just enrol the student and, later, mark the course
+                            complete and send the certificate. */}
+                        {admin && (
                           <button
                             className={isOpen ? 'btn' : 'btn-s'}
                             style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}
@@ -2465,7 +2469,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         )}
 
                         {/* Remove from batch */}
-                        {canEdit && bs && !isOpen && (
+                        {admin && bs && !isOpen && (
                           <button
                             className="btn-s"
                             style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)' }}
@@ -2842,8 +2846,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                         )
                                       })()}
 
-                                      {/* Assign to batch — right under this course */}
-                                      <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                                      {/* Assign to batch — right under this course.
+                                          HO-only: franchisees don't manage batches/
+                                          instructors at this stage, just the student
+                                          and their fee/kit/certificate. */}
+                                      {admin && <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
                                         <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
                                           Assign to batch <span style={{ textTransform: 'none', fontWeight: 400 }}>(optional — can be done later)</span>
                                         </div>
@@ -2897,7 +2904,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                             )}
                                           </>
                                         )}
-                                      </div>
+                                      </div>}
                                     </div>
                                   )
                                 })}
@@ -3342,25 +3349,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
 // ── AddStudentModal ────────────────────────────────────────────────────────────
 
-// Tiers that can operate as student-enrolment centres
-const CENTRE_TIERS = ['UF', 'CF', 'SMF', 'NLH']
-
-// Derive the SKU filter for a given franchisee record.
-// Returns:
-//   null            — no centre selected; show nothing
-//   'all'           — unrestricted centre (NLH HO, CF/SMF with no explicit list)
-//   { skuIds }      — filter to specific SKU IDs
-//   { courseIds }   — filter to specific course IDs
-function deriveFilter(fr) {
-  if (!fr) return null
-  const skus    = fr.registered_skus    || []
-  const courses = fr.registered_courses || []
-  if (skus.length > 0)    return { skuIds: skus }
-  if (courses.length > 0) return { courseIds: courses }
-  // UF with nothing registered = no courses approved yet; NLH / CF / SMF = unrestricted
-  if (fr.tier === 'UF') return { skuIds: [] }
-  return 'all'
-}
+// deriveFilter/CENTRE_TIERS now live in ../utils/courseAccess.js (shared with
+// InstructorsPage.jsx and anywhere else a franchisee's registered-courses
+// scope needs to be applied) — kept as a single source of truth per the
+// standing rule that a franchisee only ever sees courses HO registered them
+// for, never the full catalogue.
 
 function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   const { currentRole, currentFranchiseeId } = useAuth()
@@ -3956,13 +3949,13 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
             )}
           </div>
 
-          {/* ── Section 4: Batch Assignment ── */}
+          {/* ── Section 4: Kit Confirmation (+ Batch Assignment for HO) ── */}
           {selectedSkus.length > 0 && (
             <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:12 }}>
               <div style={{ font:'600 12px var(--font)', color:'var(--text)', marginBottom:8 }}>
-                📋 Batch Assignment
+                {admin ? '📋 Batch Assignment' : '🧾 Kit Confirmation'}
                 <span style={{ font:'500 10px var(--font)', color:'var(--text3)', marginLeft:8 }}>
-                  Assign each course to a batch (optional — can be done later)
+                  {admin ? 'Assign each course to a batch (optional — can be done later)' : 'Confirm what was handed over for each course'}
                 </span>
               </div>
 
@@ -4020,7 +4013,10 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                         )
                       })()}
 
-                      {bd.loading ? (
+                      {/* Batch assignment — HO-only for now; franchisees just
+                          enrol the student, then later mark the course
+                          complete and send the certificate. */}
+                      {admin && (bd.loading ? (
                         <span className="hint">Loading batches…</span>
                       ) : (
                         <>
@@ -4122,7 +4118,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
                             </div>
                           )}
                         </>
-                      )}
+                      ))}
                     </div>
                   </div>
                 )
