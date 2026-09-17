@@ -156,7 +156,14 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
 .c-title {
   font-size: 36px; font-weight: 900; letter-spacing: .06em;
   text-transform: uppercase; color: #1A1916; text-align: center;
-  margin-bottom: 3px;
+  margin-bottom: 3px; white-space: nowrap;
+  /* Both possible titles ("Franchise Certificate" / "Certificate of
+     Authorisation") fit on one line at this size with room to spare —
+     nowrap is a deliberate belt-and-suspenders here: html-to-image's
+     foreignObject-based capture (used for the PNG/PDF download) has been
+     seen to compute a narrower available width than the live DOM and wrap
+     this line, which then collides with .c-sub right below it since the
+     surrounding flex box doesn't grow to make room. Never let it wrap. */
 }
 .c-sub {
   font-size: 18px; font-style: italic; color: #1A1916;
@@ -170,7 +177,7 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
 }
 .c-state-label {
   font-family: var(--script); font-style: italic; font-size: 32px; font-weight: bold;
-  color: var(--red); text-align: center; margin-bottom: 8px;
+  color: var(--red); text-align: center; margin-bottom: 8px; white-space: nowrap;
 }
 /* A school's "City, State" line under its name — same slot as .c-state-label
    (SMF's dramatic state name) but styled like the muted address text instead. */
@@ -179,9 +186,14 @@ body { font-family: var(--font); background: #CFCCC4; min-height: 100vh; }
   color: #1A1916; margin-bottom: 10px;
 }
 
-.c-reg  { font-size: 17px; color: #1A1916; text-align: center; margin-bottom: 1px; }
-.c-type { font-size: 18px; font-weight: 700; color: var(--red); text-align: center; margin-bottom: 10px; }
-.c-org  { font-size: 26px; font-weight: 700; color: #1A1916; text-align: center; margin-bottom: 5px; }
+/* .c-reg/.c-type/.c-org: same nowrap reasoning as .c-title above — these are
+   short one-line labels that fit comfortably in the live DOM, but the
+   PNG/PDF capture (html-to-image) has been seen to wrap them anyway and
+   then overlap the sibling line below (confirmed both on .c-title and
+   .c-org during testing). Force single-line everywhere it's safe to. */
+.c-reg  { font-size: 17px; color: #1A1916; text-align: center; margin-bottom: 1px; white-space: nowrap; }
+.c-type { font-size: 18px; font-weight: 700; color: var(--red); text-align: center; margin-bottom: 10px; white-space: nowrap; }
+.c-org  { font-size: 26px; font-weight: 700; color: #1A1916; text-align: center; margin-bottom: 5px; white-space: nowrap; }
 .c-addr {
   font-size: 16px; color: #1A1916; text-align: center;
   line-height: 1.55; margin-bottom: 13px; max-width: 640px;
@@ -724,6 +736,12 @@ document.getElementById('btn-download').addEventListener('click', async function
   outer.style.transform = 'scale(1)';
   document.getElementById('certHolder').style.width  = '1122px';
   document.getElementById('certHolder').style.height = '794px';
+  // DM Sans loads with font-display:swap — if it finishes swapping in
+  // *during* html-to-image's capture, the text reflows mid-render and the
+  // PNG comes out with overlapping/garbled lines (the bug reported: title
+  // and "This is to Certify that" overlapping). Wait for every web font to
+  // actually be ready, not just two paint frames, before capturing.
+  await document.fonts.ready
   await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
   try {
     const dataUrl = await toPngWithTimeout(cert);
@@ -753,6 +771,8 @@ document.getElementById('btn-download-pdf').addEventListener('click', async func
   outer.style.transform = 'scale(1)';
   document.getElementById('certHolder').style.width  = '1122px';
   document.getElementById('certHolder').style.height = '794px';
+  // Same font-race fix as the PNG button above.
+  await document.fonts.ready
   await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
   try {
     const dataUrl = await toPngWithTimeout(cert);
