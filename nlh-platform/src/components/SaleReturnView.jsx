@@ -25,7 +25,7 @@ function tbBtn(active, color) {
   }
 }
 
-export default function SaleReturnView({ saleReturn: r, onClose, onSaved }) {
+export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmin }) {
   const fr = r.franchisees || {}
   const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
   const forOrder = r.orders?.invoice_no || r.orders?.order_ref || '—'
@@ -91,7 +91,11 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved }) {
           </>
         ) : (
           <>
-            <button onClick={startEdit} style={{ ...tbBtn(false), background: '#D97706', color: '#fff', border: 'none' }}>✏ Edit</button>
+            {/* Same rule as InvoiceView/Orders — a franchisee views and
+                downloads their own paperwork, correcting the rate is HO-only. */}
+            {isAdmin && (
+              <button onClick={startEdit} style={{ ...tbBtn(false), background: '#D97706', color: '#fff', border: 'none' }}>✏ Edit</button>
+            )}
             <button onClick={handlePrint} style={{ ...tbBtn(false), background: '#534AB7', color: '#fff', border: 'none' }}>🖨 PDF</button>
             <button onClick={onClose} style={tbBtn(false)}>← Back</button>
           </>

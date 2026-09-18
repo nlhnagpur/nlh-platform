@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { isAdminRole } from '../constants/roles'
 import { fmtDate, fmtAmt } from '../utils'
 import { loadFranchiseeLedger } from '../utils/franchiseeLedger'
 import { printFranchiseeEnrollmentInvoice, printFranchiseeReceipt, printOrderReceipt, printFranchiseeStatement } from './studentDocs'
@@ -251,6 +252,7 @@ export default function FranchiseeLedgerView({ franchiseeId, franchiseeName }) {
           saleReturn={viewSaleReturn}
           onClose={function () { setViewSaleReturn(null) }}
           onSaved={function () { setViewSaleReturn(null); loadFranchiseeLedger(franchiseeId).then(setData) }}
+          isAdmin={isAdminRole(currentRole)}
         />
       )}
     </div>

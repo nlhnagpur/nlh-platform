@@ -3018,7 +3018,7 @@ export default function OrdersPage() {
 
       {viewReturn && (
         <SaleReturnView saleReturn={viewReturn} onClose={function () { setViewReturn(null) }}
-          onSaved={async function () { await loadReturns() }} />
+          onSaved={async function () { await loadReturns() }} isAdmin={isAdmin} />
       )}
 
       {/* Modals */}
