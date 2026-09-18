@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { isAdminRole } from '../constants/roles'
@@ -898,6 +899,13 @@ export default function DashboardPage({ onNavigate }) {
   const [dashTab, setDashTab] = useState('overview')  // overview | students | orders | followups
   const searchWrapRef = useRef(null)
   const exportRef     = useRef(null)
+  // Both dropdowns render through a portal (see OrdersPage.jsx's
+  // ActionsMenu for the original fix) rather than as a nested absolutely-
+  // positioned child — same "don't let it get embedded/clipped by
+  // whatever container it happens to open inside" reasoning applies here
+  // too, not just to table rows.
+  const [searchPanelPos, setSearchPanelPos] = useState(null)
+  const [exportPanelPos, setExportPanelPos] = useState(null)
 
   useEffect(function() {
     if (currentRole === null) return
@@ -1019,18 +1027,41 @@ export default function DashboardPage({ onNavigate }) {
     return function() { clearTimeout(timer) }
   }, [searchQ])
 
+  // Both dropdown panels now live outside searchWrapRef/exportRef's own DOM
+  // subtree (portalled into document.body), so a click landing inside the
+  // panel itself has to also be treated as "inside" here, or opening the
+  // panel and then clicking one of its own rows would immediately close it.
+  const searchPanelRef = useRef(null)
+  const exportPanelRef = useRef(null)
+  const isSearchOpen = (searchRes !== null || searchLoading) && searchQ.length >= 2
+
+  useEffect(function() {
+    if (!isSearchOpen || !searchWrapRef.current) return
+    const r = searchWrapRef.current.getBoundingClientRect()
+    setSearchPanelPos({ top: r.bottom + 6, right: window.innerWidth - r.right, width: r.width })
+  }, [isSearchOpen])
+
   // ── click-outside closes search & export menus ──────────────────────────────
   useEffect(function() {
     function handle(e) {
-      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)
+          && !(searchPanelRef.current && searchPanelRef.current.contains(e.target))) {
         setSearchRes(null); setSearchQ('')
       }
-      if (exportRef.current && !exportRef.current.contains(e.target)) {
+      if (exportRef.current && !exportRef.current.contains(e.target)
+          && !(exportPanelRef.current && exportPanelRef.current.contains(e.target))) {
         setShowExportMenu(false)
       }
     }
+    function onScrollOrResize() { setSearchRes(null); setShowExportMenu(false) }
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
     document.addEventListener('mousedown', handle)
-    return function() { document.removeEventListener('mousedown', handle) }
+    return function() {
+      document.removeEventListener('mousedown', handle)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
+    }
   }, [])
 
   // ── CSV export ───────────────────────────────────────────────────────────────
@@ -1145,10 +1176,12 @@ export default function DashboardPage({ onNavigate }) {
               onChange={function(e) { setSearchQ(e.target.value) }}
               onFocus={function() { if (searchQ.length >= 2 && searchRes) setSearchRes(searchRes) }}
             />
-            {/* dropdown */}
-            {(searchRes !== null || searchLoading) && searchQ.length >= 2 && (
-              <div style={{
-                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+            {/* dropdown — portalled to document.body, positioned via
+                searchPanelPos, so it floats on top instead of being an
+                embedded child clippable by whatever this toolbar sits in. */}
+            {isSearchOpen && searchPanelPos && createPortal(
+              <div ref={searchPanelRef} style={{
+                position: 'fixed', top: searchPanelPos.top, right: searchPanelPos.right,
                 width: 340, background: 'var(--bg2)',
                 border: '1px solid var(--border)', borderRadius: 12,
                 boxShadow: '0 8px 32px rgba(0,0,0,.14)', zIndex: 1000, overflow: 'hidden',
@@ -1202,18 +1235,25 @@ export default function DashboardPage({ onNavigate }) {
                     </div>
                   )
                 })()}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
           {/* ── export dropdown ── */}
           <div ref={exportRef} style={{ position: 'relative' }}>
-            <button className="btn" onClick={function() { setShowExportMenu(function(o) { return !o }) }}>
+            <button className="btn" onClick={function() {
+              if (!showExportMenu && exportRef.current) {
+                const r = exportRef.current.getBoundingClientRect()
+                setExportPanelPos({ top: r.bottom + 6, right: window.innerWidth - r.right })
+              }
+              setShowExportMenu(function(o) { return !o })
+            }}>
               ↓ Export
             </button>
-            {showExportMenu && (
-              <div style={{
-                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+            {showExportMenu && exportPanelPos && createPortal(
+              <div ref={exportPanelRef} style={{
+                position: 'fixed', top: exportPanelPos.top, right: exportPanelPos.right,
                 width: 210, background: 'var(--bg2)',
                 border: '1px solid var(--border)', borderRadius: 12,
                 boxShadow: '0 8px 32px rgba(0,0,0,.14)', zIndex: 1000,
@@ -1238,7 +1278,8 @@ export default function DashboardPage({ onNavigate }) {
                     </button>
                   )
                 })}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
