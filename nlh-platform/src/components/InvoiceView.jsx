@@ -498,7 +498,12 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
           <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#16A34A', marginRight:5, verticalAlign:'middle' }} />{order.invoice_no || order.proforma_no || 'Draft'}
         </span>
         <button onClick={function(){setActiveTab('view')}} style={tbBtn(activeTab==='view','#534AB7')}>📄 View</button>
-        <button onClick={function(){setActiveTab('edit')}} style={tbBtn(activeTab==='edit','#D97706')}>✏ Edit</button>
+        {/* Same rule as the Orders list Actions menu — a franchisee/school
+            just views and downloads their own paperwork, editing pricing
+            is HO-only. */}
+        {isAdmin && (
+          <button onClick={function(){setActiveTab('edit')}} style={tbBtn(activeTab==='edit','#D97706')}>✏ Edit</button>
+        )}
         <button onClick={handleSendEmail} disabled={sending||!fr.email} style={{ ...tbBtn(false), background:fr.email?'#16A34A':'#9C9A92', color:'#fff', border:'none', opacity:sending?.7:1, cursor:fr.email?'pointer':'not-allowed' }}>
           {sending?'Sending…':'📧 Email'}
         </button>

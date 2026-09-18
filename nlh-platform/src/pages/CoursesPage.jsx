@@ -22,6 +22,13 @@ export default function CoursesPage() {
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  // A school's own login resolves to role 'uf' (same as a regular centre),
+  // so telling them apart needs the actual tier, not currentRole. Schools
+  // don't pay the standard UF kit rate — HO bills them per-SKU custom rates
+  // (school_sku_rates, set via the admin's "Kit Rates" modal) — and their
+  // "Student Fee" is a suggestion, not something NLH enforces.
+  const [isSchoolViewer, setIsSchoolViewer] = useState(false)
+  const [schoolRates, setSchoolRates] = useState({})  // { [sku_id]: rate }
   const [search, setSearch] = useState('')
   const [expandedProgram, setExpandedProgram] = useState(null)
   const [colCount, setColCount] = useState(getColCount)
@@ -63,7 +70,7 @@ export default function CoursesPage() {
     // Non-admin: filter by franchisee's registered_skus
     const { data: fr, error: frErr } = await sb
       .from('franchisees')
-      .select('registered_skus, registered_courses')
+      .select('registered_skus, registered_courses, tier')
       .eq('id', currentFranchiseeId)
       .single()
 
@@ -71,6 +78,16 @@ export default function CoursesPage() {
       setRows(skus || [])
       setLoading(false)
       return
+    }
+
+    const school = fr.tier === 'SCHOOL'
+    setIsSchoolViewer(school)
+    if (school) {
+      const { data: rates } = await sb.from('school_sku_rates')
+        .select('sku_id, rate').eq('franchisee_id', currentFranchiseeId)
+      const map = {}
+      ;(rates || []).forEach(function (r) { map[r.sku_id] = r.rate })
+      setSchoolRates(map)
     }
 
     const regSkus = fr.registered_skus || []
@@ -211,6 +228,13 @@ export default function CoursesPage() {
     if (currentRole === 'student') return [
       { field: 'student_fee', label: 'Course Fee' },
     ]
+    if (isSchoolViewer) return [
+      // Not uf_rate — a school doesn't pay the standard UF kit price, it
+      // pays whatever HO actually billed it per level (school_sku_rates).
+      // No entry there yet means "not billed to you yet", not "free".
+      { label: 'Kit Rate (Billed)', getValue: function (sku) { return schoolRates[sku.id] } },
+      { field: 'student_fee', label: 'Student Fee (Indicative)' },
+    ]
     // UF (default)
     return [
       { field: 'uf_rate',     label: 'Kit Rate' },
@@ -275,9 +299,9 @@ export default function CoursesPage() {
                       <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.04em' }}>{sku.id.slice(0, 8).toUpperCase()}</div>
                     </td>
                     {priceCols.map(function (col) {
-                      const val = sku[col.field]
+                      const val = col.getValue ? col.getValue(sku) : sku[col.field]
                       return (
-                        <td key={col.field} style={{ textAlign: 'right' }} className="mono">
+                        <td key={col.field || col.label} style={{ textAlign: 'right' }} className="mono">
                           {val != null ? '₹' + fmtAmt(val) : '—'}
                         </td>
                       )
@@ -319,6 +343,12 @@ export default function CoursesPage() {
             </tbody>
           </table>
         </div>
+        {isSchoolViewer && (
+          <p className="hint" style={{ padding: '8px 16px', margin: 0 }}>
+            Kit Rate is what NLH has actually billed you for that level — a "—" means it hasn't been set yet, not that it's free.
+            Student Fee is indicative only; you're free to charge your own students at your own discretion.
+          </p>
+        )}
       </div>
     )
   }
