@@ -1022,6 +1022,40 @@ function DispatchModal({ order, onClose, onSaved }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// DispatchDetailsView — read-only "what shipped" for a franchisee/school,
+// same Receipts/Record-Payment split as everywhere else: admin gets the
+// editable Dispatch (edit) action, everyone else just gets to see it.
+// ---------------------------------------------------------------------------
+function DispatchDetailsView({ order, onClose }) {
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 380 }}>
+        <ModalHeader flush title="Dispatch Details" subtitle={order.invoice_no || order.order_ref || 'Order'} onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {[
+            ['Courier', order.courier_partner || '—'],
+            ['AWB / Tracking No.', order.awb_number || '—'],
+            ['Dispatch Date', order.dispatch_date ? fmtDate(order.dispatch_date) : '—'],
+            ['Weight', order.dispatch_weight != null ? order.dispatch_weight + ' kg' : '—'],
+            ['Freight', order.dispatch_freight > 0 ? '₹' + fmtAmt(order.dispatch_freight) : '—'],
+          ].map(function (row) {
+            return (
+              <div key={row[0]} style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>{row[0]}</span>
+                <span style={{ font: '600 13px var(--font)', color: 'var(--text)', textAlign: 'right' }}>{row[1]}</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Confirms invoicing and lets the admin control the WhatsApp invoice notice.
 function InvoiceConfirmModal({ order, mode, onClose, onConfirm }) {
   const isProforma = mode === 'proforma'
@@ -2175,6 +2209,7 @@ export default function OrdersPage() {
   const [recordPayOrder, setRecordPayOrder] = useState(null)
   const [viewPayOrder,   setViewPayOrder]   = useState(null)
   const [dispatchOrder, setDispatchOrder] = useState(null)
+  const [dispatchViewOrder, setDispatchViewOrder] = useState(null)
   const [editInvoiceOrder, setEditInvoiceOrder] = useState(null)
   const [showNewOrder, setShowNewOrder] = useState(false)
   const [invoiceViewOrder, setInvoiceViewOrder] = useState(null)
@@ -2740,12 +2775,19 @@ export default function OrdersPage() {
       // this menu is just "see the paperwork" (PDF, Receipts), never edit
       // pricing or mark something dispatched.
       isAdmin && canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { setEditInvoiceOrder(order) } },
-      canPdfOrder && { key: 'pdf', label: 'PDF', onClick: function () { setInvoiceViewOrder(order) } },
+      canPdfOrder && { key: 'pdf', label: 'View Invoice', onClick: function () { setInvoiceViewOrder(order) } },
       // A proforma order with no real invoice yet can't dispatch — payment
       // has to be verified first (which converts it to a real invoice).
       isAdmin && canDispatch && {
         key: 'dispatch', label: order.dispatched_at ? 'Dispatch (edit)' : 'Dispatch',
         onClick: function () { setDispatchOrder(order) },
+      },
+      // Read-only counterpart to "Dispatch (edit)" for everyone who isn't
+      // HO — same Receipts/Record-Payment split: admin gets the editable
+      // action, a franchisee/school just gets to see what was shipped.
+      !isAdmin && order.dispatched_at && dispInfo && {
+        key: 'dispatch_view', label: 'Dispatch Details',
+        onClick: function () { setDispatchViewOrder(order) },
       },
       canCancel && ['invoiced', 'payment_submitted'].includes(order.status) && {
         key: 'cancel', cls: 'danger', label: 'Cancel', onClick: function () { setCancelOrder(order) },
@@ -2757,15 +2799,11 @@ export default function OrdersPage() {
         key: 'raisecn', label: '🧾 Raise Credit Note', onClick: function () { setRaiseCnOrder(order) },
       },
     ]
-    // Payment/dispatch/reminder context — used to sit as its own muted lines
-    // cluttering the row under the Actions button; now lives inside the
-    // dropdown itself, above the actions.
+    // Reminder context only — payment already lives in Receipts and the
+    // account/ledger section, no need to repeat it here; dispatch is now
+    // its own clickable "Dispatch Details" / "Dispatch (edit)" action
+    // above instead of a static info line.
     const info = [
-      order.paid_at && order.amount_paid > 0 && {
-        key: 'paid', color: 'var(--green)',
-        text: '💰 ₹' + fmtAmt(order.amount_paid) + ' on ' + fmtDate(String(order.paid_at).slice(0, 10)) + (order.payment_mode ? ' · ' + order.payment_mode : ''),
-      },
-      order.dispatched_at && dispInfo && { key: 'dispatch', text: '📦 ' + dispInfo },
       order.last_reminded_at && {
         key: 'reminded',
         text: 'Reminded ' + fmtDate(order.last_reminded_at.slice(0, 10)) + (order.reminder_count > 1 ? ' ×' + order.reminder_count : ''),
@@ -3064,6 +3102,10 @@ export default function OrdersPage() {
           onClose={function () { setDispatchOrder(null) }}
           onSaved={async function () { setDispatchOrder(null); await loadOrders() }}
         />
+      )}
+
+      {dispatchViewOrder && (
+        <DispatchDetailsView order={dispatchViewOrder} onClose={function () { setDispatchViewOrder(null) }} />
       )}
 
       {invoiceConfirm && (
