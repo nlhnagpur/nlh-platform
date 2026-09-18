@@ -822,7 +822,12 @@ vercel-toolbar { display: none !important; }
 .sb-close:hover { color: var(--red); background: var(--red-bg); }
 
 /* ── Table scroll wrapper ── */
-.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* overflow-y: visible is deliberate, not a default — setting overflow-x to
+   anything but visible makes the browser compute an unset overflow-y as
+   auto too, which clips any dropdown (e.g. the Actions ▾ menu) that opens
+   past this wrapper's own height instead of letting it float above the
+   table like it's supposed to. Horizontal scroll only, never vertical clip. */
+.tbl-scroll { overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; }
 .tbl-scroll .tbl { min-width: 560px; }
 .tbl-scroll .prices-tbl { min-width: 540px; }
 .tbl-scroll .data-table { min-width: 400px; }
@@ -1326,7 +1331,7 @@ vercel-toolbar { display: none !important; }
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── Table scroll: enforced min-widths + right-edge fade hint ── */
-.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
+.tbl-scroll { overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; position: relative; }
 .tbl-scroll::after {
   content: '';
   position: absolute;
