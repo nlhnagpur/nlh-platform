@@ -231,7 +231,10 @@ function TierBadge({ tier }) {
 // buttons. Module-level (not nested in OrdersPage) so its own open/closed
 // state survives unrelated re-renders of the orders table.
 // items: [{ key, label, onClick, cls?: 'primary'|'green'|'danger', disabled?, title? }]
-function ActionsMenu({ items }) {
+// info: [{ key, text, color? }] — non-clickable context lines (payment/
+// dispatch/reminder details) shown above the actions instead of sitting as
+// their own cluttered lines under the button on the row itself.
+function ActionsMenu({ items, info }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(function () {
@@ -243,7 +246,8 @@ function ActionsMenu({ items }) {
 
   const clsColor = { primary: 'var(--purple)', green: 'var(--green)', danger: '#dc2626' }
   const list = (items || []).filter(Boolean)
-  if (list.length === 0) return null
+  const infoList = (info || []).filter(Boolean)
+  if (list.length === 0 && infoList.length === 0) return null
   const hasPrimary = list.some(function (it) { return it.cls === 'primary' })
 
   return (
@@ -252,7 +256,18 @@ function ActionsMenu({ items }) {
         Actions ▾
       </button>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 14px rgba(0,0,0,.12)', zIndex: 20, minWidth: 160, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 14px rgba(0,0,0,.12)', zIndex: 20, minWidth: 220, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {infoList.length > 0 && (
+            <div style={{ padding: '8px 12px', borderBottom: list.length > 0 ? '1px solid var(--border)' : 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {infoList.map(function (row) {
+                return (
+                  <span key={row.key} style={{ fontSize: 10.5, color: row.color || 'var(--text3)', fontFamily: 'var(--mono)' }}>
+                    {row.text}
+                  </span>
+                )
+              })}
+            </div>
+          )}
           {list.map(function (it) {
             return (
               <button key={it.key} className="row-action" disabled={it.disabled} title={it.title}
@@ -2742,28 +2757,24 @@ export default function OrdersPage() {
         key: 'raisecn', label: '🧾 Raise Credit Note', onClick: function () { setRaiseCnOrder(order) },
       },
     ]
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, minWidth: 0 }}>
-        <ActionsMenu items={items} />
+    // Payment/dispatch/reminder context — used to sit as its own muted lines
+    // cluttering the row under the Actions button; now lives inside the
+    // dropdown itself, above the actions.
+    const info = [
+      order.paid_at && order.amount_paid > 0 && {
+        key: 'paid', color: 'var(--green)',
+        text: '💰 ₹' + fmtAmt(order.amount_paid) + ' on ' + fmtDate(String(order.paid_at).slice(0, 10)) + (order.payment_mode ? ' · ' + order.payment_mode : ''),
+      },
+      order.dispatched_at && dispInfo && { key: 'dispatch', text: '📦 ' + dispInfo },
+      order.last_reminded_at && {
+        key: 'reminded',
+        text: 'Reminded ' + fmtDate(order.last_reminded_at.slice(0, 10)) + (order.reminder_count > 1 ? ' ×' + order.reminder_count : ''),
+      },
+    ]
 
-        {/* ── metadata, muted, on their own lines below ── */}
-        {order.paid_at && order.amount_paid > 0 && (
-          <span style={{ fontSize: 10, color: 'var(--green)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
-            💰 ₹{fmtAmt(order.amount_paid)} on {fmtDate(String(order.paid_at).slice(0, 10))}
-            {order.payment_mode ? ' · ' + order.payment_mode : ''}
-          </span>
-        )}
-        {order.last_reminded_at && (
-          <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
-            Reminded {fmtDate(order.last_reminded_at.slice(0, 10))}
-            {order.reminder_count > 1 ? ' ×' + order.reminder_count : ''}
-          </span>
-        )}
-        {order.dispatched_at && dispInfo && (
-          <span style={{ fontSize: 10, color: 'var(--text3)', textAlign: 'right', maxWidth: 260 }}>
-            📦 {dispInfo}
-          </span>
-        )}
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', minWidth: 0 }}>
+        <ActionsMenu items={items} info={info} />
       </div>
     )
   }
