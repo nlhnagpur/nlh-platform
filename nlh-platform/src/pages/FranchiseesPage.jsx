@@ -362,8 +362,10 @@ function renewalStatus(fr) {
 // ── FranchiseeDetailModal ──────────────────────────────────────────────────────
 
 function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inline }) {
-  const { currentRole, currentUser } = useAuth()
-  const admin = isAdminRole(currentRole)
+  const { currentRole, currentUser, can } = useAuth()
+  const admin = isAdminRole(currentRole) && can('franchisees.edit')
+  const showFin = can('franchisees.financials')
+  const showContact = can('franchisees.contact')
 
   const [tab, setTab] = useState('info')
   const [form, setForm] = useState({
@@ -895,9 +897,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
             { label: 'Courses',  val: String(registeredCourses.length), color: 'var(--blue)' },
             { label: 'Validity', val: rs.isExpired ? 'Expired' : rs.isExpiring ? rs.daysLeft + 'd left' : 'Active', color: rs.isExpired ? 'var(--red)' : rs.isExpiring ? '#b45309' : 'var(--green)' },
             { label: 'Balance',  val: balance > 0 ? '₹' + fmtAmt(balance) : '✓ Cleared', color: balance > 0 ? 'var(--red)' : 'var(--green)' },
-          ].map(function (st, i) {
+          ].filter(function (st) { return showFin || st.label !== 'Balance' }).map(function (st, i, arr) {
             return (
-              <div key={i} style={{ padding: '9px 14px', borderRight: i < 3 ? '1px solid var(--border)' : 'none' }}>
+              <div key={i} style={{ padding: '9px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
                 <div style={{ font: '500 9px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>{st.label}</div>
                 <div style={{ font: '700 14px var(--font)', color: st.color }}>{st.val}</div>
               </div>
@@ -912,7 +914,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               ? ['info', 'courses', 'orders', 'students', 'ledger', 'cert']
               : ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
                   .concat(franchisee.tier === 'CF' ? ['schools'] : [])
-            ).map(t => (
+            ).filter(t => showFin || !['orders', 'ledger', 'agreement', 'courses'].includes(t)).map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
               {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t === 'schools' ? '🏫 Schools' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -932,6 +934,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               </label>
 
               {/* Row 2 — Email (left half) / Phone 1 + Phone 2 (right half) */}
+              {showContact && (<>
               <label>Email
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input value={form.email} disabled style={{ flex: 1 }} />
@@ -942,7 +945,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   {/* Schools get a real platform login too (Students, Orders,
                       etc. — same as a UF) even though they don't sign a
                       Unit Franchise Agreement, so this isn't gated on tier. */}
-                  {admin && !changingEmail && (
+                  {admin && can('franchisees.access') && !changingEmail && (
                     <button type="button" className="btn-s" onClick={resendAccess} disabled={resending}
                       style={{ fontSize: 11, whiteSpace: 'nowrap' }} title="Sends a password reset link to the franchisee's email">
                       {resending ? 'Sending…' : '📧 Resend Login Access'}
@@ -966,6 +969,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </>
                 )}
               </label>
+              </>)}
+              {showContact && (
               <div style={{ display: 'flex', gap: 12 }}>
                 <label style={{ flex: 1 }}>Phone 1
                   <input value={form.phone} onChange={field('phone')} disabled={!admin} />
@@ -974,6 +979,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   <input value={form.phone2} onChange={field('phone2')} disabled={!admin} placeholder="Optional" />
                 </label>
               </div>
+              )}
 
               {/* Row 3 — Building/Street Address / Area-Locality */}
               <label>Street / Building Address
@@ -1033,6 +1039,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </select>
                 </label>
               </div>
+              {showFin && (<>
               <div className="col-span-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>💰 Fee Tracking</span>
                 <span style={{ display: 'flex', gap: 6 }}>
@@ -1206,6 +1213,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                   </button>
                 )}
               </div>
+              </>)}
             </div>
           )}
 
@@ -2177,8 +2185,13 @@ function SchoolRatesModal({ school, admin, onClose }) {
 // ── FranchiseesPage ────────────────────────────────────────────────────────────
 
 export default function FranchiseesPage() {
-  const { currentRole, currentFranchiseeId } = useAuth()
+  const { currentRole, currentFranchiseeId, can } = useAuth()
   const admin = isAdminRole(currentRole)
+  const showFin = can('franchisees.financials')
+  const showContact = can('franchisees.contact')
+  const FIN_EXPORT = ['gstin','payment_status','enrollment_fee','fee_paid','renewal_fee','enrollment_invoice_no','contract_start','contract_end','valid_till']
+  const CONTACT_EXPORT = ['email','phone','date_of_birth']
+  const visibleFields = EXPORT_FIELDS.filter(function (f) { return (showFin || !FIN_EXPORT.includes(f.key)) && (showContact || !CONTACT_EXPORT.includes(f.key)) })
 
   const [franchisees, setFranchisees] = useState([])
   const [allCourses, setAllCourses] = useState([])
@@ -2299,7 +2312,7 @@ export default function FranchiseesPage() {
     // Use the already-loaded, role-filtered franchisees state — no extra DB query needed
     const tierSet = new Set(exportTiers)
     const scoped = franchisees.filter(function (r) { return tierSet.has(r.tier) })
-    const fields = EXPORT_FIELDS.filter(function (f) { return exportFieldKeys.includes(f.key) })
+    const fields = visibleFields.filter(function (f) { return exportFieldKeys.includes(f.key) })
     if (!scoped.length) { showToast('No franchisees match the selected tiers.', 'warn'); return }
     if (!fields.length) { showToast('Select at least one field to export.', 'warn'); return }
     setExporting(true)
@@ -2353,7 +2366,7 @@ export default function FranchiseesPage() {
           <button className="btn btn-s" onClick={function () { setShowExport(true) }} title="Choose fields and tiers to export">
             ↓<span className="btn-label"> Export</span>
           </button>
-          {admin && (
+          {admin && can('franchisees.edit') && (
             <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Add Franchisee</button>
           )}
         </div>
@@ -2393,7 +2406,7 @@ export default function FranchiseesPage() {
             <div className="mini-num">{counts.uf}</div>
             <div className="mini-lbl">UF · Urban</div>
           </div>
-          {admin && totalOutstanding > 0 && (
+          {admin && showFin && totalOutstanding > 0 && (
             <div className="mini" style={{ borderLeft: '3px solid var(--red)', background: '#fff8f8' }}>
               <div className="mini-ic" style={{ background: '#fee2e2' }}>💰</div>
               <div className="mini-num" style={{ color: 'var(--red)', fontSize: 15 }}>₹{fmtAmt(totalOutstanding)}</div>
@@ -2402,7 +2415,7 @@ export default function FranchiseesPage() {
           )}
         </div>
 
-        {admin && (
+        {admin && showFin && (
           <div className="tabs">
             <button className={'tab' + (pageTab === 'list' ? ' active' : '')} onClick={function () { setPageTab('list') }}>👥 Franchisees</button>
             <button className={'tab' + (pageTab === 'invoices' ? ' active' : '')} onClick={function () { setPageTab('invoices') }}>
@@ -2593,11 +2606,11 @@ export default function FranchiseesPage() {
                           </div>
 
                           <div className="fr-row-meta">
-                            {f.phone && <span className="fr-row-phone">{f.phone}</span>}
+                            {showContact && f.phone && <span className="fr-row-phone">{f.phone}</span>}
                             {(f.registered_courses || []).length > 0 && (
                               <span className="fr-row-courses">{(f.registered_courses || []).length} courses</span>
                             )}
-                            {frBalance > 0 && (
+                            {showFin && frBalance > 0 && (
                               <span style={{
                                 fontSize: 10, fontWeight: 700, fontFamily: 'var(--mono)',
                                 color: 'var(--red)', background: '#fee2e2',
@@ -2666,7 +2679,7 @@ export default function FranchiseesPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button style={{ font: '600 11px var(--font)', color: 'var(--purple)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                    onClick={function () { setExportFieldKeys(EXPORT_FIELDS.map(function (f) { return f.key })) }}>
+                    onClick={function () { setExportFieldKeys(visibleFields.map(function (f) { return f.key })) }}>
                     Select all
                   </button>
                   <button style={{ font: '600 11px var(--font)', color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
@@ -2676,7 +2689,7 @@ export default function FranchiseesPage() {
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px' }}>
-                {EXPORT_FIELDS.map(function (f) {
+                {visibleFields.map(function (f) {
                   return (
                     <label key={f.key} className="checkbox-item" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', cursor: 'pointer' }}>
                       <input type="checkbox" checked={exportFieldKeys.includes(f.key)} onChange={function () { toggleExportField(f.key) }} />

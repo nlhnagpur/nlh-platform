@@ -66,12 +66,22 @@ const managerNav = [
   { id: 'email-log',      l: 'Email log',        c: '#0F766E' },
 ]
 
+// Candidate pages for staff — Sidebar filters these by the login's ticked permissions.
 const staffNav = [
-  { id: 'dashboard', l: 'Dashboard',      c: '#534AB7' },
-  { id: 'orders',    l: 'Orders',         c: '#8A5200' },
-  { id: 'students',  l: 'Students',       c: '#1A5FA8' },
-  { id: 'messages',  l: 'Franchisee chat', c: '#0891B2' },
-  { id: 'courses',   l: 'Courses & SKUs', c: '#534AB7' },
+  { id: 'dashboard',      l: 'Dashboard',        c: '#534AB7' },
+  { id: 'franchisees',    l: 'Franchisees',      c: '#1D7A4F' },
+  { id: 'orders',         l: 'Orders',           c: '#8A5200' },
+  { id: 'students',       l: 'Students',         c: '#1A5FA8' },
+  { id: 'instructors',    l: 'Instructors',      c: '#6D28D9' },
+  { id: 'batches',        l: 'Batches',          c: '#0F766E' },
+  { id: 'whatsapp-inbox', l: 'WhatsApp Inbox',   c: '#25D366' },
+  { id: 'messages',       l: 'Franchisee chat',  c: '#0891B2' },
+  { id: 'accounting',     l: 'HO Accounting',    c: '#0F766E' },
+  { id: 'courses',        l: 'Courses & SKUs',   c: '#534AB7' },
+  { id: 'coupons',        l: 'Discount coupons', c: '#C2410C' },
+  { id: 'inventory',      l: 'Inventory & Kits', c: '#0F766E' },
+  { id: 'prices',         l: 'Kit prices',       c: '#1D7A4F' },
+  { id: 'email-log',      l: 'Email log',        c: '#0F766E' },
 ]
 
 export const NAV_ITEMS = {

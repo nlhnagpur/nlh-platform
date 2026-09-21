@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react'
 import Sidebar from './Sidebar'
+import { useAuth } from '../context/AuthContext'
 
 // Dashboard is eager — it's the first page after login, spinner would be jarring.
 // Everything else is lazy; each page becomes its own JS chunk fetched on first visit.
@@ -114,7 +115,10 @@ export default function AppShell() {
     return function() { document.body.style.overflow = '' }
   }, [sidebarOpen])
 
-  const PageComponent = PAGE_MAP[currentPage] || DashboardPage
+  const { can, currentRole } = useAuth()
+  const blocked = currentPage !== 'dashboard' && currentPage !== 'ledger' && !can(currentPage + '.view')
+    || (currentRole === 'staff' && ['users', 'requests', 'price-history'].includes(currentPage))
+  const PageComponent = blocked ? DashboardPage : (PAGE_MAP[currentPage] || DashboardPage)
 
   return (
     <div className="app">

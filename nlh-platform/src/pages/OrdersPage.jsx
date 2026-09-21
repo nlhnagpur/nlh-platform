@@ -2230,7 +2230,7 @@ const fldSm  = { width: '100%', font: '500 12.5px var(--font)', padding: '7px 9p
 const ORDER_FILTERS = ['all', 'pending', 'proforma', 'invoiced', 'balance_due', 'closed']
 
 export default function OrdersPage() {
-  const { currentRole, currentFranchiseeId, currentUser } = useAuth()
+  const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
   const isAdmin = isAdminRole(currentRole)
 
   const [orders, setOrders] = useState([])
@@ -2745,12 +2745,12 @@ export default function OrdersPage() {
     ].filter(Boolean).join(' · ') : ''
     const canDispatch = !(order.proforma_no && !order.invoice_no)
     const items = [
-      order.status === 'pending' && isAdmin && {
+      order.status === 'pending' && isAdmin && can('orders.invoice') && {
         key: 'invoice', cls: 'primary', disabled: busy,
         label: isActing(order.id, 'invoice') ? 'Invoicing…' : 'Invoice',
         onClick: function () { setInvoiceConfirm(order) },
       },
-      order.status === 'pending' && isAdmin && {
+      order.status === 'pending' && isAdmin && can('orders.invoice') && {
         key: 'proforma', disabled: busy,
         label: isActing(order.id, 'proforma') ? '…' : 'Proforma',
         title: 'Preliminary, non-tax document — no dispatch until payment is verified',
@@ -2765,11 +2765,11 @@ export default function OrdersPage() {
       // grand_total/courier/coupon, never invoice_no or proforma_no, so
       // re-pricing a proforma before it's converted is exactly as safe
       // as editing a pending order.
-      ['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && {
+      ['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && can('orders.payments') && {
         key: 'recordpmt', cls: 'green', label: 'Record Payment',
         onClick: function () { setRecordPayOrder(order) },
       },
-      ['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && {
+      ['invoiced', 'part_paid', 'proforma'].includes(order.status) && isAdmin && can('orders.payments') && {
         key: 'remind', disabled: busy,
         label: isActing(order.id, 'reminder') ? 'Reminding…' : 'Remind',
         onClick: function () { handleSendReminder(order) },
@@ -2779,22 +2779,22 @@ export default function OrdersPage() {
       // going ahead (no invoice_no was ever consumed, so there's nothing
       // to preserve — unlike Cancel, which is for a real invoice's audit
       // trail).
-      order.status === 'proforma' && isAdmin && {
+      order.status === 'proforma' && isAdmin && can('orders.invoice') && {
         key: 'convert', cls: 'primary', disabled: busy,
         label: isActing(order.id, 'convert') ? 'Converting…' : 'Convert to Invoice',
         title: 'Issue the real invoice now, without waiting for payment',
         onClick: function () { setConvertConfirm(order) },
       },
-      order.status === 'proforma' && isAdmin && {
+      order.status === 'proforma' && isAdmin && can('orders.delete') && {
         key: 'delete', cls: 'danger', label: 'Delete',
         onClick: function () { setDeleteProformaOrder(order) },
       },
-      order.status === 'payment_submitted' && isAdmin && {
+      order.status === 'payment_submitted' && isAdmin && can('orders.payments') && {
         key: 'verify', cls: 'primary', disabled: busy,
         label: isActing(order.id, 'verify') ? 'Verifying…' : 'Verify Payment',
         onClick: function () { handleVerifyPayment(order) },
       },
-      order.status === 'closed' && isAdmin && {
+      order.status === 'closed' && isAdmin && can('orders.payments') && {
         key: 'reopen', disabled: busy,
         label: isActing(order.id, 'reopen') ? '…' : 'Reopen',
         onClick: function () { handleReopen(order) },
@@ -2808,11 +2808,11 @@ export default function OrdersPage() {
       // Edit and Dispatch are HO-only actions — a franchisee's own side of
       // this menu is just "see the paperwork" (PDF, Receipts), never edit
       // pricing or mark something dispatched.
-      isAdmin && canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { setEditInvoiceOrder(order) } },
+      isAdmin && can('orders.edit') && canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { setEditInvoiceOrder(order) } },
       canPdfOrder && { key: 'pdf', label: 'View Invoice', onClick: function () { setInvoiceViewOrder(order) } },
       // A proforma order with no real invoice yet can't dispatch — payment
       // has to be verified first (which converts it to a real invoice).
-      isAdmin && canDispatch && {
+      isAdmin && can('orders.dispatch') && canDispatch && {
         key: 'dispatch', label: order.dispatched_at ? 'Dispatch (edit)' : 'Dispatch',
         onClick: function () { setDispatchOrder(order) },
       },
@@ -2829,7 +2829,7 @@ export default function OrdersPage() {
       // CF commission payout — admin-only, never available to the CF
       // themselves. Only makes sense once the school order is actually
       // settled (closed) so the commission is on real, paid business.
-      isAdmin && order.bill_to_fr?.tier === 'SCHOOL' && order.status === 'closed' && {
+      isAdmin && can('accounting.edit') && order.bill_to_fr?.tier === 'SCHOOL' && order.status === 'closed' && {
         key: 'raisecn', label: '🧾 Raise Credit Note', onClick: function () { setRaiseCnOrder(order) },
       },
     ]
@@ -2870,7 +2870,7 @@ export default function OrdersPage() {
         <div className="tb-r">
           <input className="search tb-search" placeholder="Search by order ref or franchisee…" readOnly />
           <button className="btn btn-s">Export CSV</button>
-          <button className="btn btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>
+          {can('orders.edit') && <button className="btn btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>}
         </div>
       </header>
 

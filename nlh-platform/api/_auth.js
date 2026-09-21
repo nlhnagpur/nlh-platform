@@ -45,7 +45,7 @@ export async function requireAuth(req, res) {
 
 // Verifies the JWT is valid AND the caller has an admin-tier role.
 // Returns true (and sends a response) if auth/authz fails.
-export async function requireAdmin(req, res) {
+export async function requireAdmin(req, res, onlyRoles) {
   const token = extractToken(req)
   if (!token) {
     res.status(401).json({ error: 'Missing Authorization header' })
@@ -70,7 +70,7 @@ export async function requireAdmin(req, res) {
     .ilike('email', user.email)
     .limit(1)
     .maybeSingle()
-  if (!profile || !ADMIN_ROLES.has(profile.role)) {
+  if (!profile || !ADMIN_ROLES.has(profile.role) || (onlyRoles && !onlyRoles.includes(profile.role))) {
     res.status(403).json({ error: 'Insufficient permissions' })
     return true
   }

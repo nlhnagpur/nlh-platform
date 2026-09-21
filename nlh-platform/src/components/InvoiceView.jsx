@@ -6,6 +6,7 @@ import { sendWAOrderInvoiced } from '../services/whatsapp'
 import { captureInvoicePng } from '../utils/captureInvoice'
 import { createPendingStockReturns } from '../utils/saleReturns'
 import WhatsAppSendConfirm from './WhatsAppSendConfirm'
+import { useAuth } from '../context/AuthContext'
 
 const CANCEL_ROLES = ['owner', 'super_admin', 'admin']
 const FR_FIELDS = 'id,business_name,tier,email,city,state,area,country,phone,address,parent_id,gstin'
@@ -73,6 +74,7 @@ function SectionHead({ color, label }) {
 }
 
 export default function InvoiceView({ order, onClose, onCancelled, currentRole, currentUser }) {
+  const { can } = useAuth()
   const isAdmin = CANCEL_ROLES.includes(currentRole) || currentRole === 'manager' || currentRole === 'staff'
   const [activeTab,    setActiveTab]    = useState('view')
   const [items,        setItems]        = useState([])
@@ -501,7 +503,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
         {/* Same rule as the Orders list Actions menu — a franchisee/school
             just views and downloads their own paperwork, editing pricing
             is HO-only. */}
-        {isAdmin && (
+        {isAdmin && can('orders.edit') && (
           <button onClick={function(){setActiveTab('edit')}} style={tbBtn(activeTab==='edit','#D97706')}>✏ Edit</button>
         )}
         <button onClick={handleSendEmail} disabled={sending||!fr.email} style={{ ...tbBtn(false), background:fr.email?'#16A34A':'#9C9A92', color:'#fff', border:'none', opacity:sending?.7:1, cursor:fr.email?'pointer':'not-allowed' }}>

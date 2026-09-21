@@ -187,8 +187,8 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
 export function StudentDetailModal({ student, onClose, onSaved, inline }) {
-  const { currentRole, currentFranchiseeId, currentUser } = useAuth()
-  const admin = isAdminRole(currentRole)
+  const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
+  const admin = isAdminRole(currentRole) && can('students.edit')
   const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
   // Fees / discounts / payments: any admin, or any franchisee who can see this
   // student (visibility is already hierarchy-scoped), incl. parent CF / SMF.
@@ -2357,7 +2357,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         </div>
 
                         {/* Complete / WhatsApp / Certificate buttons */}
-                        {canEdit && !isCompleted && !isDiscontinued && (
+                        {canEdit && can('students.complete') && !isCompleted && !isDiscontinued && (
                           <button className="btn-s"
                             style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
                             onClick={function () {
@@ -2401,7 +2401,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             submitted marks. Every other tier keeps self-certifying —
                             the plain 🎓 Cert button below, unchanged. */}
                         {!isDiscontinued && isSchool && en.cert_status === 'pending_review' && (
-                          admin ? (
+                          (admin && can('students.complete')) ? (
                             <button className="btn-s"
                               style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: '#92400e', borderColor: '#fbbf24', background: '#fffbeb' }}
                               onClick={function () { setCertifyingEn(en); setCertifyRejectNote('') }}
@@ -3314,7 +3314,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
         {/* Footer actions */}
         <div className="modal-actions">
-          {admin && (
+          {admin && can('students.delete') && (
             <button
               className="btn"
               style={{ color: 'var(--red, #dc2626)', borderColor: 'var(--red, #dc2626)', marginRight: 'auto' }}
@@ -4221,7 +4221,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 // ── StudentsPage ───────────────────────────────────────────────────────────────
 
 export default function StudentsPage() {
-  const { currentRole, currentFranchiseeId } = useAuth()
+  const { currentRole, currentFranchiseeId, can } = useAuth()
   const admin = isAdminRole(currentRole)
 
   const [students, setStudents]   = useState([])
@@ -4494,7 +4494,7 @@ export default function StudentsPage() {
           <button className="btn btn-s" onClick={exportCSV} disabled={exporting} title="Export CSV">
             {exporting ? '…' : '↓'}<span className="btn-label">{exporting ? ' Exporting' : ' Export'}</span>
           </button>
-          <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Enrol Student</button>
+          {can('students.edit') && <button className="btn btn-p" onClick={() => setShowAdd(true)}>+ Enrol Student</button>}
         </div>
       </header>
 

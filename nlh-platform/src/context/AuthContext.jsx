@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { sb } from '../supabase'
 import { isAdminRole } from '../constants/roles'
+import { hasPerm } from '../constants/permissions'
 
 const AuthContext = createContext(null)
 
@@ -8,6 +9,7 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [currentRole, setCurrentRole] = useState(null)
   const [currentFranchiseeId, setCurrentFranchiseeId] = useState(null)
+  const [currentPermissions, setCurrentPermissions] = useState({})
   const [loading, setLoading] = useState(true)
   const [screen, setScreen] = useState('loading') // 'loading'|'landing'|'login'|'reset'|'onboarding'|'app'
 
@@ -34,6 +36,7 @@ export function AuthProvider({ children }) {
         }
         role = data.role || 'uf'
         franchiseeId = data.franchisee_id
+        setCurrentPermissions(data.permissions || {})
 
         if (!franchiseeId && ['smf', 'cf', 'uf'].includes(role)) {
           const { data: fr } = await sb.from('franchisees').select('id').ilike('email', user.email).single()
@@ -161,7 +164,8 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      currentUser, currentRole, currentFranchiseeId,
+      currentUser, currentRole, currentFranchiseeId, currentPermissions,
+      can: function (key) { return hasPerm(currentRole, currentPermissions, key) },
       loading, screen, setScreen,
       initApp, signOut,
       setCurrentFranchiseeId,

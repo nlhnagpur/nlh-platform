@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { showToast } from '../utils'
 import { ROLE_LABELS, ROLE_COLORS, isAdminRole } from '../constants/roles'
 import { sendWelcomeEmail, sendInviteEmail } from '../services/email'
+import PermissionsEditor from '../components/PermissionsEditor'
+import { DEFAULT_STAFF_PERMS, normalizePerms } from '../constants/permissions'
 
 // ── role hierarchy ────────────────────────────────────────────────────────────
 const ROLE_RANK = { owner: 6, super_admin: 5, admin: 4, manager: 3, staff: 2, smf: 1, cf: 1, uf: 1, student: 0 }
@@ -72,6 +74,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
   const [name,     setName]     = useState('')
   const [role,     setRole]     = useState('staff')
   const [password, setPassword] = useState('')
+  const [perms,    setPerms]    = useState(DEFAULT_STAFF_PERMS)
   const [saving,   setSaving]   = useState(false)
   const allowed = assignableRoles(myRole)
 
@@ -93,6 +96,8 @@ function AddUserModal({ myRole, onClose, onSaved }) {
         email:    email.trim().toLowerCase(),
         password: password.trim(),
         fullName: name.trim(),
+        role,
+        permissions: role === 'staff' ? normalizePerms(perms) : undefined,
       }),
     })
     const createData = await createRes.json()
@@ -109,6 +114,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
       full_name: name.trim() || email.split('@')[0],
       role,
       is_active: true,
+      permissions: role === 'staff' ? normalizePerms(perms) : {},
     }, { onConflict: 'email' })
 
     if (dbErr) {
@@ -128,7 +134,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={function (e) { e.stopPropagation() }}>
+      <div className="modal" style={role === 'staff' ? { maxWidth: 640, maxHeight: '92vh', overflowY: 'auto' } : undefined} onClick={function (e) { e.stopPropagation() }}>
         <div className="modal-h">
           <div className="modal-title">Add user</div>
           <button className="modal-x" onClick={onClose}>✕</button>
@@ -152,6 +158,7 @@ function AddUserModal({ myRole, onClose, onSaved }) {
               })}
             </select>
           </div>
+          {role === 'staff' && <PermissionsEditor value={perms} onChange={setPerms} />}
           <div>
             <label className="lbl">Temporary password <span style={{ color: 'var(--red)' }}>*</span></label>
             <input className="inp" type="password" placeholder="Min. 8 characters" value={password}
@@ -173,12 +180,13 @@ function AddUserModal({ myRole, onClose, onSaved }) {
 // ── EditRoleModal ─────────────────────────────────────────────────────────────
 function EditRoleModal({ user, myRole, onClose, onSaved }) {
   const [role,   setRole]   = useState(user.role || 'staff')
+  const [perms,  setPerms]  = useState(user.permissions && Object.keys(user.permissions).length ? user.permissions : (user.role === 'staff' ? {} : DEFAULT_STAFF_PERMS))
   const [saving, setSaving] = useState(false)
   const allowed = assignableRoles(myRole)
 
   async function handleSave() {
     setSaving(true)
-    const { error } = await sb.from('users').update({ role }).eq('id', user.id)
+    const { error } = await sb.from('users').update({ role, permissions: role === 'staff' ? normalizePerms(perms) : {} }).eq('id', user.id)
     if (error) { showToast('Failed to update role: ' + error.message); setSaving(false); return }
     showToast('Role updated.')
     onSaved()
@@ -189,9 +197,9 @@ function EditRoleModal({ user, myRole, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={function (e) { e.stopPropagation() }}>
+      <div className="modal" style={role === 'staff' ? { maxWidth: 640, maxHeight: '92vh', overflowY: 'auto' } : undefined} onClick={function (e) { e.stopPropagation() }}>
         <div className="modal-h">
-          <div className="modal-title">Change role</div>
+          <div className="modal-title">{user.role === 'staff' ? 'Role & access' : 'Change role'}</div>
           <button className="modal-x" onClick={onClose}>✕</button>
         </div>
         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -213,9 +221,10 @@ function EditRoleModal({ user, myRole, onClose, onSaved }) {
               })}
             </select>
           </div>
+          {role === 'staff' && <PermissionsEditor value={perms} onChange={setPerms} />}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <button className="btn btn-s" onClick={onClose}>Cancel</button>
-            <button className="btn btn-p" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save role'}</button>
+            <button className="btn btn-p" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : (role === 'staff' ? 'Save' : 'Save role')}</button>
           </div>
         </div>
       </div>

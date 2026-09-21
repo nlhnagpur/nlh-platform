@@ -4,6 +4,8 @@ import { showToast } from '../utils'
 import { sendWelcomeEmail } from '../services/email'
 import ModalHeader from '../components/ModalHeader'
 import { useAuth } from '../context/AuthContext'
+import PermissionsEditor from '../components/PermissionsEditor'
+import { DEFAULT_STAFF_PERMS, normalizePerms } from '../constants/permissions'
 
 function CredentialsModal({ email, password, onClose }) {
   const [copied, setCopied] = useState(false)
@@ -281,6 +283,8 @@ function AdminAccessRequestsView() {
   const [actionLoading, setActionLoading] = useState(null)
   const [credentials, setCredentials] = useState(null) // { email, password }
   const [filterStatus, setFilterStatus] = useState('pending')
+  const [permReq, setPermReq] = useState(null)   // staff request being approved
+  const [permDraft, setPermDraft] = useState({})
 
   useEffect(function () {
     loadRequests()
@@ -300,7 +304,7 @@ function AdminAccessRequestsView() {
     setLoading(false)
   }
 
-  async function handleApprove(req) {
+  async function handleApprove(req, staffPerms) {
     setActionLoading(req.id + '_approve')
 
     const tempPass = 'NLH@123'
@@ -384,6 +388,7 @@ function AdminAccessRequestsView() {
           fullName:     req.full_name,
           role:         req.role_requested,
           franchiseeId: franchiseeId,
+          permissions:  req.role_requested === 'staff' ? normalizePerms(staffPerms) : undefined,
         }),
       })
       createData = await createRes.json()
@@ -514,7 +519,10 @@ function AdminAccessRequestsView() {
                           <button
                             className="btn-p btn-sm"
                             disabled={!!actionLoading}
-                            onClick={function () { handleApprove(req) }}
+                            onClick={function () {
+                              if (req.role_requested === 'staff') { setPermDraft(Object.assign({}, DEFAULT_STAFF_PERMS)); setPermReq(req) }
+                              else handleApprove(req)
+                            }}
                           >
                             {approvingThis ? 'Approving…' : 'Approve'}
                           </button>
@@ -537,6 +545,30 @@ function AdminAccessRequestsView() {
               })}
             </tbody>
           </table>
+          </div>
+        </div>
+      )}
+
+      {permReq && (
+        <div className="modal-bg" onClick={function () { setPermReq(null) }}>
+          <div className="modal" style={{ maxWidth: 640, maxHeight: '90vh', overflowY: 'auto' }} onClick={function (e) { e.stopPropagation() }}>
+            <div className="modal-h">
+              <div className="modal-title">What should {permReq.full_name} be able to access?</div>
+              <button className="modal-x" onClick={function () { setPermReq(null) }}>✕</button>
+            </div>
+            <div style={{ padding: '4px 20px 20px' }}>
+            <div className="hint" style={{ marginBottom: 12 }}>You can change this any time from Manage Logins.</div>
+            <PermissionsEditor value={permDraft} onChange={setPermDraft} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="btn-s" onClick={function () { setPermReq(null) }}>Cancel</button>
+              <button className="btn-p" disabled={!!actionLoading}
+                onClick={async function () {
+                  const r = permReq, p = permDraft
+                  setPermReq(null)
+                  await handleApprove(r, p)
+                }}>Approve &amp; create login</button>
+            </div>
+            </div>
           </div>
         </div>
       )}

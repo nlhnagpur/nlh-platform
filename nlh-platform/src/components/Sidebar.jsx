@@ -34,7 +34,10 @@ function initials(name) {
 
 export default function Sidebar({ currentPage, onNavigate, isOpen, onClose }) {
   const { currentRole, currentUser, currentFranchiseeId, signOut } = useAuth()
-  const navItems = NAV_ITEMS[currentRole] || NAV_ITEMS.admin
+  const { can } = useAuth()
+  const navItems = (NAV_ITEMS[currentRole] || NAV_ITEMS.admin).filter(function (i) {
+    return i.id === 'dashboard' || can(i.id + '.view')
+  })
   const isAdmin = ['owner', 'super_admin', 'admin', 'manager', 'staff'].includes(currentRole)
 
   // ── Live unread-message count for the chat nav badge ──

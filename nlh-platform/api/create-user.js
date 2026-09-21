@@ -12,15 +12,18 @@ const SUPABASE_URL = 'https://frnnoxudtlvhyyoqdqzx.supabase.co'
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  // Caller must be a logged-in NLH admin
-  if (await requireAdmin(req, res)) return
+  // Creating any admin-tier login (incl. staff) needs owner/super_admin/admin —
+  // otherwise a staff or manager login could mint itself an owner account.
+  const targetRole = (req.body && req.body.role) || ''
+  const isAdminTierTarget = ['owner', 'super_admin', 'admin', 'manager', 'staff'].includes(targetRole)
+  if (await requireAdmin(req, res, isAdminTierTarget ? ['owner', 'super_admin', 'admin'] : undefined)) return
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceKey) {
     return res.status(500).json({ error: 'Server not configured (missing SUPABASE_SERVICE_ROLE_KEY)' })
   }
 
-  const { email, password, fullName, role, franchiseeId, id } = req.body
+  const { email, password, fullName, role, franchiseeId, id, permissions } = req.body
   if (!email || !password) {
     return res.status(400).json({ error: 'email and password are required' })
   }
@@ -64,6 +67,7 @@ export default async function handler(req, res) {
     full_name:     (fullName || '').trim(),
     role:          role,
     franchisee_id: franchiseeId || null,
+    permissions:   role === 'staff' && permissions && typeof permissions === 'object' ? permissions : {},
   }, { onConflict: 'id' })
 
   if (insertErr) {
