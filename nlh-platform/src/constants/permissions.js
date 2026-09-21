@@ -55,8 +55,8 @@ function pick(keys) {
 
 export const PRESETS = [
   { id: 'marketing', label: 'Social media / Marketing',
-    desc: 'See franchisee names, cities and addresses (no fees, phones or emails).',
-    perms: pick(['franchisees.view']) },
+    desc: 'See franchisee names, cities, addresses, phones and emails (no fees or orders).',
+    perms: pick(['franchisees.view', 'franchisees.contact']) },
   { id: 'sales', label: 'Sales / Operations',
     desc: 'Orders, students and franchisees; can place and dispatch orders.',
     perms: pick(['franchisees.view', 'franchisees.contact', 'orders.view', 'orders.edit', 'orders.dispatch', 'students.view', 'courses.view', 'messages.view', 'messages.reply']) },
