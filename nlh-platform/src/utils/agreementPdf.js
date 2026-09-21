@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { buildSchoolAgreementPdfDoc } from './schoolAgreementPdf'
 
 // Builds a REAL text-based PDF of the Unit Franchise Agreement — same
 // content and layout as printFranchiseeAgreement() in studentDocs.js, but
@@ -286,8 +287,14 @@ async function buildAgreementPdfDoc(franchisee, agreement) {
 }
 
 // For BoldSign's API (Files: [{ base64, fileName }]) — a data URL string.
+async function buildDoc(franchisee, agreement) {
+  return agreement && agreement.kind === 'school'
+    ? buildSchoolAgreementPdfDoc(franchisee, agreement)
+    : buildAgreementPdfDoc(franchisee, agreement)
+}
+
 export async function buildAgreementPdfDataUrl(franchisee, agreement) {
-  const doc = await buildAgreementPdfDoc(franchisee, agreement)
+  const doc = await buildDoc(franchisee, agreement)
   // NOT doc.output('datauristring') — jsPDF emits
   // "data:application/pdf;filename=generated.pdf;base64,...", and that extra
   // ;filename=...; segment is enough to make BoldSign's API reject the file
@@ -303,6 +310,12 @@ export async function buildAgreementPdfDataUrl(franchisee, agreement) {
 // For manually uploading to BoldSign's web app (the $0 Essentials plan) —
 // saves the file straight to the browser's downloads, same document either way.
 export async function downloadAgreementPdf(franchisee, agreement) {
-  const doc = await buildAgreementPdfDoc(franchisee, agreement)
+  const doc = await buildDoc(franchisee, agreement)
   doc.save((agreement?.agreement_no || 'agreement') + '.pdf')
+}
+
+// School agreements have no HTML print view — open the real PDF in a new tab.
+export async function openAgreementPdf(franchisee, agreement) {
+  const doc = await buildDoc(franchisee, agreement)
+  window.open(doc.output('bloburl'), '_blank')
 }

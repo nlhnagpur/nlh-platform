@@ -13,8 +13,8 @@ import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice, printFranchis
 import { captureDocPng } from '../utils/captureReceipt'
 import { StudentDetailModal, daysLeftInMonth } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
-import { loadLatestAgreement, generateAgreement } from '../utils/franchiseeAgreement'
-import { buildAgreementPdfDataUrl, downloadAgreementPdf } from '../utils/agreementPdf'
+import { loadLatestAgreement, generateAgreement, generateSchoolAgreement } from '../utils/franchiseeAgreement'
+import { buildAgreementPdfDataUrl, downloadAgreementPdf, openAgreementPdf } from '../utils/agreementPdf'
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
@@ -431,6 +431,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const [certEmailedAt, setCertEmailedAt] = useState(franchisee.cert_emailed_at || null)
   const [agreement, setAgreement] = useState(null)
   const [agreementBusy, setAgreementBusy] = useState(false)
+  const [schoolAg, setSchoolAg] = useState({ model: 'inhouse', repName: '', repTitle: 'Principal', charges: [] })
   const [resending, setResending] = useState(false)
   const [changingEmail, setChangingEmail] = useState(false)
   const [newEmail, setNewEmail] = useState('')
@@ -650,13 +651,18 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   async function generateOrRefreshAgreement() {
     setAgreementBusy(true)
     try {
-      const row = await generateAgreement(
-        Object.assign({}, franchisee, form, {
-          enrollment_fee: Number(form.enrollment_fee) || 0,
-          registered_courses: registeredCourses,
-        }),
-        currentUser?.email
-      )
+      const merged = Object.assign({}, franchisee, form, {
+        enrollment_fee: Number(form.enrollment_fee) || 0,
+        registered_courses: registeredCourses,
+      })
+      const row = franchisee.tier === 'SCHOOL'
+        ? await generateSchoolAgreement(merged, {
+            model: schoolAg.model,
+            repName: schoolAg.repName || form.owner_name,
+            repTitle: schoolAg.repTitle,
+            charges: schoolAg.charges,
+          }, currentUser?.email)
+        : await generateAgreement(merged, currentUser?.email)
       setAgreement(row)
       showToast('Agreement ' + row.agreement_no + ' generated ✓')
     } catch (err) {
@@ -689,6 +695,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
 
   function viewAgreement() {
     if (!agreement) return
+    if (agreement.kind === 'school') { openAgreementPdf(Object.assign({}, franchisee, form), agreement); return }
     printFranchiseeAgreement(Object.assign({}, franchisee, form), agreement)
   }
 
@@ -909,9 +916,10 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
 
         <div className="tabs">
           {(franchisee.tier === 'SCHOOL'
-              // A school doesn't sign a Unit Franchise Agreement — it's a
-              // CF's B2B customer, not a franchise business in its own right.
-              ? ['info', 'courses', 'orders', 'students', 'ledger', 'cert']
+              // A school doesn't sign a Unit Franchise Agreement — it signs
+              // the School Program Partnership Agreement (same tab, its own
+              // generator and terms).
+              ? ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
               : ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
                   .concat(franchisee.tier === 'CF' ? ['schools'] : [])
             ).filter(t => showFin || !['orders', 'ledger', 'agreement'].includes(t)).map(t => (
@@ -1558,7 +1566,52 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
           {tab === 'agreement' && (
             <div>
               {!agreement && (
-                <p className="hint">No Unit Franchise Agreement generated yet for this franchisee.</p>
+                <p className="hint">No {franchisee.tier === 'SCHOOL' ? 'School Program Partnership Agreement' : 'Unit Franchise Agreement'} generated yet for this {franchisee.tier === 'SCHOOL' ? 'school' : 'franchisee'}.</p>
+              )}
+              {admin && franchisee.tier === 'SCHOOL' && (!agreement || agreement.status === 'draft') && (
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', marginBottom: 12 }}>
+                  <div style={{ font: '700 12px var(--font)', marginBottom: 10 }}>Agreement options</div>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <label style={{ flex: '1 1 220px' }}>Training model
+                      <select value={schoolAg.model} onChange={function (e) { setSchoolAg(function (s) { return { ...s, model: e.target.value } }) }}>
+                        <option value="inhouse">In-house — school's own teacher (NLH trains one teacher)</option>
+                        <option value="full_service">Full-Service — NLH supplies its own trainer</option>
+                      </select>
+                    </label>
+                    <label style={{ flex: '1 1 200px' }}>Signatory name
+                      <input value={schoolAg.repName} placeholder={form.owner_name || 'Principal / Chairperson'}
+                        onChange={function (e) { setSchoolAg(function (s) { return { ...s, repName: e.target.value } }) }} />
+                    </label>
+                    <label style={{ flex: '1 1 160px' }}>Designation
+                      <input value={schoolAg.repTitle}
+                        onChange={function (e) { setSchoolAg(function (s) { return { ...s, repTitle: e.target.value } }) }} />
+                    </label>
+                  </div>
+                  {schoolAg.model === 'full_service' && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ font: '600 12px var(--font)', marginBottom: 6 }}>Instructor charges (Annexure B) — billed monthly to the school</div>
+                      {schoolAg.charges.map(function (c, i) {
+                        function upd(patch) { setSchoolAg(function (s) { return { ...s, charges: s.charges.map(function (x, j) { return j === i ? { ...x, ...patch } : x }) } }) }
+                        const programNames = Array.from(new Set(allCourses.filter(function (x) { return registeredCourses.includes(x.id) }).map(function (x) { return x.group_name || x.name })))
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <select value={c.course} onChange={function (e) { upd({ course: e.target.value }) }} style={{ flex: '1 1 160px' }}>
+                              <option value="">Program…</option>
+                              {programNames.map(function (n) { return <option key={n} value={n}>{n}</option> })}
+                            </select>
+                            <input placeholder="Level (blank = all)" value={c.level} onChange={function (e) { upd({ level: e.target.value }) }} style={{ flex: '1 1 120px' }} />
+                            <input type="number" placeholder="Charge ₹" value={c.charge} onChange={function (e) { upd({ charge: e.target.value }) }} style={{ flex: '0 1 110px' }} />
+                            <select value={c.frequency} onChange={function (e) { upd({ frequency: e.target.value }) }} style={{ flex: '0 1 120px' }}>
+                              <option>Monthly</option><option>Per session</option><option>Quarterly</option>
+                            </select>
+                            <button type="button" className="btn-s" onClick={function () { setSchoolAg(function (s) { return { ...s, charges: s.charges.filter(function (_, j) { return j !== i }) } }) }}>✕</button>
+                          </div>
+                        )
+                      })}
+                      <button type="button" className="btn-s" onClick={function () { setSchoolAg(function (s) { return { ...s, charges: [...s.charges, { course: '', level: '', charge: '', frequency: 'Monthly' }] } }) }}>+ Add charge</button>
+                    </div>
+                  )}
+                </div>
               )}
               {agreement && (
                 <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', marginBottom: 12 }}>
@@ -1569,7 +1622,9 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                     </span>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.7 }}>
-                    Fee: <strong style={{ color: 'var(--text)' }}>₹{fmtAmt(agreement.fee)}</strong> &middot;
+                    {agreement.kind === 'school'
+                      ? <>Model: <strong style={{ color: 'var(--text)' }}>{agreement.service_model === 'full_service' ? 'Full-Service' : 'In-house'}</strong> &middot; </>
+                      : <>Fee: <strong style={{ color: 'var(--text)' }}>₹{fmtAmt(agreement.fee)}</strong> &middot; </>}
                     {' '}Term: <strong style={{ color: 'var(--text)' }}>{fmtDate(agreement.term_start)} – {fmtDate(agreement.term_end)}</strong><br/>
                     {agreement.status === 'signed'
                       ? <>Signed via BoldSign by <strong style={{ color: 'var(--text)' }}>{agreement.signed_name}</strong> on {fmtDate(agreement.signed_at)}</>
@@ -1606,7 +1661,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               {agreement && agreement.status === 'draft' && (
                 <p className="hint" style={{ marginTop: 8 }}>
                   Download the PDF, then in BoldSign click <strong>Create New → Send a Document</strong>, upload it, and send to <strong>{form.email || franchisee.email}</strong> —
-                  keep the document title exactly as <strong>"Unit Franchise Agreement — {franchisee.business_name || franchisee.owner_name} ({agreement.agreement_no})"</strong> so this app can match it and update the status automatically once signed.
+                  keep the document title exactly as <strong>"{agreement.kind === 'school' ? 'School Program Partnership Agreement' : 'Unit Franchise Agreement'} — {franchisee.business_name || franchisee.owner_name} ({agreement.agreement_no})"</strong> so this app can match it and update the status automatically once signed.
                   Regenerating creates a fresh draft with a new agreement number.
                 </p>
               )}
