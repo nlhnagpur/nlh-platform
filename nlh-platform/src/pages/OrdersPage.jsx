@@ -7,6 +7,7 @@ import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { invoiceFit, invoiceFull } from '../utils/invoiceFit'
 import { createPendingStockReturns } from '../utils/saleReturns'
+import { generateServiceInvoices, snapshotOrderCommission, computeOrderCommission, monthFirst, monthLabel } from '../utils/serviceBilling'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
 import { printOrderReceipt } from '../components/studentDocs'
@@ -66,7 +67,7 @@ async function mirrorOrderToTransactions(orderId) {
         transaction_id: orderId, sku_id: i.sku_id, item_id: i.item_id,
         qty: i.ordered_qty, sent_qty: i.sent_qty, rate: i.rate,
         amount: i.line_total ?? (i.rate * i.ordered_qty),
-        excluded_kit_items: i.excluded_kit_items, cf_commission_rate: i.cf_commission_rate,
+        excluded_kit_items: i.excluded_kit_items, cf_commission_rate: null,
       }
     }))
   }
@@ -540,7 +541,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
         const { data: nowOrder } = await sb.from('orders').select('*').eq('id', order.id).single()
         if (nowOrder && nowOrder.invoice_no) {
           warnIfStockNegative(await deductOrderStockIfNeeded(nowOrder, 'Invoice'))
-          await createPendingStockReturns(nowOrder)
+          await createPendingStockReturns(nowOrder); await snapshotOrderCommission(nowOrder)
         }
       } catch (e) { console.warn('Stock deduction (auto-invoice) failed:', e.message) }
     }
@@ -918,7 +919,7 @@ function DispatchModal({ order, onClose, onSaved }) {
       try {
         const negatives = await deductOrderStockIfNeeded(order, 'Dispatch')
         warnIfStockNegative(negatives)
-        await createPendingStockReturns(order)
+        await createPendingStockReturns(order); await snapshotOrderCommission(order)
       } catch (stkErr) { console.warn('Stock deduction skipped:', stkErr.message) }
 
       // ── Lock (redeem) the coupon now that the order is dispatched ──
@@ -1141,6 +1142,124 @@ function InvoiceConfirmModal({ order, mode, onClose, onConfirm }) {
   )
 }
 
+// ── Service (CI) invoices — lines have a description instead of a SKU ──────
+function ServiceInvoiceEditModal({ order, onClose, onSaved }) {
+  const [items, setItems] = useState([])
+  const [removed, setRemoved] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(function () {
+    sb.from('order_items').select('id, description, ordered_qty, rate').eq('order_id', order.id).order('created_at')
+      .then(function (r) { setItems((r.data || []).map(function (i) { return { ...i, qty: String(i.ordered_qty), rate: String(i.rate) } })); setLoading(false) })
+  }, [order.id])
+
+  function upd(idx, patch) { setItems(function (arr) { return arr.map(function (x, k) { return k === idx ? { ...x, ...patch } : x }) }) }
+
+  async function save() {
+    const valid = items.filter(function (i) { return (i.description || '').trim() && parseInt(i.qty, 10) > 0 })
+    if (!valid.length) { showToast('Add at least one line', 'warn'); return }
+    setSaving(true)
+    let err = null
+    for (const i of valid) {
+      const row = { description: i.description.trim(), ordered_qty: parseInt(i.qty, 10), sent_qty: parseInt(i.qty, 10), rate: parseInt(i.rate, 10) || 0 }
+      const r = i.id ? await sb.from('order_items').update(row).eq('id', i.id) : await sb.from('order_items').insert({ ...row, order_id: order.id, excluded_kit_items: [] })
+      if (r.error) err = r.error
+    }
+    for (const id of removed) { const r = await sb.from('order_items').delete().eq('id', id); if (r.error) err = r.error }
+    setSaving(false)
+    if (err) { showToast('Could not save: ' + err.message, 'err'); return }
+    try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] service edit mirror failed:', e.message) }
+    showToast('Invoice updated \✓')
+    onSaved()
+  }
+
+  const total = items.reduce(function (s, i) { return s + (parseInt(i.qty, 10) || 0) * (parseInt(i.rate, 10) || 0) }, 0)
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 720 }}>
+        <ModalHeader flush title={(order.invoice_no ? 'Edit Invoice \— ' : 'Edit Order \— ') + order.order_ref} subtitle={order.bill_to_fr?.business_name || ''} onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px' }}>
+          {loading ? <div className="muted">Loading\…</div> : (
+            <>
+              <div className="tbl-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Description</th><th style={{ width: 70 }}>Qty</th><th style={{ width: 110 }}>Rate (\₹)</th><th style={{ width: 30 }}></th></tr></thead>
+                  <tbody>
+                    {items.map(function (i, idx) {
+                      return (
+                        <tr key={i.id || 'n' + idx}>
+                          <td><input value={i.description || ''} onChange={function (e) { upd(idx, { description: e.target.value }) }} style={{ width: '100%' }} /></td>
+                          <td><input type="number" min={0} value={i.qty} onChange={function (e) { upd(idx, { qty: e.target.value }) }} style={{ width: 60 }} /></td>
+                          <td><input type="number" min={0} value={i.rate} onChange={function (e) { upd(idx, { rate: e.target.value }) }} style={{ width: 100 }} /></td>
+                          <td><button className="btn-s" onClick={function () { if (i.id) setRemoved(function (r) { return [...r, i.id] }); setItems(function (arr) { return arr.filter(function (_, k) { return k !== idx }) }) }}>\✕</button></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <button className="btn-s" style={{ marginTop: 8 }} onClick={function () { setItems(function (arr) { return [...arr, { description: '', qty: '1', rate: '' }] }) }}>+ Add line</button>
+              <div style={{ textAlign: 'right', marginTop: 10, font: '700 14px var(--font)' }}>Total \₹{fmtAmt(total)}</div>
+              <p className="hint" style={{ marginTop: 6 }}>To change what is charged every month, revise the CI's charge in the school's CIs &amp; Billing tab instead.</p>
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving || loading}>{saving ? 'Saving\…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GenerateServiceInvoicesModal({ onClose, onDone }) {
+  const [month, setMonth] = useState(monthFirst(new Date()))
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+
+  async function run() {
+    setBusy(true)
+    try { setResult(await generateServiceInvoices(month)) } catch (e) { showToast('Could not generate: ' + e.message, 'err') }
+    setBusy(false)
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) { if (result) onDone(); else onClose() } }}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <ModalHeader flush title="Generate service invoices" subtitle="Instructor (CI) charges for Full-Service schools" onClose={result ? onDone : onClose} />
+        <div style={{ padding: '4px 20px 16px' }}>
+          {!result ? (
+            <>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Month
+                <input type="month" value={month.slice(0, 7)} onChange={function (e) { if (e.target.value) setMonth(e.target.value + '-01') }} style={{ display: 'block', marginTop: 6 }} />
+              </label>
+              <p className="hint" style={{ marginTop: 10 }}>
+                Creates one draft per Full-Service school with CIs appointed for {monthLabel(month)}, at the agreed charges.
+                A school already invoiced for the month is skipped. Review each draft, edit if needed, then issue it as a normal invoice.
+              </p>
+            </>
+          ) : (
+            <div style={{ fontSize: 12, lineHeight: 1.7 }}>
+              <div><strong>{result.created.length}</strong> draft{result.created.length === 1 ? '' : 's'} created</div>
+              {result.created.map(function (c, k) { return <div key={k} className="mono">{c.order_ref} \— {c.school} \— \₹{fmtAmt(c.total)}</div> })}
+              {result.skipped.length > 0 && <div style={{ marginTop: 8 }}><strong>Skipped</strong></div>}
+              {result.skipped.map(function (c, k) { return <div key={k} style={{ color: 'var(--text3)' }}>{c.school} \— {c.reason}</div> })}
+            </div>
+          )}
+        </div>
+        <div className="modal-actions">
+          {!result
+            ? (<><button className="btn-s" onClick={onClose}>Cancel</button><button className="btn-p" onClick={run} disabled={busy}>{busy ? 'Generating\…' : 'Generate ' + monthLabel(month)}</button></>)
+            : <button className="btn-p" onClick={onDone}>Done</button>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── RaiseCreditNoteModal — admin-only, pays out a CF's commission on a
 // closed school order by crediting it into their ledger. Pre-fills the
 // system-computed suggestion (Σ sent_qty × cf_commission_rate) but the
@@ -1152,20 +1271,17 @@ function RaiseCreditNoteModal({ order, currentUser, onClose, onSaved }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  const [parts, setParts] = useState([])
+
   useEffect(function () {
     async function load() {
-      const { data } = await sb.from('order_items')
-        .select('sent_qty, ordered_qty, cf_commission_rate, skus(level_name, courses(group_name))')
-        .eq('order_id', order.id)
-      const total = (data || []).reduce(function (sum, it) {
-        const qty = (it.sent_qty && it.sent_qty > 0) ? it.sent_qty : (it.ordered_qty || 0)
-        return sum + qty * (it.cf_commission_rate || 0)
-      }, 0)
-      setSuggested(total)
-      setAmount(String(total))
-      const lines = (data || []).filter(function (it) { return (it.cf_commission_rate || 0) > 0 })
-        .map(function (it) { return (it.skus?.courses?.group_name || 'Kit') + ' — ' + (it.skus?.level_name || '') })
-      setReason('School kit commission · ' + (order.order_ref || '') + (lines.length ? ' · ' + lines.join(', ') : ''))
+      const res = await computeOrderCommission(order)
+      setParts(res.parts)
+      setSuggested(res.total)
+      setAmount(String(res.total))
+      const names = res.parts.filter(function (x) { return x.amount > 0 }).map(function (x) { return x.label })
+      const head = order.kind === 'service' ? 'Instructor services commission' : 'School kit commission'
+      setReason(head + ' \· ' + (order.order_ref || '') + (names.length ? ' \· ' + names.join(', ') : ''))
       setLoading(false)
     }
     load()
@@ -1197,9 +1313,14 @@ function RaiseCreditNoteModal({ order, currentUser, onClose, onSaved }) {
           {loading ? <div className="muted">Calculating commission…</div> : (
             <>
               <p className="hint" style={{ marginBottom: 10 }}>
-                System-suggested commission: <strong>₹{fmtAmt(suggested)}</strong> (based on sent quantities × the agreed per-kit cut).
+                System-suggested commission: <strong>₹{fmtAmt(suggested)}</strong> (from the CF share locked in when this invoice was issued).
                 Adjust below if needed before raising.
               </p>
+              {parts.length > 0 && (
+                <div style={{ font: '500 11px var(--mono)', color: 'var(--text3)', marginBottom: 10, lineHeight: 1.6 }}>
+                  {parts.map(function (x, k) { return <div key={k}>{x.label} — {x.qty} × ₹{fmtAmt(x.share)} = ₹{fmtAmt(x.amount)}</div> })}
+                </div>
+              )}
               <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
                 Amount
                 <input type="number" min={0} value={amount} onChange={function (e) { setAmount(e.target.value) }}
@@ -1314,10 +1435,10 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
 
   useEffect(function () {
     if (!isSchoolOrder) return
-    sb.from('school_sku_rates').select('sku_id, rate, cf_cut').eq('franchisee_id', order.bill_to_franchisee_id)
+    sb.from('school_sku_rates').select('sku_id, rate').eq('franchisee_id', order.bill_to_franchisee_id)
       .then(function (res) {
         const m = {}
-        ;(res.data || []).forEach(function (r) { m[r.sku_id] = { rate: r.rate, cf_cut: r.cf_cut } })
+        ;(res.data || []).forEach(function (r) { m[r.sku_id] = { rate: r.rate } })
         setSchoolRates(m)
       })
   }, [isSchoolOrder, order.bill_to_franchisee_id])
@@ -1383,7 +1504,7 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
         return {
           ...it, sku_id: id, item_id: null, skus: sku || null, inventory_items: null,
           rate: schoolRate ? schoolRate.rate : (sku ? rateForSku(sku, tier) : 0),
-          cf_commission_rate: schoolRate ? schoolRate.cf_cut : null,
+          cf_commission_rate: null,
           ordered_qty: it.ordered_qty || 1, excluded_kit_items: [],
         }
       })
@@ -1779,11 +1900,11 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
   useEffect(function () {
     if (!schoolId) { setSchoolRates({}); return }
     let cancelled = false
-    sb.from('school_sku_rates').select('sku_id, rate, cf_cut').eq('franchisee_id', schoolId)
+    sb.from('school_sku_rates').select('sku_id, rate').eq('franchisee_id', schoolId)
       .then(function (res) {
         if (cancelled) return
         const m = {}
-        ;(res.data || []).forEach(function (r) { m[r.sku_id] = { rate: r.rate, cf_cut: r.cf_cut } })
+        ;(res.data || []).forEach(function (r) { m[r.sku_id] = { rate: r.rate } })
         setSchoolRates(m)
       })
     return function () { cancelled = true }
@@ -1907,7 +2028,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
             const sku = allSkus.find(function (s) { return s.id === id })
             if (schoolId && schoolRates[id]) {
               updated.rate = schoolRates[id].rate
-              updated.cf_commission_rate = schoolRates[id].cf_cut
+              updated.cf_commission_rate = null
             } else {
               updated.rate = rateForSku(sku, placerTier)
               updated.cf_commission_rate = null
@@ -1955,7 +2076,7 @@ function NewOrderModal({ currentFranchiseeId, currentRole, isAdmin, onClose, onS
           // tick (it's fetched by the schoolId effect) — the effect's rerender
           // will settle it; here just clear commission if this SKU has no
           // agreed school rate at all.
-          return r ? { ...line, rate: r.rate, cf_commission_rate: r.cf_cut } : line
+          return r ? { ...line, rate: r.rate, cf_commission_rate: null } : line
         }
         const sku = allSkus.find(function (s) { return s.id === line.sku_id })
         return { ...line, rate: rateForSku(sku, placerTier), cf_commission_rate: null }
@@ -2245,6 +2366,8 @@ export default function OrdersPage() {
   const [dispatchOrder, setDispatchOrder] = useState(null)
   const [dispatchViewOrder, setDispatchViewOrder] = useState(null)
   const [editInvoiceOrder, setEditInvoiceOrder] = useState(null)
+  const [serviceEditOrder, setServiceEditOrder] = useState(null)
+  const [showGenService, setShowGenService] = useState(false)
   const [showNewOrder, setShowNewOrder] = useState(false)
   const [invoiceViewOrder, setInvoiceViewOrder] = useState(null)
   const [invoiceConfirm, setInvoiceConfirm] = useState(null)
@@ -2388,7 +2511,7 @@ export default function OrdersPage() {
       try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] invoice mirror failed:', e.message) }
       try {
         warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
-        await createPendingStockReturns(order)
+        await createPendingStockReturns(order); await snapshotOrderCommission(order)
         await loadReturns()
       } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
@@ -2548,7 +2671,7 @@ export default function OrdersPage() {
       try { await mirrorOrderToTransactions(order.id) } catch (e) { console.warn('[Phase 3 dual-write] convert-proforma mirror failed:', e.message) }
       try {
         warnIfStockNegative(await deductOrderStockIfNeeded({ ...order, invoice_no: invoiceNo }, 'Invoice'))
-        await createPendingStockReturns(order)
+        await createPendingStockReturns(order); await snapshotOrderCommission(order)
         await loadReturns()
       } catch (e) { console.warn('Stock deduction failed:', e.message) }
       try {
@@ -2808,18 +2931,18 @@ export default function OrdersPage() {
       // Edit and Dispatch are HO-only actions — a franchisee's own side of
       // this menu is just "see the paperwork" (PDF, Receipts), never edit
       // pricing or mark something dispatched.
-      isAdmin && can('orders.edit') && canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { setEditInvoiceOrder(order) } },
+      isAdmin && can('orders.edit') && canEditOrder && { key: 'edit', label: 'Edit', onClick: function () { if (order.kind === 'service') setServiceEditOrder(order); else setEditInvoiceOrder(order) } },
       canPdfOrder && { key: 'pdf', label: 'View Invoice', onClick: function () { setInvoiceViewOrder(order) } },
       // A proforma order with no real invoice yet can't dispatch — payment
       // has to be verified first (which converts it to a real invoice).
-      isAdmin && can('orders.dispatch') && canDispatch && {
+      isAdmin && can('orders.dispatch') && canDispatch && order.kind !== 'service' && {
         key: 'dispatch', label: order.dispatched_at ? 'Dispatch (edit)' : 'Dispatch',
         onClick: function () { setDispatchOrder(order) },
       },
       // Read-only counterpart to "Dispatch (edit)" for everyone who isn't
       // HO — same Receipts/Record-Payment split: admin gets the editable
       // action, a franchisee/school just gets to see what was shipped.
-      !isAdmin && order.dispatched_at && dispInfo && {
+      !isAdmin && order.kind !== 'service' && order.dispatched_at && dispInfo && {
         key: 'dispatch_view', label: 'Dispatch Details',
         onClick: function () { setDispatchViewOrder(order) },
       },
@@ -2870,6 +2993,7 @@ export default function OrdersPage() {
         <div className="tb-r">
           <input className="search tb-search" placeholder="Search by order ref or franchisee…" readOnly />
           <button className="btn btn-s">Export CSV</button>
+          {isAdmin && can('orders.edit') && <button className="btn btn-s" onClick={function () { setShowGenService(true) }} title="Create this month's CI invoices for Full-Service schools">Generate service invoices</button>}
           {can('orders.edit') && <button className="btn btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>}
         </div>
       </header>
@@ -3039,7 +3163,7 @@ export default function OrdersPage() {
                 {filtered.map(function (order) {
                   return (
                     <tr key={order.id}>
-                      <td className="mono" style={{ color: 'var(--purple)', fontWeight: 600 }}>{order.order_ref}</td>
+                      <td className="mono" style={{ color: 'var(--purple)', fontWeight: 600 }}>{order.order_ref}{order.kind === 'service' && <span style={{ marginLeft: 6, font: '700 9px var(--mono)', background: '#ede9fe', color: 'var(--purple)', borderRadius: 4, padding: '1px 5px' }}>SERVICE</span>}</td>
                       <td className="mono hide-mobile">
                         {order.invoice_no || (order.proforma_no
                           ? <span style={{ color: 'var(--amber, #B45309)' }}>{order.proforma_no}</span>
@@ -3212,6 +3336,21 @@ export default function OrdersPage() {
           currentUser={currentUser}
           onClose={function () { setRaiseCnOrder(null) }}
           onSaved={async function () { setRaiseCnOrder(null); await loadPendingCns() }}
+        />
+      )}
+
+      {serviceEditOrder && (
+        <ServiceInvoiceEditModal
+          order={serviceEditOrder}
+          onClose={function () { setServiceEditOrder(null) }}
+          onSaved={async function () { setServiceEditOrder(null); await loadOrders() }}
+        />
+      )}
+
+      {showGenService && (
+        <GenerateServiceInvoicesModal
+          onClose={function () { setShowGenService(false) }}
+          onDone={async function () { setShowGenService(false); await loadOrders() }}
         />
       )}
 

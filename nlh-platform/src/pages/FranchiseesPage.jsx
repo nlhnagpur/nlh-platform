@@ -15,6 +15,9 @@ import { StudentDetailModal, daysLeftInMonth } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
 import { loadLatestAgreement, generateAgreement, generateSchoolAgreement } from '../utils/franchiseeAgreement'
 import { buildAgreementPdfDataUrl, downloadAgreementPdf, openAgreementPdf } from '../utils/agreementPdf'
+import SchoolCiBilling from '../components/SchoolCiBilling'
+import CfCommissionTab from '../components/CfCommissionTab'
+import { groupServiceLines, monthFirst } from '../utils/serviceBilling'
 
 // ── Location data ──────────────────────────────────────────────────────────────
 
@@ -366,6 +369,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   const admin = isAdminRole(currentRole) && can('franchisees.edit')
   const showFin = can('franchisees.financials')
   const showContact = can('franchisees.contact')
+  const canBilling = isAdminRole(currentRole) && can('accounting.edit')
 
   const [tab, setTab] = useState('info')
   const [form, setForm] = useState({
@@ -693,6 +697,17 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
     setAgreementBusy(false)
   }
 
+  async function fillChargesFromCis() {
+    const { data } = await sb.from('school_ci_assignments').select('*').eq('school_id', franchisee.id)
+    const groups = groupServiceLines(data || [], monthFirst(new Date()))
+    if (!groups.length) { showToast('No CIs appointed yet \u2014 add them in the CIs & Billing tab first', 'warn'); return }
+    setSchoolAg(function (sa) {
+      return { ...sa, charges: groups.map(function (g) {
+        return { course: g.program, level: (g.level || '') + (g.qty > 1 ? (g.level ? ' ' : '') + '(' + g.qty + ' CIs)' : ''), charge: String(g.rate), frequency: 'Monthly' }
+      }) }
+    })
+  }
+
   function viewAgreement() {
     if (!agreement) return
     if (agreement.kind === 'school') { openAgreementPdf(Object.assign({}, franchisee, form), agreement); return }
@@ -919,12 +934,12 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               // A school doesn't sign a Unit Franchise Agreement — it signs
               // the School Program Partnership Agreement (same tab, its own
               // generator and terms).
-              ? ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
+              ? ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement'].concat(canBilling ? ['cis'] : [])
               : ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
-                  .concat(franchisee.tier === 'CF' ? ['schools'] : [])
-            ).filter(t => showFin || !['orders', 'ledger', 'agreement'].includes(t)).map(t => (
+                  .concat(franchisee.tier === 'CF' ? ['schools'].concat(canBilling ? ['commission'] : []) : [])
+            ).filter(t => showFin || !['orders', 'ledger', 'agreement'].includes(t)).filter(t => !(t === 'agreement' && franchisee.tier === 'SCHOOL' && !admin)).map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
-              {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t === 'schools' ? '🏫 Schools' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t === 'schools' ? '🏫 Schools' : t === 'cis' ? '👩‍🏫 CIs & Billing' : t === 'commission' ? '🤝 Commission' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -1608,7 +1623,8 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                           </div>
                         )
                       })}
-                      <button type="button" className="btn-s" onClick={function () { setSchoolAg(function (s) { return { ...s, charges: [...s.charges, { course: '', level: '', charge: '', frequency: 'Monthly' }] } }) }}>+ Add charge</button>
+                      <button type="button" className="btn-s" onClick={function () { setSchoolAg(function (s) { return { ...s, charges: [...s.charges, { course: '', level: '', charge: '', frequency: 'Monthly' }] } }) }}>+ Add charge</button>{' '}
+                      <button type="button" className="btn-s" onClick={fillChargesFromCis}>Fill from appointed CIs</button>
                     </div>
                   )}
                 </div>
@@ -1666,6 +1682,14 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
                 </p>
               )}
             </div>
+          )}
+
+          {tab === 'cis' && canBilling && (
+            <SchoolCiBilling school={Object.assign({}, franchisee, { registered_courses: registeredCourses })} currentUser={currentUser} canEdit={canBilling} />
+          )}
+
+          {tab === 'commission' && canBilling && (
+            <CfCommissionTab cf={franchisee} currentUser={currentUser} canEdit={canBilling} />
           )}
 
           {tab === 'schools' && (
@@ -2149,7 +2173,7 @@ function SchoolRatesModal({ school, admin, onClose }) {
       ])
       setSkus(skuRes.data || [])
       const m = {}
-      ;(rateRes.data || []).forEach(function (r) { m[r.sku_id] = { rate: String(r.rate), cf_cut: String(r.cf_cut), _rowId: r.id } })
+      ;(rateRes.data || []).forEach(function (r) { m[r.sku_id] = { rate: String(r.rate), _rowId: r.id } })
       setRates(m)
       setLoading(false)
     }
@@ -2158,16 +2182,16 @@ function SchoolRatesModal({ school, admin, onClose }) {
 
   function setRate(skuId, field, val) {
     setRates(function (prev) {
-      return { ...prev, [skuId]: { ...(prev[skuId] || { rate: '', cf_cut: '' }), [field]: val } }
+      return { ...prev, [skuId]: { ...(prev[skuId] || { rate: '' }), [field]: val } }
     })
   }
 
   async function saveAll() {
     setSaving(true)
     const rows = Object.entries(rates)
-      .filter(function ([, v]) { return v.rate !== '' || v.cf_cut !== '' })
+      .filter(function ([, v]) { return v.rate !== '' })
       .map(function ([skuId, v]) {
-        return { franchisee_id: school.id, sku_id: skuId, rate: parseInt(v.rate, 10) || 0, cf_cut: parseInt(v.cf_cut, 10) || 0 }
+        return { franchisee_id: school.id, sku_id: skuId, rate: parseInt(v.rate, 10) || 0 }
       })
     const { error } = await sb.from('school_sku_rates').upsert(rows, { onConflict: 'franchisee_id,sku_id' })
     setSaving(false)
@@ -2187,30 +2211,25 @@ function SchoolRatesModal({ school, admin, onClose }) {
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal modal-lg" style={{ maxWidth: 640, display: 'flex', flexDirection: 'column', maxHeight: '86vh' }}>
         <ModalHeader flush title={'Kit Rates — ' + school.business_name}
-          subtitle={admin ? 'Price billed to the school, and this CF\'s commission, per kit' : 'View only — set by admin'}
+          subtitle={admin ? 'Price billed to the school, per kit' : 'View only — set by admin'}
           onClose={onClose} />
         <div style={{ padding: '4px 20px 16px', overflowY: 'auto' }}>
           {loading ? <div className="muted">Loading…</div> : (
             <div className="tbl-scroll">
               <table className="data-table">
                 <thead>
-                  <tr><th>Course / Level</th><th style={{ textAlign: 'right' }}>Rate to School</th><th style={{ textAlign: 'right' }}>CF Cut</th></tr>
+                  <tr><th>Course / Level</th><th style={{ textAlign: 'right' }}>Rate to School</th></tr>
                 </thead>
                 <tbody>
                   {Object.entries(grouped).map(function ([course, list]) {
                     return list.map(function (s, i) {
-                      const r = rates[s.id] || { rate: '', cf_cut: '' }
+                      const r = rates[s.id] || { rate: '' }
                       return (
                         <tr key={s.id}>
                           <td style={{ fontSize: 12 }}>{i === 0 && <span style={{ font: '700 10px var(--mono)', color: 'var(--purple)', display: 'block' }}>{course}</span>}{s.level_name}</td>
                           <td style={{ textAlign: 'right' }}>
                             <input type="number" min={0} value={r.rate} disabled={!admin}
                               onChange={function (e) { setRate(s.id, 'rate', e.target.value) }}
-                              style={{ width: 90, textAlign: 'right', fontSize: 12 }} placeholder="0" />
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <input type="number" min={0} value={r.cf_cut} disabled={!admin}
-                              onChange={function (e) { setRate(s.id, 'cf_cut', e.target.value) }}
                               style={{ width: 90, textAlign: 'right', fontSize: 12 }} placeholder="0" />
                           </td>
                         </tr>
@@ -2222,7 +2241,7 @@ function SchoolRatesModal({ school, admin, onClose }) {
             </div>
           )}
           <p className="hint" style={{ marginTop: 10 }}>
-            Only SKUs with a Rate to School set here will be orderable for this school. Leave both
+            Only SKUs with a Rate to School set here will be orderable for this school. Leave it
             blank for a kit this school isn't buying.
           </p>
         </div>

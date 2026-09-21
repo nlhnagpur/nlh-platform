@@ -503,7 +503,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
         {/* Same rule as the Orders list Actions menu — a franchisee/school
             just views and downloads their own paperwork, editing pricing
             is HO-only. */}
-        {isAdmin && can('orders.edit') && (
+        {isAdmin && can('orders.edit') && order.kind !== 'service' && (
           <button onClick={function(){setActiveTab('edit')}} style={tbBtn(activeTab==='edit','#D97706')}>✏ Edit</button>
         )}
         <button onClick={handleSendEmail} disabled={sending||!fr.email} style={{ ...tbBtn(false), background:fr.email?'#16A34A':'#9C9A92', color:'#fff', border:'none', opacity:sending?.7:1, cursor:fr.email?'pointer':'not-allowed' }}>
@@ -849,7 +849,7 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
               {items.map(function(item, i) {
                 const course = item.skus?.courses?.group_name||''
                 const level  = item.skus?.level_name||item.inventory_items?.name||item.sku_id||'—'
-                const name   = course?course+' — '+level:level
+                const name   = item.description ? item.description : (course?course+' — '+level:level)
                 const lineAmt = (item.rate||0)*(item.ordered_qty||0)
                 const sent    = item.sent_qty||0
                 return (
