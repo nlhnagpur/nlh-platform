@@ -914,7 +914,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
               ? ['info', 'courses', 'orders', 'students', 'ledger', 'cert']
               : ['info', 'courses', 'orders', 'students', 'ledger', 'cert', 'agreement']
                   .concat(franchisee.tier === 'CF' ? ['schools'] : [])
-            ).filter(t => showFin || !['orders', 'ledger', 'agreement', 'courses'].includes(t)).map(t => (
+            ).filter(t => showFin || !['orders', 'ledger', 'agreement'].includes(t)).map(t => (
             <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => loadTab(t)}>
               {t === 'cert' ? '📜 Certificate' : t === 'agreement' ? '📄 Agreement' : t === 'ledger' ? '💰 Accounts' : t === 'schools' ? '🏫 Schools' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -2191,18 +2191,28 @@ export default function FranchiseesPage() {
   const showContact = can('franchisees.contact')
   const FIN_EXPORT = ['gstin','payment_status','enrollment_fee','fee_paid','renewal_fee','enrollment_invoice_no','contract_start','contract_end','valid_till']
   const CONTACT_EXPORT = ['email','phone','date_of_birth']
-  const visibleFields = EXPORT_FIELDS.filter(function (f) { return (showFin || !FIN_EXPORT.includes(f.key)) && (showContact || !CONTACT_EXPORT.includes(f.key)) })
 
   const [franchisees, setFranchisees] = useState([])
   const [allCourses, setAllCourses] = useState([])
   const [loading, setLoading]       = useState(true)
+
+  // Programs (course groups) a franchisee is registered for, e.g. ["ACEM Abacus", "Chess"]
+  function programsOf(f) {
+    const ids = f.registered_courses || []
+    return Array.from(new Set(
+      allCourses.filter(function (c) { return ids.includes(c.id) }).map(function (c) { return c.group_name || c.name }).filter(Boolean)
+    )).sort()
+  }
+  const visibleFields = EXPORT_FIELDS
+    .concat([{ key: 'programs', label: 'Programs (names)', get: function (r) { return programsOf(r).join('; ') }, checkedByDefault: true }])
+    .filter(function (f) { return (showFin || !FIN_EXPORT.includes(f.key)) && (showContact || !CONTACT_EXPORT.includes(f.key)) })
   const [search, setSearch]         = useState('')
   const [exporting, setExporting]   = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [exportFieldKeys, setExportFieldKeys] = useState(function () {
-    return EXPORT_FIELDS.filter(function (f) { return f.checkedByDefault }).map(function (f) { return f.key })
+    return EXPORT_FIELDS.filter(function (f) { return f.checkedByDefault }).map(function (f) { return f.key }).concat(['programs'])
   })
   const [exportTiers, setExportTiers] = useState(['NLH', 'SMF', 'CF', 'UF'])
   const [pageTab, setPageTab] = useState('list')   // 'list' | 'invoices'
@@ -2601,6 +2611,11 @@ export default function FranchiseesPage() {
                             {(f.area || f.state) && (
                               <div className="fr-row-loc">
                                 {[f.area, f.tier === 'SMF' ? f.state : null].filter(Boolean).join(' · ')}
+                              </div>
+                            )}
+                            {programsOf(f).length > 0 && (
+                              <div className="fr-row-loc" style={{ color: 'var(--purple)' }}>
+                                {programsOf(f).join(' · ')}
                               </div>
                             )}
                           </div>

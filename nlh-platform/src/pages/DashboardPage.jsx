@@ -870,9 +870,16 @@ function OrdersPanel({ orders, isAdmin, onNavigate }) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
+const NONE = Promise.resolve({ count: 0, data: [] })
+
 export default function DashboardPage({ onNavigate }) {
-  const { currentRole, currentFranchiseeId, currentUser } = useAuth()
+  const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
   const isAdmin = isAdminRole(currentRole)
+  // Staff see only the cards/sections their ticked permissions cover; every
+  // other role gets true from can(), so nothing changes for them.
+  const vF = can('franchisees.view'), vO = can('orders.view'), vS = can('students.view')
+  const vM = can('messages.view'), vC = can('courses.view'), vI = can('instructors.view')
+  const showContact = can('franchisees.contact'), showFin = can('franchisees.financials')
 
   const [loading, setLoading] = useState(true)
   const [franchiseeCount, setFranchiseeCount] = useState(0)
@@ -922,11 +929,11 @@ export default function DashboardPage({ onNavigate }) {
 
   async function loadAdminData() {
     const [fr, frAll, st, orPend, orAll] = await Promise.all([
-      sb.from('franchisees').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-      sb.from('franchisees').select('tier').eq('status', 'active'),
-      sb.from('students').select('id', { count: 'exact', head: true }),
-      sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, placer:franchisees!orders_placer_id_fkey(business_name, city, tier)'),
+      vF ? sb.from('franchisees').select('id', { count: 'exact', head: true }).eq('status', 'active') : NONE,
+      vF ? sb.from('franchisees').select('tier').eq('status', 'active') : NONE,
+      vS ? sb.from('students').select('id', { count: 'exact', head: true }) : NONE,
+      vO ? sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending') : NONE,
+      vO ? sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, placer:franchisees!orders_placer_id_fkey(business_name, city, tier)') : NONE,
     ])
     setFranchiseeCount(fr.count || 0)
     setStudentCount(st.count || 0)
@@ -1011,10 +1018,10 @@ export default function DashboardPage({ onNavigate }) {
     setSearchLoading(true)
     const timer = setTimeout(async function() {
       const [fr, st, or_, ins] = await Promise.all([
-        sb.from('franchisees').select('id,business_name,owner_name,city,tier').or('business_name.ilike.' + like + ',owner_name.ilike.' + like + ',city.ilike.' + like).limit(4),
-        sb.from('students').select('id,full_name,parent_name,phone').or('full_name.ilike.' + like + ',parent_name.ilike.' + like + ',phone.ilike.' + like).limit(4),
-        sb.from('orders').select('id,invoice_no,status,grand_total').ilike('invoice_no', like).limit(4),
-        sb.from('instructors').select('id,full_name,phone').or('full_name.ilike.' + like + ',phone.ilike.' + like).limit(4),
+        vF ? sb.from('franchisees').select('id,business_name,owner_name,city,tier').or('business_name.ilike.' + like + ',owner_name.ilike.' + like + ',city.ilike.' + like).limit(4) : NONE,
+        vS ? sb.from('students').select('id,full_name,parent_name,phone').or('full_name.ilike.' + like + ',parent_name.ilike.' + like + ',phone.ilike.' + like).limit(4) : NONE,
+        vO ? sb.from('orders').select('id,invoice_no,status,grand_total').ilike('invoice_no', like).limit(4) : NONE,
+        vI ? sb.from('instructors').select('id,full_name,phone').or('full_name.ilike.' + like + ',phone.ilike.' + like).limit(4) : NONE,
       ])
       setSearchRes({
         franchisees: fr.data  || [],
@@ -1085,9 +1092,14 @@ export default function DashboardPage({ onNavigate }) {
         const { data } = await sb.from('franchisees')
           .select('business_name,owner_name,tier,email,phone,area,city,state,country,pin_code,status,enrollment_fee,fee_paid')
           .order('tier').order('city').order('business_name')
-        headers  = ['Business Name','Owner Name','Tier','Email','Phone','Area','City','State','Country','PIN Code','Status','Enrollment Fee','Fee Paid']
+        const cols = [
+          ['Business Name', 'business_name'], ['Owner Name', 'owner_name'], ['Tier', 'tier'],
+        ].concat(showContact ? [['Email', 'email'], ['Phone', 'phone']] : []).concat([
+          ['Area', 'area'], ['City', 'city'], ['State', 'state'], ['Country', 'country'], ['PIN Code', 'pin_code'], ['Status', 'status'],
+        ]).concat(showFin ? [['Enrollment Fee', 'enrollment_fee'], ['Fee Paid', 'fee_paid']] : [])
+        headers  = cols.map(function(c) { return c[0] })
         rows     = (data || []).map(function(r) {
-          return [r.business_name, r.owner_name, r.tier, r.email, r.phone, r.area, r.city, r.state, r.country, r.pin_code, r.status, r.enrollment_fee || 0, r.fee_paid || 0]
+          return cols.map(function(c) { return (c[1] === 'enrollment_fee' || c[1] === 'fee_paid') ? (r[c[1]] || 0) : r[c[1]] })
         })
         filename = 'nlh-franchisees-' + date + '.csv'
 
@@ -1241,7 +1253,7 @@ export default function DashboardPage({ onNavigate }) {
           </div>
 
           {/* ── export dropdown ── */}
-          <div ref={exportRef} style={{ position: 'relative' }}>
+          {(vF || vS || vO || vI) && <div ref={exportRef} style={{ position: 'relative' }}>
             <button className="btn" onClick={function() {
               if (!showExportMenu && exportRef.current) {
                 const r = exportRef.current.getBoundingClientRect()
@@ -1260,11 +1272,11 @@ export default function DashboardPage({ onNavigate }) {
                 padding: 6,
               }}>
                 {[
-                  { type: 'franchisees', icon: '🏢', label: 'Franchisee list' },
-                  { type: 'students',    icon: '🎓', label: 'Student list' },
-                  { type: 'orders',      icon: '📦', label: 'Order list' },
-                  { type: 'instructors', icon: '👩‍🏫', label: 'Instructor list' },
-                ].map(function(item) {
+                  { type: 'franchisees', icon: '🏢', label: 'Franchisee list', ok: vF },
+                  { type: 'students',    icon: '🎓', label: 'Student list', ok: vS },
+                  { type: 'orders',      icon: '📦', label: 'Order list', ok: vO },
+                  { type: 'instructors', icon: '👩‍🏫', label: 'Instructor list', ok: vI },
+                ].filter(function(i) { return i.ok }).map(function(item) {
                   return (
                     <button key={item.type}
                       onClick={function() { exportCSV(item.type) }}
@@ -1281,9 +1293,9 @@ export default function DashboardPage({ onNavigate }) {
               </div>,
               document.body
             )}
-          </div>
+          </div>}
 
-          <button className="btn-p" onClick={function() { onNavigate && onNavigate('orders') }}>+ New order</button>
+          {vO && can('orders.edit') && <button className="btn-p" onClick={function() { onNavigate && onNavigate('orders') }}>+ New order</button>}
         </div>
       </div>
 
@@ -1300,16 +1312,16 @@ export default function DashboardPage({ onNavigate }) {
             <p className="hero-sub">
               Here is what is happening across your network today.{' '}
               {isAdmin
-                ? <><b>16 programs</b> running, <b>{franchiseeCount}</b> franchisees active, and <b>{studentCount.toLocaleString('en-IN')}</b> students enrolled.</>
+                ? <>{vC && <><b>16 programs</b> running{(vF || vS) ? ', ' : '.'}</>}{vF && <><b>{franchiseeCount}</b> franchisees active{vS ? ', and ' : '.'}</>}{vS && <><b>{studentCount.toLocaleString('en-IN')}</b> students enrolled.</>}</>
                 : <>Your centre is active and growing.</>
               }
             </p>
             <div className="hero-chips">
               {isAdmin ? (
                 <>
-                  <span className="hero-chip"><span className="em">🎓</span><b>{studentCount.toLocaleString('en-IN')}</b>&nbsp;students</span>
-                  <span className="hero-chip"><span className="em">📦</span><b>{pendingCount}</b>&nbsp;pending orders</span>
-                  <span className="hero-chip"><span className="em">🏢</span><b>{franchiseeCount}</b>&nbsp;franchisees</span>
+                  {vS && <span className="hero-chip"><span className="em">🎓</span><b>{studentCount.toLocaleString('en-IN')}</b>&nbsp;students</span>}
+                  {vO && <span className="hero-chip"><span className="em">📦</span><b>{pendingCount}</b>&nbsp;pending orders</span>}
+                  {vF && <span className="hero-chip"><span className="em">🏢</span><b>{franchiseeCount}</b>&nbsp;franchisees</span>}
                 </>
               ) : (
                 <>
@@ -1349,10 +1361,10 @@ export default function DashboardPage({ onNavigate }) {
         </div>
 
         {/* ── KPI cards ── */}
-        <div className="kpi">
+        <div className="kpi" style={isAdmin ? { gridTemplateColumns: 'repeat(' + Math.max(1, (vF ? 1 : 0) + (vS ? 1 : 0) + (vO ? 2 : 0)) + ', minmax(0, 1fr))', display: (vF || vS || vO) ? undefined : 'none' } : undefined}>
           {isAdmin ? (
             <>
-              <div className="kc kc-1" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('franchisees') }}>
+              {vF && <div className="kc kc-1" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('franchisees') }}>
                 <div className="kc-top"><div className="kc-ic">🏢</div><div className="kc-arr">↗</div></div>
                 <div className="kc-num">{franchiseeCount}</div>
                 <div className="kc-lbl">Active franchisees</div>
@@ -1360,25 +1372,25 @@ export default function DashboardPage({ onNavigate }) {
                   <span className="delta">SMF {tierBreakdown.SMF}</span>
                   CF {tierBreakdown.CF} · UF {tierBreakdown.UF}
                 </div>
-              </div>
-              <div className="kc kc-2" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('students') }}>
+              </div>}
+              {vS && <div className="kc kc-2" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('students') }}>
                 <div className="kc-top"><div className="kc-ic">🎓</div><div className="kc-arr">↗</div></div>
                 <div className="kc-num">{studentCount.toLocaleString('en-IN')}</div>
                 <div className="kc-lbl">Total students</div>
                 <div className="kc-sub"><span className="delta">all centres</span>across network</div>
-              </div>
-              <div className="kc kc-3" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('orders') }}>
+              </div>}
+              {vO && <div className="kc kc-3" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('orders') }}>
                 <div className="kc-top"><div className="kc-ic">📦</div><div className="kc-arr">↗</div></div>
                 <div className="kc-num">{pendingCount}</div>
                 <div className="kc-lbl">Pending orders</div>
                 <div className="kc-sub"><span className="delta">awaiting</span>invoice</div>
-              </div>
-              <div className="kc kc-4" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('orders') }}>
+              </div>}
+              {vO && <div className="kc kc-4" style={{ cursor: 'pointer' }} onClick={function() { onNavigate && onNavigate('orders') }}>
                 <div className="kc-top"><div className="kc-ic">💰</div><div className="kc-arr">↗</div></div>
                 <div className="kc-num">{'₹' + fmtAmt(outstanding)}</div>
                 <div className="kc-lbl">Outstanding</div>
                 <div className="kc-sub"><span className="delta">unpaid</span>invoiced orders</div>
-              </div>
+              </div>}
             </>
           ) : (
             <>
@@ -1411,16 +1423,16 @@ export default function DashboardPage({ onNavigate }) {
         </div>
 
         {/* ── prominent chat surface (only shows once chat is in use) ── */}
-        <DashboardMessagesCard onNavigate={onNavigate} isAdmin={isAdmin} franchiseeId={currentFranchiseeId} />
+        {vM && <DashboardMessagesCard onNavigate={onNavigate} isAdmin={isAdmin} franchiseeId={currentFranchiseeId} />}
 
         {/* ── inline dashboard tabs ── */}
         <div className="status-pills" style={{ marginTop: 18, marginBottom: 4 }}>
           {[
-            { id: 'overview',  label: '🏠 Overview' },
-            { id: 'students',  label: '👥 Students' },
-            { id: 'orders',    label: '📦 Orders' },
-            { id: 'followups', label: '🔔 Follow-ups' },
-          ].map(function (t) {
+            { id: 'overview',  label: '🏠 Overview', ok: true },
+            { id: 'students',  label: '👥 Students', ok: vS },
+            { id: 'orders',    label: '📦 Orders', ok: vO },
+            { id: 'followups', label: '🔔 Follow-ups', ok: vS },
+          ].filter(function (t) { return t.ok }).map(function (t) {
             return (
               <button key={t.id} className={'sp' + (dashTab === t.id ? ' on on-pend' : '')}
                 onClick={function () { setDashTab(t.id) }}>{t.label}</button>
@@ -1429,18 +1441,18 @@ export default function DashboardPage({ onNavigate }) {
         </div>
 
         {/* ── Students tab ── */}
-        {dashTab === 'students' && <StudentsPanel onNavigate={onNavigate} />}
+        {dashTab === 'students' && vS && <StudentsPanel onNavigate={onNavigate} />}
 
         {/* ── Orders tab ── */}
-        {dashTab === 'orders' && <OrdersPanel orders={displayOrders} isAdmin={isAdmin} onNavigate={onNavigate} />}
+        {dashTab === 'orders' && vO && <OrdersPanel orders={displayOrders} isAdmin={isAdmin} onNavigate={onNavigate} />}
 
         {/* ── Follow-ups tab ── */}
-        {dashTab === 'followups' && <FollowUpsCard onNavigate={onNavigate} />}
+        {dashTab === 'followups' && vS && <FollowUpsCard onNavigate={onNavigate} />}
 
         {/* ── Overview tab (default dashboard) ── */}
         {dashTab === 'overview' && (<>
         {/* ── programs strip ── */}
-        <div className="programs-card">
+        {vC && <div className="programs-card">
           <div className="pc-head">
             <div>
               <div className="pc-title">Programs at a glance</div>
@@ -1459,13 +1471,13 @@ export default function DashboardPage({ onNavigate }) {
               )
             })}
           </div>
-        </div>
+        </div>}
 
         {/* ── chart + donut row ── */}
-        <div className="row">
-          <OrdersChart chartData={chartData} />
+        {(vO || vF) && <div className="row">
+          {vO && <OrdersChart chartData={chartData} />}
           {isAdmin ? (
-            <TierDonut tierBreakdown={tierBreakdown} total={franchiseeCount} />
+            vF && <TierDonut tierBreakdown={tierBreakdown} total={franchiseeCount} />
           ) : (
             <div className="card-new tier-card">
               <div className="card-h" style={{ padding: 0, border: 'none', marginBottom: 12 }}>
@@ -1496,10 +1508,10 @@ export default function DashboardPage({ onNavigate }) {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* ── orders table + activity feed ── */}
-        <div className="row">
+        {vO && <div className="row">
 
           {/* recent orders table */}
           <div className="card-new">
@@ -1574,10 +1586,10 @@ export default function DashboardPage({ onNavigate }) {
             ? <ActivityFeed orders={displayOrders} isAdmin={isAdmin} />
             : <QuickActions onNavigate={onNavigate} currentRole={currentRole} />
           }
-        </div>
+        </div>}
 
         {/* ── top franchisees (full-width, admin only) ── */}
-        {isAdmin && topFranchisees.length > 0 && (
+        {isAdmin && vO && vF && topFranchisees.length > 0 && (
           <TopFranchiseesCard topFranchisees={topFranchisees} onNavigate={onNavigate} />
         )}
         </>)}
