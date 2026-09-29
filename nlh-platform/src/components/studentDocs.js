@@ -435,6 +435,50 @@ ${receiptTotals([
   }))
 }
 
+// ── Payment Receipt for ONE payment split across several invoices ─────────────
+// Same document, one line per invoice instead of one line per payment — the
+// receipt_no is shared across every order_payments row this payment created
+// (see next_order_receipt_no / RecordMultiPaymentModal), so it's one real
+// receipt, not several with the same money counted more than once.
+// rows: [{ order, payment }] — every {order, payment} pair the split touched,
+// all against the SAME franchisee (bill_to_fr/placer taken from the first row).
+export function printCombinedOrderReceipt(rows, ctx) {
+  const c = ctx || {}
+  const first = rows[0]
+  const fr = first.order.bill_to_fr || first.order.placer || {}
+  const totalAmount = rows.reduce(function (s, r) { return s + (r.payment.amount || 0) }, 0)
+
+  const lines = rows.map(function (r, i) {
+    const against = r.order.invoice_no || r.order.order_ref || ''
+    const bal = Math.max(0, (r.order.grand_total || 0) - (r.balanceAfter != null ? (r.order.grand_total || 0) - r.balanceAfter : (r.order.amount_paid || 0)))
+    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(against || 'Invoice')}</div>${
+      r.balanceAfter != null ? `<div class="kit"><span class="k1">Balance after:</span><span class="k2">${r.balanceAfter > 0 ? '&#8377;' + fmtAmt(r.balanceAfter) : 'Cleared'}</span></div>` : ''
+    }</div><div class="amt r">&#8377;${fmtAmt(r.payment.amount || 0)}</div></div>`
+  }).join('')
+
+  const body = `
+    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — payment against invoice</div><div class="r">Amount (Rs)</div></div>${lines}</div>
+${receiptTotals([], totalAmount)}`
+
+  return emit(ctx, shell({
+    title: 'PAYMENT RECEIPT', sub: 'Official Receipt · ' + rows.length + ' invoices', size: 'A5',
+    meta: [
+      { l: 'Receipt no.', v: first.payment.receipt_no || '-' },
+      { l: 'Date', v: fmtLong(first.payment.paid_on || first.payment.paid_at || new Date()) },
+      { l: 'Mode', v: first.payment.mode ? String(first.payment.mode).replace(/_/g, ' ') : '-', sans: true },
+      { l: 'Invoices', v: String(rows.length) },
+    ],
+    party: partyCards({
+      badge: fr.tier || 'Franchisee',
+      name:  fr.business_name,
+      sub:   [fr.owner_name, fr.city].filter(Boolean).join(' · '),
+      phone: fr.phone,
+      email: fr.email,
+    }),
+    bodyHTML: body,
+  }))
+}
+
 // ── Payment Receipt for a franchisee's enrolment / franchise fee ──────────────
 // Same chrome again — only the bill-to party and the wording change.
 // franchisee: { business_name, owner_name, tier, city, phone, email, centre_code }

@@ -10,7 +10,7 @@ import { createPendingStockReturns, liveReturnsForLine, cancelStockReturn, creat
 import { generateServiceInvoices, snapshotOrderCommission, computeOrderCommission, monthFirst, monthLabel } from '../utils/serviceBilling'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
-import { printOrderReceipt, printFranchiseeReceipt } from '../components/studentDocs'
+import { printOrderReceipt, printFranchiseeReceipt, printCombinedOrderReceipt } from '../components/studentDocs'
 import { RecordFranchiseePaymentModal } from './FranchiseesPage'
 import SearchSelect from '../components/SearchSelect'
 import { captureDocPng } from '../utils/captureReceipt'
@@ -1369,6 +1369,130 @@ function RaiseCreditNoteEntryModal({ currentUser, onClose, onSaved }) {
   )
 }
 
+// ── EditReceiptModal — edit or cancel (delete) a Receipts-register entry.
+// Franchise fee: one franchisee_payments row. Invoice payment: one or more
+// order_payments rows sharing a receipt_no (a split payment) — mode/date/
+// reference are edited once and applied to every row in the group, each
+// row's own amount stays individually editable. Both tables recompute their
+// parent totals (fee_paid / order.amount_paid) via a DB trigger on
+// update/delete, so nothing here needs to touch that by hand.
+function EditReceiptModal({ rec, onClose, onSaved }) {
+  const isFee = rec.type === 'fee'
+  const rows = isFee ? [rec.raw] : rec.raw
+  const [mode, setMode] = useState(isFee ? (rows[0].payment_mode || 'UPI') : (rows[0].mode || 'upi'))
+  const [date, setDate] = useState(isFee ? (rows[0].payment_date || '').slice(0, 10) : (rows[0].paid_on || '').slice(0, 10))
+  const [reference, setReference] = useState(isFee ? (rows[0].reference_no || '') : (rows[0].reference || ''))
+  const [amounts, setAmounts] = useState(function () {
+    const o = {}
+    rows.forEach(function (r) { o[r.id] = String(r.amount) })
+    return o
+  })
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    let err = null
+    for (const r of rows) {
+      const amt = parseInt(amounts[r.id], 10) || 0
+      if (amt <= 0) { err = { message: 'Enter an amount greater than zero' }; break }
+      const payload = isFee
+        ? { amount: amt, payment_date: date || null, payment_mode: mode || null, reference_no: reference.trim() || null }
+        : { amount: amt, paid_on: date || null, mode: mode || null, reference: reference.trim() || null }
+      const table = isFee ? 'franchisee_payments' : 'order_payments'
+      const res = await sb.from(table).update(payload).eq('id', r.id)
+      if (res.error) { err = res.error; break }
+    }
+    setSaving(false)
+    if (err) { showToast('Update failed: ' + err.message, 'err'); return }
+    showToast('Receipt updated ✓')
+    onSaved()
+  }
+
+  async function del() {
+    setDeleting(true)
+    const table = isFee ? 'franchisee_payments' : 'order_payments'
+    const { error } = await sb.from(table).delete().in('id', rows.map(function (r) { return r.id }))
+    setDeleting(false)
+    if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
+    showToast((isFee ? 'Fee payment' : 'Receipt') + ' deleted — ' + (isFee ? 'fee paid' : 'invoice balance') + ' recalculated.')
+    onSaved()
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <ModalHeader flush title={'Edit ' + (rec.no || 'Receipt')} subtitle={rec.fr?.business_name || ''} onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {confirmDelete ? (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: 14 }}>
+              <div style={{ font: '600 12px var(--font)', color: '#991b1b', marginBottom: 10 }}>
+                Delete this {isFee ? 'fee payment' : (rows.length > 1 ? rows.length + '-invoice receipt' : 'receipt')} of ₹{fmtAmt(rows.reduce(function (s, r) { return s + (r.amount || 0) }, 0))}?
+                {' '}{isFee ? "The franchisee's fee-paid total" : "Each invoice's balance"} will be recalculated. This can't be undone.
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn-s" onClick={function () { setConfirmDelete(false) }} disabled={deleting}>Back</button>
+                <button className="btn-p" style={{ background: '#dc2626' }} onClick={del} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete'}</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Mode
+                  {isFee ? (
+                    <select className="inp" value={mode} onChange={function (e) { setMode(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
+                      <option>UPI</option><option>NEFT</option><option>RTGS</option><option>Cash</option><option>Cheque</option><option>DD</option>
+                    </select>
+                  ) : (
+                    <select className="inp" value={mode} onChange={function (e) { setMode(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
+                      <option value="upi">UPI</option><option value="neft">NEFT</option><option value="cash">Cash</option>
+                      <option value="cheque">Cheque</option><option value="razorpay">Razorpay</option><option value="other">Other</option>
+                    </select>
+                  )}
+                </label>
+                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Date
+                  <input className="inp" type="date" value={date} onChange={function (e) { setDate(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
+                </label>
+                <label style={{ flex: '1 1 150px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Reference
+                  <input className="inp" value={reference} onChange={function (e) { setReference(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
+                </label>
+              </div>
+
+              {rows.length > 1 ? (
+                <div>
+                  <div style={{ font: '700 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 6 }}>Amount per invoice</div>
+                  {rows.map(function (r) {
+                    return (
+                      <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                        <div style={{ flex: 1, fontSize: 12 }}>{r.order?.invoice_no || r.order?.order_ref || '—'}</div>
+                        <input type="number" min={1} value={amounts[r.id]} onChange={function (e) { setAmounts(function (a) { return { ...a, [r.id]: e.target.value } }) }} style={{ width: 110, textAlign: 'right' }} />
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Amount (₹)
+                  <input className="inp" type="number" min={1} value={amounts[rows[0].id]} onChange={function (e) { setAmounts({ [rows[0].id]: e.target.value }) }} style={{ marginTop: 6, width: '100%', fontWeight: 700, fontSize: 14 }} />
+                </label>
+              )}
+            </>
+          )}
+        </div>
+        {!confirmDelete && (
+          <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
+            <button className="btn-s" style={{ color: '#dc2626', borderColor: '#dc2626' }} onClick={function () { setConfirmDelete(true) }}>🗑 Delete</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-s" onClick={onClose} disabled={saving}>Cancel</button>
+              <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function RecordMultiPaymentModal({ onClose, onSaved }) {
   const { currentUser } = useAuth()
   const [franchisees, setFranchisees] = useState([])
@@ -1437,53 +1561,64 @@ function RecordMultiPaymentModal({ onClose, onSaved }) {
       if (r.amt > balanceOf(r.order)) { showToast('₹' + fmtAmt(r.amt) + ' on ' + (r.order.invoice_no || r.order.order_ref) + ' is more than its ₹' + fmtAmt(balanceOf(r.order)) + ' balance', 'warn'); return }
     }
     setSaving(true)
+    // One receipt number for the whole payment — every order_payments row
+    // this split creates shares it (same trick as a Sale Return voucher
+    // sharing one return_no across lines), so it's one real receipt, not
+    // several documents each claiming the full picture.
+    const { data: sharedReceiptNo, error: rnErr } = await sb.rpc('next_order_receipt_no')
+    if (rnErr) { showToast('Could not reserve a receipt number: ' + rnErr.message, 'err'); setSaving(false); return }
+
     let failed = null
-    const labels = []   // invoice numbers actually paid, for one combined WA message
-    let balanceAfterTotal = 0
+    const paidRows = []   // { order, payment, balanceAfter } for the combined receipt + WA send
     for (const r of rows) {
       const { data: inserted, error } = await sb.from('order_payments').insert({
         order_id: r.order.id, amount: r.amt, paid_on: paidOn || new Date().toISOString().slice(0, 10),
-        mode: mode, reference: ref.trim() || null,
-      }).select('receipt_no').single()
+        mode: mode, reference: ref.trim() || null, receipt_no: sharedReceiptNo,
+      }).select('*').single()
       if (error) { failed = error; break }
       try {
         await mirrorOrderPayment(r.order.id, {
           amount: r.amt, paid_on: paidOn || new Date().toISOString().slice(0, 10),
           mode: mode, reference: ref.trim() || null, note: 'Part of a ' + fmtAmt(totalNum) + ' payment split across ' + rows.length + ' invoices',
-          recorded_by: currentUser && currentUser.email, receipt_no: inserted && inserted.receipt_no,
+          recorded_by: currentUser && currentUser.email, receipt_no: sharedReceiptNo,
         })
       } catch (e) { console.warn('[Phase 3 dual-write] payment mirror failed:', e.message) }
 
-      let label = r.order.invoice_no || r.order.order_ref
+      let orderForReceipt = r.order
       // A proforma paid in full auto-converts to a real invoice via a DB
       // trigger — same follow-up as the single-invoice Record Payment.
       if (!r.order.invoice_no) {
         try {
           const { data: nowOrder } = await sb.from('orders').select('*').eq('id', r.order.id).single()
           if (nowOrder && nowOrder.invoice_no) {
-            label = nowOrder.invoice_no
+            orderForReceipt = Object.assign({}, r.order, nowOrder)
             warnIfStockNegative(await deductOrderStockIfNeeded(nowOrder, 'Invoice'))
             await createPendingStockReturns(nowOrder); await snapshotOrderCommission(nowOrder)
           }
         } catch (e) { console.warn('Stock deduction (auto-invoice) failed:', e.message) }
       }
-      labels.push(label)
-      balanceAfterTotal += Math.max(0, balanceOf(r.order) - r.amt)
+      paidRows.push({ order: orderForReceipt, payment: inserted, balanceAfter: Math.max(0, balanceOf(r.order) - r.amt) })
     }
     setSaving(false)
     if (failed) { showToast('Recorded some, then failed: ' + failed.message, 'err'); onSaved(); return }
-    showToast('₹' + fmtAmt(allocated) + ' recorded across ' + rows.length + ' invoice' + (rows.length === 1 ? '' : 's') + ' ✓')
+    showToast(sharedReceiptNo + ' — ₹' + fmtAmt(allocated) + ' recorded across ' + rows.length + ' invoice' + (rows.length === 1 ? '' : 's') + ' ✓')
 
     // One combined WhatsApp confirmation listing every invoice number it
     // covered, instead of sending a separate receipt per invoice.
     if (sendWA && waPhone) {
       const fr = franchisees.find(function (f) { return f.id === franchiseeId }) || {}
+      const balanceAfterTotal = paidRows.reduce(function (s, x) { return s + x.balanceAfter }, 0)
       try {
+        let imageUrl = null
+        try {
+          const html = printCombinedOrderReceipt(paidRows, { asHtml: true })
+          imageUrl = await captureDocPng(html, sharedReceiptNo)
+        } catch (capErr) { /* non-fatal — falls back to text */ }
         const res = await sendWAPaymentReceived(waPhone, {
           name: fr.business_name || 'Partner', amount: fmtAmt(allocated), balance: balanceAfterTotal,
-          receiptNo: labels.join(', '), date: fmtDate(paidOn),
+          receiptNo: sharedReceiptNo, date: fmtDate(paidOn), imageUrl: imageUrl,
         })
-        if (res && res.success) showToast('💬 Payment confirmation sent on WhatsApp for ' + labels.join(', ') + '.')
+        if (res && res.success) showToast('💬 Payment confirmation sent on WhatsApp — ' + sharedReceiptNo + '.')
         else showToast('WhatsApp failed: ' + ((res && res.error) || 'unknown error'), 'warn')
       } catch (e) { showToast('WhatsApp failed: ' + e.message, 'warn') }
     }
@@ -2967,6 +3102,8 @@ export default function OrdersPage() {
   const [showRaiseCn, setShowRaiseCn] = useState(false)
   const [records, setRecords] = useState([])
   const [recordsLoading, setRecordsLoading] = useState(false)
+  const [recWaConfirm, setRecWaConfirm] = useState(null)
+  const [editRecord, setEditRecord] = useState(null)
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -2998,10 +3135,26 @@ export default function OrdersPage() {
         .select('id, credit_note_no, amount, reason, status, requested_at, approved_at, franchisee_id, franchisees(' + FR + '), orders(order_ref, invoice_no)')
         .order('requested_at', { ascending: false }).limit(300),
     ])
+    // A payment split across several invoices shares one receipt_no across
+    // several order_payments rows — group those back into one register line
+    // (one receipt = one row here), the same way Sale Returns group by
+    // return_no. A row with no receipt_no (shouldn't happen, but a payment
+    // predating this feature might) stays on its own.
+    const payGroups = {}
+    const payOrder = []
+    ;(payRes.data || []).forEach(function (p) {
+      const key = p.receipt_no || p.id
+      if (!payGroups[key]) { payGroups[key] = []; payOrder.push(key) }
+      payGroups[key].push(p)
+    })
     const merged = []
-      .concat((payRes.data || []).map(function (p) {
-        const fr = p.order?.bill_to_fr || p.order?.placer || {}
-        return { type: 'payment', id: p.id, no: p.receipt_no, date: p.paid_on, amount: p.amount, fr: fr, forLabel: p.order?.invoice_no || p.order?.order_ref || '—', status: null, raw: p }
+      .concat(payOrder.map(function (key) {
+        const group = payGroups[key]
+        const p0 = group[0]
+        const fr = p0.order?.bill_to_fr || p0.order?.placer || {}
+        const total = group.reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+        const forLabel = group.map(function (x) { return x.order?.invoice_no || x.order?.order_ref }).filter(Boolean).join(', ') || '—'
+        return { type: 'payment', id: p0.id, no: p0.receipt_no, date: p0.paid_on, amount: total, fr: fr, forLabel: forLabel, status: null, raw: group }
       }))
       .concat((feeRes.data || []).map(function (f) {
         return { type: 'fee', id: f.id, no: f.receipt_no, date: f.payment_date, amount: f.amount, fr: f.franchisees || {}, forLabel: 'Franchise fee', status: null, raw: f }
@@ -3057,15 +3210,29 @@ export default function OrdersPage() {
   // the moment of that specific instalment, same rule RecordPaymentModal and
   // FranchiseesPage's fee history already use, so a reprinted receipt always
   // shows the balance as it stood then, not today's.
-  async function viewReceiptRecord(rec) {
-    if (rec.type === 'payment') {
-      const o = rec.raw.order
-      if (!o) { showToast('Could not load that invoice', 'err'); return }
+  // Rebuilds a payment receipt's line items with "paid to date"/balance as they
+  // stood at that instalment — reused by both View/Print and the WhatsApp
+  // resend, so a reprint months later still shows the real figures, not today's.
+  async function buildCombinedPaymentReceipt(paymentRows) {
+    const out = []
+    for (const p of paymentRows) {
+      const o = p.order
+      if (!o) continue
       const { data: hist } = await sb.from('order_payments').select('id, amount, paid_on').eq('order_id', o.id)
       const paidToDate = (hist || [])
-        .filter(function (x) { return x.paid_on < rec.raw.paid_on || (x.paid_on === rec.raw.paid_on && x.id === rec.raw.id) })
+        .filter(function (x) { return x.paid_on < p.paid_on || (x.paid_on === p.paid_on && x.id === p.id) })
         .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
-      printOrderReceipt(o, rec.raw, { paidToDate: paidToDate })
+      out.push({ order: o, payment: p, balanceAfter: Math.max(0, (o.grand_total || 0) - paidToDate) })
+    }
+    return out
+  }
+
+  async function viewReceiptRecord(rec) {
+    if (rec.type === 'payment') {
+      const rows = await buildCombinedPaymentReceipt(rec.raw)
+      if (!rows.length) { showToast('Could not load that invoice', 'err'); return }
+      if (rows.length === 1) printOrderReceipt(rows[0].order, rows[0].payment, { paidToDate: (rows[0].order.grand_total || 0) - rows[0].balanceAfter })
+      else printCombinedOrderReceipt(rows)
     } else if (rec.type === 'fee') {
       const fr = rec.fr
       const { data: frRow } = await sb.from('franchisees').select('enrollment_fee').eq('id', rec.raw.franchisee_id).maybeSingle()
@@ -3074,6 +3241,49 @@ export default function OrdersPage() {
         .filter(function (x) { return x.payment_date < rec.raw.payment_date || (x.payment_date === rec.raw.payment_date && x.id === rec.raw.id) })
         .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
       printFranchiseeReceipt(fr, rec.raw, { total: (frRow && frRow.enrollment_fee) || 0, paidToDate: paidToDate })
+    }
+  }
+
+  // Resend (or send for the first time) a receipt on WhatsApp from the
+  // Receipts register — the multi-invoice Record Payment already offers this
+  // at save time, but there was previously no way to send it again later.
+  async function sendReceiptRecordWA(rec, phone) {
+    if (rec.type === 'payment') {
+      const rows = await buildCombinedPaymentReceipt(rec.raw)
+      if (!rows.length) { showToast('Could not load that invoice', 'err'); return }
+      let imageUrl = null
+      try {
+        const html = rows.length === 1
+          ? printOrderReceipt(rows[0].order, rows[0].payment, { paidToDate: (rows[0].order.grand_total || 0) - rows[0].balanceAfter, asHtml: true })
+          : printCombinedOrderReceipt(rows, { asHtml: true })
+        imageUrl = await captureDocPng(html, rec.no || 'receipt')
+      } catch (capErr) { /* non-fatal — falls back to text */ }
+      const balanceAfterTotal = rows.reduce(function (s, x) { return s + x.balanceAfter }, 0)
+      const res = await sendWAPaymentReceived(phone, {
+        name: rec.fr?.business_name || 'Partner', amount: fmtAmt(rec.amount), balance: balanceAfterTotal,
+        receiptNo: rec.no, date: fmtDate(rec.date), imageUrl: imageUrl,
+      })
+      if (res && res.success) showToast('💬 Receipt sent on WhatsApp.')
+      else showToast('WhatsApp failed: ' + ((res && res.error) || 'unknown error'), 'warn')
+    } else if (rec.type === 'fee') {
+      const fr = rec.fr
+      const { data: frRow } = await sb.from('franchisees').select('enrollment_fee').eq('id', rec.raw.franchisee_id).maybeSingle()
+      const { data: hist } = await sb.from('franchisee_payments').select('id, amount, payment_date').eq('franchisee_id', rec.raw.franchisee_id)
+      const paidToDate = (hist || [])
+        .filter(function (x) { return x.payment_date < rec.raw.payment_date || (x.payment_date === rec.raw.payment_date && x.id === rec.raw.id) })
+        .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+      const total = (frRow && frRow.enrollment_fee) || 0
+      let imageUrl = null
+      try {
+        const html = printFranchiseeReceipt(fr, rec.raw, { total: total, paidToDate: paidToDate, asHtml: true })
+        imageUrl = await captureDocPng(html, rec.no || 'receipt')
+      } catch (capErr) { /* non-fatal */ }
+      const res = await sendWAPaymentReceived(phone, {
+        name: fr.business_name || 'Partner', amount: fmtAmt(rec.amount), balance: Math.max(0, total - paidToDate),
+        receiptNo: rec.no, date: fmtDate(rec.date), imageUrl: imageUrl,
+      })
+      if (res && res.success) showToast('💬 Receipt sent on WhatsApp.')
+      else showToast('WhatsApp failed: ' + ((res && res.error) || 'unknown error'), 'warn')
     }
   }
 
@@ -3769,7 +3979,11 @@ export default function OrdersPage() {
                                 </>
                               : <span style={{ color: 'var(--text3)' }}>{rec.raw.reason || '—'}</span>
                           ) : (
-                            <button className="row-action" onClick={function () { viewReceiptRecord(rec) }}>View / Print</button>
+                            <>
+                              <button className="row-action" onClick={function () { viewReceiptRecord(rec) }}>View / Print</button>{' '}
+                              <button className="row-action" onClick={function () { setRecWaConfirm({ label: 'Send receipt ' + (rec.no || ''), phone: rec.fr?.phone || '', send: function (phone) { return sendReceiptRecordWA(rec, phone) } }) }}>💬 WhatsApp</button>{' '}
+                              <button className="row-action" onClick={function () { setEditRecord(rec) }}>✎ Edit</button>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -3999,6 +4213,16 @@ export default function OrdersPage() {
           currentUser={currentUser}
           onClose={function () { setShowRaiseCn(false) }}
           onSaved={async function () { setShowRaiseCn(false); await Promise.all([loadPendingCns(), loadRecords()]) }}
+        />
+      )}
+
+      {recWaConfirm && <WhatsAppSendConfirm {...recWaConfirm} onClose={function () { setRecWaConfirm(null) }} />}
+
+      {editRecord && (
+        <EditReceiptModal
+          rec={editRecord}
+          onClose={function () { setEditRecord(null) }}
+          onSaved={async function () { setEditRecord(null); await Promise.all([loadRecords(), loadOrders()]) }}
         />
       )}
 
