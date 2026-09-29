@@ -3979,11 +3979,11 @@ export default function OrdersPage() {
                                 </>
                               : <span style={{ color: 'var(--text3)' }}>{rec.raw.reason || '—'}</span>
                           ) : (
-                            <>
-                              <button className="row-action" onClick={function () { viewReceiptRecord(rec) }}>View / Print</button>{' '}
-                              <button className="row-action" onClick={function () { setRecWaConfirm({ label: 'Send receipt ' + (rec.no || ''), phone: rec.fr?.phone || '', send: function (phone) { return sendReceiptRecordWA(rec, phone) } }) }}>💬 WhatsApp</button>{' '}
-                              <button className="row-action" onClick={function () { setEditRecord(rec) }}>✎ Edit</button>
-                            </>
+                            <ActionsMenu items={[
+                              { key: 'view', label: 'View / Print', onClick: function () { viewReceiptRecord(rec) } },
+                              { key: 'wa', label: '💬 WhatsApp', onClick: function () { setRecWaConfirm({ label: 'Send receipt ' + (rec.no || ''), phone: rec.fr?.phone || '', send: function (phone) { return sendReceiptRecordWA(rec, phone) } }) } },
+                              { key: 'edit', label: '✎ Edit', onClick: function () { setEditRecord(rec) } },
+                            ]} />
                           )}
                         </td>
                       </tr>
