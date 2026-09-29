@@ -10,7 +10,8 @@ import { createPendingStockReturns, liveReturnsForLine, cancelStockReturn, creat
 import { generateServiceInvoices, snapshotOrderCommission, computeOrderCommission, monthFirst, monthLabel } from '../utils/serviceBilling'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
-import { printOrderReceipt } from '../components/studentDocs'
+import { printOrderReceipt, printFranchiseeReceipt } from '../components/studentDocs'
+import { RecordFranchiseePaymentModal } from './FranchiseesPage'
 import { captureDocPng } from '../utils/captureReceipt'
 import InvoiceView from '../components/InvoiceView'
 import SaleReturnView from '../components/SaleReturnView'
@@ -1271,6 +1272,98 @@ function GenerateServiceInvoicesModal({ onClose, onDone }) {
 // their open invoices (oldest first by default, editable per line) instead
 // of opening Record Payment on each invoice separately and re-typing the
 // same UTR every time.
+// ── RecordFranchiseeFeeEntryModal — pick a franchisee first, then reuse the
+// exact same fee-payment form FranchiseesPage uses on a centre's own Info
+// tab, so a franchise-enrollment/renewal fee can be recorded from the
+// Receipts tab without navigating to that franchisee's page.
+function RecordFranchiseeFeeEntryModal({ onClose, onSaved }) {
+  const { currentUser } = useAuth()
+  const [franchisees, setFranchisees] = useState([])
+  const [franchisee, setFranchisee] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(function () {
+    sb.from('franchisees').select('id, business_name, tier, phone, enrollment_fee, fee_paid').eq('status', 'active').order('business_name')
+      .then(function (res) { setFranchisees(res.data || []); setLoading(false) })
+  }, [])
+
+  if (franchisee) {
+    const balance = Math.max(0, (Number(franchisee.enrollment_fee) || 0) - (Number(franchisee.fee_paid) || 0))
+    return (
+      <RecordFranchiseePaymentModal
+        franchisee={franchisee} balance={balance} currentUser={currentUser && currentUser.email}
+        onClose={onClose} onSaved={function () { onSaved() }}
+      />
+    )
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 440 }}>
+        <ModalHeader flush title="Record Franchise Fee" subtitle="Enrollment or renewal fee payment" onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px' }}>
+          {loading ? <div className="muted">Loading…</div> : (
+            <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Franchisee
+              <select className="inp" value="" onChange={function (e) { setFranchisee(franchisees.find(function (f) { return f.id === e.target.value }) || null) }} style={{ marginTop: 6, width: '100%' }}>
+                <option value="">Select franchisee…</option>
+                {franchisees.map(function (f) { return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}</option> })}
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── RaiseCreditNoteEntryModal — pick the order first, then the existing
+// RaiseCreditNoteModal (unchanged) so a commission credit note can be raised
+// from the Receipts tab without going through Orders → row → Actions.
+function RaiseCreditNoteEntryModal({ currentUser, onClose, onSaved }) {
+  const [orders, setOrders] = useState([])
+  const [order, setOrder] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(function () {
+    sb.from('orders')
+      .select('id, order_ref, invoice_no, kind, placer_id, status, placer:franchisees!orders_placer_id_fkey(business_name,tier), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name,tier)')
+      .not('bill_to_franchisee_id', 'is', null)
+      .in('status', ['closed', 'invoiced', 'part_paid'])
+      .order('created_at', { ascending: false }).limit(200)
+      .then(function (res) { setOrders(res.data || []); setLoading(false) })
+  }, [])
+
+  if (order) {
+    return <RaiseCreditNoteModal order={order} currentUser={currentUser} onClose={onClose} onSaved={onSaved} />
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <ModalHeader flush title="Raise Credit Note" subtitle="Pick the order the commission is for" onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px' }}>
+          {loading ? <div className="muted">Loading…</div> : orders.length === 0 ? (
+            <p className="hint">No school-billed orders found.</p>
+          ) : (
+            <select className="inp" value="" onChange={function (e) { setOrder(orders.find(function (o) { return o.id === e.target.value }) || null) }} style={{ width: '100%' }}>
+              <option value="">Select order…</option>
+              {orders.map(function (o) {
+                return <option key={o.id} value={o.id}>{o.invoice_no || o.order_ref} — {o.bill_to_fr?.business_name} (via {o.placer?.business_name})</option>
+              })}
+            </select>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RecordMultiPaymentModal({ onClose, onSaved }) {
   const { currentUser } = useAuth()
   const [franchisees, setFranchisees] = useState([])
@@ -2856,9 +2949,13 @@ export default function OrdersPage() {
   const [pendingCns, setPendingCns] = useState([])
   const [returns, setReturns] = useState([])
   const [viewReturn, setViewReturn] = useState(null)
-  const [pageTab, setPageTab] = useState('orders')   // 'orders' | 'returns'
+  const [pageTab, setPageTab] = useState('orders')   // 'orders' | 'returns' | 'receipts'
   const [showRecordReturn, setShowRecordReturn] = useState(false)
   const [showRecordPayment, setShowRecordPayment] = useState(false)
+  const [showRecordFee, setShowRecordFee] = useState(false)
+  const [showRaiseCn, setShowRaiseCn] = useState(false)
+  const [records, setRecords] = useState([])
+  const [recordsLoading, setRecordsLoading] = useState(false)
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -2870,8 +2967,41 @@ export default function OrdersPage() {
   useEffect(function () {
     if (currentRole === null) return   // wait for auth to resolve
     loadOrders()
-    if (isAdminRole(currentRole)) { loadPendingCns(); loadReturns() }
+    if (isAdminRole(currentRole)) { loadPendingCns(); loadReturns(); loadRecords() }
   }, [currentRole, currentFranchiseeId])
+
+  // Unified "Receipts" register — every order-invoice payment, franchise fee
+  // payment, and commission credit note, merged into one list so nothing
+  // needs three separate screens to reconcile what money moved and why.
+  async function loadRecords() {
+    setRecordsLoading(true)
+    const FR = 'business_name, tier'
+    const [payRes, feeRes, cnRes] = await Promise.all([
+      sb.from('order_payments')
+        .select('id, receipt_no, amount, paid_on, mode, reference, order:orders(id, order_ref, invoice_no, grand_total, amount_paid, placer:franchisees!orders_placer_id_fkey(' + FR + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + FR + '))')
+        .order('paid_on', { ascending: false }).limit(300),
+      sb.from('franchisee_payments')
+        .select('id, receipt_no, amount, payment_date, payment_mode, reference_no, notes, franchisee_id, franchisees(' + FR + ')')
+        .order('payment_date', { ascending: false }).limit(300),
+      sb.from('franchisee_credit_notes')
+        .select('id, credit_note_no, amount, reason, status, requested_at, approved_at, franchisee_id, franchisees(' + FR + '), orders(order_ref, invoice_no)')
+        .order('requested_at', { ascending: false }).limit(300),
+    ])
+    const merged = []
+      .concat((payRes.data || []).map(function (p) {
+        const fr = p.order?.bill_to_fr || p.order?.placer || {}
+        return { type: 'payment', id: p.id, no: p.receipt_no, date: p.paid_on, amount: p.amount, fr: fr, forLabel: p.order?.invoice_no || p.order?.order_ref || '—', status: null, raw: p }
+      }))
+      .concat((feeRes.data || []).map(function (f) {
+        return { type: 'fee', id: f.id, no: f.receipt_no, date: f.payment_date, amount: f.amount, fr: f.franchisees || {}, forLabel: 'Franchise fee', status: null, raw: f }
+      }))
+      .concat((cnRes.data || []).map(function (c) {
+        return { type: 'credit_note', id: c.id, no: c.credit_note_no, date: (c.approved_at || c.requested_at || '').slice(0, 10), amount: c.amount, fr: c.franchisees || {}, forLabel: c.orders?.invoice_no || c.orders?.order_ref || c.reason || '—', status: c.status, raw: c }
+      }))
+    merged.sort(function (a, b) { return (b.date || '').localeCompare(a.date || '') })
+    setRecords(merged)
+    setRecordsLoading(false)
+  }
 
   // Sale returns are fully automated (raised pre-approved by
   // createPendingStockReturns) — this is a read-only list, not an approval
@@ -2898,7 +3028,7 @@ export default function OrdersPage() {
       .update({ status: 'approved', approved_by: currentUser?.email || null })
       .eq('id', cn.id)
     if (error) { showToast('Failed to approve: ' + error.message, 'err') }
-    else { showToast('Credit note approved ✓'); await loadPendingCns() }
+    else { showToast('Credit note approved ✓'); await Promise.all([loadPendingCns(), loadRecords()]) }
     setActionLoading(null)
   }
 
@@ -2908,8 +3038,32 @@ export default function OrdersPage() {
       .update({ status: 'rejected', approved_by: currentUser?.email || null, approved_at: new Date().toISOString() })
       .eq('id', cn.id)
     if (error) { showToast('Failed to reject: ' + error.message, 'err') }
-    else { showToast('Credit note rejected'); await loadPendingCns() }
+    else { showToast('Credit note rejected'); await Promise.all([loadPendingCns(), loadRecords()]) }
     setActionLoading(null)
+  }
+
+  // "View / Print" from the Receipts register — recomputes "paid to date" at
+  // the moment of that specific instalment, same rule RecordPaymentModal and
+  // FranchiseesPage's fee history already use, so a reprinted receipt always
+  // shows the balance as it stood then, not today's.
+  async function viewReceiptRecord(rec) {
+    if (rec.type === 'payment') {
+      const o = rec.raw.order
+      if (!o) { showToast('Could not load that invoice', 'err'); return }
+      const { data: hist } = await sb.from('order_payments').select('id, amount, paid_on').eq('order_id', o.id)
+      const paidToDate = (hist || [])
+        .filter(function (x) { return x.paid_on < rec.raw.paid_on || (x.paid_on === rec.raw.paid_on && x.id === rec.raw.id) })
+        .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+      printOrderReceipt(o, rec.raw, { paidToDate: paidToDate })
+    } else if (rec.type === 'fee') {
+      const fr = rec.fr
+      const { data: frRow } = await sb.from('franchisees').select('enrollment_fee').eq('id', rec.raw.franchisee_id).maybeSingle()
+      const { data: hist } = await sb.from('franchisee_payments').select('id, amount, payment_date').eq('franchisee_id', rec.raw.franchisee_id)
+      const paidToDate = (hist || [])
+        .filter(function (x) { return x.payment_date < rec.raw.payment_date || (x.payment_date === rec.raw.payment_date && x.id === rec.raw.id) })
+        .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+      printFranchiseeReceipt(fr, rec.raw, { total: (frRow && frRow.enrollment_fee) || 0, paidToDate: paidToDate })
+    }
   }
 
   async function loadOrders() {
@@ -3537,14 +3691,84 @@ export default function OrdersPage() {
               <button className={'tab' + (pageTab === 'returns' ? ' active' : '')} onClick={function () { setPageTab('returns') }}>
                 ↩ Sale Returns{returns.length > 0 ? ' (' + returns.length + ')' : ''}
               </button>
+              <button className={'tab' + (pageTab === 'receipts' ? ' active' : '')} onClick={function () { setPageTab('receipts') }}>
+                🧾 Receipts{records.length > 0 ? ' (' + records.length + ')' : ''}
+              </button>
             </div>
             {pageTab === 'returns' && (
               <button className="btn btn-s" style={{ margin: '6px 6px 6px 0' }} onClick={function () { setShowRecordReturn(true) }}>+ Record Return</button>
             )}
+            {pageTab === 'receipts' && (
+              <div style={{ display: 'flex', gap: 6, margin: '6px 6px 6px 0' }}>
+                <button className="btn btn-s" onClick={function () { setShowRecordPayment(true) }}>+ Invoice Payment</button>
+                <button className="btn btn-s" onClick={function () { setShowRecordFee(true) }}>+ Franchise Fee</button>
+                <button className="btn btn-s" onClick={function () { setShowRaiseCn(true) }}>+ Credit Note</button>
+              </div>
+            )}
           </div>
         )}
 
-        {pageTab === 'returns' ? (
+        {pageTab === 'receipts' ? (
+          <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
+            {recordsLoading ? (
+              <div className="loading"><span className="spinner" />Loading…</div>
+            ) : records.length === 0 ? (
+              <div className="empty">No receipts or credit notes yet.</div>
+            ) : (
+              <table className="big-tbl">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th className="hide-mobile">Date</th>
+                    <th>Type</th>
+                    <th>Franchisee</th>
+                    <th className="hide-mobile">For</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map(function (rec) {
+                    const typeLabel = rec.type === 'payment' ? 'Invoice Payment' : rec.type === 'fee' ? 'Franchise Fee' : 'Credit Note'
+                    const typeColor = rec.type === 'payment' ? { c: '#1A5FA8', bg: '#eff6ff', bd: '#bfdbfe' } : rec.type === 'fee' ? { c: '#8A5200', bg: '#fff7ed', bd: '#fed7aa' } : { c: '#6D28D9', bg: '#f5f3ff', bd: '#ddd6fe' }
+                    const cn = rec.type === 'credit_note'
+                    const busy = actionLoading === 'cn_' + rec.id
+                    return (
+                      <tr key={rec.type + rec.id}>
+                        <td className="mono" style={{ fontWeight: 600 }}>{rec.no || '—'}</td>
+                        <td className="mono hide-mobile">{fmtDate(rec.date)}</td>
+                        <td><span style={{ font: '700 10px var(--mono)', color: typeColor.c, background: typeColor.bg, border: '1px solid ' + typeColor.bd, borderRadius: 20, padding: '2px 8px' }}>{typeLabel}</span></td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{rec.fr?.business_name || '—'}</div>
+                          <TierBadge tier={rec.fr?.tier} />
+                        </td>
+                        <td className="mono hide-mobile">{rec.forLabel}</td>
+                        <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(rec.amount)}</div></td>
+                        <td>{cn
+                          ? <span style={{ font: '700 10px var(--mono)', textTransform: 'uppercase', color: rec.status === 'approved' ? '#16A34A' : rec.status === 'rejected' ? '#991b1b' : '#92400E', background: rec.status === 'approved' ? '#f0fdf4' : rec.status === 'rejected' ? '#fef2f2' : '#FFF7DA', border: '1px solid ' + (rec.status === 'approved' ? '#bbf7d0' : rec.status === 'rejected' ? '#fecaca' : '#D97706'), borderRadius: 20, padding: '2px 8px' }}>{rec.status}</span>
+                          : <span style={{ font: '700 10px var(--mono)', color: '#16A34A', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20, padding: '2px 8px' }}>Recorded</span>}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          {cn ? (
+                            rec.status === 'pending'
+                              ? <>
+                                  <button className="row-action green" disabled={busy} onClick={function () { approveCreditNote(rec.raw) }}>{busy ? '…' : 'Approve'}</button>{' '}
+                                  <button className="row-action danger" disabled={busy} onClick={function () { rejectCreditNote(rec.raw) }}>Reject</button>
+                                </>
+                              : <span style={{ color: 'var(--text3)' }}>{rec.raw.reason || '—'}</span>
+                          ) : (
+                            <button className="row-action" onClick={function () { viewReceiptRecord(rec) }}>View / Print</button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ) : pageTab === 'returns' ? (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
             {returns.length === 0 ? (
               <div className="empty">No sale returns yet.</div>
@@ -3748,7 +3972,22 @@ export default function OrdersPage() {
       {showRecordPayment && (
         <RecordMultiPaymentModal
           onClose={function () { setShowRecordPayment(false) }}
-          onSaved={async function () { setShowRecordPayment(false); await loadOrders() }}
+          onSaved={async function () { setShowRecordPayment(false); await Promise.all([loadOrders(), loadRecords()]) }}
+        />
+      )}
+
+      {showRecordFee && (
+        <RecordFranchiseeFeeEntryModal
+          onClose={function () { setShowRecordFee(false) }}
+          onSaved={async function () { setShowRecordFee(false); await loadRecords() }}
+        />
+      )}
+
+      {showRaiseCn && (
+        <RaiseCreditNoteEntryModal
+          currentUser={currentUser}
+          onClose={function () { setShowRaiseCn(false) }}
+          onSaved={async function () { setShowRaiseCn(false); await Promise.all([loadPendingCns(), loadRecords()]) }}
         />
       )}
 

@@ -156,7 +156,7 @@ function LocationFields({ form, onChange, disabled }) {
 
 // ── RecordFranchiseePaymentModal ───────────────────────────────────────────────
 
-function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSaved, onClose }) {
+export function RecordFranchiseePaymentModal({ franchisee, balance, currentUser, onSaved, onClose }) {
   const [amount,  setAmount]  = useState(balance > 0 ? String(balance) : '')
   const [date,    setDate]    = useState(new Date().toISOString().slice(0, 10))
   const [mode,    setMode]    = useState('UPI')
