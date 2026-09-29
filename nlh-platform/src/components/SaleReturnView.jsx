@@ -1,6 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { fmtAmt, showToast } from '../utils'
+import { useAuth } from '../context/AuthContext'
+import { cancelStockReturn, applyCreditToOrder } from '../utils/saleReturns'
 
 // Printable Sale Return voucher — a franchisee (CF/SMF) supplied part of
 // another party's order from their own previously-purchased stock, and this
@@ -26,9 +28,12 @@ function tbBtn(active, color) {
 }
 
 export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmin }) {
+  const { currentUser } = useAuth()
+  const isCancelled = r.status === 'cancelled'
   const fr = r.franchisees || {}
   const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
-  const forOrder = r.orders?.invoice_no || r.orders?.order_ref || '—'
+  const isPhysical = r.kind === 'physical_return'
+  const forOrder = r.orders?.invoice_no || r.orders?.order_ref || (isPhysical ? (r.note || 'Direct kit return') : '—')
   // Who actually received the goods — a school billed through its CF shows
   // as the school, same bill_to_fr-else-placer resolution used everywhere
   // else (OrderReceiverInfo, InvoiceView, stock ledger notes).
@@ -39,7 +44,90 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
   const [qty, setQty] = useState(r.qty)
   const [unitValue, setUnitValue] = useState(r.unit_value)
   const [saving, setSaving] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [showCancel, setShowCancel] = useState(false)
+  const [linkedItemId, setLinkedItemId] = useState(null)
+  const [clearFulfilled, setClearFulfilled] = useState(true)
+  const [showApply, setShowApply] = useState(false)
+  const [applyOrders, setApplyOrders] = useState([])
+  const [applyOrderId, setApplyOrderId] = useState('')
+  const [applying, setApplying] = useState(false)
+  const isApplied = !!r.applied_order_id
   const liveCredit = (parseInt(qty, 10) || 0) * (parseInt(unitValue, 10) || 0)
+
+  function openApply() {
+    setApplyOrderId('')
+    setShowApply(true)
+    sb.from('orders').select('id, order_ref, invoice_no, grand_total, amount_paid')
+      .or('placer_id.eq.' + r.returning_franchisee_id + ',bill_to_franchisee_id.eq.' + r.returning_franchisee_id)
+      .in('status', ['invoiced', 'part_paid'])
+      .order('created_at', { ascending: false })
+      .then(function (res) {
+        setApplyOrders((res.data || []).filter(function (o) { return (o.grand_total || 0) - (o.amount_paid || 0) > 0 }))
+      })
+  }
+
+  async function doApply() {
+    if (!applyOrderId) { showToast('Pick an invoice', 'warn'); return }
+    setApplying(true)
+    try {
+      const amt = await applyCreditToOrder(r, applyOrderId, currentUser && currentUser.email)
+      showToast('₹' + fmtAmt(amt) + ' applied against that invoice ✓')
+      setShowApply(false)
+      if (onSaved) onSaved()
+      onClose()
+    } catch (err) {
+      showToast('Could not apply: ' + err.message, 'err')
+    }
+    setApplying(false)
+  }
+
+  // Is this return's franchisee still marked as "Fulfilled by" on the order
+  // line it's for? If so, offer to clear that flag in the same action —
+  // otherwise a cancelled return can leave a flag behind that no longer
+  // means anything (the exact drift that caused SR-2026-0003).
+  useEffect(function () {
+    if (isCancelled || r.kind === 'physical_return') return
+    let cancelled = false
+    async function check() {
+      let itemId = r.fulfills_order_item_id || null
+      if (!itemId && r.fulfills_order_id && r.sku_id) {
+        const { data } = await sb.from('order_items').select('id, fulfilled_by_franchisee_id')
+          .eq('order_id', r.fulfills_order_id).eq('sku_id', r.sku_id).eq('fulfilled_by_franchisee_id', r.returning_franchisee_id).limit(1).maybeSingle()
+        itemId = data ? data.id : null
+      } else if (itemId) {
+        const { data } = await sb.from('order_items').select('fulfilled_by_franchisee_id').eq('id', itemId).maybeSingle()
+        if (!data || data.fulfilled_by_franchisee_id !== r.returning_franchisee_id) itemId = null
+      }
+      if (!cancelled) setLinkedItemId(itemId)
+    }
+    check()
+    return function () { cancelled = true }
+  }, [r.id, isCancelled])
+
+  async function doCancel() {
+    if (!cancelReason.trim()) { showToast('Enter a reason for the audit trail', 'warn'); return }
+    setCancelling(true)
+    try {
+      const res = await cancelStockReturn(r, cancelReason.trim(), currentUser && currentUser.email)
+      let msg = 'Sale return cancelled ✓'
+      if (res.stockReversed) msg += ' Stock correction reversed too.'
+      else if (r.kind === 'cf_fulfillment' && !r.fulfills_order_item_id) msg += ' (raised before automatic stock linking — check stock manually if it had posted a compensating entry.)'
+
+      if (linkedItemId && clearFulfilled) {
+        const { error: clearErr } = await sb.from('order_items').update({ fulfilled_by_franchisee_id: null }).eq('id', linkedItemId)
+        msg += clearErr ? (' Could not clear "Fulfilled by": ' + clearErr.message) : ' "Fulfilled by" cleared on the order line too.'
+      }
+      showToast(msg)
+      setShowCancel(false)
+      if (onSaved) onSaved()
+      onClose()
+    } catch (err) {
+      showToast('Could not cancel: ' + err.message, 'err')
+    }
+    setCancelling(false)
+  }
 
   function startEdit() { setQty(r.qty); setUnitValue(r.unit_value); setEditing(true) }
   function cancelEdit() { setQty(r.qty); setUnitValue(r.unit_value); setEditing(false) }
@@ -93,14 +181,74 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
           <>
             {/* Same rule as InvoiceView/Orders — a franchisee views and
                 downloads their own paperwork, correcting the rate is HO-only. */}
-            {isAdmin && (
+            {isAdmin && !isCancelled && !isApplied && (
               <button onClick={startEdit} style={{ ...tbBtn(false), background: '#D97706', color: '#fff', border: 'none' }}>✏ Edit</button>
+            )}
+            {isAdmin && !isCancelled && (
+              <button onClick={function () { setShowCancel(true) }} style={{ ...tbBtn(false), background: '#dc2626', color: '#fff', border: 'none' }}>✕ Cancel</button>
+            )}
+            {isAdmin && !isCancelled && !isApplied && (
+              <button onClick={openApply} style={{ ...tbBtn(false), background: '#16A34A', color: '#fff', border: 'none' }}>🧾 Apply to Invoice</button>
             )}
             <button onClick={handlePrint} style={{ ...tbBtn(false), background: '#534AB7', color: '#fff', border: 'none' }}>🖨 PDF</button>
             <button onClick={onClose} style={tbBtn(false)}>← Back</button>
           </>
         )}
       </div>
+
+      {showCancel && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={function (e) { if (e.target === e.currentTarget) setShowCancel(false) }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 20, width: 420, maxWidth: '100%' }}>
+            <div style={{ font: '700 14px "DM Sans",sans-serif', marginBottom: 6 }}>Cancel {r.return_no}?</div>
+            <div style={{ font: '500 12px "DM Sans",sans-serif', color: '#5C5A54', marginBottom: 10, lineHeight: 1.5 }}>
+              Removes the ₹{fmtAmt(liveCredit)} credit from {fr.business_name || 'the franchisee'}'s account.
+              {' '}If this return posted a stock correction, that's reversed too. The voucher stays on record as cancelled — nothing is deleted.
+            </div>
+            <textarea value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
+              placeholder="Reason (required — kept in the audit trail)" rows={3}
+              style={{ width: '100%', border: '1px solid #D0CEC6', borderRadius: 8, padding: 8, font: '500 12px "DM Sans",sans-serif', marginBottom: 12 }} />
+            {linkedItemId && (
+              <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', font: '500 12px "DM Sans",sans-serif', color: '#1A1916', marginBottom: 12, cursor: 'pointer' }}>
+                <input type="checkbox" checked={clearFulfilled} onChange={function (e) { setClearFulfilled(e.target.checked) }} style={{ marginTop: 2 }} />
+                <span>Also clear "Fulfilled by {fr.business_name}" on this order line, so it's counted as HO-supplied again. Leave this unchecked if {fr.business_name} really did supply it and you're only correcting the amount.</span>
+              </label>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={function () { setShowCancel(false) }} disabled={cancelling} style={tbBtn(false)}>Back</button>
+              <button onClick={doCancel} disabled={cancelling} style={{ ...tbBtn(false), background: '#dc2626', color: '#fff', border: 'none', opacity: cancelling ? .7 : 1 }}>
+                {cancelling ? 'Cancelling…' : 'Cancel return'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApply && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={function (e) { if (e.target === e.currentTarget) setShowApply(false) }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 20, width: 420, maxWidth: '100%' }}>
+            <div style={{ font: '700 14px "DM Sans",sans-serif', marginBottom: 6 }}>Apply ₹{fmtAmt(liveCredit)} to an invoice</div>
+            <div style={{ font: '500 12px "DM Sans",sans-serif', color: '#5C5A54', marginBottom: 10, lineHeight: 1.5 }}>
+              Reduces {fr.business_name || 'their'}'s balance due on the invoice you pick, same as recording a payment — capped at whatever's still due on it.
+            </div>
+            <select value={applyOrderId} onChange={function (e) { setApplyOrderId(e.target.value) }} style={{ width: '100%', padding: '8px 10px', border: '1px solid #D0CEC6', borderRadius: 8, marginBottom: 12 }}>
+              <option value="">Select invoice…</option>
+              {applyOrders.map(function (o) {
+                const bal = (o.grand_total || 0) - (o.amount_paid || 0)
+                return <option key={o.id} value={o.id}>{o.invoice_no || o.order_ref} — ₹{fmtAmt(bal)} due</option>
+              })}
+            </select>
+            {applyOrders.length === 0 && <p className="hint" style={{ marginTop: -6, marginBottom: 12 }}>No outstanding invoices found for this franchisee.</p>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={function () { setShowApply(false) }} disabled={applying} style={tbBtn(false)}>Back</button>
+              <button onClick={doApply} disabled={applying || !applyOrderId} style={{ ...tbBtn(false), background: '#16A34A', color: '#fff', border: 'none', opacity: applying ? .7 : 1 }}>
+                {applying ? 'Applying…' : 'Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════════ VOUCHER ══════════ */}
       <div id="sr-sheet" style={{ width: '210mm', minHeight: '297mm', background: '#fff', boxShadow: '0 8px 28px rgba(0,0,0,.10)', display: 'flex', flexDirection: 'column', fontFamily: '"DM Sans",system-ui,sans-serif', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
@@ -115,7 +263,7 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
               <img src="/NLH%20Logo.png" alt="NLH" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ font: '800 40px "DM Sans",sans-serif', color: '#1E40AF', letterSpacing: '-.02em', lineHeight: 1, marginBottom: 2 }}>SALE RETURN</div>
+              <div style={{ font: '800 40px "DM Sans",sans-serif', color: '#1E40AF', letterSpacing: '-.02em', lineHeight: 1, marginBottom: 2 }}>{isPhysical ? 'KIT RETURN' : 'SALE RETURN'}</div>
               <div style={{ font: '700 8px "DM Mono",monospace', color: '#2563EB', textTransform: 'uppercase', letterSpacing: '.2em' }}>Stock &amp; Credit Voucher · Auto-Approved</div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -135,6 +283,19 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
         <div style={{ background: 'linear-gradient(90deg,#1E40AF,#2563EB)', color: '#fff', textAlign: 'center', padding: '5px 20px', font: '600 8px "DM Mono",monospace', textTransform: 'uppercase', letterSpacing: '.14em', flexShrink: 0 }}>
           New Learning Horizons · ISO 9001:2015 Certified · Enriching Children's Future
         </div>
+
+        {isCancelled && (
+          <div style={{ background: '#fef2f2', borderBottom: '1px solid #fecaca', padding: '8px 20px', font: '600 11px "DM Sans",sans-serif', color: '#991b1b' }}>
+            ✕ Cancelled{r.cancelled_at ? ' on ' + fmtDateLong(r.cancelled_at) : ''}{r.cancelled_by ? ' by ' + r.cancelled_by : ''} — credit reversed.
+            {r.cancel_reason && <div style={{ fontWeight: 500, marginTop: 2 }}>{r.cancel_reason}</div>}
+          </div>
+        )}
+
+        {!isCancelled && isApplied && (
+          <div style={{ background: '#f0fdf4', borderBottom: '1px solid #bbf7d0', padding: '8px 20px', font: '600 11px "DM Sans",sans-serif', color: '#166534' }}>
+            🧾 ₹{fmtAmt(r.applied_amount)} applied against invoice {r.applied_order?.invoice_no || r.applied_order?.order_ref || ''} — reduces its balance due.
+          </div>
+        )}
 
         {/* meta */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: '#F7F6F3', borderBottom: '1px solid #E2E0D8', padding: '8px 20px', gap: 10, flexShrink: 0 }}>
@@ -160,7 +321,7 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div style={{ borderRadius: 10, padding: '9px 12px 24px', background: '#EFF6FF', position: 'relative', overflow: 'hidden', minHeight: 104 }}>
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 3, background: '#2563EB' }} />
-              <div style={{ font: '700 7.5px "DM Mono",monospace', color: '#2563EB', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 5 }}>Returned goods issued by</div>
+              <div style={{ font: '700 7.5px "DM Mono",monospace', color: '#2563EB', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 5 }}>{isPhysical ? 'Goods received by' : 'Returned goods issued by'}</div>
               <div style={{ font: '700 12px "DM Sans",sans-serif', color: '#1A1916', lineHeight: 1.2, marginBottom: 3 }}>New Learning Horizons</div>
               <div style={{ font: '500 9px "DM Mono",monospace', color: '#5C5A54', lineHeight: 1.55 }}>9, Anjuman Shopping Complex, Residency Rd, Sadar, Nagpur 440 001</div>
             </div>
@@ -208,7 +369,7 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
 
           {/* who it was supplied to — short, one line */}
           <div style={{ font: '500 10px "DM Mono",monospace', color: '#5C5A54' }}>
-            Supplied to <b style={{ color: '#1A1916' }}>{receiver}</b> · {forOrder} · {orderDate}
+            {isPhysical ? <>Returned by <b style={{ color: '#1A1916' }}>{fr.business_name || '—'}</b> · {forOrder} · {orderDate}</> : <>Supplied to <b style={{ color: '#1A1916' }}>{receiver}</b> · {forOrder} · {orderDate}</>}
           </div>
 
           {/* credit total */}

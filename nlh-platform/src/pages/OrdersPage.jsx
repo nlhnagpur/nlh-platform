@@ -6,7 +6,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { invoiceFit, invoiceFull } from '../utils/invoiceFit'
-import { createPendingStockReturns } from '../utils/saleReturns'
+import { createPendingStockReturns, liveReturnsForLine, cancelStockReturn, createManualStockReturn } from '../utils/saleReturns'
 import { generateServiceInvoices, snapshotOrderCommission, computeOrderCommission, monthFirst, monthLabel } from '../utils/serviceBilling'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
@@ -1260,6 +1260,173 @@ function GenerateServiceInvoicesModal({ onClose, onDone }) {
   )
 }
 
+// ── RecordManualReturnModal — admin-only. A franchisee physically ships a
+// kit/book back to HO (wrong item, defect, student never used it) — this is
+// NOT the auto-generated "fulfilled another order from their own stock"
+// return; it's the other direction: goods coming back INTO HO, credited to
+// whoever sent them. See createManualStockReturn in utils/saleReturns.js.
+function RecordManualReturnModal({ onClose, onSaved }) {
+  const { currentUser } = useAuth()
+  const [franchisees, setFranchisees] = useState([])
+  const [skus, setSkus] = useState([])
+  const [franchiseeId, setFranchiseeId] = useState('')
+  const [skuId, setSkuId] = useState('')
+  const [qty, setQty] = useState('1')
+  const [rate, setRate] = useState('')
+  const [reason, setReason] = useState('')
+  const [addBack, setAddBack] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [rateLoading, setRateLoading] = useState(false)
+  const [openOrders, setOpenOrders] = useState([])
+  const [applyToOrderId, setApplyToOrderId] = useState('')
+
+  useEffect(function () {
+    Promise.all([
+      sb.from('franchisees').select('id, business_name, tier').eq('status', 'active').order('business_name'),
+      sb.from('skus').select('id, level_name, courses(group_name)').order('sort_order'),
+    ]).then(function (res) {
+      setFranchisees(res[0].data || [])
+      setSkus(res[1].data || [])
+      setLoading(false)
+    })
+  }, [])
+
+  // Prefill the rate from this franchisee's own most recent purchase of the
+  // SKU — same "what they actually paid" logic as the automatic flow.
+  useEffect(function () {
+    if (!franchiseeId || !skuId) return
+    let cancelled = false
+    setRateLoading(true)
+    sb.from('order_items').select('rate, orders!inner(placer_id, created_at)')
+      .eq('sku_id', skuId).eq('orders.placer_id', franchiseeId)
+      .order('created_at', { foreignTable: 'orders', ascending: false }).limit(1).maybeSingle()
+      .then(function (res) {
+        if (cancelled) return
+        if (res.data) setRate(String(res.data.rate))
+        setRateLoading(false)
+      })
+    return function () { cancelled = true }
+  }, [franchiseeId, skuId])
+
+  // This franchisee's own outstanding invoices — the credit can be applied
+  // straight against one, same as recording a payment, so it doesn't just
+  // sit as an unapplied ledger credit while the invoice still shows pending.
+  useEffect(function () {
+    setApplyToOrderId('')
+    if (!franchiseeId) { setOpenOrders([]); return }
+    let cancelled = false
+    sb.from('orders').select('id, order_ref, invoice_no, grand_total, amount_paid')
+      .or('placer_id.eq.' + franchiseeId + ',bill_to_franchisee_id.eq.' + franchiseeId)
+      .in('status', ['invoiced', 'part_paid'])
+      .order('created_at', { ascending: false })
+      .then(function (res) {
+        if (cancelled) return
+        setOpenOrders((res.data || []).filter(function (o) { return (o.grand_total || 0) - (o.amount_paid || 0) > 0 }))
+      })
+    return function () { cancelled = true }
+  }, [franchiseeId])
+
+  async function save() {
+    const q = parseInt(qty, 10) || 0
+    const uv = parseInt(rate, 10) || 0
+    if (!franchiseeId) { showToast('Pick who is returning it', 'warn'); return }
+    if (!skuId) { showToast('Pick what is being returned', 'warn'); return }
+    if (q <= 0) { showToast('Enter a quantity greater than zero', 'warn'); return }
+    if (!reason.trim()) { showToast('Enter a reason', 'warn'); return }
+    setSaving(true)
+    try {
+      const sr = await createManualStockReturn({
+        franchiseeId: franchiseeId, skuId: skuId, qty: q, unitValue: uv,
+        reason: reason.trim(), addBack: addBack, createdBy: currentUser && currentUser.email,
+        applyToOrderId: applyToOrderId || null,
+      })
+      showToast((sr.return_no || 'Return') + ' recorded ✓'
+        + (applyToOrderId ? ' — applied against the invoice.' : '')
+        + (addBack ? ' Added back to HO stock.' : ''))
+      onSaved()
+    } catch (err) {
+      showToast('Could not record return: ' + err.message, 'err')
+    }
+    setSaving(false)
+  }
+
+  const grouped = skus.reduce(function (acc, s) {
+    const c = s.courses?.group_name || 'Other'
+    if (!acc[c]) acc[c] = []
+    acc[c].push(s)
+    return acc
+  }, {})
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 460 }}>
+        <ModalHeader flush title="Record a Kit / Book Return" subtitle="A franchisee is physically sending stock back to HO" onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {loading ? <div className="muted">Loading…</div> : (
+            <>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Returned by
+                <select className="inp" value={franchiseeId} onChange={function (e) { setFranchiseeId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
+                  <option value="">Select franchisee…</option>
+                  {franchisees.map(function (f) { return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}</option> })}
+                </select>
+              </label>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Item
+                <select className="inp" value={skuId} onChange={function (e) { setSkuId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
+                  <option value="">Select SKU…</option>
+                  {Object.entries(grouped).map(function ([course, list]) {
+                    return <optgroup key={course} label={course}>
+                      {list.map(function (s) { return <option key={s.id} value={s.id}>{s.level_name}</option> })}
+                    </optgroup>
+                  })}
+                </select>
+              </label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <label style={{ flex: 1, font: '600 12px var(--font)', color: 'var(--text2)' }}>Qty
+                  <input className="inp" type="number" min={1} value={qty} onChange={function (e) { setQty(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
+                </label>
+                <label style={{ flex: 1, font: '600 12px var(--font)', color: 'var(--text2)' }}>Credit rate (₹/unit)
+                  <input className="inp" type="number" min={0} value={rate} onChange={function (e) { setRate(e.target.value) }}
+                    placeholder={rateLoading ? 'Looking up…' : '0'} style={{ marginTop: 6, width: '100%' }} />
+                </label>
+              </div>
+              <p className="hint" style={{ margin: 0 }}>Total credit: <strong>₹{fmtAmt((parseInt(qty, 10) || 0) * (parseInt(rate, 10) || 0))}</strong>.</p>
+              {franchiseeId && (
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Apply against invoice
+                  <select className="inp" value={applyToOrderId} onChange={function (e) { setApplyToOrderId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
+                    <option value="">Don't apply — leave as ledger credit</option>
+                    {openOrders.map(function (o) {
+                      const bal = (o.grand_total || 0) - (o.amount_paid || 0)
+                      return <option key={o.id} value={o.id}>{o.invoice_no || o.order_ref} — ₹{fmtAmt(bal)} due</option>
+                    })}
+                  </select>
+                  <span className="hint" style={{ display: 'block', marginTop: 4 }}>
+                    {applyToOrderId
+                      ? 'Reduces that invoice\'s balance due, same as recording a payment. Otherwise the credit sits on their account until you apply it later.'
+                      : openOrders.length === 0 ? 'No outstanding invoices for this franchisee right now.' : ''}
+                  </span>
+                </label>
+              )}
+              <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', font: '500 12px var(--font)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={addBack} onChange={function (e) { setAddBack(e.target.checked) }} style={{ marginTop: 2 }} />
+                <span>Add this stock back into HO's inventory (uncheck for a damaged/unsellable return — the franchisee still gets credited, but the stock count won't change).</span>
+              </label>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Reason
+                <textarea className="inp" rows={2} value={reason} onChange={function (e) { setReason(e.target.value) }}
+                  placeholder="e.g. wrong level sent, student withdrew before kit was used" style={{ marginTop: 6, width: '100%', resize: 'vertical' }} />
+              </label>
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving || loading}>{saving ? 'Saving…' : 'Record Return'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── RaiseCreditNoteModal — admin-only, pays out a CF's commission on a
 // closed school order by crediting it into their ledger. Pre-fills the
 // system-computed suggestion (Σ sent_qty × cf_commission_rate) but the
@@ -1405,7 +1572,11 @@ function KitChecklist({ components, excluded, onToggle }) {
 // InvoiceEditModal — admin edits items (add/delete/change), sent_qty, rate, courier
 // ---------------------------------------------------------------------------
 export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
+  const { currentUser } = useAuth()
   const [items, setItems] = useState([])
+  const [origFulfilled, setOrigFulfilled] = useState({})   // item.id -> fulfilled_by_franchisee_id as loaded
+  const [fulfillConfirm, setFulfillConfirm] = useState(null)   // { item, srs } awaiting confirmation
+  const [confirmBusy, setConfirmBusy] = useState(false)
   const [allSkus, setAllSkus] = useState([])
   const [allItems, setAllItems] = useState([])
   const [kitMap, setKitMap] = useState({})   // sku_id -> [{ item_id, name, quantity }]
@@ -1452,7 +1623,12 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       isAdmin ? sb.from('inventory_items').select('id, name, unit, sell_price').eq('is_active', true).order('name') : { data: [] },
     ])
     if (itemsRes.error) showToast('Failed to load items: ' + itemsRes.error.message)
-    else setItems(itemsRes.data || [])
+    else {
+      setItems(itemsRes.data || [])
+      const orig = {}
+      ;(itemsRes.data || []).forEach(function (it) { orig[it.id] = it.fulfilled_by_franchisee_id || null })
+      setOrigFulfilled(orig)
+    }
     setAllSkus(skusRes.data || [])
     setAllItems(invRes.data || [])
     // Kit compositions for both existing lines and the full SKU catalog (for newly-added lines)
@@ -1564,7 +1740,40 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
     return Math.max(0, itemsSubtotal() + (parseInt(courierCharges, 10) || 0) - couponDisc())
   }
 
+  // Any line whose "Fulfilled by" is being cleared or reassigned, that still
+  // has a live Sale Return crediting the old franchisee for it, needs that
+  // return cancelled first (the guard trigger would otherwise reject the
+  // save outright) — ask before doing it, rather than silently cancelling
+  // someone's credit as a side effect of an unrelated save.
+  async function findFulfillChange() {
+    for (const item of items) {
+      if (!item.id) continue
+      const orig = origFulfilled[item.id]
+      if (!orig || item.fulfilled_by_franchisee_id === orig) continue
+      const srs = await liveReturnsForLine(order.id, item.id, item.sku_id)
+      if (srs.length) return { item, srs }
+    }
+    return null
+  }
+
+  async function confirmFulfillChangeAndSave() {
+    if (!fulfillConfirm) return
+    setConfirmBusy(true)
+    try {
+      for (const sr of fulfillConfirm.srs) {
+        await cancelStockReturn(sr, 'Fulfilled-by cleared/reassigned while editing ' + (order.order_ref || 'this order'), currentUser && currentUser.email)
+      }
+      setFulfillConfirm(null)
+      await handleSave()
+    } catch (err) {
+      showToast('Could not cancel the linked return: ' + err.message, 'err')
+    }
+    setConfirmBusy(false)
+  }
+
   async function handleSave() {
+    const change = await findFulfillChange()
+    if (change) { setFulfillConfirm(change); return }
     setSaving(true)
     // Delete removed items
     for (const id of deletedIds) {
@@ -1855,6 +2064,26 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
           </button>
         </div>
       </div>
+
+      {fulfillConfirm && (
+        <div className="modal-bg" style={{ zIndex: 400 }} onClick={function (e) { if (e.target === e.currentTarget) setFulfillConfirm(null) }}>
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <ModalHeader flush title="Also cancel the linked return?" onClose={function () { setFulfillConfirm(null) }} />
+            <div style={{ padding: '4px 20px 16px' }}>
+              <p className="hint" style={{ marginBottom: 10 }}>
+                Changing "Fulfilled by" on this line will also cancel {fulfillConfirm.srs.length === 1 ? 'the return it created' : 'the returns it created'}, reversing the credit:
+              </p>
+              {fulfillConfirm.srs.map(function (sr) {
+                return <div key={sr.id} style={{ font: '600 12px var(--font)', marginBottom: 4 }}>{sr.return_no} — ₹{fmtAmt(sr.total_credit)} to {sr.franchisees?.business_name || 'franchisee'}</div>
+              })}
+            </div>
+            <div className="modal-actions">
+              <button className="btn-s" onClick={function () { setFulfillConfirm(null) }} disabled={confirmBusy}>Back</button>
+              <button className="btn-p" onClick={confirmFulfillChangeAndSave} disabled={confirmBusy}>{confirmBusy ? 'Cancelling…' : 'Cancel return(s) and save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2357,6 +2586,7 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [orderFilter, setOrderFilter] = useState('all')
+  const [searchQ, setSearchQ] = useState('')
   const [actionLoading, setActionLoading] = useState(null)
 
   // Modal state
@@ -2378,6 +2608,7 @@ export default function OrdersPage() {
   const [returns, setReturns] = useState([])
   const [viewReturn, setViewReturn] = useState(null)
   const [pageTab, setPageTab] = useState('orders')   // 'orders' | 'returns'
+  const [showRecordReturn, setShowRecordReturn] = useState(false)
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -2397,7 +2628,7 @@ export default function OrdersPage() {
   // queue. To correct one, edit the franchisee_stock_returns row directly.
   async function loadReturns() {
     const { data } = await sb.from('franchisee_stock_returns')
-      .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier, phone, email, address, area, city, state), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no, invoiced_at, created_at, placer:franchisees!orders_placer_id_fkey(business_name), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name))')
+      .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier, phone, email, address, area, city, state), skus(level_name, courses(group_name)), orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no, invoiced_at, created_at, placer:franchisees!orders_placer_id_fkey(business_name), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name)), applied_order:orders!franchisee_stock_returns_applied_order_id_fkey(order_ref, invoice_no)')
       .order('created_at', { ascending: false })
       .limit(500)
     setReturns(data || [])
@@ -2846,8 +3077,13 @@ export default function OrdersPage() {
   }
 
   const filtered = orders.filter(function (o) {
-    if (orderFilter === 'all') return true
-    return matchesFilter(o, orderFilter)
+    if (orderFilter !== 'all' && !matchesFilter(o, orderFilter)) return false
+    const q = searchQ.trim().toLowerCase()
+    if (!q) return true
+    return [
+      o.order_ref, o.invoice_no, o.proforma_no,
+      o.placer?.business_name, o.bill_to_fr?.business_name, o.bill_to_name,
+    ].filter(Boolean).some(function (v) { return String(v).toLowerCase().includes(q) })
   })
 
   const filterCounts = ORDER_FILTERS.reduce(function (acc, f) {
@@ -2991,7 +3227,7 @@ export default function OrdersPage() {
       <header className="tb">
         <div className="crumb">Operations <span className="sep">›</span> <b>Orders</b></div>
         <div className="tb-r">
-          <input className="search tb-search" placeholder="Search by order ref or franchisee…" readOnly />
+          <input className="search tb-search" placeholder="Search by order ref, invoice no or franchisee…" value={searchQ} onChange={function (e) { setSearchQ(e.target.value) }} />
           <button className="btn btn-s">Export CSV</button>
           {isAdmin && can('orders.edit') && <button className="btn btn-s" onClick={function () { setShowGenService(true) }} title="Create this month's CI invoices for Full-Service schools">Generate service invoices</button>}
           {can('orders.edit') && <button className="btn btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>}
@@ -3044,11 +3280,16 @@ export default function OrdersPage() {
         })()}
 
         {isAdmin && (
-          <div className="tabs">
-            <button className={'tab' + (pageTab === 'orders' ? ' active' : '')} onClick={function () { setPageTab('orders') }}>📦 Orders</button>
-            <button className={'tab' + (pageTab === 'returns' ? ' active' : '')} onClick={function () { setPageTab('returns') }}>
-              ↩ Sale Returns{returns.length > 0 ? ' (' + returns.length + ')' : ''}
-            </button>
+          <div className="tabs" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex' }}>
+              <button className={'tab' + (pageTab === 'orders' ? ' active' : '')} onClick={function () { setPageTab('orders') }}>📦 Orders</button>
+              <button className={'tab' + (pageTab === 'returns' ? ' active' : '')} onClick={function () { setPageTab('returns') }}>
+                ↩ Sale Returns{returns.length > 0 ? ' (' + returns.length + ')' : ''}
+              </button>
+            </div>
+            {pageTab === 'returns' && (
+              <button className="btn btn-s" style={{ margin: '6px 6px 6px 0' }} onClick={function () { setShowRecordReturn(true) }}>+ Record Return</button>
+            )}
           </div>
         )}
 
@@ -3068,14 +3309,16 @@ export default function OrdersPage() {
                     <th className="hide-mobile" style={{ textAlign: 'right' }}>Rate</th>
                     <th style={{ textAlign: 'right' }}>Credit</th>
                     <th className="hide-mobile">For Order</th>
+                    <th>Status</th>
                     <th style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {returns.map(function (r) {
                     const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
+                    const cancelled = r.status === 'cancelled'
                     return (
-                      <tr key={r.id}>
+                      <tr key={r.id} style={{ opacity: cancelled ? 0.55 : 1 }}>
                         <td className="mono" style={{ color: '#2563EB', fontWeight: 600 }}>{r.return_no || '—'}</td>
                         <td className="mono hide-mobile">{fmtDate(r.approved_at || r.created_at)}</td>
                         <td>
@@ -3085,8 +3328,11 @@ export default function OrdersPage() {
                         <td>{skuName || '—'}</td>
                         <td style={{ textAlign: 'right' }} className="mono">{r.qty}</td>
                         <td className="hide-mobile mono" style={{ textAlign: 'right' }}>₹{fmtAmt(r.unit_value)}</td>
-                        <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(r.total_credit)}</div></td>
+                        <td style={{ textAlign: 'right' }}><div className="amt" style={cancelled ? { textDecoration: 'line-through' } : undefined}>₹{fmtAmt(r.total_credit)}</div></td>
                         <td className="mono hide-mobile">{r.orders?.invoice_no || r.orders?.order_ref || '—'}</td>
+                        <td>{cancelled
+                          ? <span style={{ font: '700 10px var(--mono)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 20, padding: '2px 8px' }}>Cancelled</span>
+                          : <span style={{ font: '700 10px var(--mono)', color: '#16A34A', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20, padding: '2px 8px' }}>Approved</span>}</td>
                         <td style={{ textAlign: 'right' }}>
                           <button className="row-action" onClick={function () { setViewReturn(r) }}>View / Print</button>
                         </td>
@@ -3226,6 +3472,13 @@ export default function OrdersPage() {
       {viewReturn && (
         <SaleReturnView saleReturn={viewReturn} onClose={function () { setViewReturn(null) }}
           onSaved={async function () { await loadReturns() }} isAdmin={isAdmin} />
+      )}
+
+      {showRecordReturn && (
+        <RecordManualReturnModal
+          onClose={function () { setShowRecordReturn(false) }}
+          onSaved={async function () { setShowRecordReturn(false); await loadReturns() }}
+        />
       )}
 
       {/* Modals */}
