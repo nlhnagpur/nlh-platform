@@ -1265,6 +1265,235 @@ function GenerateServiceInvoicesModal({ onClose, onDone }) {
 // NOT the auto-generated "fulfilled another order from their own stock"
 // return; it's the other direction: goods coming back INTO HO, credited to
 // whoever sent them. See createManualStockReturn in utils/saleReturns.js.
+// ── RecordMultiPaymentModal — one payment received from a franchisee, split
+// across several of their outstanding invoices in one action. Pick the
+// franchisee, enter what was actually received, then allocate it across
+// their open invoices (oldest first by default, editable per line) instead
+// of opening Record Payment on each invoice separately and re-typing the
+// same UTR every time.
+function RecordMultiPaymentModal({ onClose, onSaved }) {
+  const { currentUser } = useAuth()
+  const [franchisees, setFranchisees] = useState([])
+  const [franchiseeId, setFranchiseeId] = useState('')
+  const [openOrders, setOpenOrders] = useState([])
+  const [amounts, setAmounts] = useState({})   // order.id -> string
+  const [totalReceived, setTotalReceived] = useState('')
+  const [mode, setMode] = useState('upi')
+  const [ref, setRef] = useState('')
+  const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10))
+  const [loading, setLoading] = useState(true)
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const [sendWA, setSendWA] = useState(true)
+  const [waPhone, setWaPhone] = useState('')
+
+  useEffect(function () {
+    sb.from('franchisees').select('id, business_name, tier, phone').eq('status', 'active').order('business_name')
+      .then(function (res) { setFranchisees(res.data || []); setLoading(false) })
+  }, [])
+
+  useEffect(function () {
+    setAmounts({})
+    setWaPhone((franchisees.find(function (f) { return f.id === franchiseeId }) || {}).phone || '')
+    if (!franchiseeId) { setOpenOrders([]); return }
+    setOrdersLoading(true)
+    sb.from('orders').select('id, order_ref, invoice_no, grand_total, amount_paid, created_at, kind, service_month')
+      .or('placer_id.eq.' + franchiseeId + ',bill_to_franchisee_id.eq.' + franchiseeId)
+      .in('status', ['invoiced', 'part_paid'])
+      .order('created_at', { ascending: true })
+      .then(function (res) {
+        setOpenOrders((res.data || []).filter(function (o) { return (o.grand_total || 0) - (o.amount_paid || 0) > 0 }))
+        setOrdersLoading(false)
+      })
+  }, [franchiseeId])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  function balanceOf(o) { return Math.max(0, (o.grand_total || 0) - (o.amount_paid || 0)) }
+  const allocated = openOrders.reduce(function (s, o) { return s + (parseInt(amounts[o.id], 10) || 0) }, 0)
+  const totalNum = parseInt(totalReceived, 10) || 0
+  const leftover = totalNum - allocated
+
+  // Fills each invoice's box with its own balance, oldest first, until the
+  // entered total runs out — the common case (pay off in order) in one click.
+  function autoAllocate() {
+    let remaining = totalNum
+    const next = {}
+    for (const o of openOrders) {
+      const bal = balanceOf(o)
+      const give = Math.min(bal, Math.max(0, remaining))
+      if (give > 0) next[o.id] = String(give)
+      remaining -= give
+    }
+    setAmounts(next)
+  }
+
+  function setAmount(orderId, val) {
+    setAmounts(function (prev) { return { ...prev, [orderId]: val } })
+  }
+
+  async function save() {
+    if (!franchiseeId) { showToast('Pick who paid', 'warn'); return }
+    const rows = openOrders.map(function (o) { return { order: o, amt: parseInt(amounts[o.id], 10) || 0 } }).filter(function (r) { return r.amt > 0 })
+    if (!rows.length) { showToast('Allocate the payment to at least one invoice', 'warn'); return }
+    for (const r of rows) {
+      if (r.amt > balanceOf(r.order)) { showToast('₹' + fmtAmt(r.amt) + ' on ' + (r.order.invoice_no || r.order.order_ref) + ' is more than its ₹' + fmtAmt(balanceOf(r.order)) + ' balance', 'warn'); return }
+    }
+    setSaving(true)
+    let failed = null
+    const labels = []   // invoice numbers actually paid, for one combined WA message
+    let balanceAfterTotal = 0
+    for (const r of rows) {
+      const { data: inserted, error } = await sb.from('order_payments').insert({
+        order_id: r.order.id, amount: r.amt, paid_on: paidOn || new Date().toISOString().slice(0, 10),
+        mode: mode, reference: ref.trim() || null,
+      }).select('receipt_no').single()
+      if (error) { failed = error; break }
+      try {
+        await mirrorOrderPayment(r.order.id, {
+          amount: r.amt, paid_on: paidOn || new Date().toISOString().slice(0, 10),
+          mode: mode, reference: ref.trim() || null, note: 'Part of a ' + fmtAmt(totalNum) + ' payment split across ' + rows.length + ' invoices',
+          recorded_by: currentUser && currentUser.email, receipt_no: inserted && inserted.receipt_no,
+        })
+      } catch (e) { console.warn('[Phase 3 dual-write] payment mirror failed:', e.message) }
+
+      let label = r.order.invoice_no || r.order.order_ref
+      // A proforma paid in full auto-converts to a real invoice via a DB
+      // trigger — same follow-up as the single-invoice Record Payment.
+      if (!r.order.invoice_no) {
+        try {
+          const { data: nowOrder } = await sb.from('orders').select('*').eq('id', r.order.id).single()
+          if (nowOrder && nowOrder.invoice_no) {
+            label = nowOrder.invoice_no
+            warnIfStockNegative(await deductOrderStockIfNeeded(nowOrder, 'Invoice'))
+            await createPendingStockReturns(nowOrder); await snapshotOrderCommission(nowOrder)
+          }
+        } catch (e) { console.warn('Stock deduction (auto-invoice) failed:', e.message) }
+      }
+      labels.push(label)
+      balanceAfterTotal += Math.max(0, balanceOf(r.order) - r.amt)
+    }
+    setSaving(false)
+    if (failed) { showToast('Recorded some, then failed: ' + failed.message, 'err'); onSaved(); return }
+    showToast('₹' + fmtAmt(allocated) + ' recorded across ' + rows.length + ' invoice' + (rows.length === 1 ? '' : 's') + ' ✓')
+
+    // One combined WhatsApp confirmation listing every invoice number it
+    // covered, instead of sending a separate receipt per invoice.
+    if (sendWA && waPhone) {
+      const fr = franchisees.find(function (f) { return f.id === franchiseeId }) || {}
+      try {
+        const res = await sendWAPaymentReceived(waPhone, {
+          name: fr.business_name || 'Partner', amount: fmtAmt(allocated), balance: balanceAfterTotal,
+          receiptNo: labels.join(', '), date: fmtDate(paidOn),
+        })
+        if (res && res.success) showToast('💬 Payment confirmation sent on WhatsApp for ' + labels.join(', ') + '.')
+        else showToast('WhatsApp failed: ' + ((res && res.error) || 'unknown error'), 'warn')
+      } catch (e) { showToast('WhatsApp failed: ' + e.message, 'warn') }
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 640 }}>
+        <ModalHeader flush title="Record Payment" subtitle="One payment, split across a franchisee's open invoices" onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {loading ? <div className="muted">Loading…</div> : (
+            <>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Received from
+                <select className="inp" value={franchiseeId} onChange={function (e) { setFranchiseeId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
+                  <option value="">Select franchisee…</option>
+                  {franchisees.map(function (f) { return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}</option> })}
+                </select>
+              </label>
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <label style={{ flex: '1 1 140px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Amount received (₹)
+                  <input className="inp" type="number" min={0} value={totalReceived} onChange={function (e) { setTotalReceived(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
+                </label>
+                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Mode
+                  <select className="inp" value={mode} onChange={function (e) { setMode(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
+                    <option value="upi">UPI</option><option value="neft">NEFT</option><option value="cash">Cash</option>
+                    <option value="cheque">Cheque</option><option value="razorpay">Razorpay</option><option value="other">Other</option>
+                  </select>
+                </label>
+                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Date
+                  <input className="inp" type="date" value={paidOn} onChange={function (e) { setPaidOn(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
+                </label>
+                <label style={{ flex: '1 1 160px', font: '600 12px var(--font)', color: 'var(--text2)' }}>UTR / Reference
+                  <input className="inp" value={ref} onChange={function (e) { setRef(e.target.value) }} placeholder="Transaction ID" style={{ marginTop: 6, width: '100%' }} />
+                </label>
+              </div>
+
+              {franchiseeId && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ font: '700 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' }}>Apply against</div>
+                    <button type="button" className="btn-s" style={{ fontSize: 11 }} onClick={autoAllocate} disabled={!totalNum}>Auto-allocate oldest first</button>
+                  </div>
+                  {ordersLoading ? <div className="muted">Loading invoices…</div> : openOrders.length === 0 ? (
+                    <p className="hint">No outstanding invoices for this franchisee.</p>
+                  ) : (
+                    <div className="tbl-scroll" style={{ maxHeight: 240 }}>
+                      <table className="data-table">
+                        <thead><tr><th>Invoice</th><th style={{ textAlign: 'right' }}>Balance due</th><th style={{ textAlign: 'right' }}>Applying</th></tr></thead>
+                        <tbody>
+                          {openOrders.map(function (o) {
+                            const bal = balanceOf(o)
+                            return (
+                              <tr key={o.id}>
+                                <td>{o.invoice_no || o.order_ref}{o.kind === 'service' ? <span style={{ marginLeft: 6, font: '700 9px var(--mono)', background: '#ede9fe', color: 'var(--purple)', borderRadius: 4, padding: '1px 5px' }}>SERVICE</span> : null}</td>
+                                <td style={{ textAlign: 'right' }}>₹{fmtAmt(bal)}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <input type="number" min={0} max={bal} value={amounts[o.id] || ''} onChange={function (e) { setAmount(o.id, e.target.value) }}
+                                    style={{ width: 100, textAlign: 'right', fontSize: 12 }} placeholder="0" />
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, font: '600 12px var(--font)' }}>
+                    <span>Allocated: ₹{fmtAmt(allocated)}</span>
+                    <span style={{ color: leftover === 0 ? 'var(--green,#16A34A)' : leftover > 0 ? '#D97706' : 'var(--red,#dc2626)' }}>
+                      {leftover === 0 ? 'Fully allocated ✓' : leftover > 0 ? '₹' + fmtAmt(leftover) + ' not yet allocated' : '₹' + fmtAmt(-leftover) + ' over the amount received'}
+                    </span>
+                  </div>
+                  {leftover > 0 && <p className="hint" style={{ marginTop: 4 }}>The unallocated amount won't be recorded against any invoice — allocate it once there's an invoice for it, or leave it out and record it later.</p>}
+                </div>
+              )}
+
+              {franchiseeId && (
+                <div style={{ background: sendWA ? '#f0fdf4' : 'var(--bg)', border: '1px solid ' + (sendWA ? '#bbf7d0' : 'var(--border)'), borderRadius: 10, padding: '10px 12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={sendWA} onChange={function (e) { setSendWA(e.target.checked) }} />
+                    💬 Send one WhatsApp confirmation for all the invoices it covers
+                  </label>
+                  {sendWA && (
+                    <>
+                      <input className="inp" value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }} placeholder="Phone number" style={{ marginTop: 8, width: '100%' }} />
+                      {allocated > 0 && (
+                        <p className="hint" style={{ marginTop: 6, marginBottom: 0 }}>
+                          Will confirm ₹{fmtAmt(allocated)} received against {openOrders.filter(function (o) { return (parseInt(amounts[o.id], 10) || 0) > 0 }).map(function (o) { return o.invoice_no || o.order_ref }).join(', ') || '—'}.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-s" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving || loading || allocated <= 0 || leftover < 0}>{saving ? 'Saving…' : 'Record Payment'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RecordManualReturnModal({ onClose, onSaved }) {
   const { currentUser } = useAuth()
   const [franchisees, setFranchisees] = useState([])
@@ -2629,6 +2858,7 @@ export default function OrdersPage() {
   const [viewReturn, setViewReturn] = useState(null)
   const [pageTab, setPageTab] = useState('orders')   // 'orders' | 'returns'
   const [showRecordReturn, setShowRecordReturn] = useState(false)
+  const [showRecordPayment, setShowRecordPayment] = useState(false)
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -3249,6 +3479,7 @@ export default function OrdersPage() {
         <div className="tb-r">
           <input className="search tb-search" placeholder="Search by order ref, invoice no or franchisee…" value={searchQ} onChange={function (e) { setSearchQ(e.target.value) }} />
           <button className="btn btn-s">Export CSV</button>
+          {isAdmin && can('orders.payments') && <button className="btn btn-s" onClick={function () { setShowRecordPayment(true) }} title="One payment, split across several of a franchisee's invoices">Record Payment</button>}
           {isAdmin && can('orders.edit') && <button className="btn btn-s" onClick={function () { setShowGenService(true) }} title="Create this month's CI invoices for Full-Service schools">Generate service invoices</button>}
           {can('orders.edit') && <button className="btn btn-p" onClick={function () { setShowNewOrder(true) }}>+ New Order</button>}
         </div>
@@ -3511,6 +3742,13 @@ export default function OrdersPage() {
         <RecordManualReturnModal
           onClose={function () { setShowRecordReturn(false) }}
           onSaved={async function () { setShowRecordReturn(false); await loadReturns() }}
+        />
+      )}
+
+      {showRecordPayment && (
+        <RecordMultiPaymentModal
+          onClose={function () { setShowRecordPayment(false) }}
+          onSaved={async function () { setShowRecordPayment(false); await loadOrders() }}
         />
       )}
 
