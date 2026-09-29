@@ -12,6 +12,7 @@ import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../s
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
 import { printOrderReceipt, printFranchiseeReceipt } from '../components/studentDocs'
 import { RecordFranchiseePaymentModal } from './FranchiseesPage'
+import SearchSelect from '../components/SearchSelect'
 import { captureDocPng } from '../utils/captureReceipt'
 import InvoiceView from '../components/InvoiceView'
 import SaleReturnView from '../components/SaleReturnView'
@@ -1304,10 +1305,13 @@ function RecordFranchiseeFeeEntryModal({ onClose, onSaved }) {
         <div style={{ padding: '4px 20px 16px' }}>
           {loading ? <div className="muted">Loading…</div> : (
             <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Franchisee
-              <select className="inp" value="" onChange={function (e) { setFranchisee(franchisees.find(function (f) { return f.id === e.target.value }) || null) }} style={{ marginTop: 6, width: '100%' }}>
-                <option value="">Select franchisee…</option>
-                {franchisees.map(function (f) { return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}</option> })}
-              </select>
+              <div style={{ marginTop: 6 }}>
+                <SearchSelect
+                  options={franchisees.map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })}
+                  value="" placeholder="Type to search franchisee…"
+                  onChange={function (id) { setFranchisee(franchisees.find(function (f) { return f.id === id }) || null) }}
+                />
+              </div>
             </label>
           )}
         </div>
@@ -1348,12 +1352,13 @@ function RaiseCreditNoteEntryModal({ currentUser, onClose, onSaved }) {
           {loading ? <div className="muted">Loading…</div> : orders.length === 0 ? (
             <p className="hint">No school-billed orders found.</p>
           ) : (
-            <select className="inp" value="" onChange={function (e) { setOrder(orders.find(function (o) { return o.id === e.target.value }) || null) }} style={{ width: '100%' }}>
-              <option value="">Select order…</option>
-              {orders.map(function (o) {
-                return <option key={o.id} value={o.id}>{o.invoice_no || o.order_ref} — {o.bill_to_fr?.business_name} (via {o.placer?.business_name})</option>
+            <SearchSelect
+              options={orders.map(function (o) {
+                return { value: o.id, label: o.invoice_no || o.order_ref, sublabel: (o.bill_to_fr?.business_name || '') + ' (via ' + (o.placer?.business_name || '') + ')' }
               })}
-            </select>
+              value="" placeholder="Type to search order / invoice no…"
+              onChange={function (id) { setOrder(orders.find(function (o) { return o.id === id }) || null) }}
+            />
           )}
         </div>
         <div className="modal-actions">
@@ -1493,10 +1498,13 @@ function RecordMultiPaymentModal({ onClose, onSaved }) {
           {loading ? <div className="muted">Loading…</div> : (
             <>
               <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Received from
-                <select className="inp" value={franchiseeId} onChange={function (e) { setFranchiseeId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
-                  <option value="">Select franchisee…</option>
-                  {franchisees.map(function (f) { return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}</option> })}
-                </select>
+                <div style={{ marginTop: 6 }}>
+                  <SearchSelect
+                    options={franchisees.map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })}
+                    value={franchiseeId} placeholder="Type to search franchisee…"
+                    onChange={setFranchiseeId}
+                  />
+                </div>
               </label>
 
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -1688,10 +1696,13 @@ function RecordManualReturnModal({ onClose, onSaved }) {
           {loading ? <div className="muted">Loading…</div> : (
             <>
               <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Returned by
-                <select className="inp" value={franchiseeId} onChange={function (e) { setFranchiseeId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
-                  <option value="">Select franchisee…</option>
-                  {franchisees.map(function (f) { return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}</option> })}
-                </select>
+                <div style={{ marginTop: 6 }}>
+                  <SearchSelect
+                    options={franchisees.map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })}
+                    value={franchiseeId} placeholder="Type to search franchisee…"
+                    onChange={setFranchiseeId}
+                  />
+                </div>
               </label>
 
               <div>
