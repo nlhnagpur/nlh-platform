@@ -2,17 +2,15 @@ import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { fmtAmt, showToast } from '../utils'
 import { useAuth } from '../context/AuthContext'
-import { cancelStockReturn, applyCreditToOrder } from '../utils/saleReturns'
+import { cancelStockReturn, applyCreditToOrder, fetchReturnGroup } from '../utils/saleReturns'
 
 // Printable Sale Return voucher — a franchisee (CF/SMF) supplied part of
-// another party's order from their own previously-purchased stock, and this
-// document is the credit record for it (see franchisee_stock_returns and
-// createPendingStockReturns in OrdersPage.jsx). Always a single line — one
-// SKU, one qty — so unlike InvoiceView this never needs page-pack logic.
-// Auto-generated and auto-approved, but the rate (or qty) can be corrected
-// here by hand — e.g. if the franchisee's original purchase rate needs
-// adjusting — same "automated, manually correctable" model the user asked
-// for the whole sale-return process to follow.
+// another party's order from their own previously-purchased stock (or is
+// physically sending stock back to HO), and this document is the credit
+// record for it. A voucher can cover several SKU lines sharing one return_no
+// (same as an order groups order_items under one invoice_no) — this always
+// re-fetches the authoritative full group by return_no, so it works whether
+// the caller passed one row or several.
 
 function fmtDateLong(d) {
   if (!d) return '—'
@@ -27,11 +25,24 @@ function tbBtn(active, color) {
   }
 }
 
-export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmin }) {
+export default function SaleReturnView({ saleReturn, onClose, onSaved, isAdmin }) {
   const { currentUser } = useAuth()
+  const seed = Array.isArray(saleReturn) ? saleReturn[0] : saleReturn
+  const [rows, setRows] = useState(Array.isArray(saleReturn) ? saleReturn : [saleReturn])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(function () {
+    let cancelled = false
+    setLoading(true)
+    fetchReturnGroup(seed.return_no).then(function (data) {
+      if (!cancelled) { setRows(data.length ? data : [seed]); setLoading(false) }
+    })
+    return function () { cancelled = true }
+  }, [seed.return_no])
+
+  const r = rows[0]
   const isCancelled = r.status === 'cancelled'
   const fr = r.franchisees || {}
-  const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
   const isPhysical = r.kind === 'physical_return'
   const forOrder = r.orders?.invoice_no || r.orders?.order_ref || (isPhysical ? (r.note || 'Direct kit return') : '—')
   // Who actually received the goods — a school billed through its CF shows
@@ -39,22 +50,23 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
   // else (OrderReceiverInfo, InvoiceView, stock ledger notes).
   const receiver = r.orders?.bill_to_fr?.business_name || r.orders?.placer?.business_name || '—'
   const orderDate = fmtDateLong(r.orders?.invoiced_at || r.orders?.created_at)
+  const isApplied = !!r.applied_order_id
 
   const [editing, setEditing] = useState(false)
-  const [qty, setQty] = useState(r.qty)
-  const [unitValue, setUnitValue] = useState(r.unit_value)
+  const [editLines, setEditLines] = useState([])
   const [saving, setSaving] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [showCancel, setShowCancel] = useState(false)
-  const [linkedItemId, setLinkedItemId] = useState(null)
+  const [linkedItems, setLinkedItems] = useState([])   // [{ rowId, orderItemId }]
   const [clearFulfilled, setClearFulfilled] = useState(true)
   const [showApply, setShowApply] = useState(false)
   const [applyOrders, setApplyOrders] = useState([])
   const [applyOrderId, setApplyOrderId] = useState('')
   const [applying, setApplying] = useState(false)
-  const isApplied = !!r.applied_order_id
-  const liveCredit = (parseInt(qty, 10) || 0) * (parseInt(unitValue, 10) || 0)
+
+  const liveRows = rows.filter(function (x) { return x.status === 'approved' })
+  const liveCredit = liveRows.reduce(function (s, x) { return s + (x.total_credit || 0) }, 0)
 
   function openApply() {
     setApplyOrderId('')
@@ -72,7 +84,7 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
     if (!applyOrderId) { showToast('Pick an invoice', 'warn'); return }
     setApplying(true)
     try {
-      const amt = await applyCreditToOrder(r, applyOrderId, currentUser && currentUser.email)
+      const amt = await applyCreditToOrder(liveRows, applyOrderId, currentUser && currentUser.email)
       showToast('₹' + fmtAmt(amt) + ' applied against that invoice ✓')
       setShowApply(false)
       if (onSaved) onSaved()
@@ -83,41 +95,46 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
     setApplying(false)
   }
 
-  // Is this return's franchisee still marked as "Fulfilled by" on the order
-  // line it's for? If so, offer to clear that flag in the same action —
-  // otherwise a cancelled return can leave a flag behind that no longer
-  // means anything (the exact drift that caused SR-2026-0003).
+  // For each still-live cf_fulfillment line, is that franchisee still marked
+  // as "Fulfilled by" on the order line it's for? If so, offer to clear that
+  // flag in the same action — otherwise a cancelled return can leave a flag
+  // behind that no longer means anything (the exact drift that caused
+  // SR-2026-0003).
   useEffect(function () {
-    if (isCancelled || r.kind === 'physical_return') return
+    if (isCancelled || isPhysical || loading) { setLinkedItems([]); return }
     let cancelled = false
     async function check() {
-      let itemId = r.fulfills_order_item_id || null
-      if (!itemId && r.fulfills_order_id && r.sku_id) {
-        const { data } = await sb.from('order_items').select('id, fulfilled_by_franchisee_id')
-          .eq('order_id', r.fulfills_order_id).eq('sku_id', r.sku_id).eq('fulfilled_by_franchisee_id', r.returning_franchisee_id).limit(1).maybeSingle()
-        itemId = data ? data.id : null
-      } else if (itemId) {
-        const { data } = await sb.from('order_items').select('fulfilled_by_franchisee_id').eq('id', itemId).maybeSingle()
-        if (!data || data.fulfilled_by_franchisee_id !== r.returning_franchisee_id) itemId = null
+      const found = []
+      for (const row of liveRows) {
+        let itemId = row.fulfills_order_item_id || null
+        if (!itemId && row.fulfills_order_id && row.sku_id) {
+          const { data } = await sb.from('order_items').select('id, fulfilled_by_franchisee_id')
+            .eq('order_id', row.fulfills_order_id).eq('sku_id', row.sku_id).eq('fulfilled_by_franchisee_id', row.returning_franchisee_id).limit(1).maybeSingle()
+          itemId = data ? data.id : null
+        } else if (itemId) {
+          const { data } = await sb.from('order_items').select('fulfilled_by_franchisee_id').eq('id', itemId).maybeSingle()
+          if (!data || data.fulfilled_by_franchisee_id !== row.returning_franchisee_id) itemId = null
+        }
+        if (itemId) found.push({ rowId: row.id, orderItemId: itemId })
       }
-      if (!cancelled) setLinkedItemId(itemId)
+      if (!cancelled) setLinkedItems(found)
     }
     check()
     return function () { cancelled = true }
-  }, [r.id, isCancelled])
+  }, [rows, isCancelled, isPhysical, loading])   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function doCancel() {
     if (!cancelReason.trim()) { showToast('Enter a reason for the audit trail', 'warn'); return }
     setCancelling(true)
     try {
-      const res = await cancelStockReturn(r, cancelReason.trim(), currentUser && currentUser.email)
+      const res = await cancelStockReturn(liveRows, cancelReason.trim(), currentUser && currentUser.email)
       let msg = 'Sale return cancelled ✓'
       if (res.stockReversed) msg += ' Stock correction reversed too.'
-      else if (r.kind === 'cf_fulfillment' && !r.fulfills_order_item_id) msg += ' (raised before automatic stock linking — check stock manually if it had posted a compensating entry.)'
 
-      if (linkedItemId && clearFulfilled) {
-        const { error: clearErr } = await sb.from('order_items').update({ fulfilled_by_franchisee_id: null }).eq('id', linkedItemId)
-        msg += clearErr ? (' Could not clear "Fulfilled by": ' + clearErr.message) : ' "Fulfilled by" cleared on the order line too.'
+      if (linkedItems.length && clearFulfilled) {
+        const { error: clearErr } = await sb.from('order_items').update({ fulfilled_by_franchisee_id: null })
+          .in('id', linkedItems.map(function (l) { return l.orderItemId }))
+        msg += clearErr ? (' Could not clear "Fulfilled by": ' + clearErr.message) : ' "Fulfilled by" cleared on the order line' + (linkedItems.length > 1 ? 's' : '') + ' too.'
       }
       showToast(msg)
       setShowCancel(false)
@@ -129,18 +146,26 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
     setCancelling(false)
   }
 
-  function startEdit() { setQty(r.qty); setUnitValue(r.unit_value); setEditing(true) }
-  function cancelEdit() { setQty(r.qty); setUnitValue(r.unit_value); setEditing(false) }
+  function startEdit() {
+    setEditLines(liveRows.map(function (row) { return { id: row.id, qty: row.qty, unitValue: row.unit_value } }))
+    setEditing(true)
+  }
+  function cancelEdit() { setEditing(false) }
+  function updateEditLine(id, patch) {
+    setEditLines(function (prev) { return prev.map(function (l) { return l.id === id ? { ...l, ...patch } : l } ) })
+  }
 
   async function saveEdit() {
-    const q = parseInt(qty, 10) || 0
-    const uv = parseInt(unitValue, 10) || 0
     setSaving(true)
-    const { error } = await sb.from('franchisee_stock_returns')
-      .update({ qty: q, unit_value: uv, total_credit: q * uv })
-      .eq('id', r.id)
+    let err = null
+    for (const l of editLines) {
+      const q = parseInt(l.qty, 10) || 0
+      const uv = parseInt(l.unitValue, 10) || 0
+      const r2 = await sb.from('franchisee_stock_returns').update({ qty: q, unit_value: uv, total_credit: q * uv }).eq('id', l.id)
+      if (r2.error) err = r2.error
+    }
     setSaving(false)
-    if (error) { showToast('Failed to save: ' + error.message, 'err'); return }
+    if (err) { showToast('Failed to save: ' + err.message, 'err'); return }
     showToast('Sale return voucher updated ✓')
     setEditing(false)
     if (onSaved) onSaved()
@@ -162,6 +187,14 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
       <div class="page">${node.outerHTML}</div>
       </body></html>`)
     win.document.close()
+  }
+
+  if (loading) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="spinner" />
+      </div>
+    )
   }
 
   return (
@@ -202,16 +235,16 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, width: 420, maxWidth: '100%' }}>
             <div style={{ font: '700 14px "DM Sans",sans-serif', marginBottom: 6 }}>Cancel {r.return_no}?</div>
             <div style={{ font: '500 12px "DM Sans",sans-serif', color: '#5C5A54', marginBottom: 10, lineHeight: 1.5 }}>
-              Removes the ₹{fmtAmt(liveCredit)} credit from {fr.business_name || 'the franchisee'}'s account.
+              Removes the ₹{fmtAmt(liveCredit)} credit from {fr.business_name || 'the franchisee'}'s account{liveRows.length > 1 ? ' (all ' + liveRows.length + ' items on this voucher)' : ''}.
               {' '}If this return posted a stock correction, that's reversed too. The voucher stays on record as cancelled — nothing is deleted.
             </div>
             <textarea value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
               placeholder="Reason (required — kept in the audit trail)" rows={3}
               style={{ width: '100%', border: '1px solid #D0CEC6', borderRadius: 8, padding: 8, font: '500 12px "DM Sans",sans-serif', marginBottom: 12 }} />
-            {linkedItemId && (
+            {linkedItems.length > 0 && (
               <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', font: '500 12px "DM Sans",sans-serif', color: '#1A1916', marginBottom: 12, cursor: 'pointer' }}>
                 <input type="checkbox" checked={clearFulfilled} onChange={function (e) { setClearFulfilled(e.target.checked) }} style={{ marginTop: 2 }} />
-                <span>Also clear "Fulfilled by {fr.business_name}" on this order line, so it's counted as HO-supplied again. Leave this unchecked if {fr.business_name} really did supply it and you're only correcting the amount.</span>
+                <span>Also clear "Fulfilled by {fr.business_name}" on {linkedItems.length > 1 ? 'these order lines' : 'this order line'}, so {linkedItems.length > 1 ? 'they are' : 'it is'} counted as HO-supplied again. Leave this unchecked if {fr.business_name} really did supply it and you're only correcting the amount.</span>
               </label>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -341,7 +374,7 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
             </div>
           </div>
 
-          {/* item table — one line, editable qty/rate */}
+          {/* item table — one row per SKU line */}
           <div style={{ border: '1px solid #E2E0D8', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ background: 'linear-gradient(90deg,#1E40AF,#2563EB)', color: '#fff', padding: '9px 14px', display: 'grid', gridTemplateColumns: '1fr 70px 90px 110px', gap: 10, font: '700 10px "DM Mono",monospace', textTransform: 'uppercase', letterSpacing: '.07em' }}>
               <div>SKU / Item</div>
@@ -349,22 +382,30 @@ export default function SaleReturnView({ saleReturn: r, onClose, onSaved, isAdmi
               <div style={{ textAlign: 'right' }}>Rate</div>
               <div style={{ textAlign: 'right' }}>Credit</div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 110px', gap: 10, padding: '11px 14px', alignItems: 'center' }}>
-              <div style={{ font: '600 13px "DM Sans",sans-serif', color: '#1A1916' }}>{skuName || '—'}</div>
-              {editing ? (
-                <input type="number" min="1" value={qty} onChange={function (e) { setQty(e.target.value) }}
-                  style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
-              ) : (
-                <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>{qty}</div>
-              )}
-              {editing ? (
-                <input type="number" min="0" value={unitValue} onChange={function (e) { setUnitValue(e.target.value) }}
-                  style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
-              ) : (
-                <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>₹{fmtAmt(unitValue)}</div>
-              )}
-              <div style={{ textAlign: 'right', font: '700 13.5px "DM Mono",monospace', color: '#1A1916' }}>₹{fmtAmt(liveCredit)}</div>
-            </div>
+            {rows.map(function (row, i) {
+              const rowSkuName = (row.skus?.courses?.group_name ? row.skus.courses.group_name + ' — ' : '') + (row.skus?.level_name || '')
+              const editLine = editing ? editLines.find(function (l) { return l.id === row.id }) : null
+              const rowCancelled = row.status === 'cancelled'
+              const rowCredit = editLine ? (parseInt(editLine.qty, 10) || 0) * (parseInt(editLine.unitValue, 10) || 0) : row.total_credit
+              return (
+                <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 110px', gap: 10, padding: '11px 14px', alignItems: 'center', borderTop: i > 0 ? '1px solid #F0EEE9' : 'none', opacity: rowCancelled ? 0.5 : 1 }}>
+                  <div style={{ font: '600 13px "DM Sans",sans-serif', color: '#1A1916' }}>{rowSkuName || '—'}{rowCancelled ? ' (cancelled)' : ''}</div>
+                  {editLine ? (
+                    <input type="number" min="1" value={editLine.qty} onChange={function (e) { updateEditLine(row.id, { qty: e.target.value }) }}
+                      style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
+                  ) : (
+                    <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>{row.qty}</div>
+                  )}
+                  {editLine ? (
+                    <input type="number" min="0" value={editLine.unitValue} onChange={function (e) { updateEditLine(row.id, { unitValue: e.target.value }) }}
+                      style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
+                  ) : (
+                    <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>₹{fmtAmt(row.unit_value)}</div>
+                  )}
+                  <div style={{ textAlign: 'right', font: '700 13.5px "DM Mono",monospace', color: '#1A1916' }}>₹{fmtAmt(rowCredit)}</div>
+                </div>
+              )
+            })}
           </div>
 
           {/* who it was supplied to — short, one line */}

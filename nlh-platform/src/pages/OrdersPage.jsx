@@ -6,7 +6,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getDescendantIds, getTreeIds } from '../utils/hierarchy'
 import { invoiceFit, invoiceFull } from '../utils/invoiceFit'
-import { createPendingStockReturns, liveReturnsForLine, cancelStockReturn, createManualStockReturn } from '../utils/saleReturns'
+import { createPendingStockReturns, liveReturnsForLine, cancelStockReturn, createManualStockReturn, fetchReturnGroup, applyCreditToOrder } from '../utils/saleReturns'
 import { generateServiceInvoices, snapshotOrderCommission, computeOrderCommission, monthFirst, monthLabel } from '../utils/serviceBilling'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
@@ -1270,14 +1270,12 @@ function RecordManualReturnModal({ onClose, onSaved }) {
   const [franchisees, setFranchisees] = useState([])
   const [skus, setSkus] = useState([])
   const [franchiseeId, setFranchiseeId] = useState('')
-  const [skuId, setSkuId] = useState('')
-  const [qty, setQty] = useState('1')
-  const [rate, setRate] = useState('')
+  // One voucher, many lines — same shape as NewOrderModal's `lines`.
+  const [lines, setLines] = useState([{ skuId: '', qty: '1', rate: '' }])
   const [reason, setReason] = useState('')
   const [addBack, setAddBack] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [rateLoading, setRateLoading] = useState(false)
   const [openOrders, setOpenOrders] = useState([])
   const [applyToOrderId, setApplyToOrderId] = useState('')
 
@@ -1291,23 +1289,6 @@ function RecordManualReturnModal({ onClose, onSaved }) {
       setLoading(false)
     })
   }, [])
-
-  // Prefill the rate from this franchisee's own most recent purchase of the
-  // SKU — same "what they actually paid" logic as the automatic flow.
-  useEffect(function () {
-    if (!franchiseeId || !skuId) return
-    let cancelled = false
-    setRateLoading(true)
-    sb.from('order_items').select('rate, orders!inner(placer_id, created_at)')
-      .eq('sku_id', skuId).eq('orders.placer_id', franchiseeId)
-      .order('created_at', { foreignTable: 'orders', ascending: false }).limit(1).maybeSingle()
-      .then(function (res) {
-        if (cancelled) return
-        if (res.data) setRate(String(res.data.rate))
-        setRateLoading(false)
-      })
-    return function () { cancelled = true }
-  }, [franchiseeId, skuId])
 
   // This franchisee's own outstanding invoices — the credit can be applied
   // straight against one, same as recording a payment, so it doesn't just
@@ -1327,21 +1308,40 @@ function RecordManualReturnModal({ onClose, onSaved }) {
     return function () { cancelled = true }
   }, [franchiseeId])
 
+  function updateLine(idx, patch) {
+    setLines(function (prev) { return prev.map(function (l, i) { return i === idx ? { ...l, ...patch } : l }) })
+  }
+
+  // Prefill a line's rate from this franchisee's own most recent purchase of
+  // that SKU — same "what they actually paid" logic as the automatic flow.
+  async function onLineSkuChange(idx, skuId) {
+    updateLine(idx, { skuId: skuId })
+    if (!franchiseeId || !skuId) return
+    const { data } = await sb.from('order_items').select('rate, orders!inner(placer_id, created_at)')
+      .eq('sku_id', skuId).eq('orders.placer_id', franchiseeId)
+      .order('created_at', { foreignTable: 'orders', ascending: false }).limit(1).maybeSingle()
+    if (data) updateLine(idx, { rate: String(data.rate) })
+  }
+
+  function addLine() { setLines(function (prev) { return [...prev, { skuId: '', qty: '1', rate: '' }] }) }
+  function removeLine(idx) { setLines(function (prev) { return prev.filter(function (_, i) { return i !== idx }) }) }
+
+  const validLines = lines.filter(function (l) { return l.skuId && (parseInt(l.qty, 10) || 0) > 0 })
+  const totalCredit = validLines.reduce(function (s, l) { return s + (parseInt(l.qty, 10) || 0) * (parseInt(l.rate, 10) || 0) }, 0)
+
   async function save() {
-    const q = parseInt(qty, 10) || 0
-    const uv = parseInt(rate, 10) || 0
     if (!franchiseeId) { showToast('Pick who is returning it', 'warn'); return }
-    if (!skuId) { showToast('Pick what is being returned', 'warn'); return }
-    if (q <= 0) { showToast('Enter a quantity greater than zero', 'warn'); return }
+    if (!validLines.length) { showToast('Add at least one item', 'warn'); return }
     if (!reason.trim()) { showToast('Enter a reason', 'warn'); return }
     setSaving(true)
     try {
-      const sr = await createManualStockReturn({
-        franchiseeId: franchiseeId, skuId: skuId, qty: q, unitValue: uv,
+      const res = await createManualStockReturn({
+        franchiseeId: franchiseeId,
+        lines: validLines.map(function (l) { return { skuId: l.skuId, qty: parseInt(l.qty, 10) || 0, unitValue: parseInt(l.rate, 10) || 0 } }),
         reason: reason.trim(), addBack: addBack, createdBy: currentUser && currentUser.email,
         applyToOrderId: applyToOrderId || null,
       })
-      showToast((sr.return_no || 'Return') + ' recorded ✓'
+      showToast((res.return_no || 'Return') + ' recorded ✓'
         + (applyToOrderId ? ' — applied against the invoice.' : '')
         + (addBack ? ' Added back to HO stock.' : ''))
       onSaved()
@@ -1360,7 +1360,7 @@ function RecordManualReturnModal({ onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 460 }}>
+      <div className="modal" style={{ maxWidth: 640 }}>
         <ModalHeader flush title="Record a Kit / Book Return" subtitle="A franchisee is physically sending stock back to HO" onClose={onClose} />
         <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {loading ? <div className="muted">Loading…</div> : (
@@ -1371,26 +1371,34 @@ function RecordManualReturnModal({ onClose, onSaved }) {
                   {franchisees.map(function (f) { return <option key={f.id} value={f.id}>[{f.tier}] {f.business_name}</option> })}
                 </select>
               </label>
-              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Item
-                <select className="inp" value={skuId} onChange={function (e) { setSkuId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
-                  <option value="">Select SKU…</option>
-                  {Object.entries(grouped).map(function ([course, list]) {
-                    return <optgroup key={course} label={course}>
-                      {list.map(function (s) { return <option key={s.id} value={s.id}>{s.level_name}</option> })}
-                    </optgroup>
-                  })}
-                </select>
-              </label>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <label style={{ flex: 1, font: '600 12px var(--font)', color: 'var(--text2)' }}>Qty
-                  <input className="inp" type="number" min={1} value={qty} onChange={function (e) { setQty(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
-                </label>
-                <label style={{ flex: 1, font: '600 12px var(--font)', color: 'var(--text2)' }}>Credit rate (₹/unit)
-                  <input className="inp" type="number" min={0} value={rate} onChange={function (e) { setRate(e.target.value) }}
-                    placeholder={rateLoading ? 'Looking up…' : '0'} style={{ marginTop: 6, width: '100%' }} />
-                </label>
+
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 110px 100px 30px', gap: 8, font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', padding: '0 2px 4px' }}>
+                  <div>Item</div><div style={{ textAlign: 'right' }}>Qty</div><div style={{ textAlign: 'right' }}>Rate (₹)</div><div style={{ textAlign: 'right' }}>Credit</div><div />
+                </div>
+                {lines.map(function (l, idx) {
+                  const lineCredit = (parseInt(l.qty, 10) || 0) * (parseInt(l.rate, 10) || 0)
+                  return (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 110px 100px 30px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                      <select className="inp" value={l.skuId} onChange={function (e) { onLineSkuChange(idx, e.target.value) }}>
+                        <option value="">Select SKU…</option>
+                        {Object.entries(grouped).map(function ([course, list]) {
+                          return <optgroup key={course} label={course}>
+                            {list.map(function (s) { return <option key={s.id} value={s.id}>{s.level_name}</option> })}
+                          </optgroup>
+                        })}
+                      </select>
+                      <input className="inp" type="number" min={1} value={l.qty} onChange={function (e) { updateLine(idx, { qty: e.target.value }) }} style={{ textAlign: 'right' }} />
+                      <input className="inp" type="number" min={0} value={l.rate} onChange={function (e) { updateLine(idx, { rate: e.target.value }) }} style={{ textAlign: 'right' }} />
+                      <div style={{ textAlign: 'right', font: '600 12px var(--mono)' }}>₹{fmtAmt(lineCredit)}</div>
+                      <button type="button" className="btn-icon" onClick={function () { removeLine(idx) }} disabled={lines.length === 1} style={{ opacity: lines.length === 1 ? 0.3 : 1 }}>✕</button>
+                    </div>
+                  )
+                })}
+                <button type="button" className="btn-s" style={{ fontSize: 12 }} onClick={addLine}>+ Add item</button>
               </div>
-              <p className="hint" style={{ margin: 0 }}>Total credit: <strong>₹{fmtAmt((parseInt(qty, 10) || 0) * (parseInt(rate, 10) || 0))}</strong>.</p>
+
+              <p className="hint" style={{ margin: 0 }}>Total credit: <strong>₹{fmtAmt(totalCredit)}</strong>.</p>
               {franchiseeId && (
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Apply against invoice
                   <select className="inp" value={applyToOrderId} onChange={function (e) { setApplyToOrderId(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
@@ -1575,7 +1583,7 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   const { currentUser } = useAuth()
   const [items, setItems] = useState([])
   const [origFulfilled, setOrigFulfilled] = useState({})   // item.id -> fulfilled_by_franchisee_id as loaded
-  const [fulfillConfirm, setFulfillConfirm] = useState(null)   // { item, srs } awaiting confirmation
+  const [fulfillConfirm, setFulfillConfirm] = useState(null)   // [{ returnNo, rows, franchisee, total }] awaiting confirmation
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [allSkus, setAllSkus] = useState([])
   const [allItems, setAllItems] = useState([])
@@ -1746,22 +1754,34 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   // save outright) — ask before doing it, rather than silently cancelling
   // someone's credit as a side effect of an unrelated save.
   async function findFulfillChange() {
+    const seen = new Set()
+    const groups = []
     for (const item of items) {
       if (!item.id) continue
       const orig = origFulfilled[item.id]
       if (!orig || item.fulfilled_by_franchisee_id === orig) continue
       const srs = await liveReturnsForLine(order.id, item.id, item.sku_id)
-      if (srs.length) return { item, srs }
+      for (const sr of srs) {
+        if (seen.has(sr.return_no)) continue
+        seen.add(sr.return_no)
+        // A voucher can cover more than this one line (one franchisee
+        // fulfilling several lines on the same order shares one return_no) —
+        // expand to the full group so the confirm dialog and the cancel
+        // itself never silently reach past what's shown.
+        const rows = await fetchReturnGroup(sr.return_no)
+        const live = rows.filter(function (r) { return r.status === 'approved' })
+        if (live.length) groups.push({ returnNo: sr.return_no, rows: live, franchisee: sr.franchisees?.business_name, total: live.reduce(function (s, r) { return s + (r.total_credit || 0) }, 0) })
+      }
     }
-    return null
+    return groups.length ? groups : null
   }
 
   async function confirmFulfillChangeAndSave() {
     if (!fulfillConfirm) return
     setConfirmBusy(true)
     try {
-      for (const sr of fulfillConfirm.srs) {
-        await cancelStockReturn(sr, 'Fulfilled-by cleared/reassigned while editing ' + (order.order_ref || 'this order'), currentUser && currentUser.email)
+      for (const g of fulfillConfirm) {
+        await cancelStockReturn(g.rows, 'Fulfilled-by cleared/reassigned while editing ' + (order.order_ref || 'this order'), currentUser && currentUser.email)
       }
       setFulfillConfirm(null)
       await handleSave()
@@ -2071,10 +2091,10 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
             <ModalHeader flush title="Also cancel the linked return?" onClose={function () { setFulfillConfirm(null) }} />
             <div style={{ padding: '4px 20px 16px' }}>
               <p className="hint" style={{ marginBottom: 10 }}>
-                Changing "Fulfilled by" on this line will also cancel {fulfillConfirm.srs.length === 1 ? 'the return it created' : 'the returns it created'}, reversing the credit:
+                Changing "Fulfilled by" on this line will also cancel {fulfillConfirm.length === 1 ? 'the return it created' : 'the returns it created'}, reversing the credit:
               </p>
-              {fulfillConfirm.srs.map(function (sr) {
-                return <div key={sr.id} style={{ font: '600 12px var(--font)', marginBottom: 4 }}>{sr.return_no} — ₹{fmtAmt(sr.total_credit)} to {sr.franchisees?.business_name || 'franchisee'}</div>
+              {fulfillConfirm.map(function (g) {
+                return <div key={g.returnNo} style={{ font: '600 12px var(--font)', marginBottom: 4 }}>{g.returnNo} — ₹{fmtAmt(g.total)} to {g.franchisee || 'franchisee'}{g.rows.length > 1 ? ' (covers ' + g.rows.length + ' lines on this order)' : ''}</div>
               })}
             </div>
             <div className="modal-actions">
@@ -3297,16 +3317,26 @@ export default function OrdersPage() {
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
             {returns.length === 0 ? (
               <div className="empty">No sale returns yet.</div>
-            ) : (
+            ) : (function () {
+              // Group rows sharing one return_no into a single voucher row —
+              // one row per SKU line underneath, same as an order groups
+              // order_items under one order_ref/invoice_no.
+              const byVoucher = {}
+              const order = []
+              returns.forEach(function (r) {
+                const key = r.return_no || r.id
+                if (!byVoucher[key]) { byVoucher[key] = []; order.push(key) }
+                byVoucher[key].push(r)
+              })
+              const vouchers = order.map(function (key) { return byVoucher[key] })
+              return (
               <table className="big-tbl">
                 <thead>
                   <tr>
                     <th>Voucher No</th>
                     <th className="hide-mobile">Date</th>
                     <th>Franchisee</th>
-                    <th>Item</th>
-                    <th style={{ textAlign: 'right' }}>Qty</th>
-                    <th className="hide-mobile" style={{ textAlign: 'right' }}>Rate</th>
+                    <th>Items</th>
                     <th style={{ textAlign: 'right' }}>Credit</th>
                     <th className="hide-mobile">For Order</th>
                     <th>Status</th>
@@ -3314,34 +3344,37 @@ export default function OrdersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {returns.map(function (r) {
-                    const skuName = (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
+                  {vouchers.map(function (rows) {
+                    const r = rows[0]
                     const cancelled = r.status === 'cancelled'
+                    const total = rows.reduce(function (s, x) { return s + (x.total_credit || 0) }, 0)
+                    const itemLabel = rows.length === 1
+                      ? (r.skus?.courses?.group_name ? r.skus.courses.group_name + ' — ' : '') + (r.skus?.level_name || '')
+                      : rows.length + ' items'
                     return (
-                      <tr key={r.id} style={{ opacity: cancelled ? 0.55 : 1 }}>
+                      <tr key={r.return_no || r.id} style={{ opacity: cancelled ? 0.55 : 1 }}>
                         <td className="mono" style={{ color: '#2563EB', fontWeight: 600 }}>{r.return_no || '—'}</td>
                         <td className="mono hide-mobile">{fmtDate(r.approved_at || r.created_at)}</td>
                         <td>
                           <div style={{ fontWeight: 600 }}>{r.franchisees?.business_name || '—'}</div>
                           <TierBadge tier={r.franchisees?.tier} />
                         </td>
-                        <td>{skuName || '—'}</td>
-                        <td style={{ textAlign: 'right' }} className="mono">{r.qty}</td>
-                        <td className="hide-mobile mono" style={{ textAlign: 'right' }}>₹{fmtAmt(r.unit_value)}</td>
-                        <td style={{ textAlign: 'right' }}><div className="amt" style={cancelled ? { textDecoration: 'line-through' } : undefined}>₹{fmtAmt(r.total_credit)}</div></td>
-                        <td className="mono hide-mobile">{r.orders?.invoice_no || r.orders?.order_ref || '—'}</td>
+                        <td>{itemLabel || '—'}</td>
+                        <td style={{ textAlign: 'right' }}><div className="amt" style={cancelled ? { textDecoration: 'line-through' } : undefined}>₹{fmtAmt(total)}</div></td>
+                        <td className="mono hide-mobile">{r.orders?.invoice_no || r.orders?.order_ref || (r.kind === 'physical_return' ? '—' : '—')}</td>
                         <td>{cancelled
                           ? <span style={{ font: '700 10px var(--mono)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 20, padding: '2px 8px' }}>Cancelled</span>
                           : <span style={{ font: '700 10px var(--mono)', color: '#16A34A', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20, padding: '2px 8px' }}>Approved</span>}</td>
                         <td style={{ textAlign: 'right' }}>
-                          <button className="row-action" onClick={function () { setViewReturn(r) }}>View / Print</button>
+                          <button className="row-action" onClick={function () { setViewReturn(rows) }}>View / Print</button>
                         </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
-            )}
+              )
+            })()}
           </div>
         ) : (
         <>

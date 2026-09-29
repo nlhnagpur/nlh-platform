@@ -43,78 +43,104 @@ export async function createPendingStockReturns(order) {
   const { data: alreadyDeducted } = await sb.from('stock_ledger').select('id').eq('ref_type', 'order').eq('ref_id', order.id).limit(1)
   const stockAlreadyOut = !!(alreadyDeducted && alreadyDeducted.length)
 
-  for (const line of lines) {
-    if (liveLineIds.has(line.id) || liveSkuIds.has(line.sku_id)) continue
-    // What this franchisee actually paid HO for this SKU — their own most
-    // recent order line for it, so the credit reflects a real transaction,
-    // not a rate that may have since changed.
-    // Excludes the order being processed itself — the fulfilling
-    // franchisee can also be that order's own placer (a CF ordering on a
-    // school's behalf, same as this exact case), which would otherwise
-    // let the lookup circularly reference the very line it's crediting.
-    const { data: source } = await sb.from('order_items')
-      .select('id, order_id, rate, orders!inner(placer_id, created_at)')
-      .eq('sku_id', line.sku_id).eq('orders.placer_id', line.fulfilled_by_franchisee_id)
-      .neq('order_id', order.id)
-      .order('created_at', { foreignTable: 'orders', ascending: false }).limit(1).maybeSingle()
-    const unitValue = source?.rate || 0
-    const { data: sr, error: srErr } = await sb.from('franchisee_stock_returns').insert({
-      returning_franchisee_id: line.fulfilled_by_franchisee_id,
-      sku_id: line.sku_id, qty: line.ordered_qty, unit_value: unitValue,
-      total_credit: unitValue * line.ordered_qty,
-      source_order_id: source?.order_id || null, source_order_item_id: source?.id || null,
-      fulfills_order_id: order.id, fulfills_order_item_id: line.id,
-      status: 'approved', requested_by: 'system (auto)', approved_by: 'system (auto)',
-    }).select().single()
-    if (srErr || !sr) continue
+  // One voucher (return_no) per fulfilling franchisee on this order, covering
+  // every line they supplied — mirrors one invoice covering many order_items
+  // — rather than a separate SR number per line.
+  const pending = lines.filter(function (line) { return !liveLineIds.has(line.id) && !liveSkuIds.has(line.sku_id) })
+  const byFranchisee = {}
+  pending.forEach(function (l) { (byFranchisee[l.fulfilled_by_franchisee_id] = byFranchisee[l.fulfilled_by_franchisee_id] || []).push(l) })
 
-    if (stockAlreadyOut) {
-      const { data: kits } = await sb.from('kit_items').select('item_id, quantity').eq('sku_id', line.sku_id)
-      if (kits && kits.length) {
-        await sb.from('stock_ledger').insert(kits.map(function (k) {
-          return {
-            item_id: k.item_id, location_type: 'ho', movement_type: 'adjustment',
-            qty: line.ordered_qty * Number(k.quantity || 1),
-            ref_type: 'sale_return', ref_id: sr.id,
-            note: 'Stock kept by HO — ' + (sr.return_no || 'Sale Return') + ' reassigned this line to the franchisee’s own stock after HO’s stock was already deducted',
-          }
-        }))
+  for (const fid of Object.keys(byFranchisee)) {
+    const { data: returnNo } = await sb.rpc('next_sale_return_no')
+    for (const line of byFranchisee[fid]) {
+      // What this franchisee actually paid HO for this SKU — their own most
+      // recent order line for it, so the credit reflects a real transaction,
+      // not a rate that may have since changed.
+      // Excludes the order being processed itself — the fulfilling
+      // franchisee can also be that order's own placer (a CF ordering on a
+      // school's behalf, same as this exact case), which would otherwise
+      // let the lookup circularly reference the very line it's crediting.
+      const { data: source } = await sb.from('order_items')
+        .select('id, order_id, rate, orders!inner(placer_id, created_at)')
+        .eq('sku_id', line.sku_id).eq('orders.placer_id', fid)
+        .neq('order_id', order.id)
+        .order('created_at', { foreignTable: 'orders', ascending: false }).limit(1).maybeSingle()
+      const unitValue = source?.rate || 0
+      const { data: sr, error: srErr } = await sb.from('franchisee_stock_returns').insert({
+        return_no: returnNo || null,
+        returning_franchisee_id: fid,
+        sku_id: line.sku_id, qty: line.ordered_qty, unit_value: unitValue,
+        total_credit: unitValue * line.ordered_qty,
+        source_order_id: source?.order_id || null, source_order_item_id: source?.id || null,
+        fulfills_order_id: order.id, fulfills_order_item_id: line.id,
+        status: 'approved', requested_by: 'system (auto)', approved_by: 'system (auto)',
+      }).select().single()
+      if (srErr || !sr) continue
+
+      if (stockAlreadyOut) {
+        const { data: kits } = await sb.from('kit_items').select('item_id, quantity').eq('sku_id', line.sku_id)
+        if (kits && kits.length) {
+          await sb.from('stock_ledger').insert(kits.map(function (k) {
+            return {
+              item_id: k.item_id, location_type: 'ho', movement_type: 'adjustment',
+              qty: line.ordered_qty * Number(k.quantity || 1),
+              ref_type: 'sale_return', ref_id: sr.id,
+              note: 'Stock kept by HO — ' + (sr.return_no || 'Sale Return') + ' reassigned this line to the franchisee’s own stock after HO’s stock was already deducted',
+            }
+          }))
+        }
       }
     }
   }
 }
 
-// Reverses a Sale Return: drops the credit from the ledger (franchiseeLedger
-// only sums status='approved' rows, so a cancelled row is simply excluded —
-// nothing else to touch there) and, if this return had posted a compensating
-// stock entry (see above), posts the exact opposite so HO's stock is right
-// again. Returns created before this existed have no linked stock entry to
-// reverse automatically — those need a manual stock correction alongside.
-export async function cancelStockReturn(sr, reason, cancelledBy) {
-  const { data: compEntries } = await sb.from('stock_ledger').select('item_id, qty').eq('ref_type', 'sale_return').eq('ref_id', sr.id)
+// A "voucher" is every row sharing one return_no — one per SKU line, the same
+// way order_items lines share one order/invoice. Fetches the group given any
+// one row or just the return_no.
+export async function fetchReturnGroup(returnNo) {
+  const { data } = await sb.from('franchisee_stock_returns')
+    .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier, phone, email, address, area, city, state), skus(level_name, courses(group_name)), ' +
+      'orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no, invoiced_at, created_at, placer:franchisees!orders_placer_id_fkey(business_name), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name)), ' +
+      'applied_order:orders!franchisee_stock_returns_applied_order_id_fkey(order_ref, invoice_no)')
+    .eq('return_no', returnNo).order('created_at')
+  return data || []
+}
 
-  // If this credit was applied against an invoice (see applyCreditToOrder),
-  // pull that payment back out first — otherwise the invoice would stay
-  // showing as paid/part-paid for a credit that no longer exists.
-  if (sr.applied_order_payment_id) {
-    const { error: delErr } = await sb.from('order_payments').delete().eq('id', sr.applied_order_payment_id)
+// Reverses a Sale Return voucher (every line sharing its return_no that's
+// still approved): drops the credit from the ledger (franchiseeLedger only
+// sums status='approved' rows, so a cancelled one is simply excluded),
+// reverses any compensating stock entry each line posted, and — if the
+// voucher's credit had been applied against an invoice (see
+// applyCreditToOrder) — deletes that payment so the invoice's balance goes
+// back up too. Accepts either one row or an array of rows from the same
+// voucher; either way every live row in the group is cancelled together.
+export async function cancelStockReturn(srOrRows, reason, cancelledBy) {
+  const rows = Array.isArray(srOrRows) ? srOrRows : await fetchReturnGroup(srOrRows.return_no)
+  const live = rows.filter(function (r) { return r.status === 'approved' })
+  if (!live.length) return { stockReversed: false }
+
+  const paymentIds = new Set(live.map(function (r) { return r.applied_order_payment_id }).filter(Boolean))
+  for (const paymentId of paymentIds) {
+    const { error: delErr } = await sb.from('order_payments').delete().eq('id', paymentId)
     if (delErr) throw new Error('Could not reverse the invoice credit: ' + delErr.message)
   }
 
+  const ids = live.map(function (r) { return r.id })
   const { error } = await sb.from('franchisee_stock_returns')
     .update({
       status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_by: cancelledBy || null, cancel_reason: (reason || '').trim() || null,
       applied_order_id: null, applied_order_payment_id: null, applied_amount: null,
     })
-    .eq('id', sr.id)
+    .in('id', ids)
   if (error) throw error
 
+  const { data: compEntries } = await sb.from('stock_ledger').select('item_id, qty, ref_id').eq('ref_type', 'sale_return').in('ref_id', ids)
   if (compEntries && compEntries.length) {
     await sb.from('stock_ledger').insert(compEntries.map(function (e) {
       return {
         item_id: e.item_id, location_type: 'ho', movement_type: 'adjustment', qty: -e.qty,
-        ref_type: 'sale_return', ref_id: sr.id,
-        note: 'Reversing ' + (sr.return_no || 'Sale Return') + ' (cancelled)' + (reason ? ': ' + reason : ''),
+        ref_type: 'sale_return', ref_id: e.ref_id,
+        note: 'Reversing ' + (live[0].return_no || 'Sale Return') + ' (cancelled)' + (reason ? ': ' + reason : ''),
       }
     }))
     return { stockReversed: true }
@@ -133,63 +159,81 @@ export async function liveReturnsForLine(orderId, orderItemId, skuId) {
   return data || []
 }
 
-// Applies an approved, not-yet-applied return's credit against a specific
-// invoice — same mechanism as Record Payment (an order_payments row; the DB
-// trigger recomputes that order's amount_paid/status automatically), so the
-// invoice stops showing a balance due instead of the credit sitting unused
-// in the franchisee's general ledger. Caps at the invoice's own balance —
-// any leftover stays as ledger credit, applicable elsewhere later.
-export async function applyCreditToOrder(sr, orderId, appliedBy) {
+// Applies an approved, not-yet-applied return voucher's TOTAL credit (summed
+// across every line sharing its return_no) against a specific invoice — same
+// mechanism as Record Payment (an order_payments row; the DB trigger
+// recomputes that order's amount_paid/status automatically), so the invoice
+// stops showing a balance due instead of the credit sitting unused in the
+// franchisee's general ledger. Caps at the invoice's own balance — any
+// leftover stays as ledger credit, applicable elsewhere later. Stamps every
+// line in the group with the same applied_order_payment_id, so cancelling
+// any one of them (or the whole voucher) finds and reverses it.
+export async function applyCreditToOrder(srOrRows, orderId, appliedBy) {
+  const rows = Array.isArray(srOrRows) ? srOrRows : await fetchReturnGroup(srOrRows.return_no)
+  const live = rows.filter(function (r) { return r.status === 'approved' })
+  const totalCredit = live.reduce(function (s, r) { return s + (r.total_credit || 0) }, 0)
+  const returnNo = live[0] && live[0].return_no
+
   const { data: order, error: oErr } = await sb.from('orders').select('id, grand_total, amount_paid').eq('id', orderId).single()
   if (oErr || !order) throw new Error(oErr ? oErr.message : 'Invoice not found')
   const balance = Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
-  const amount = Math.min(sr.total_credit, balance)
+  const amount = Math.min(totalCredit, balance)
   if (amount <= 0) throw new Error('That invoice has no balance due to apply this credit against.')
 
   const { data: payment, error: pErr } = await sb.from('order_payments').insert({
     order_id: orderId, amount: amount, mode: 'credit_note',
-    reference: sr.return_no || null, note: 'Credit from Sale Return ' + (sr.return_no || sr.id),
+    reference: returnNo || null, note: 'Credit from Sale Return ' + (returnNo || ''),
     recorded_by: appliedBy || null,
   }).select().single()
   if (pErr) throw pErr
 
   const { error: uErr } = await sb.from('franchisee_stock_returns')
     .update({ applied_order_id: orderId, applied_order_payment_id: payment.id, applied_amount: amount })
-    .eq('id', sr.id)
+    .in('id', live.map(function (r) { return r.id }))
   if (uErr) throw uErr
   return amount
 }
 
-// Manual entry for a genuine physical return — a franchisee ships a kit/book
-// back to HO. Unlike createPendingStockReturns above, this isn't fulfilling
-// anyone else's order (fulfills_order_id stays null); it's just goods coming
-// back into HO's own stock, with a credit to whoever sent them back. addBack
-// controls whether the physical stock is actually usable again (uncheck for
-// a damaged/unsellable return that still merits a credit).
+// Manual entry for a genuine physical return — a franchisee ships one or more
+// kits/books back to HO. Unlike createPendingStockReturns above, this isn't
+// fulfilling anyone else's order (fulfills_order_id stays null); it's just
+// goods coming back into HO's own stock, with a credit to whoever sent them
+// back. One reserved return_no covers every line, the same way one invoice
+// covers every order_items line. addBack controls whether the physical stock
+// is actually usable again (uncheck for a damaged/unsellable return that
+// still merits a credit).
 export async function createManualStockReturn(opts) {
-  const { franchiseeId, skuId, qty, unitValue, reason, addBack, createdBy, applyToOrderId } = opts
-  const { data: sr, error } = await sb.from('franchisee_stock_returns').insert({
-    returning_franchisee_id: franchiseeId, sku_id: skuId, qty: qty, unit_value: unitValue,
-    total_credit: qty * unitValue, kind: 'physical_return', reason: (reason || '').trim() || null,
-    fulfills_order_id: null, status: 'approved', requested_by: createdBy || null, approved_by: createdBy || null,
-  }).select().single()
-  if (error) throw error
+  const { franchiseeId, lines, reason, addBack, createdBy, applyToOrderId } = opts
+  const { data: returnNo, error: rnErr } = await sb.rpc('next_sale_return_no')
+  if (rnErr) throw rnErr
 
-  if (applyToOrderId) {
-    try { await applyCreditToOrder(sr, applyToOrderId, createdBy) } catch (e) { console.warn('[sale return] could not apply to invoice:', e.message) }
-  }
+  const rows = []
+  for (const line of lines) {
+    const { data: sr, error } = await sb.from('franchisee_stock_returns').insert({
+      return_no: returnNo || null,
+      returning_franchisee_id: franchiseeId, sku_id: line.skuId, qty: line.qty, unit_value: line.unitValue,
+      total_credit: line.qty * line.unitValue, kind: 'physical_return', reason: (reason || '').trim() || null,
+      fulfills_order_id: null, status: 'approved', requested_by: createdBy || null, approved_by: createdBy || null,
+    }).select().single()
+    if (error) throw error
+    rows.push(sr)
 
-  if (addBack) {
-    const { data: kits } = await sb.from('kit_items').select('item_id, quantity').eq('sku_id', skuId)
-    if (kits && kits.length) {
-      await sb.from('stock_ledger').insert(kits.map(function (k) {
-        return {
-          item_id: k.item_id, location_type: 'ho', movement_type: 'receipt',
-          qty: qty * Number(k.quantity || 1), ref_type: 'sale_return', ref_id: sr.id,
-          note: (sr.return_no || 'Sale Return') + ' — kit returned to HO',
-        }
-      }))
+    if (addBack) {
+      const { data: kits } = await sb.from('kit_items').select('item_id, quantity').eq('sku_id', line.skuId)
+      if (kits && kits.length) {
+        await sb.from('stock_ledger').insert(kits.map(function (k) {
+          return {
+            item_id: k.item_id, location_type: 'ho', movement_type: 'receipt',
+            qty: line.qty * Number(k.quantity || 1), ref_type: 'sale_return', ref_id: sr.id,
+            note: (returnNo || 'Sale Return') + ' — kit returned to HO',
+          }
+        }))
+      }
     }
   }
-  return sr
+
+  if (applyToOrderId) {
+    try { await applyCreditToOrder(rows, applyToOrderId, createdBy) } catch (e) { console.warn('[sale return] could not apply to invoice:', e.message) }
+  }
+  return { return_no: returnNo, rows: rows }
 }
