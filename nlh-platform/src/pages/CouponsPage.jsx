@@ -48,6 +48,7 @@ function CouponModal({ coupon, currentUserId, onClose, onSaved }) {
     if (!code) { showToast('Enter a coupon code', 'warn'); return }
     if (!f.discount_value || Number(f.discount_value) <= 0) { showToast('Enter a discount value', 'warn'); return }
     if (f.discount_type === 'percent' && Number(f.discount_value) > 100) { showToast('Percentage cannot exceed 100', 'warn'); return }
+    if (f.valid_from && f.valid_until && f.valid_until < f.valid_from) { showToast('"Valid until" must be after "Valid from"', 'warn'); return }
     const row = {
       code: code,
       description: f.description || null,
