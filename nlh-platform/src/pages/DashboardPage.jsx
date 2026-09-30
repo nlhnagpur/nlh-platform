@@ -292,7 +292,7 @@ function ActivityFeed({ orders, isAdmin }) {
       bg:    act.bg,
       label: act.label,
       title: act.verb + (isAdmin ? ' · ' + name : ''),
-      ref:   o.invoice_no ? o.invoice_no : ('#' + String(o.id).slice(0, 8)),
+      ref:   o.invoice_no || o.proforma_no || o.order_ref || ('#' + String(o.id).slice(0, 8)),
       when:  relTime(o.created_at),
       amt:   o.grand_total ? '₹' + fmtAmt(o.grand_total) : null,
     }
@@ -854,7 +854,7 @@ function OrdersPanel({ orders, isAdmin, onNavigate }) {
               {list.map(function (o) {
                 return (
                   <tr key={o.id} style={{ cursor: 'pointer' }} onClick={function () { onNavigate && onNavigate('orders') }}>
-                    <td style={{ font: '600 12px var(--mono)', color: 'var(--text)' }}>{o.invoice_no || o.order_ref || o.id.slice(0, 8)}</td>
+                    <td style={{ font: '600 12px var(--mono)', color: 'var(--text)' }}>{o.invoice_no || o.proforma_no || o.order_ref || o.id.slice(0, 8)}</td>
                     {isAdmin && <td style={{ fontSize: 12, color: 'var(--text2)' }}>{o.placer?.business_name || '—'}</td>}
                     <td><OrderBadge status={o.status} /></td>
                     <td className="hide-mobile mono" style={{ color: 'var(--text3)', fontSize: 11 }}>{fmtDate(o.created_at)}</td>
@@ -935,7 +935,7 @@ export default function DashboardPage({ onNavigate }) {
       vF ? sb.from('franchisees').select('tier').eq('status', 'active') : NONE,
       vS ? sb.from('students').select('id', { count: 'exact', head: true }) : NONE,
       vO ? sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending') : NONE,
-      vO ? sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, placer:franchisees!orders_placer_id_fkey(business_name, city, tier)') : NONE,
+      vO ? sb.from('orders').select('id, status, grand_total, amount_paid, created_at, invoice_no, order_ref, proforma_no, placer:franchisees!orders_placer_id_fkey(business_name, city, tier)') : NONE,
     ])
     setFranchiseeCount(fr.count || 0)
     setStudentCount(st.count || 0)
@@ -979,7 +979,7 @@ export default function DashboardPage({ onNavigate }) {
     // order billed to this centre but placed by someone else on its behalf
     // (a CF placing/paying for a school) never showed up here otherwise.
     const { data: ownOrds } = await sb.from('orders')
-      .select('id, status, grand_total, amount_paid, created_at, invoice_no')
+      .select('id, status, grand_total, amount_paid, created_at, invoice_no, order_ref, proforma_no')
       .or('placer_id.eq.' + currentFranchiseeId + ',bill_to_franchisee_id.eq.' + currentFranchiseeId)
     const orders = ownOrds || []
     setOwnOrderCount(orders.length)
@@ -1117,12 +1117,12 @@ export default function DashboardPage({ onNavigate }) {
 
       } else if (type === 'orders') {
         const { data } = await sb.from('orders')
-          .select('invoice_no,id,status,grand_total,amount_paid,created_at,placer:franchisees!orders_placer_id_fkey(business_name,city,tier)')
+          .select('invoice_no,proforma_no,order_ref,id,status,grand_total,amount_paid,created_at,placer:franchisees!orders_placer_id_fkey(business_name,city,tier)')
           .order('created_at', { ascending: false })
         headers  = ['Invoice / Ref','Franchisee','City','Tier','Status','Total (₹)','Paid (₹)','Balance (₹)','Date']
         rows     = (data || []).map(function(r) {
           const bal = Math.max(0, (r.grand_total || 0) - (r.amount_paid || 0))
-          return [r.invoice_no || ('#' + String(r.id).slice(0, 8)), r.placer?.business_name, r.placer?.city, r.placer?.tier, r.status, r.grand_total || 0, r.amount_paid || 0, bal, r.created_at ? r.created_at.slice(0, 10) : '']
+          return [r.invoice_no || r.proforma_no || r.order_ref || ('#' + String(r.id).slice(0, 8)), r.placer?.business_name, r.placer?.city, r.placer?.tier, r.status, r.grand_total || 0, r.amount_paid || 0, bal, r.created_at ? r.created_at.slice(0, 10) : '']
         })
         filename = 'nlh-orders-' + date + '.csv'
 
@@ -1546,7 +1546,7 @@ export default function DashboardPage({ onNavigate }) {
                     return (
                       <tr key={o.id || i}>
                         <td className="mono" style={{ fontSize: 11 }}>
-                          {o.invoice_no || ('#' + String(o.id).slice(0, 8))}
+                          {o.invoice_no || o.proforma_no || o.order_ref || ('#' + String(o.id).slice(0, 8))}
                         </td>
                         {isAdmin && (
                           <td>
