@@ -1735,14 +1735,20 @@ function RecordManualReturnModal({ onClose, onSaved }) {
   const [franchisees, setFranchisees] = useState([])
   const [skus, setSkus] = useState([])
   const [franchiseeId, setFranchiseeId] = useState('')
+  // '' = HO (default). Otherwise another franchisee/school id — the sender
+  // is still credited (that party settles with HO separately); destination
+  // is recorded for audit only, since there's no per-franchisee stock ledger.
+  const [destinationId, setDestinationId] = useState('')
   // One voucher, many lines — same shape as NewOrderModal's `lines`.
-  const [lines, setLines] = useState([{ skuId: '', qty: '1', rate: '' }])
+  const [lines, setLines] = useState([{ skuId: '', qty: '1', rate: '', excluded: [] }])
+  const [kitMap, setKitMap] = useState({})   // sku_id -> [{ item_id, name, quantity }]
   const [reason, setReason] = useState('')
   const [addBack, setAddBack] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [openOrders, setOpenOrders] = useState([])
   const [applyToOrderId, setApplyToOrderId] = useState('')
+  const toHo = !destinationId
 
   useEffect(function () {
     Promise.all([
@@ -1755,11 +1761,18 @@ function RecordManualReturnModal({ onClose, onSaved }) {
     })
   }, [])
 
+  useEffect(function () {
+    const ids = lines.map(function (l) { return l.skuId }).filter(Boolean)
+    if (!ids.length) { setKitMap({}); return }
+    loadKitMap(ids).then(setKitMap)
+  }, [lines])   // eslint-disable-line react-hooks/exhaustive-deps
+
   // This franchisee's own outstanding invoices — the credit can be applied
   // straight against one, same as recording a payment, so it doesn't just
   // sit as an unapplied ledger credit while the invoice still shows pending.
   useEffect(function () {
     setApplyToOrderId('')
+    setDestinationId(function (d) { return d === franchiseeId ? '' : d })
     if (!franchiseeId) { setOpenOrders([]); return }
     let cancelled = false
     sb.from('orders').select('id, order_ref, invoice_no, grand_total, amount_paid')
@@ -1788,8 +1801,18 @@ function RecordManualReturnModal({ onClose, onSaved }) {
     if (data) updateLine(idx, { rate: String(data.rate) })
   }
 
-  function addLine() { setLines(function (prev) { return [...prev, { skuId: '', qty: '1', rate: '' }] }) }
+  function addLine() { setLines(function (prev) { return [...prev, { skuId: '', qty: '1', rate: '', excluded: [] }] }) }
   function removeLine(idx) { setLines(function (prev) { return prev.filter(function (_, i) { return i !== idx }) }) }
+  function toggleLineKitItem(idx, itemId) {
+    setLines(function (prev) {
+      return prev.map(function (l, i) {
+        if (i !== idx) return l
+        const ex = l.excluded || []
+        const next = ex.includes(itemId) ? ex.filter(function (x) { return x !== itemId }) : [...ex, itemId]
+        return { ...l, excluded: next }
+      })
+    })
+  }
 
   const validLines = lines.filter(function (l) { return l.skuId && (parseInt(l.qty, 10) || 0) > 0 })
   const totalCredit = validLines.reduce(function (s, l) { return s + (parseInt(l.qty, 10) || 0) * (parseInt(l.rate, 10) || 0) }, 0)
@@ -1802,13 +1825,14 @@ function RecordManualReturnModal({ onClose, onSaved }) {
     try {
       const res = await createManualStockReturn({
         franchiseeId: franchiseeId,
-        lines: validLines.map(function (l) { return { skuId: l.skuId, qty: parseInt(l.qty, 10) || 0, unitValue: parseInt(l.rate, 10) || 0 } }),
+        destinationFranchiseeId: destinationId || null,
+        lines: validLines.map(function (l) { return { skuId: l.skuId, qty: parseInt(l.qty, 10) || 0, unitValue: parseInt(l.rate, 10) || 0, excludedKitItems: l.excluded || [] } }),
         reason: reason.trim(), addBack: addBack, createdBy: currentUser && currentUser.email,
         applyToOrderId: applyToOrderId || null,
       })
       showToast((res.return_no || 'Return') + ' recorded ✓'
         + (applyToOrderId ? ' — applied against the invoice.' : '')
-        + (addBack ? ' Added back to HO stock.' : ''))
+        + (toHo && addBack ? ' Added back to HO stock.' : ''))
       onSaved()
     } catch (err) {
       showToast('Could not record return: ' + err.message, 'err')
@@ -1826,19 +1850,37 @@ function RecordManualReturnModal({ onClose, onSaved }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 640 }}>
-        <ModalHeader flush title="Record a Kit / Book Return" subtitle="A franchisee is physically sending stock back to HO" onClose={onClose} />
+        <ModalHeader flush title="Record a Kit / Book Return" subtitle="A franchisee is physically sending stock back to HO or on to another centre/school" onClose={onClose} />
         <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {loading ? <div className="muted">Loading…</div> : (
             <>
-              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Returned by
-                <div style={{ marginTop: 6 }}>
-                  <SearchSelect
-                    options={franchisees.map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })}
-                    value={franchiseeId} placeholder="Type to search franchisee…"
-                    onChange={setFranchiseeId}
-                  />
-                </div>
-              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Returned by
+                  <div style={{ marginTop: 6 }}>
+                    <SearchSelect
+                      options={franchisees.map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })}
+                      value={franchiseeId} placeholder="Type to search franchisee…"
+                      onChange={setFranchiseeId}
+                    />
+                  </div>
+                </label>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Supplied to
+                  <div style={{ marginTop: 6 }}>
+                    <SearchSelect
+                      options={[{ value: '', label: 'Head Office (HO)' }].concat(
+                        franchisees.filter(function (f) { return f.id !== franchiseeId }).map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })
+                      )}
+                      value={destinationId} placeholder="Head Office (HO)"
+                      onChange={setDestinationId}
+                    />
+                  </div>
+                </label>
+              </div>
+              {!toHo && (
+                <p className="hint" style={{ margin: 0 }}>
+                  Going to a franchisee/school, not HO — {franchisees.find(function (f) { return f.id === destinationId })?.business_name || 'they'} settle this with HO separately, so HO stock is unaffected. {franchisees.find(function (f) { return f.id === franchiseeId })?.business_name || 'The sender'} is still credited below.
+                </p>
+              )}
 
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 110px 100px 30px', gap: 8, font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', padding: '0 2px 4px' }}>
@@ -1846,25 +1888,32 @@ function RecordManualReturnModal({ onClose, onSaved }) {
                 </div>
                 {lines.map(function (l, idx) {
                   const lineCredit = (parseInt(l.qty, 10) || 0) * (parseInt(l.rate, 10) || 0)
+                  const kitComps = l.skuId ? kitMap[l.skuId] : null
                   return (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 110px 100px 30px', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                      <select className="inp" value={l.skuId} onChange={function (e) { onLineSkuChange(idx, e.target.value) }}>
-                        <option value="">Select SKU…</option>
-                        {Object.entries(grouped).map(function ([course, list]) {
-                          return <optgroup key={course} label={course}>
-                            {list.map(function (s) { return <option key={s.id} value={s.id}>{s.level_name}</option> })}
-                          </optgroup>
-                        })}
-                      </select>
-                      <input className="inp" type="number" min={1} value={l.qty} onChange={function (e) { updateLine(idx, { qty: e.target.value }) }} style={{ textAlign: 'right' }} />
-                      <input className="inp" type="number" min={0} value={l.rate} onChange={function (e) { updateLine(idx, { rate: e.target.value }) }} style={{ textAlign: 'right' }} />
-                      <div style={{ textAlign: 'right', font: '600 12px var(--mono)' }}>₹{fmtAmt(lineCredit)}</div>
-                      <button type="button" className="btn-icon" onClick={function () { removeLine(idx) }} disabled={lines.length === 1} style={{ opacity: lines.length === 1 ? 0.3 : 1 }}>✕</button>
+                    <div key={idx} style={{ marginBottom: 6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 110px 100px 30px', gap: 8, alignItems: 'center' }}>
+                        <select className="inp" value={l.skuId} onChange={function (e) { onLineSkuChange(idx, e.target.value) }}>
+                          <option value="">Select SKU…</option>
+                          {Object.entries(grouped).map(function ([course, list]) {
+                            return <optgroup key={course} label={course}>
+                              {list.map(function (s) { return <option key={s.id} value={s.id}>{s.level_name}</option> })}
+                            </optgroup>
+                          })}
+                        </select>
+                        <input className="inp" type="number" min={1} value={l.qty} onChange={function (e) { updateLine(idx, { qty: e.target.value }) }} style={{ textAlign: 'right' }} />
+                        <input className="inp" type="number" min={0} value={l.rate} onChange={function (e) { updateLine(idx, { rate: e.target.value }) }} style={{ textAlign: 'right' }} />
+                        <div style={{ textAlign: 'right', font: '600 12px var(--mono)' }}>₹{fmtAmt(lineCredit)}</div>
+                        <button type="button" className="btn-icon" onClick={function () { removeLine(idx) }} disabled={lines.length === 1} style={{ opacity: lines.length === 1 ? 0.3 : 1 }}>✕</button>
+                      </div>
+                      {kitComps && kitComps.length > 0 && (
+                        <KitChecklist components={kitComps} excluded={l.excluded} onToggle={function (id) { toggleLineKitItem(idx, id) }} />
+                      )}
                     </div>
                   )
                 })}
                 <button type="button" className="btn-s" style={{ fontSize: 12 }} onClick={addLine}>+ Add item</button>
               </div>
+              <p className="hint" style={{ margin: 0, marginTop: -6 }}>Untick a kit component above if it stayed with {franchisees.find(function (f) { return f.id === franchiseeId })?.business_name || 'the sender'} instead of being sent on — adjust the rate to reflect the partial kit.</p>
 
               <p className="hint" style={{ margin: 0 }}>Total credit: <strong>₹{fmtAmt(totalCredit)}</strong>.</p>
               {franchiseeId && (
@@ -1883,10 +1932,12 @@ function RecordManualReturnModal({ onClose, onSaved }) {
                   </span>
                 </label>
               )}
-              <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', font: '500 12px var(--font)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={addBack} onChange={function (e) { setAddBack(e.target.checked) }} style={{ marginTop: 2 }} />
-                <span>Add this stock back into HO's inventory (uncheck for a damaged/unsellable return — the franchisee still gets credited, but the stock count won't change).</span>
-              </label>
+              {toHo && (
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', font: '500 12px var(--font)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={addBack} onChange={function (e) { setAddBack(e.target.checked) }} style={{ marginTop: 2 }} />
+                  <span>Add this stock back into HO's inventory (uncheck for a damaged/unsellable return — the franchisee still gets credited, but the stock count won't change).</span>
+                </label>
+              )}
               <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Reason
                 <textarea className="inp" rows={2} value={reason} onChange={function (e) { setReason(e.target.value) }}
                   placeholder="e.g. wrong level sent, student withdrew before kit was used" style={{ marginTop: 6, width: '100%', resize: 'vertical' }} />

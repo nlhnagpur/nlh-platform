@@ -109,7 +109,8 @@ export async function fetchReturnGroup(returnNo) {
   const { data } = await sb.from('franchisee_stock_returns')
     .select('*, franchisees!franchisee_stock_returns_returning_franchisee_id_fkey(business_name, tier, phone, email, address, area, city, state), skus(level_name, courses(group_name)), ' +
       'orders!franchisee_stock_returns_fulfills_order_id_fkey(order_ref, invoice_no, invoiced_at, created_at, placer:franchisees!orders_placer_id_fkey(business_name), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name)), ' +
-      'applied_order:orders!franchisee_stock_returns_applied_order_id_fkey(order_ref, invoice_no)')
+      'applied_order:orders!franchisee_stock_returns_applied_order_id_fkey(order_ref, invoice_no), ' +
+      'destination_fr:franchisees!franchisee_stock_returns_destination_franchisee_id_fkey(business_name, tier)')
     .eq('return_no', returnNo).order('created_at')
   return data || []
 }
@@ -203,33 +204,45 @@ export async function applyCreditToOrder(srOrRows, orderId, appliedBy) {
 }
 
 // Manual entry for a genuine physical return — a franchisee ships one or more
-// kits/books back to HO. Unlike createPendingStockReturns above, this isn't
-// fulfilling anyone else's order (fulfills_order_id stays null); it's just
-// goods coming back into HO's own stock, with a credit to whoever sent them
-// back. One reserved return_no covers every line, the same way one invoice
-// covers every order_items line. addBack controls whether the physical stock
-// is actually usable again (uncheck for a damaged/unsellable return that
-// still merits a credit).
+// kits/books back to HO, or on to another franchisee/school. Unlike
+// createPendingStockReturns above, this isn't fulfilling anyone else's order
+// (fulfills_order_id stays null); the sender is credited either way — when
+// the destination is HO, HO settles the credit directly; when it's another
+// franchisee/school, that party pays HO separately, so the sender still gets
+// credited here and destination is recorded only for audit (there's no
+// per-franchisee stock ledger, so a non-HO destination never touches
+// stock_ledger, and addBack is ignored for it). One reserved return_no
+// covers every line, the same way one invoice covers every order_items line.
+// addBack controls whether the physical stock is actually usable again
+// (uncheck for a damaged/unsellable HO return that still merits a credit).
+// Each line may carry excludedKitItems — component item_ids retained by the
+// sender rather than supplied — so a partial-kit voucher shows the real
+// breakdown and the addBack stock entry only credits HO for what it actually
+// received back.
 export async function createManualStockReturn(opts) {
-  const { franchiseeId, lines, reason, addBack, createdBy, applyToOrderId } = opts
+  const { franchiseeId, lines, reason, addBack, createdBy, applyToOrderId, destinationFranchiseeId } = opts
   const { data: returnNo, error: rnErr } = await sb.rpc('next_sale_return_no')
   if (rnErr) throw rnErr
+  const toHo = !destinationFranchiseeId
 
   const rows = []
   for (const line of lines) {
+    const excluded = line.excludedKitItems || []
     const { data: sr, error } = await sb.from('franchisee_stock_returns').insert({
       return_no: returnNo || null,
       returning_franchisee_id: franchiseeId, sku_id: line.skuId, qty: line.qty, unit_value: line.unitValue,
       total_credit: line.qty * line.unitValue, kind: 'physical_return', reason: (reason || '').trim() || null,
       fulfills_order_id: null, status: 'approved', requested_by: createdBy || null, approved_by: createdBy || null,
+      destination_franchisee_id: destinationFranchiseeId || null, excluded_kit_items: excluded,
     }).select().single()
     if (error) throw error
     rows.push(sr)
 
-    if (addBack) {
+    if (addBack && toHo) {
       const { data: kits } = await sb.from('kit_items').select('item_id, quantity').eq('sku_id', line.skuId)
-      if (kits && kits.length) {
-        await sb.from('stock_ledger').insert(kits.map(function (k) {
+      const included = (kits || []).filter(function (k) { return !excluded.includes(k.item_id) })
+      if (included.length) {
+        await sb.from('stock_ledger').insert(included.map(function (k) {
           return {
             item_id: k.item_id, location_type: 'ho', movement_type: 'receipt',
             qty: line.qty * Number(k.quantity || 1), ref_type: 'sale_return', ref_id: sr.id,

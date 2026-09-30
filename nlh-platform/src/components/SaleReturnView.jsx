@@ -44,6 +44,8 @@ export default function SaleReturnView({ saleReturn, onClose, onSaved, isAdmin }
   const isCancelled = r.status === 'cancelled'
   const fr = r.franchisees || {}
   const isPhysical = r.kind === 'physical_return'
+  const destFr = r.destination_fr || null
+  const toHo = isPhysical && !destFr
   const forOrder = r.orders?.invoice_no || r.orders?.order_ref || (isPhysical ? (r.note || 'Direct kit return') : '—')
   // Who actually received the goods — a school billed through its CF shows
   // as the school, same bill_to_fr-else-placer resolution used everywhere
@@ -67,6 +69,25 @@ export default function SaleReturnView({ saleReturn, onClose, onSaved, isAdmin }
 
   const liveRows = rows.filter(function (x) { return x.status === 'approved' })
   const liveCredit = liveRows.reduce(function (s, x) { return s + (x.total_credit || 0) }, 0)
+
+  // Kit component names for any line carrying an excluded_kit_items breakdown
+  // (a partial-kit return/supply — some components stayed with the sender).
+  const [kitMap, setKitMap] = useState({})   // sku_id -> [{ item_id, name }]
+  useEffect(function () {
+    const skuIds = rows.filter(function (x) { return (x.excluded_kit_items || []).length > 0 }).map(function (x) { return x.sku_id }).filter(Boolean)
+    if (!skuIds.length) { setKitMap({}); return }
+    let cancelled = false
+    sb.from('kit_items').select('sku_id, item_id, inventory_items(name)').in('sku_id', skuIds).then(function (res) {
+      if (cancelled) return
+      const map = {}
+      ;(res.data || []).forEach(function (k) {
+        if (!map[k.sku_id]) map[k.sku_id] = []
+        map[k.sku_id].push({ item_id: k.item_id, name: k.inventory_items?.name || '—' })
+      })
+      setKitMap(map)
+    })
+    return function () { cancelled = true }
+  }, [rows])
 
   function openApply() {
     setApplyOrderId('')
@@ -355,8 +376,20 @@ export default function SaleReturnView({ saleReturn, onClose, onSaved, isAdmin }
             <div style={{ borderRadius: 10, padding: '9px 12px 24px', background: '#EFF6FF', position: 'relative', overflow: 'hidden', minHeight: 104 }}>
               <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 3, background: '#2563EB' }} />
               <div style={{ font: '700 7.5px "DM Mono",monospace', color: '#2563EB', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 5 }}>{isPhysical ? 'Goods received by' : 'Returned goods issued by'}</div>
-              <div style={{ font: '700 12px "DM Sans",sans-serif', color: '#1A1916', lineHeight: 1.2, marginBottom: 3 }}>New Learning Horizons</div>
-              <div style={{ font: '500 9px "DM Mono",monospace', color: '#5C5A54', lineHeight: 1.55 }}>9, Anjuman Shopping Complex, Residency Rd, Sadar, Nagpur 440 001</div>
+              {toHo ? (
+                <>
+                  <div style={{ font: '700 12px "DM Sans",sans-serif', color: '#1A1916', lineHeight: 1.2, marginBottom: 3 }}>New Learning Horizons</div>
+                  <div style={{ font: '500 9px "DM Mono",monospace', color: '#5C5A54', lineHeight: 1.55 }}>9, Anjuman Shopping Complex, Residency Rd, Sadar, Nagpur 440 001</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+                    <span style={{ background: 'rgba(0,0,0,.08)', color: '#2563EB', padding: '2px 8px', borderRadius: 20, font: '700 8px "DM Mono",monospace', textTransform: 'uppercase', letterSpacing: '.04em', flexShrink: 0 }}>{destFr.tier || '—'}</span>
+                    <span style={{ font: '700 12px "DM Sans",sans-serif', color: '#1A1916', lineHeight: 1.2 }}>{destFr.business_name}</span>
+                  </div>
+                  <div style={{ font: '500 9px "DM Mono",monospace', color: '#5C5A54', lineHeight: 1.55 }}>Settles this directly with HO — recorded here for audit only.</div>
+                </>
+              )}
             </div>
             <div style={{ borderRadius: 10, padding: '9px 12px 24px', background: 'linear-gradient(135deg,#FFF7DA,#FFEAA0)', position: 'relative', overflow: 'hidden', minHeight: 104 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 5 }}>
@@ -387,22 +420,34 @@ export default function SaleReturnView({ saleReturn, onClose, onSaved, isAdmin }
               const editLine = editing ? editLines.find(function (l) { return l.id === row.id }) : null
               const rowCancelled = row.status === 'cancelled'
               const rowCredit = editLine ? (parseInt(editLine.qty, 10) || 0) * (parseInt(editLine.unitValue, 10) || 0) : row.total_credit
+              const excluded = row.excluded_kit_items || []
+              const comps = kitMap[row.sku_id] || []
+              const retained = comps.filter(function (c) { return excluded.includes(c.item_id) })
+              const sent = comps.filter(function (c) { return !excluded.includes(c.item_id) })
               return (
-                <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 110px', gap: 10, padding: '11px 14px', alignItems: 'center', borderTop: i > 0 ? '1px solid #F0EEE9' : 'none', opacity: rowCancelled ? 0.5 : 1 }}>
-                  <div style={{ font: '600 13px "DM Sans",sans-serif', color: '#1A1916' }}>{rowSkuName || '—'}{rowCancelled ? ' (cancelled)' : ''}</div>
-                  {editLine ? (
-                    <input type="number" min="1" value={editLine.qty} onChange={function (e) { updateEditLine(row.id, { qty: e.target.value }) }}
-                      style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
-                  ) : (
-                    <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>{row.qty}</div>
+                <div key={row.id} style={{ borderTop: i > 0 ? '1px solid #F0EEE9' : 'none' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 110px', gap: 10, padding: '11px 14px 4px', alignItems: 'center', opacity: rowCancelled ? 0.5 : 1 }}>
+                    <div style={{ font: '600 13px "DM Sans",sans-serif', color: '#1A1916' }}>{rowSkuName || '—'}{rowCancelled ? ' (cancelled)' : ''}</div>
+                    {editLine ? (
+                      <input type="number" min="1" value={editLine.qty} onChange={function (e) { updateEditLine(row.id, { qty: e.target.value }) }}
+                        style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
+                    ) : (
+                      <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>{row.qty}</div>
+                    )}
+                    {editLine ? (
+                      <input type="number" min="0" value={editLine.unitValue} onChange={function (e) { updateEditLine(row.id, { unitValue: e.target.value }) }}
+                        style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
+                    ) : (
+                      <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>₹{fmtAmt(row.unit_value)}</div>
+                    )}
+                    <div style={{ textAlign: 'right', font: '700 13.5px "DM Mono",monospace', color: '#1A1916' }}>₹{fmtAmt(rowCredit)}</div>
+                  </div>
+                  {retained.length > 0 && (
+                    <div style={{ padding: '0 14px 10px', font: '500 9.5px "DM Mono",monospace', color: '#5C5A54' }}>
+                      Supplied: {sent.map(function (c) { return c.name }).join(', ') || '—'}
+                      {' · '}<span style={{ textDecoration: 'line-through', color: '#9C9A92' }}>Retained by {fr.business_name || 'sender'}: {retained.map(function (c) { return c.name }).join(', ')}</span>
+                    </div>
                   )}
-                  {editLine ? (
-                    <input type="number" min="0" value={editLine.unitValue} onChange={function (e) { updateEditLine(row.id, { unitValue: e.target.value }) }}
-                      style={{ textAlign: 'right', font: '600 12.5px "DM Mono",monospace', border: '1px solid #D0CEC6', borderRadius: 6, padding: '4px 6px', width: '100%' }} />
-                  ) : (
-                    <div style={{ textAlign: 'right', font: '500 12.5px "DM Mono",monospace', color: '#5C5A54' }}>₹{fmtAmt(row.unit_value)}</div>
-                  )}
-                  <div style={{ textAlign: 'right', font: '700 13.5px "DM Mono",monospace', color: '#1A1916' }}>₹{fmtAmt(rowCredit)}</div>
                 </div>
               )
             })}
@@ -410,7 +455,9 @@ export default function SaleReturnView({ saleReturn, onClose, onSaved, isAdmin }
 
           {/* who it was supplied to — short, one line */}
           <div style={{ font: '500 10px "DM Mono",monospace', color: '#5C5A54' }}>
-            {isPhysical ? <>Returned by <b style={{ color: '#1A1916' }}>{fr.business_name || '—'}</b> · {forOrder} · {orderDate}</> : <>Supplied to <b style={{ color: '#1A1916' }}>{receiver}</b> · {forOrder} · {orderDate}</>}
+            {isPhysical
+              ? <>Returned by <b style={{ color: '#1A1916' }}>{fr.business_name || '—'}</b> · Supplied to <b style={{ color: '#1A1916' }}>{toHo ? 'Head Office' : destFr.business_name}</b>{r.reason ? ' · ' + r.reason : ''}</>
+              : <>Supplied to <b style={{ color: '#1A1916' }}>{receiver}</b> · {forOrder} · {orderDate}</>}
           </div>
 
           {/* credit total */}
