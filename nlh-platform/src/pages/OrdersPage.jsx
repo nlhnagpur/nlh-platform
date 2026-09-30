@@ -161,6 +161,25 @@ async function deductOrderStockIfNeeded(order, noteLabel) {
     .filter(function (r) { return r.after < 0 })
 }
 
+// Reverses whatever deductOrderStockIfNeeded deducted for this order — used
+// when an invoice is fully cancelled, so HO's stock isn't left permanently
+// short for goods it never actually shipped. Idempotent (checked via a
+// compensating 'adjustment' row already present for this order) and a no-op
+// if the order was never invoiced (nothing was ever deducted). Returns
+// whether anything was reversed, so the caller can mention it or not.
+async function reverseOrderStockIfNeeded(orderId) {
+  const { data: issued } = await sb.from('stock_ledger').select('item_id, qty')
+    .eq('ref_type', 'order').eq('ref_id', orderId).eq('movement_type', 'issue_to_franchisee')
+  if (!issued || !issued.length) return false
+  const { data: alreadyReversed } = await sb.from('stock_ledger').select('id')
+    .eq('ref_type', 'order').eq('ref_id', orderId).eq('movement_type', 'adjustment').limit(1)
+  if (alreadyReversed && alreadyReversed.length) return false
+  await sb.from('stock_ledger').insert(issued.map(function (r) {
+    return { item_id: r.item_id, location_type: 'ho', movement_type: 'adjustment', qty: -r.qty, ref_type: 'order', ref_id: orderId, note: 'Invoice cancelled — stock reversed to HO' }
+  }))
+  return true
+}
+
 // createPendingStockReturns moved to ../utils/saleReturns.js — shared with
 // InvoiceView.jsx's own Edit tab, which now also has the "Fulfilled by"
 // picker (see InvoiceView.jsx), without the two pages importing each other.
@@ -1066,17 +1085,21 @@ function DispatchModal({ order, onClose, onSaved }) {
 // editable Dispatch (edit) action, everyone else just gets to see it.
 // ---------------------------------------------------------------------------
 function DispatchDetailsView({ order, onClose }) {
+  const cancelled = order.status === 'cancelled'
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 380 }}>
         <ModalHeader flush title="Dispatch Details" subtitle={order.invoice_no || order.order_ref || 'Order'} onClose={onClose} />
+        {cancelled && (
+          <p className="hint" style={{ margin: '0 20px 10px', color: 'var(--red, #dc2626)' }}>This order was cancelled — weight and freight no longer apply.</p>
+        )}
         <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[
             ['Courier', order.courier_partner || '—'],
             ['AWB / Tracking No.', order.awb_number || '—'],
             ['Dispatch Date', order.dispatch_date ? fmtDate(order.dispatch_date) : '—'],
-            ['Weight', order.dispatch_weight != null ? order.dispatch_weight + ' kg' : '—'],
-            ['Freight', order.dispatch_freight > 0 ? '₹' + fmtAmt(order.dispatch_freight) : '—'],
+            ['Weight', cancelled ? '0 kg' : (order.dispatch_weight != null ? order.dispatch_weight + ' kg' : '—')],
+            ['Freight', cancelled ? '₹0' : (order.dispatch_freight > 0 ? '₹' + fmtAmt(order.dispatch_freight) : '—')],
           ].map(function (row) {
             return (
               <div key={row[0]} style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
@@ -3761,17 +3784,26 @@ export default function OrdersPage() {
   async function handleCancelInvoice() {
     if (!cancelOrder) return
     setCancelling(true)
+    // invoice_no is kept, not nulled — it stays on the order purely for
+    // reference ("this was INV-2026-0011, now cancelled"); it was never
+    // going to be reused either way (invoice_seq doesn't roll back), and
+    // cancel is now terminal so there's no future re-invoice that would
+    // need the number freed up.
     const { error } = await sb.from('orders').update({
       status: 'cancelled',
-      invoice_no: null,
       invoice_cancelled_at: new Date().toISOString(),
       invoice_cancelled_by: currentUser?.email || currentRole || 'admin',
       cancel_reason: cancelReason.trim() || null,
     }).eq('id', cancelOrder.id)
     setCancelling(false)
     if (error) { showToast('Failed to cancel: ' + error.message, 'err'); return }
+    let stockMsg = ''
+    try {
+      const reversed = await reverseOrderStockIfNeeded(cancelOrder.id)
+      if (reversed) stockMsg = ' · stock reversed to HO'
+    } catch (e) { console.warn('Stock reversal failed:', e.message) }
     try { await mirrorOrderToTransactions(cancelOrder.id) } catch (e) { console.warn('[Phase 3 dual-write] cancel-invoice mirror failed:', e.message) }
-    showToast('Invoice ' + (cancelOrder.invoice_no || '') + ' cancelled · order fully cancelled')
+    showToast('Invoice ' + (cancelOrder.invoice_no || '') + ' cancelled · order fully cancelled' + stockMsg)
     setCancelOrder(null)
     setCancelReason('')
     await loadOrders()
@@ -3891,7 +3923,7 @@ export default function OrdersPage() {
       canPdfOrder && { key: 'pdf', label: 'View Invoice', onClick: function () { setInvoiceViewOrder(order) } },
       // A proforma order with no real invoice yet can't dispatch — payment
       // has to be verified first (which converts it to a real invoice).
-      isAdmin && can('orders.dispatch') && canDispatch && order.kind !== 'service' && {
+      isAdmin && can('orders.dispatch') && canDispatch && order.kind !== 'service' && order.status !== 'cancelled' && {
         key: 'dispatch', label: order.dispatched_at ? 'Dispatch (edit)' : 'Dispatch',
         onClick: function () { setDispatchOrder(order) },
       },
@@ -4488,7 +4520,7 @@ export default function OrdersPage() {
               <div style={{ font: '700 16px "DM Sans",sans-serif', color: '#A32D2D' }}>Cancel Invoice {cancelOrder.invoice_no}?</div>
             </div>
             <p style={{ font: '400 13px "DM Sans",sans-serif', color: '#5C5A54', lineHeight: 1.6, marginBottom: 16 }}>
-              This will <strong>void the invoice number and cancel this order</strong> — it will not go back to Pending. The number will not be reused.
+              This will <strong>fully cancel this order</strong> — it will not go back to Pending. Any stock deducted for it is returned to HO. The invoice number stays on the order for reference and won't be reused.
             </p>
             <textarea value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }} placeholder="Reason (optional)" rows={2}
               style={{ width: '100%', padding: '8px 11px', border: '1.5px solid #E2E0D8', borderRadius: 8, font: '13px "DM Sans",sans-serif', marginBottom: 16, resize: 'none', outline: 'none', boxSizing: 'border-box' }} />
