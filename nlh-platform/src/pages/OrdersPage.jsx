@@ -4249,12 +4249,14 @@ export default function OrdersPage() {
                       )}
                       <td className="mono hide-mobile">{fmtDate(order.invoiced_at || order.created_at)}</td>
                       <td><StatusBadge status={order.status} /></td>
-                      <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(order.grand_total || 0)}</div></td>
+                      <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(order.status === 'cancelled' ? 0 : (order.grand_total || 0))}</div></td>
                       {/* What's still owed — the figure that actually needs chasing.
-                          The amount received shows on the 💰 line under the actions. */}
+                          The amount received shows on the 💰 line under the actions.
+                          A cancelled invoice owes nothing, regardless of what it was
+                          originally billed for. */}
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         {(function () {
-                          const bal = Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
+                          const bal = order.status === 'cancelled' ? 0 : Math.max(0, (order.grand_total || 0) - (order.amount_paid || 0))
                           return (
                             <div className="amt" style={{
                               color: bal > 0 ? '#92400e' : 'var(--green)',
