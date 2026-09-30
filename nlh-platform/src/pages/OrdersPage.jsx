@@ -1748,6 +1748,10 @@ function RecordManualReturnModal({ onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [openOrders, setOpenOrders] = useState([])
   const [applyToOrderId, setApplyToOrderId] = useState('')
+  // Only the sender's own downstream centres/schools — a CF/SMF can hand
+  // stock on to the franchisees/schools under them, not to some unrelated
+  // party elsewhere on the platform.
+  const [destinationOptions, setDestinationOptions] = useState([])
   const toHo = !destinationId
 
   useEffect(function () {
@@ -1772,8 +1776,8 @@ function RecordManualReturnModal({ onClose, onSaved }) {
   // sit as an unapplied ledger credit while the invoice still shows pending.
   useEffect(function () {
     setApplyToOrderId('')
-    setDestinationId(function (d) { return d === franchiseeId ? '' : d })
-    if (!franchiseeId) { setOpenOrders([]); return }
+    setDestinationId('')
+    if (!franchiseeId) { setOpenOrders([]); setDestinationOptions([]); return }
     let cancelled = false
     sb.from('orders').select('id, order_ref, invoice_no, grand_total, amount_paid')
       .or('placer_id.eq.' + franchiseeId + ',bill_to_franchisee_id.eq.' + franchiseeId)
@@ -1782,6 +1786,10 @@ function RecordManualReturnModal({ onClose, onSaved }) {
       .then(function (res) {
         if (cancelled) return
         setOpenOrders((res.data || []).filter(function (o) { return (o.grand_total || 0) - (o.amount_paid || 0) > 0 }))
+      })
+    sb.from('franchisees').select('id, business_name, tier').eq('parent_id', franchiseeId).eq('status', 'active').order('business_name')
+      .then(function (res) {
+        if (!cancelled) setDestinationOptions(res.data || [])
       })
     return function () { cancelled = true }
   }, [franchiseeId])
@@ -1868,12 +1876,15 @@ function RecordManualReturnModal({ onClose, onSaved }) {
                   <div style={{ marginTop: 6 }}>
                     <SearchSelect
                       options={[{ value: '', label: 'Head Office (HO)' }].concat(
-                        franchisees.filter(function (f) { return f.id !== franchiseeId }).map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })
+                        destinationOptions.map(function (f) { return { value: f.id, label: f.business_name, sublabel: f.tier } })
                       )}
                       value={destinationId} placeholder="Head Office (HO)"
                       onChange={setDestinationId}
                     />
                   </div>
+                  {franchiseeId && destinationOptions.length === 0 && (
+                    <span className="hint" style={{ display: 'block', marginTop: 4 }}>No centres/schools under {franchisees.find(function (f) { return f.id === franchiseeId })?.business_name || 'this franchisee'} — only HO is available.</span>
+                  )}
                 </label>
               </div>
               {!toHo && (
