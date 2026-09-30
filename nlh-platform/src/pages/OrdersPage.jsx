@@ -2439,6 +2439,11 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
       coupon_id:       coupon?.coupon_id || null,
       coupon_code:     coupon?.code || null,
     }).eq('id', order.id)
+    // Editing an already-invoiced order's total doesn't touch order_payments,
+    // so the trigger that flips status to part_paid/closed never refires on
+    // its own — re-run its exact logic now the total's changed (e.g. a
+    // reduced total that now exactly matches what was already paid).
+    try { await sb.rpc('recompute_order_payment_status', { p_order_id: order.id }) } catch (e) { console.warn('Order status recompute failed:', e.message) }
 
     // The coupon only locks (redeems) once the order is dispatched. Clear any
     // stale redemption for this order, and only re-record it if the order has
