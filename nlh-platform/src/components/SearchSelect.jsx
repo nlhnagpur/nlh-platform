@@ -42,7 +42,16 @@ export default function SearchSelect({ options, value, onChange, placeholder, cl
           ) : filtered.map(function (o) {
             return (
               <div key={o.value}
-                onClick={function () { onChange(o.value); setOpen(false); setQuery('') }}
+                // Select on mousedown, not click — a real click is mousedown
+                // then mouseup, and if the option list shifts in between (e.g.
+                // it's still loading in another option), the browser can end
+                // up not firing click at all, silently swallowing the pick.
+                // preventDefault stops the input from blurring first, and
+                // firing here (before the document-level outside-click
+                // mousedown listener, since bubbling reaches this element
+                // before it reaches document) means the pick is never racing
+                // against that listener closing the dropdown.
+                onMouseDown={function (e) { e.preventDefault(); onChange(o.value); setOpen(false); setQuery('') }}
                 style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid var(--bg)' }}
                 onMouseEnter={function (e) { e.currentTarget.style.background = 'var(--purple-bg, #f5f3ff)' }}
                 onMouseLeave={function (e) { e.currentTarget.style.background = 'none' }}
