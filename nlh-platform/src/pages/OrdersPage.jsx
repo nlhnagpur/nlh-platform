@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
@@ -268,7 +268,8 @@ function TierBadge({ tier }) {
 // cleanly on top, regardless of what table or container it's opened from.
 function ActionsMenu({ items, info }) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState(null)   // { top, right } in viewport pixels
+  const [anchor, setAnchor] = useState(null)   // { top, bottom, right } of the button, in viewport pixels
+  const [pos, setPos] = useState(null)         // { top, right } the panel actually renders at
   const btnRef = useRef(null)
   const menuRef = useRef(null)
 
@@ -295,10 +296,28 @@ function ActionsMenu({ items, info }) {
   function toggle() {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
-      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+      const a = { top: r.top, bottom: r.bottom, right: window.innerWidth - r.right }
+      setAnchor(a)
+      setPos({ top: a.bottom + 4, right: a.right })   // provisional — flips above in the layout effect below once the panel's real height is known
     }
     setOpen(function (o) { return !o })
   }
+
+  // A row near the bottom of the screen (last row of a table, a short
+  // window, the OS taskbar eating into viewport height) would otherwise
+  // always open the panel downward and clip it — the exact bug seen on the
+  // Orders Actions menu. Measure the panel's actual height once it's
+  // rendered and flip it above the button when there isn't room below.
+  useLayoutEffect(function () {
+    if (!open || !anchor || !menuRef.current) return
+    const h = menuRef.current.getBoundingClientRect().height
+    const margin = 8
+    const fitsBelow = anchor.bottom + 4 + h <= window.innerHeight - margin
+    if (!fitsBelow) {
+      const top = Math.max(margin, anchor.top - 4 - h)
+      setPos(function (p) { return (p && p.top === top) ? p : { top: top, right: anchor.right } })
+    }
+  }, [open, anchor, items, info])
 
   const clsColor = { primary: 'var(--purple)', green: 'var(--green)', danger: '#dc2626' }
   const list = (items || []).filter(Boolean)
@@ -312,7 +331,7 @@ function ActionsMenu({ items, info }) {
         Actions ▾
       </button>
       {open && pos && createPortal(
-        <div ref={menuRef} style={{ position: 'fixed', top: pos.top, right: pos.right, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 14px rgba(0,0,0,.12)', zIndex: 1000, minWidth: 220, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div ref={menuRef} style={{ position: 'fixed', top: pos.top, right: pos.right, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 14px rgba(0,0,0,.12)', zIndex: 1000, minWidth: 220, maxHeight: 'calc(100vh - 16px)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           {infoList.length > 0 && (
             <div style={{ padding: '8px 12px', borderBottom: list.length > 0 ? '1px solid var(--border)' : 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
               {infoList.map(function (row) {

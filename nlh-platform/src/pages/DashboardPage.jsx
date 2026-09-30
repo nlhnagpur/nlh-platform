@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
@@ -915,6 +915,11 @@ export default function DashboardPage({ onNavigate }) {
   // too, not just to table rows.
   const [searchPanelPos, setSearchPanelPos] = useState(null)
   const [exportPanelPos, setExportPanelPos] = useState(null)
+  // Anchor (button rect) each panel was opened from — kept alongside its
+  // provisional position so the flip-above-if-clipped effects below can
+  // recompute without re-querying the DOM.
+  const [searchAnchor, setSearchAnchor] = useState(null)
+  const [exportAnchor, setExportAnchor] = useState(null)
 
   useEffect(function() {
     if (currentRole === null) return
@@ -1047,8 +1052,36 @@ export default function DashboardPage({ onNavigate }) {
   useEffect(function() {
     if (!isSearchOpen || !searchWrapRef.current) return
     const r = searchWrapRef.current.getBoundingClientRect()
+    setSearchAnchor({ top: r.top, bottom: r.bottom, right: window.innerWidth - r.right })
     setSearchPanelPos({ top: r.bottom + 6, right: window.innerWidth - r.right, width: r.width })
   }, [isSearchOpen])
+
+  // Flip the results panel above the search box instead of below when there
+  // isn't room beneath it — the same clipped-dropdown bug fixed on the
+  // Orders Actions menu (see ActionsMenu in OrdersPage.jsx), reused here
+  // since this panel is also portalled and positioned from a bounding rect.
+  useLayoutEffect(function() {
+    if (!isSearchOpen || !searchAnchor || !searchPanelRef.current) return
+    const h = searchPanelRef.current.getBoundingClientRect().height
+    const margin = 8
+    const fitsBelow = searchAnchor.bottom + 6 + h <= window.innerHeight - margin
+    if (!fitsBelow) {
+      const top = Math.max(margin, searchAnchor.top - 6 - h)
+      setSearchPanelPos(function(p) { return (p && p.top === top) ? p : { top: top, right: searchAnchor.right, width: p ? p.width : undefined } })
+    }
+  }, [isSearchOpen, searchAnchor, searchRes, searchLoading])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Same flip for the Export dropdown.
+  useLayoutEffect(function() {
+    if (!showExportMenu || !exportAnchor || !exportPanelRef.current) return
+    const h = exportPanelRef.current.getBoundingClientRect().height
+    const margin = 8
+    const fitsBelow = exportAnchor.bottom + 6 + h <= window.innerHeight - margin
+    if (!fitsBelow) {
+      const top = Math.max(margin, exportAnchor.top - 6 - h)
+      setExportPanelPos(function(p) { return (p && p.top === top) ? p : { top: top, right: exportAnchor.right } })
+    }
+  }, [showExportMenu, exportAnchor])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── click-outside closes search & export menus ──────────────────────────────
   useEffect(function() {
@@ -1198,7 +1231,8 @@ export default function DashboardPage({ onNavigate }) {
                 position: 'fixed', top: searchPanelPos.top, right: searchPanelPos.right,
                 width: 340, background: 'var(--bg2)',
                 border: '1px solid var(--border)', borderRadius: 12,
-                boxShadow: '0 8px 32px rgba(0,0,0,.14)', zIndex: 1000, overflow: 'hidden',
+                boxShadow: '0 8px 32px rgba(0,0,0,.14)', zIndex: 1000,
+                maxHeight: 'calc(100vh - 16px)', overflowY: 'auto',
               }}>
                 {searchLoading ? (
                   <div style={{ padding: '14px 16px', color: 'var(--text3)', fontSize: 12 }}>Searching…</div>
@@ -1259,7 +1293,9 @@ export default function DashboardPage({ onNavigate }) {
             <button className="btn" onClick={function() {
               if (!showExportMenu && exportRef.current) {
                 const r = exportRef.current.getBoundingClientRect()
-                setExportPanelPos({ top: r.bottom + 6, right: window.innerWidth - r.right })
+                const a = { top: r.top, bottom: r.bottom, right: window.innerWidth - r.right }
+                setExportAnchor(a)
+                setExportPanelPos({ top: a.bottom + 6, right: a.right })
               }
               setShowExportMenu(function(o) { return !o })
             }}>
