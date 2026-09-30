@@ -208,6 +208,7 @@ function StatusBadge({ status }) {
     verified:          { cls: 'bdg-paid', txt: 'verified' },
     closed:            { cls: 'bdg-paid', txt: 'closed' },
     part_paid:         { cls: 'bdg-pmt',  txt: 'part paid' },
+    cancelled:         { cls: 'bdg-over', txt: 'cancelled' },
   }
   const s = map[status] || { cls: '', txt: status || '—' }
   return <span className={'bdg ' + s.cls}><span className="d"></span>{s.txt}</span>
@@ -3761,15 +3762,16 @@ export default function OrdersPage() {
     if (!cancelOrder) return
     setCancelling(true)
     const { error } = await sb.from('orders').update({
-      status: 'pending',
+      status: 'cancelled',
       invoice_no: null,
       invoice_cancelled_at: new Date().toISOString(),
       invoice_cancelled_by: currentUser?.email || currentRole || 'admin',
+      cancel_reason: cancelReason.trim() || null,
     }).eq('id', cancelOrder.id)
     setCancelling(false)
     if (error) { showToast('Failed to cancel: ' + error.message, 'err'); return }
     try { await mirrorOrderToTransactions(cancelOrder.id) } catch (e) { console.warn('[Phase 3 dual-write] cancel-invoice mirror failed:', e.message) }
-    showToast('Invoice ' + (cancelOrder.invoice_no || '') + ' cancelled · order returned to Pending')
+    showToast('Invoice ' + (cancelOrder.invoice_no || '') + ' cancelled · order fully cancelled')
     setCancelOrder(null)
     setCancelReason('')
     await loadOrders()
@@ -4484,7 +4486,7 @@ export default function OrdersPage() {
               <div style={{ font: '700 16px "DM Sans",sans-serif', color: '#A32D2D' }}>Cancel Invoice {cancelOrder.invoice_no}?</div>
             </div>
             <p style={{ font: '400 13px "DM Sans",sans-serif', color: '#5C5A54', lineHeight: 1.6, marginBottom: 16 }}>
-              This will <strong>void the invoice number</strong> and return the order to <em>Pending</em>. The number will not be reused.
+              This will <strong>void the invoice number and cancel this order</strong> — it will not go back to Pending. The number will not be reused.
             </p>
             <textarea value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }} placeholder="Reason (optional)" rows={2}
               style={{ width: '100%', padding: '8px 11px', border: '1.5px solid #E2E0D8', borderRadius: 8, font: '13px "DM Sans",sans-serif', marginBottom: 16, resize: 'none', outline: 'none', boxSizing: 'border-box' }} />

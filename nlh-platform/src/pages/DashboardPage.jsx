@@ -71,6 +71,7 @@ const STATUS_ACT = {
   verified:          { em: '✅', bg: '#DCFCE7', label: 'Payment', verb: 'Payment verified' },
   closed:            { em: '✅', bg: '#DCFCE7', label: 'Closed',  verb: 'Order closed' },
   part_paid:         { em: '💸', bg: '#FEF3C7', label: 'Payment', verb: 'Partial payment' },
+  cancelled:         { em: '✕',  bg: '#FEE2E2', label: 'Cancelled', verb: 'Order cancelled' },
 }
 
 // ── badge ──────────────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ function OrderBadge({ status }) {
     verified:          { cls: 'bdg-paid', txt: 'verified' },
     closed:            { cls: 'bdg-paid', txt: 'closed' },
     part_paid:         { cls: 'bdg-pend', txt: 'part paid' },
+    cancelled:         { cls: 'bdg-over', txt: 'cancelled' },
   }
   const s = map[status] || { cls: 'bdg-inv', txt: status || '—' }
   return (
