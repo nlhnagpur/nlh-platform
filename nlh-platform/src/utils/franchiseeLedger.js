@@ -47,7 +47,7 @@ export async function loadFranchiseeLedger(franchiseeId) {
     // back — this was missing entirely before, the ledger just never
     // queried franchisee_stock_returns.
     sb.from('franchisee_stock_returns')
-      .select('id, return_no, qty, unit_value, total_credit, status, created_at, approved_at, ' +
+      .select('id, return_no, qty, unit_value, total_credit, status, created_at, approved_at, applied_order_payment_id, ' +
         'franchisees:returning_franchisee_id(business_name, tier, phone, email, address, area, city, state), ' +
         'skus(level_name, courses(group_name)), ' +
         'orders:fulfills_order_id(order_ref, invoice_no, invoiced_at, created_at, placer:franchisees!orders_placer_id_fkey(business_name), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(business_name))')
@@ -152,8 +152,32 @@ export async function loadFranchiseeLedger(franchiseeId) {
       doc: { type: 'order_invoice', order: o },
     })
   })
+  // A Sale Return's credit, once applied against an invoice (see
+  // applyCreditToOrder), IS the order_payments row below — the same ₹ can't
+  // also stand as its own "Sale Return" line further down, or the ledger
+  // (and its Total Credit) double-counts one real event as two. Map applied
+  // payment id -> the return so the payment row below can absorb its
+  // description/voucher instead, and the raw sale_return loop can skip it.
+  const srByPaymentId = {}
+  saleReturns.forEach(function (sr) { if (sr.applied_order_payment_id) srByPaymentId[sr.applied_order_payment_id] = sr })
+
   orderPayments.forEach(function (p) {
     const o = orderById[p.order_id]
+    const appliedSr = srByPaymentId[p.id]
+    if (appliedSr) {
+      const skuName = (appliedSr.skus?.courses?.group_name ? appliedSr.skus.courses.group_name + ' — ' : '') + (appliedSr.skus?.level_name || '')
+      txns.push({
+        id: 'order-payment-' + p.id,
+        date: p.paid_on,
+        category: 'order',
+        desc: 'Sale Return Applied' + (skuName ? ' — ' + skuName : '') + placedViaSuffix(o),
+        ref: appliedSr.return_no || p.receipt_no || p.reference || null,
+        debit: 0,
+        credit: Number(p.amount) || 0,
+        doc: { type: 'sale_return', saleReturn: appliedSr },
+      })
+      return
+    }
     txns.push({
       id: 'order-payment-' + p.id,
       date: p.paid_on,
@@ -182,6 +206,7 @@ export async function loadFranchiseeLedger(franchiseeId) {
   })
 
   saleReturns.forEach(function (sr) {
+    if (sr.applied_order_payment_id) return   // already represented by its order_payments row above — don't double-credit
     const skuName = (sr.skus?.courses?.group_name ? sr.skus.courses.group_name + ' — ' : '') + (sr.skus?.level_name || '')
     txns.push({
       id: 'sale-return-' + sr.id,
