@@ -19,7 +19,7 @@ import { sb } from '../supabase'
 // InvoiceView as the "PDF" action's modal).
 export async function createPendingStockReturns(order) {
   const { data: lines } = await sb.from('order_items')
-    .select('id, sku_id, ordered_qty, fulfilled_by_franchisee_id').eq('order_id', order.id)
+    .select('id, sku_id, ordered_qty, fulfilled_by_franchisee_id, excluded_kit_items').eq('order_id', order.id)
     .not('fulfilled_by_franchisee_id', 'is', null)
   if (!lines || !lines.length) return
 
@@ -78,9 +78,17 @@ export async function createPendingStockReturns(order) {
       if (srErr || !sr) continue
 
       if (stockAlreadyOut) {
+        // Only the components this line actually asked HO for in the first
+        // place (computeOrderStockNeed's own exclusion filter) were ever
+        // deducted — a component unchecked as "not sent" (e.g. a reusable
+        // bag the school already has) was never taken from HO's stock, so
+        // there's nothing to hand back for it. Compensating for the full kit
+        // regardless of exclusions would fabricate stock HO never lost.
+        const excluded = line.excluded_kit_items || []
         const { data: kits } = await sb.from('kit_items').select('item_id, quantity').eq('sku_id', line.sku_id)
-        if (kits && kits.length) {
-          await sb.from('stock_ledger').insert(kits.map(function (k) {
+        const included = (kits || []).filter(function (k) { return !excluded.includes(k.item_id) })
+        if (included.length) {
+          await sb.from('stock_ledger').insert(included.map(function (k) {
             return {
               item_id: k.item_id, location_type: 'ho', movement_type: 'adjustment',
               qty: line.ordered_qty * Number(k.quantity || 1),
