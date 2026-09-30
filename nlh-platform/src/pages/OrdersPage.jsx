@@ -2073,12 +2073,34 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
   // createPendingStockReturns). Only CF/SMF tiers hold their own bulk
   // stock worth crediting back this way — UF and SCHOOL don't, so they're
   // excluded to keep the list short and relevant.
+  // Scoped to the CF/SMF actually connected to THIS order — the order's own
+  // placer (if CF/SMF), and the bill-to party's parent chain up to a CF/SMF
+  // (e.g. a school's own CF) — not every CF/SMF on the platform. A school's
+  // kit was never going to be "fulfilled by" some unrelated CF elsewhere.
   const [fulfillOptions, setFulfillOptions] = useState([])
   useEffect(function () {
     if (!isAdmin) return
-    sb.from('franchisees').select('id, business_name, tier').eq('status', 'active').in('tier', ['CF', 'SMF']).order('business_name')
-      .then(function (res) { setFulfillOptions(res.data || []) })
-  }, [isAdmin])
+    let cancelled = false
+    async function load() {
+      const ids = new Set()
+      if (order.placer_id) ids.add(order.placer_id)
+      let walk = order.bill_to_fr?.parent_id || null
+      let hops = 0
+      while (walk && hops < 5) {
+        const { data: p } = await sb.from('franchisees').select('id, tier, parent_id').eq('id', walk).maybeSingle()
+        if (!p) break
+        if (p.tier === 'CF' || p.tier === 'SMF') ids.add(p.id)
+        walk = p.parent_id
+        hops++
+      }
+      if (!ids.size) { if (!cancelled) setFulfillOptions([]); return }
+      const { data } = await sb.from('franchisees').select('id, business_name, tier')
+        .in('id', Array.from(ids)).in('tier', ['CF', 'SMF']).eq('status', 'active').order('business_name')
+      if (!cancelled) setFulfillOptions(data || [])
+    }
+    load()
+    return function () { cancelled = true }
+  }, [isAdmin, order.placer_id, order.bill_to_fr])   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(function () {
     if (!isSchoolOrder) return
@@ -2125,6 +2147,15 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
         if (i !== idx) return it
         return { ...it, [field]: parseInt(val, 10) || 0 }
       })
+    })
+  }
+
+  // fulfilled_by_franchisee_id is a UUID, not a number — updateField's
+  // parseInt(val, 10) || 0 would silently coerce any real id to 0, which is
+  // exactly why picking a franchisee here never stuck.
+  function updateFulfilledBy(idx, val) {
+    setItems(function (prev) {
+      return prev.map(function (it, i) { return i === idx ? { ...it, fulfilled_by_franchisee_id: val || null } : it })
     })
   }
 
@@ -2462,7 +2493,7 @@ export function InvoiceEditModal({ order, isAdmin, onClose, onSaved }) {
                               Fulfilled by:
                               <select
                                 value={item.fulfilled_by_franchisee_id || ''}
-                                onChange={function (e) { updateField(idx, 'fulfilled_by_franchisee_id', e.target.value || null) }}
+                                onChange={function (e) { updateFulfilledBy(idx, e.target.value) }}
                                 style={{ fontSize: 12, padding: '3px 6px' }}
                               >
                                 <option value="">HO stock (normal)</option>
@@ -3123,7 +3154,7 @@ export default function OrdersPage() {
   // needs three separate screens to reconcile what money moved and why.
   async function loadRecords() {
     setRecordsLoading(true)
-    const FR = 'business_name, tier'
+    const FR = 'business_name, tier, phone'
     const [payRes, feeRes, cnRes] = await Promise.all([
       sb.from('order_payments')
         .select('id, receipt_no, amount, paid_on, mode, reference, order:orders(id, order_ref, invoice_no, grand_total, amount_paid, placer:franchisees!orders_placer_id_fkey(' + FR + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + FR + '))')
@@ -3292,7 +3323,7 @@ export default function OrdersPage() {
     let data, error
 
     const PLACER_FIELDS = 'business_name, tier, email, city, state, phone, address'
-    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + PLACER_FIELDS + ', gstin)'
+    const SELECT = '*, placer:franchisees!orders_placer_id_fkey(' + PLACER_FIELDS + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + PLACER_FIELDS + ', gstin, parent_id)'
     if (isAdmin) {
       ;({ data, error } = await sb
         .from('orders')
