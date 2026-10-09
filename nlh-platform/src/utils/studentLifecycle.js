@@ -53,19 +53,29 @@ export function scheduledWeekdays(scheduleDays) {
   return set
 }
 
+function prevDay(iso) {
+  const d = new Date(iso + 'T00:00:00')
+  d.setDate(d.getDate() - 1)
+  return isoDay(d)
+}
+
 // Progress through one monthly cycle.
 //   sessions    batch_sessions rows { id, session_date, is_holiday } for the student's batch
-//   attendedIds Set of session ids this student attended
+//   attendance  Map(session_id -> attended boolean) for this student's enrolment.
+//               A session with no entry is "not marked" — attendance was never
+//               recorded — which is not the same thing as "absent".
 // target  = scheduled Mon-Fri days in [start, due) minus declared holidays
-// done    = weekday classes attended + Saturday classes attended, the Saturdays
-//           only up to the number of weekday classes missed (capped at target)
-export function computeCycle(en, sessions, attendedIds, scheduleDays, today) {
+// done    = weekday classes attended + Saturday revision classes attended, the
+//           Saturdays only up to the number of weekday classes the student was
+//           marked ABSENT for (capped at target). Not-marked classes aren't
+//           counted either way — they're surfaced so attendance gets filled in.
+export function computeCycle(en, sessions, attendance, scheduleDays, today) {
   const start = cycleAnchor(en)
   if (!start) return null
   const due = addOneMonth(start)
   const todayStr = today || todayIso()
   const sched = scheduledWeekdays(scheduleDays)
-  const attended = attendedIds || new Set()
+  const att = attendance || new Map()
   const inWindow = (sessions || []).filter(function (s) { return s.session_date >= start && s.session_date < due })
   const holidayDates = new Set(inWindow.filter(function (s) { return s.is_holiday }).map(function (s) { return s.session_date }))
 
@@ -77,14 +87,16 @@ export function computeCycle(en, sessions, attendedIds, scheduleDays, today) {
   const ran = inWindow.filter(function (s) { return !s.is_holiday && s.session_date <= todayStr })
   const weekday = ran.filter(function (s) { const w = dowOf(s.session_date); return w >= 1 && w <= 5 })
   const saturday = ran.filter(function (s) { return dowOf(s.session_date) === 6 })
-  const attendedWeekday = weekday.filter(function (s) { return attended.has(s.id) }).length
-  const attendedSat = saturday.filter(function (s) { return attended.has(s.id) }).length
-  const missed = weekday.length - attendedWeekday
-  const makeUp = Math.min(missed, attendedSat)
+  const attendedWeekday = weekday.filter(function (s) { return att.get(s.id) === true }).length
+  const absent = weekday.filter(function (s) { return att.get(s.id) === false }).length
+  const unmarked = weekday.filter(function (s) { return !att.has(s.id) }).length
+  const attendedSat = saturday.filter(function (s) { return att.get(s.id) === true }).length
+  const makeUp = Math.min(absent, attendedSat)
   return {
-    start: start, due: due, target: target,
+    start: start, due: due, end: prevDay(due), target: target,
     done: Math.min(target, attendedWeekday + makeUp),
-    held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat, missed: missed, makeUp: makeUp,
+    held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat,
+    absent: absent, unmarked: unmarked, makeUp: makeUp,
   }
 }
 

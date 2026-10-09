@@ -721,16 +721,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             .in('batch_id', batchIds).gte('session_date', anchors[0]).order('id').range(from, to)
         }),
         fetchAllRows(function (from, to) {
-          return sb.from('session_attendance').select('id, enrollment_id, session_id')
-            .in('enrollment_id', monthly.map(function (en) { return en.id })).eq('attended', true).order('id').range(from, to)
+          return sb.from('session_attendance').select('id, enrollment_id, session_id, attended')
+            .in('enrollment_id', monthly.map(function (en) { return en.id })).order('id').range(from, to)
         }),
       ])
-      const attendedByEnr = {}
-      attRows.forEach(function (a) { (attendedByEnr[a.enrollment_id] = attendedByEnr[a.enrollment_id] || new Set()).add(a.session_id) })
+      const attendanceByEnr = {}
+      attRows.forEach(function (a) { (attendanceByEnr[a.enrollment_id] = attendanceByEnr[a.enrollment_id] || new Map()).set(a.session_id, !!a.attended) })
       const progress = {}
       monthly.forEach(function (en) {
         const bsRow = assignMap[en.id]
-        progress[en.id] = computeCycle(en, sessRows.filter(function (s) { return s.batch_id === bsRow.batch_id }), attendedByEnr[en.id], bsRow.batches?.schedule_days)
+        progress[en.id] = computeCycle(en, sessRows.filter(function (s) { return s.batch_id === bsRow.batch_id }), attendanceByEnr[en.id], bsRow.batches?.schedule_days)
       })
       setCycleProgress(progress)
     } catch (e) { console.error('Cycle progress load error:', e); setCycleProgress({}) }
@@ -2238,13 +2238,30 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 ⚠ Sessions done — review
                               </span>
                             )}
-                            {renewal && (
-                              <span title={'Cycle ' + fmtDate(cycleAnchor(en)) + ' to ' + fmtDate(renewal.due) + ': ' + cycleTarget + ' weekday (Mon–Fri) classes. Attended ' + (cycle ? cycle.attendedWeekday : 0) + ' weekday'
-                                + (cycle && cycle.missed > 0 ? ', missed ' + cycle.missed + '; ' + cycle.makeUp + ' made up at Saturday revision (' + cycle.attendedSat + ' Saturday attended)' : '')
-                                + '. Saturday revision classes are included in the fee and only count to make up missed weekday classes.'}
-                                style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                {cycleHeld} / {cycleTarget} this cycle · {renewal.state === 'overdue' ? 'renewal overdue since ' : 'renews '}{fmtDate(renewal.due)}
-                              </span>
+                            {renewal && cycle && (
+                              <>
+                                {/* Progress + the cycle's own dates, so the target isn't a
+                                    mystery number: it's the Mon–Fri classes inside this range. */}
+                                <span title={'Cycle ' + fmtDate(cycle.start) + ' to ' + fmtDate(cycle.end) + ': ' + cycleTarget + ' weekday (Mon–Fri) classes after declared holidays. Saturday revision classes are included in the fee and only count to make up weekday classes the student was marked absent for.'}
+                                  style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                  {cycleHeld} / {cycleTarget} this cycle · {shortDay(cycle.start)}–{shortDay(cycle.end)}
+                                </span>
+                                {cycle.absent > 0 && (
+                                  <span title="Weekday classes marked absent. A Saturday revision class attended makes up one absence."
+                                    style={{ font: '600 10px var(--font)', color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                    {cycle.absent} absent{cycle.makeUp > 0 ? ' · ' + cycle.makeUp + ' made up on Sat' : ''}
+                                  </span>
+                                )}
+                                {cycle.unmarked > 0 && (
+                                  <span title={'No attendance was recorded for ' + cycle.unmarked + ' weekday class' + (cycle.unmarked > 1 ? 'es' : '') + ' this cycle — mark it (present or absent) so it is counted.'}
+                                    style={{ font: '600 10px var(--font)', color: '#B45309', background: '#FEF3C7', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                    {cycle.unmarked} not marked
+                                  </span>
+                                )}
+                                <span style={{ font: '600 10px var(--font)', color: renewal.state === 'overdue' ? '#991b1b' : renewal.state === 'soon' ? '#B45309' : 'var(--text3)', background: renewal.state === 'overdue' ? '#fef2f2' : renewal.state === 'soon' ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                  {renewal.state === 'overdue' ? 'Renewal overdue since ' : 'Renews '}{fmtDate(renewal.due)}
+                                </span>
+                              </>
                             )}
                             {monthEnding && (
                               <button
@@ -3091,8 +3108,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
               <div style={{ padding: '4px 20px 16px' }}>
                 <p className="hint" style={{ marginBottom: 12 }}>
                   {cyc ? cyc.done : 0} of {cyc ? cyc.target : 0} classes done in the cycle that started {fmtDate(cycleAnchor(renewingEn))}
-                  {cyc && cyc.missed > 0
-                    ? <> — missed {cyc.missed} weekday class{cyc.missed > 1 ? 'es' : ''}, {cyc.makeUp} made up at Saturday revision</>
+                  {cyc && (cyc.absent > 0 || cyc.unmarked > 0)
+                    ? <> ({[
+                        cyc.absent > 0 ? cyc.absent + ' absent' + (cyc.makeUp > 0 ? ', ' + cyc.makeUp + ' made up at Saturday revision' : '') : null,
+                        cyc.unmarked > 0 ? cyc.unmarked + ' not marked — mark attendance first so it is counted' : null,
+                      ].filter(Boolean).join('; ')})</>
                     : null}.{' '}
                   Saturday revision classes are included in the fee, so nothing carries into the next cycle.
                   {' '}The next cycle starts on the due date (same date next month) — nudge it a day or two either way to fold in a session that ran early or late.
@@ -4356,19 +4376,21 @@ export default function StudentsPage() {
                 return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday')
                   .in('batch_id', batchIds).gte('session_date', anchors[0]).order('id').range(from, to)
               }),
+              // Present AND absent rows: "absent" and "never marked" are
+              // different things and the cycle count treats them differently.
               fetchAllRows(function (from, to) {
-                return sb.from('session_attendance').select('id, enrollment_id, session_id')
-                  .in('enrollment_id', monthlyEnrIds).eq('attended', true).order('id').range(from, to)
+                return sb.from('session_attendance').select('id, enrollment_id, session_id, attended')
+                  .in('enrollment_id', monthlyEnrIds).order('id').range(from, to)
               }),
             ])
           }
-          const attendedByEnr = {}
-          attRows.forEach(function (a) { (attendedByEnr[a.enrollment_id] = attendedByEnr[a.enrollment_id] || new Set()).add(a.session_id) })
+          const attendanceByEnr = {}
+          attRows.forEach(function (a) { (attendanceByEnr[a.enrollment_id] = attendanceByEnr[a.enrollment_id] || new Map()).set(a.session_id, !!a.attended) })
           const cm = {}
           ;(data || []).forEach(function (s) {
             (s.enrollments || []).filter(isMonthlyActive).forEach(function (e) {
               const bId = batchByEnr[e.id]
-              cm[e.id] = computeCycle(e, sessRows.filter(function (r) { return r.batch_id === bId }), attendedByEnr[e.id], daysByEnr[e.id])
+              cm[e.id] = computeCycle(e, sessRows.filter(function (r) { return r.batch_id === bId }), attendanceByEnr[e.id], daysByEnr[e.id])
             })
           })
           setCycleMap(cm)
@@ -4818,6 +4840,9 @@ export default function StudentsPage() {
                                   else if (ri && ri.state === 'soon') { txt = held + '/' + target + ' · renew ' + shortDay(ri.due); color = '#B45309'; bg = '#FEF3C7' }
                                   else if (ri) { txt = held + '/' + target + ' · renews ' + shortDay(ri.due); color = 'var(--text2)'; bg = 'var(--bg2)' }
                                   else { txt = held + '/' + target; color = 'var(--text2)'; bg = 'var(--bg2)' }
+                                  // Attendance never recorded for some classes — point at it
+                                  // rather than quietly counting them as absences.
+                                  if (cyc && cyc.unmarked > 0) extra = { t: cyc.unmarked + ' not marked', color: '#B45309', bg: '#FEF3C7' }
                                 }
                                 else if (tot > 0) { txt = att + '/' + tot; color = done ? '#B45309' : 'var(--text2)'; bg = done ? '#FEF3C7' : 'var(--bg2)' }
                                 else { txt = att + ' sess'; color = 'var(--text2)'; bg = 'var(--bg2)' }
