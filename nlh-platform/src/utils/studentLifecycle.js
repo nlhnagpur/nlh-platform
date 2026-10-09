@@ -1,6 +1,9 @@
-// A monthly-billing student gets this many sessions per cycle, and the cycle
-// renews on the same date next month (not a rolling 28 days).
-export const CYCLE_SESSIONS = 22
+// A monthly-billing cycle runs from its start date to the same date next
+// month (not a rolling 28 days). Its class target is the number of scheduled
+// Mon–Fri days in that window, less any days the batch declared a holiday —
+// it varies with the calendar rather than being a fixed number. Saturday
+// classes are revision, included in the fee: they don't raise the target, and
+// count only to make up weekday classes the student missed.
 const RENEW_SOON_DAYS = 5
 
 function isoDay(d) {
@@ -25,6 +28,64 @@ export function addOneMonth(iso) {
 
 function daysBetween(fromIso, toIso) {
   return Math.round((new Date(toIso + 'T00:00:00') - new Date(fromIso + 'T00:00:00')) / 86400000)
+}
+
+function dowOf(iso) { return new Date(String(iso).slice(0, 10) + 'T00:00:00').getDay() }   // 0 Sun .. 6 Sat
+
+function nextDay(iso) {
+  const d = new Date(iso + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return isoDay(d)
+}
+
+const DOW_KEYS = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+
+// Weekdays (1-5) a batch is scheduled for. A batch that meets Tue/Wed/Thu has
+// a smaller monthly target than Mon-Fri; a blank schedule means every Mon-Fri.
+export function scheduledWeekdays(scheduleDays) {
+  const set = new Set()
+  String(scheduleDays || '').split(/[,\s]+/).forEach(function (t) {
+    if (!t) return
+    const k = t.slice(0, 1).toUpperCase() + t.slice(1, 3).toLowerCase()
+    if (DOW_KEYS[k] >= 1 && DOW_KEYS[k] <= 5) set.add(DOW_KEYS[k])
+  })
+  if (set.size === 0) [1, 2, 3, 4, 5].forEach(function (n) { set.add(n) })
+  return set
+}
+
+// Progress through one monthly cycle.
+//   sessions    batch_sessions rows { id, session_date, is_holiday } for the student's batch
+//   attendedIds Set of session ids this student attended
+// target  = scheduled Mon-Fri days in [start, due) minus declared holidays
+// done    = weekday classes attended + Saturday classes attended, the Saturdays
+//           only up to the number of weekday classes missed (capped at target)
+export function computeCycle(en, sessions, attendedIds, scheduleDays, today) {
+  const start = cycleAnchor(en)
+  if (!start) return null
+  const due = addOneMonth(start)
+  const todayStr = today || todayIso()
+  const sched = scheduledWeekdays(scheduleDays)
+  const attended = attendedIds || new Set()
+  const inWindow = (sessions || []).filter(function (s) { return s.session_date >= start && s.session_date < due })
+  const holidayDates = new Set(inWindow.filter(function (s) { return s.is_holiday }).map(function (s) { return s.session_date }))
+
+  let target = 0
+  for (let d = start; d < due; d = nextDay(d)) {
+    if (sched.has(dowOf(d)) && !holidayDates.has(d)) target++
+  }
+
+  const ran = inWindow.filter(function (s) { return !s.is_holiday && s.session_date <= todayStr })
+  const weekday = ran.filter(function (s) { const w = dowOf(s.session_date); return w >= 1 && w <= 5 })
+  const saturday = ran.filter(function (s) { return dowOf(s.session_date) === 6 })
+  const attendedWeekday = weekday.filter(function (s) { return attended.has(s.id) }).length
+  const attendedSat = saturday.filter(function (s) { return attended.has(s.id) }).length
+  const missed = weekday.length - attendedWeekday
+  const makeUp = Math.min(missed, attendedSat)
+  return {
+    start: start, due: due, target: target,
+    done: Math.min(target, attendedWeekday + makeUp),
+    held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat, missed: missed, makeUp: makeUp,
+  }
 }
 
 // Enrolments made before cycle tracking existed have no cycle_started_at —
@@ -55,7 +116,7 @@ export function enrolmentBucket(en) {
 }
 
 export function certPending(en) {
-  return !!en.completed_at && !en.cert_wa_sent_at && !en.cert_emailed_at
+  return !!en.completed_at && !en.cert_wa_sent_at && !en.cert_emailed_at && !en.cert_issued_at
 }
 
 // Why a student needs attention. attMap = { [enrolment_id]: attended count }.

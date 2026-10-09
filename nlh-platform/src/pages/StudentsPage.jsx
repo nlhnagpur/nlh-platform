@@ -5,13 +5,14 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
-import { CYCLE_SESSIONS, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
+import { computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
 import { printStudentInvoice, printStudentReceipt } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
 import ModalHeader from '../components/ModalHeader'
+import ActionsMenu from '../components/ActionsMenu'
 import StudentCertModal from '../components/StudentCertModal'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
@@ -702,6 +703,39 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     showToast('Payment updated ✓')
   }
 
+  // Monthly-billing cycle progress for each running monthly enrolment — see
+  // computeCycle (utils/studentLifecycle.js): target is the cycle's Mon–Fri
+  // days (per the batch's own schedule, less declared holidays); Saturday
+  // revision classes count only to make up weekday absences. Same maths as the
+  // Students list. Takes the enrolments/batch map explicitly so it can re-run
+  // right after a renewal with the new cycle start.
+  async function loadCycleProgress(enrList, assignMap) {
+    const monthly = enrList.filter(function (en) { return !en.completed_at && en.status !== 'dropped' && assignMap[en.id] })
+    const batchIds = Array.from(new Set(monthly.map(function (en) { return assignMap[en.id].batch_id }).filter(Boolean)))
+    if (batchIds.length === 0) { setCycleProgress({}); return }
+    try {
+      const anchors = monthly.map(cycleAnchor).filter(Boolean).sort()
+      const [sessRows, attRows] = await Promise.all([
+        fetchAllRows(function (from, to) {
+          return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday')
+            .in('batch_id', batchIds).gte('session_date', anchors[0]).order('id').range(from, to)
+        }),
+        fetchAllRows(function (from, to) {
+          return sb.from('session_attendance').select('id, enrollment_id, session_id')
+            .in('enrollment_id', monthly.map(function (en) { return en.id })).eq('attended', true).order('id').range(from, to)
+        }),
+      ])
+      const attendedByEnr = {}
+      attRows.forEach(function (a) { (attendedByEnr[a.enrollment_id] = attendedByEnr[a.enrollment_id] || new Set()).add(a.session_id) })
+      const progress = {}
+      monthly.forEach(function (en) {
+        const bsRow = assignMap[en.id]
+        progress[en.id] = computeCycle(en, sessRows.filter(function (s) { return s.batch_id === bsRow.batch_id }), attendedByEnr[en.id], bsRow.batches?.schedule_days)
+      })
+      setCycleProgress(progress)
+    } catch (e) { console.error('Cycle progress load error:', e); setCycleProgress({}) }
+  }
+
   // ── Load courses tab ──
   async function loadCoursesTab() {
     if (coursesLoaded) return
@@ -718,31 +752,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
       setBatchAssignments(map)
 
-      // Monthly-billing cycle progress — actual class dates held for this
-      // enrollment's assigned batch since ITS OWN cycle_started_at (not the
-      // calendar month, not attendance) — a class that ran counts toward
-      // the cycle whether or not this particular student showed up, since
-      // the schedule itself (not this student's presence) is what a month
-      // of fees is paying for.
-      const cycleBatchIds = Array.from(new Set(Object.values(map).map(function (bs) { return bs.batch_id }).filter(Boolean)))
-      if (cycleBatchIds.length > 0) {
-        const sessRows = await fetchAllRows(function (from, to) {
-          return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday')
-            .in('batch_id', cycleBatchIds)
-            .lte('session_date', new Date().toISOString().slice(0, 10))
-            .order('id').range(from, to)
-        })
-        const progress = {}
-        localEnrollments.forEach(function (en) {
-          const bsRow = map[en.id]
-          const anchor = cycleAnchor(en)
-          if (!bsRow || !anchor) return
-          progress[en.id] = sessRows.filter(function (s) {
-            return s.batch_id === bsRow.batch_id && !s.is_holiday && s.session_date >= anchor
-          }).length
-        })
-        setCycleProgress(progress)
-      }
+      await loadCycleProgress(localEnrollments, map)
 
       // Which enrollments have had their kit issued (HO stock deducted) —
       // and specifically which items, so "Kit issued" can be confirmed or
@@ -1003,6 +1013,20 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (onSaved) onSaved({ ...student, ...form, enrollments: next })
   }
 
+  // ── Record that a certificate was handed over outside the app ──
+  // (printed at the centre, or issued before sending existed) — clears it
+  // from Needs attention without claiming it was emailed or WhatsApped.
+  async function markCertIssued(en) {
+    if (!window.confirm('Mark the certificate for this course as already issued?\n\nIt will stop showing under Needs attention. This does not send anything to the parent.')) return
+    const patch = { cert_issued_at: new Date().toISOString(), cert_issued_by: currentUser?.email || currentRole || null, cert_issued_note: 'Marked as issued manually' }
+    const { error } = await sb.from('enrollments').update(patch).eq('id', en.id)
+    if (error) { showToast('Failed: ' + error.message, 'err'); return }
+    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, ...patch } : e })
+    setLocalEnrollments(next)
+    showToast('Certificate marked as issued ✓')
+    if (onSaved) onSaved({ ...student, ...form, enrollments: next })
+  }
+
   // ── HO certify / reject a school's submitted marks ──
   async function certifyEnrollment(en, approve, rejectNote) {
     setCertifySaving(true)
@@ -1040,17 +1064,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const fee = Number(renewFee) || 0
     setRenewSaving(true)
 
+    // Only the start date moves. The next cycle's target is worked out from
+    // its own Mon–Fri window; a student who missed weekday classes makes them
+    // up at Saturday revision, so nothing is carried between cycles.
     const patch = { cycle_started_at: renewDate }
-    {
-      // A cycle is CYCLE_SESSIONS classes. Ran short (holidays, a schedule
-      // gap) → the missed classes are owed, not lost — carry them into next
-      // cycle's target. Ran over → those extra classes were complimentary;
-      // nothing carries the other way.
-      const held = cycleProgress[en.id] || 0
-      const target = en.sessions_per_cycle || CYCLE_SESSIONS
-      const shortfall = Math.max(0, target - held)
-      patch.sessions_per_cycle = CYCLE_SESSIONS + shortfall
-    }
     const { error: enrErr } = await sb.from('enrollments').update(patch).eq('id', en.id)
     if (enrErr) { setRenewSaving(false); showToast('Failed: ' + enrErr.message, 'err'); return }
 
@@ -1065,7 +1082,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
     const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, ...patch } : e })
     setLocalEnrollments(next)
-    setCycleProgress(function (prev) { return { ...prev, [en.id]: 0 } })
+    // Recompute from the new start date — a late renewal already has classes
+    // held since the old cycle's due date, so this is not simply zero.
+    await loadCycleProgress(next, batchAssignments)
     setRenewSaving(false)
     setRenewingEn(null)
     showToast('Cycle renewed from ' + fmtDate(renewDate) + (fee > 0 ? ' · ₹' + fmtAmt(fee) + ' added to Fee Total ✓' : ' ✓'))
@@ -1178,7 +1197,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1279,7 +1298,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       }
     })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
@@ -1408,7 +1427,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -2115,7 +2134,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   const totalSess    = skuTotals[en.sku_id] || 0
                   const billingType  = skuBilling[en.sku_id] || null
                   // Session-based course finished its sessions but not marked complete → follow up
-                  const sessionsDone = !isCompleted && totalSess > 0 && attended >= totalSess
+                  // (Monthly courses never "finish" at a session count — they renew.)
+                  const sessionsDone = !isCompleted && billingType !== 'monthly' && totalSess > 0 && attended >= totalSess
                   // Monthly course — cycle progress is real held classes for this
                   // enrollment's own batch since ITS cycle_started_at (a
                   // per-student date, not the calendar month), against the
@@ -2131,13 +2151,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   // schedule gap) still gets prompted once the month's actually
                   // up rather than waiting forever for a count that may never
                   // arrive — the shortfall carries into the next cycle instead.
-                  // A cycle is CYCLE_SESSIONS (22) classes and renews on the
-                  // same date next month; enrolments with no stored cycle
-                  // start use their enrolment date. Same rule the Students
+                  // A cycle runs to the same date next month; its target is the
+                  // Mon–Fri classes in that window (Saturday revision only
+                  // makes up weekday absences); enrolments with no stored cycle
+                  // start use their enrolment date. Same maths the Students
                   // list uses (utils/studentLifecycle.js) so the two agree.
-                  const cycleHeld    = cycleProgress[en.id] || 0
-                  const cycleTarget  = billingType === 'monthly' ? (en.sessions_per_cycle || CYCLE_SESSIONS) : 0
-                  const renewal      = billingType === 'monthly' && !isCompleted && !isDiscontinued ? renewalInfo(en) : null
+                  const isMonthlyRunning = billingType === 'monthly' && !isCompleted && !isDiscontinued
+                  const cycle        = isMonthlyRunning ? (cycleProgress[en.id] || computeCycle(en, [], null, '')) : null
+                  const cycleHeld    = cycle ? cycle.done : 0
+                  const cycleTarget  = cycle ? cycle.target : 0
+                  const renewal      = isMonthlyRunning ? renewalInfo(en) : null
                   const monthEnding  = !!renewal && renewal.state !== 'ok'
                   const kitItems     = kitDefs[en.sku_id] || []
                   const kitGivenForEnr = kitGiven[en.id] || {}
@@ -2150,9 +2173,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                       background: isCompleted ? 'var(--green-bg)' : 'var(--card)',
                     }}>
                       {/* Enrollment header row */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ font: '600 13px var(--font)', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                          <div style={{ font: '600 13px var(--font)', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             {courseName}
                             <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)' }}>
                               {levelName}
@@ -2167,9 +2190,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 ⊘ Discontinued
                               </span>
                             )}
-                            <span style={{ font: '600 10px var(--mono)', color: sessionsDone ? '#B45309' : 'var(--purple)', background: sessionsDone ? '#FEF3C7' : 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                              {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
-                            </span>
+                            {/* Monthly courses have no fixed session total — their one
+                                counter is the cycle chip below, so this "x / total"
+                                chip (which used the course's old fixed number and
+                                contradicted it) is for fixed-session courses only. */}
+                            {!isMonthlyRunning && (
+                              <span style={{ font: '600 10px var(--mono)', color: sessionsDone ? '#B45309' : 'var(--purple)', background: sessionsDone ? '#FEF3C7' : 'var(--purple-bg)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
+                              </span>
+                            )}
                             {kitItems.length > 0 && (
                               <button
                                 onClick={function () { setKitPanelEnrId(kitPanelOpen ? null : en.id) }}
@@ -2182,6 +2211,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 }}>
                                 🧰 {kitIssued[en.id] ? Object.keys(kitGivenForEnr).length + '/' + kitItems.length + ' kit given' : 'Confirm kit'}
                               </button>
+                            )}
+                            {en.cert_issued_at && (
+                              <span title={'Marked issued' + (en.cert_issued_by ? ' by ' + en.cert_issued_by : '') + ' — handed over outside the app'}
+                                style={{ font: '600 10px var(--font)', color: '#6B7280', background: '#F3F4F6', border: '1px solid #D1D5DB', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                🎓 Cert issued {fmtDate(String(en.cert_issued_at).slice(0, 10))}
+                              </span>
                             )}
                             {(en.cert_wa_sent_at || certWaStatus[en.id]) && (function () {
                               const st = certWaStatus[en.id] || 'sent'
@@ -2204,7 +2239,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                               </span>
                             )}
                             {renewal && (
-                              <span title={'This billing cycle: ' + cycleHeld + ' of ' + cycleTarget + ' classes held since ' + fmtDate(cycleAnchor(en))}
+                              <span title={'Cycle ' + fmtDate(cycleAnchor(en)) + ' to ' + fmtDate(renewal.due) + ': ' + cycleTarget + ' weekday (Mon–Fri) classes. Attended ' + (cycle ? cycle.attendedWeekday : 0) + ' weekday'
+                                + (cycle && cycle.missed > 0 ? ', missed ' + cycle.missed + '; ' + cycle.makeUp + ' made up at Saturday revision (' + cycle.attendedSat + ' Saturday attended)' : '')
+                                + '. Saturday revision classes are included in the fee and only count to make up missed weekday classes.'}
                                 style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                                 {cycleHeld} / {cycleTarget} this cycle · {renewal.state === 'overdue' ? 'renewal overdue since ' : 'renews '}{fmtDate(renewal.due)}
                               </span>
@@ -2212,7 +2249,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             {monthEnding && (
                               <button
                                 onClick={function () { openRenewCycle(en) }}
-                                title={'Renewal ' + (renewal.state === 'overdue' ? 'was due ' : 'is due ') + fmtDate(renewal.due) + ' — ' + cycleHeld + ' of ' + cycleTarget + ' classes held. Collect the next fee and start a new cycle.'}
+                                title={'Renewal ' + (renewal.state === 'overdue' ? 'was due ' : 'is due ') + fmtDate(renewal.due) + ' — ' + cycleHeld + ' of ' + cycleTarget + ' classes done. Collect the next fee and start a new cycle.'}
                                 style={{ font: '600 10px var(--font)', color: '#1D4ED8', background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                                 📅 Renew cycle
                               </button>
@@ -2346,151 +2383,108 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           })()}
                         </div>
 
-                        {/* Complete / WhatsApp / Certificate buttons */}
-                        {canEdit && can('students.complete') && !isCompleted && !isDiscontinued && (
-                          <button className="btn-s"
-                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
-                            onClick={function () {
-                              setCompleteDate(lastAttendedDate[en.id] || new Date().toISOString().slice(0, 10))
-                              setMarksObtained(en.marks_obtained != null ? String(en.marks_obtained) : '')
-                              setMarksTotal(en.marks_total != null ? String(en.marks_total) : '')
-                              setMarksRemarks(en.marks_remarks || '')
-                              setCompletingEnr(en)
-                            }}>
-                            ✓ Complete
-                          </button>
-                        )}
-                        {/* Discontinue one course (student stays active); restore to undo */}
-                        {canEdit && !isCompleted && !isDiscontinued && (
-                          <button className="btn-s"
-                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: '#92400e', borderColor: '#fbbf24' }}
-                            disabled={courseBusy === en.id}
-                            onClick={function () { discontinueCourse(en) }}
-                            title="Mark this course discontinued and waive its unpaid fee">
-                            {courseBusy === en.id ? '…' : '⊘ Discontinue'}
-                          </button>
-                        )}
-                        {canEdit && isDiscontinued && (
-                          <button className="btn-s"
-                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
-                            disabled={courseBusy === en.id}
-                            onClick={function () { restoreCourse(en) }}
-                            title="Undo — the course becomes active and its fee due again">
-                            {courseBusy === en.id ? '…' : '↩ Restore'}
-                          </button>
-                        )}
-                        {isCompleted && (
-                          <button className="btn-s"
-                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, background: '#25D366', borderColor: '#25D366', color: '#fff' }}
-                            onClick={function () { openReview(en) }}
-                            title="Send Google Review request on WhatsApp">
-                            💬 Review
-                          </button>
-                        )}
-                        {/* School-tier: certificate is gated behind HO review of the
-                            submitted marks. Every other tier keeps self-certifying —
-                            the plain 🎓 Cert button below, unchanged. */}
-                        {!isDiscontinued && isSchool && en.cert_status === 'pending_review' && (
-                          (admin && can('students.complete')) ? (
-                            <button className="btn-s"
-                              style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0, color: '#92400e', borderColor: '#fbbf24', background: '#fffbeb' }}
-                              onClick={function () { setCertifyingEn(en); setCertifyRejectNote('') }}
-                              title="Review submitted marks and certify or reject">
-                              ⏳ Review marks
-                            </button>
-                          ) : (
-                            <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' }}>
-                              ⏳ Pending HO review
-                            </span>
-                          )
-                        )}
-                        {!isDiscontinued && isSchool && en.cert_status === 'rejected' && (
-                          <>
-                            <span title={en.cert_reject_note || 'Marks were rejected'} style={{ font: '600 11px var(--font)', color: '#991b1b', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' }}>
-                              ✖ Rejected{en.cert_reject_note ? ': ' + en.cert_reject_note : ''}
-                            </span>
-                            {canEdit && (
-                              <button className="btn-s"
-                                style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
-                                onClick={function () {
+                        {/* Every per-course action lives under one Actions menu (the same
+                            component Orders uses) instead of a row of buttons that ran off
+                            the card. Status that isn't an action (pending HO review, a
+                            rejection note) shows as a line at the top of the menu. */}
+                        <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                          <ActionsMenu
+                            info={[
+                              !isDiscontinued && isSchool && en.cert_status === 'pending_review' && !(admin && can('students.complete')) && { key: 'pendreview', text: '⏳ Pending HO review', color: '#92400e' },
+                              !isDiscontinued && isSchool && en.cert_status === 'rejected' && { key: 'rejected', text: '✖ Rejected' + (en.cert_reject_note ? ': ' + en.cert_reject_note : ''), color: '#991b1b' },
+                            ]}
+                            items={[
+                              canEdit && can('students.complete') && !isCompleted && !isDiscontinued && {
+                                key: 'complete', label: '✓ Complete',
+                                onClick: function () {
+                                  setCompleteDate(lastAttendedDate[en.id] || new Date().toISOString().slice(0, 10))
+                                  setMarksObtained(en.marks_obtained != null ? String(en.marks_obtained) : '')
+                                  setMarksTotal(en.marks_total != null ? String(en.marks_total) : '')
+                                  setMarksRemarks(en.marks_remarks || '')
+                                  setCompletingEnr(en)
+                                },
+                              },
+                              // School-tier: the certificate is gated behind HO review of the
+                              // submitted marks. Every other tier self-certifies via the
+                              // Certificate item below.
+                              !isDiscontinued && isSchool && en.cert_status === 'pending_review' && admin && can('students.complete') && {
+                                key: 'reviewmarks', label: '⏳ Review marks', cls: 'primary',
+                                title: 'Review submitted marks and certify or reject',
+                                onClick: function () { setCertifyingEn(en); setCertifyRejectNote('') },
+                              },
+                              !isDiscontinued && isSchool && en.cert_status === 'rejected' && canEdit && {
+                                key: 'resubmit', label: '✎ Resubmit marks',
+                                onClick: function () {
                                   setCompleteDate(en.completed_at ? en.completed_at.slice(0, 10) : new Date().toISOString().slice(0, 10))
                                   setMarksObtained(en.marks_obtained != null ? String(en.marks_obtained) : '')
                                   setMarksTotal(en.marks_total != null ? String(en.marks_total) : '')
                                   setMarksRemarks(en.marks_remarks || '')
                                   setCompletingEnr(en)
-                                }}>
-                                ✎ Resubmit marks
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {!isDiscontinued && (!isSchool || en.cert_status === 'certified') && (
-                          <button
-                            className="btn-s"
-                            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
-                            onClick={async function () {
-                              let centre = centreCache
-                              if (!centre && student.franchisee_id) {
-                                const { data } = await sb.from('franchisees')
-                                  .select('id,business_name,city,area,country,tier')
-                                  .eq('id', student.franchisee_id).single()
-                                centre = data || null
-                                setCentreCache(centre)
-                              }
-                              setCertModal({ enrollments: localEnrollments, centre })
-                            }}
-                          >
-                            {en.cert_emailed_at ? '🎓 Re-issue' : '🎓 Cert'}
-                          </button>
-                        )}
-
-                        {/* Assign batch toggle — HO-only for now: batch/instructor
-                            scheduling isn't something franchisees manage yet, they
-                            just enrol the student and, later, mark the course
-                            complete and send the certificate. */}
-                        {admin && (
-                          <button
-                            className={isOpen ? 'btn' : 'btn-s'}
-                            style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}
-                            onClick={function () { openBatchPanel(en) }}
-                          >
-                            {isOpen ? 'Close' : bs ? '✏️ Change Batch' : '+ Assign Batch'}
-                          </button>
-                        )}
-
-                        {/* Remove from batch */}
-                        {admin && bs && !isOpen && (
-                          <button
-                            className="btn-s"
-                            style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)' }}
-                            onClick={function () { removeFromBatch(en.id) }}
-                            title="Remove from batch"
-                          >✕ Batch</button>
-                        )}
-
-                        {/* Change course / level */}
-                        {canEdit && (
-                          <button
-                            className="btn-s"
-                            style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0 }}
-                            onClick={function () { openChangeLevel(en) }}
-                            title="Change course / level"
-                          >⇄ Level</button>
-                        )}
-
-                        {/* Remove enrollment entirely */}
-                        {admin && (
-                          <button
-                            className="btn-s"
-                            style={{ fontSize: 11, padding: '4px 8px', flexShrink: 0, color: 'var(--red)', borderColor: 'var(--red)' }}
-                            onClick={function () {
-                              if (window.confirm('Remove ' + courseName + ' ' + levelName + ' enrollment for ' + student.full_name + '?')) {
-                                removeEnrollment(en)
-                              }
-                            }}
-                            title="Remove course enrollment"
-                          >🗑</button>
-                        )}
+                                },
+                              },
+                              !isDiscontinued && (!isSchool || en.cert_status === 'certified') && {
+                                key: 'cert', label: en.cert_emailed_at ? '🎓 Re-issue certificate' : '🎓 Certificate',
+                                onClick: async function () {
+                                  let centre = centreCache
+                                  if (!centre && student.franchisee_id) {
+                                    const { data } = await sb.from('franchisees')
+                                      .select('id,business_name,city,area,country,tier')
+                                      .eq('id', student.franchisee_id).single()
+                                    centre = data || null
+                                    setCentreCache(centre)
+                                  }
+                                  setCertModal({ enrollments: localEnrollments, centre })
+                                },
+                              },
+                              canEdit && certPending(en) && {
+                                key: 'certissued', label: '✓ Mark certificate issued',
+                                title: 'Certificate was already handed over outside the app — mark it issued so it stops showing as pending',
+                                onClick: function () { markCertIssued(en) },
+                              },
+                              isCompleted && {
+                                key: 'review', label: '💬 Send Google review request',
+                                title: 'Send Google Review request on WhatsApp',
+                                onClick: function () { openReview(en) },
+                              },
+                              // Assign batch — HO-only for now: batch/instructor scheduling
+                              // isn't something franchisees manage yet.
+                              admin && {
+                                key: 'batch', label: isOpen ? 'Close batch panel' : bs ? '✏️ Change batch' : '+ Assign batch',
+                                onClick: function () { openBatchPanel(en) },
+                              },
+                              admin && bs && !isOpen && {
+                                key: 'rmbatch', label: '✕ Remove from batch', cls: 'danger',
+                                onClick: function () { removeFromBatch(en.id) },
+                              },
+                              canEdit && {
+                                key: 'level', label: '⇄ Change course / level',
+                                onClick: function () { openChangeLevel(en) },
+                              },
+                              // Discontinue one course (student stays active); Restore undoes it.
+                              canEdit && !isCompleted && !isDiscontinued && {
+                                key: 'discontinue', label: courseBusy === en.id ? '…' : '⊘ Discontinue course',
+                                disabled: courseBusy === en.id,
+                                title: 'Mark this course discontinued and waive its unpaid fee',
+                                onClick: function () { discontinueCourse(en) },
+                              },
+                              canEdit && isDiscontinued && {
+                                key: 'restore', label: courseBusy === en.id ? '…' : '↩ Restore course',
+                                disabled: courseBusy === en.id,
+                                title: 'Undo — the course becomes active and its fee due again',
+                                onClick: function () { restoreCourse(en) },
+                              },
+                              admin && {
+                                key: 'remove', label: '🗑 Remove course', cls: 'danger',
+                                title: 'Remove course enrollment',
+                                onClick: function () {
+                                  if (window.confirm('Remove ' + courseName + ' ' + levelName + ' enrollment for ' + student.full_name + '?')) {
+                                    removeEnrollment(en)
+                                  }
+                                },
+                              },
+                            ]}
+                          />
+                        </div>
                       </div>
 
                       {/* Batch assignment panel */}
@@ -3085,14 +3079,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           </div>
         )}
 
-        {/* Renew a monthly billing cycle (CYCLE_SESSIONS classes, renewing on
-            the same date next month). */}
+        {/* Renew a monthly billing cycle (renewing on the same date next month). */}
         {renewingEn && (function () {
-          const held = cycleProgress[renewingEn.id] || 0
-          const target = renewingEn.sessions_per_cycle || CYCLE_SESSIONS
-          const shortfall = Math.max(0, target - held)
-          const surplus = Math.max(0, held - target)
-          const nextTarget = CYCLE_SESSIONS + shortfall
+          const cyc = cycleProgress[renewingEn.id] || computeCycle(renewingEn, [], null, '')
           return (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setRenewingEn(null) }}>
             <div className="modal" style={{ maxWidth: 380 }}>
@@ -3101,12 +3090,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 onClose={function () { setRenewingEn(null) }} />
               <div style={{ padding: '4px 20px 16px' }}>
                 <p className="hint" style={{ marginBottom: 12 }}>
-                  {held} of {target} classes were held in the cycle that started {fmtDate(cycleAnchor(renewingEn))}.{' '}
-                  {shortfall > 0
-                    ? <b style={{ color: 'var(--text2)' }}>{shortfall} short — carried into next cycle's target ({nextTarget} classes).</b>
-                    : surplus > 0
-                      ? <b style={{ color: 'var(--text2)' }}>{surplus} extra — complimentary, nothing carries forward.</b>
-                      : 'Right on target.'}
+                  {cyc ? cyc.done : 0} of {cyc ? cyc.target : 0} classes done in the cycle that started {fmtDate(cycleAnchor(renewingEn))}
+                  {cyc && cyc.missed > 0
+                    ? <> — missed {cyc.missed} weekday class{cyc.missed > 1 ? 'es' : ''}, {cyc.makeUp} made up at Saturday revision</>
+                    : null}.{' '}
+                  Saturday revision classes are included in the fee, so nothing carries into the next cycle.
                   {' '}The next cycle starts on the due date (same date next month) — nudge it a day or two either way to fold in a session that ran early or late.
                 </p>
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
@@ -3688,7 +3676,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       try { await mirrorStudentToTransaction(st.id) } catch (e) { console.warn('[Phase 3 dual-write] student create mirror failed:', e.message) }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -4188,10 +4176,90 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
   )
 }
 
+// ── MarkCertsIssuedModal ───────────────────────────────────────────────────────
+// Bulk "these certificates were already handed over" — for completions whose
+// certificate went out at the centre (or before sending existed), so they stop
+// sitting in Needs attention. Records an issued marker only; nothing is sent.
+function MarkCertsIssuedModal({ rows, userEmail, onClose, onDone }) {
+  const [cutoff, setCutoff] = useState('')                 // completed on or before
+  const [excluded, setExcluded] = useState(function () { return new Set() })
+  const [saving, setSaving] = useState(false)
+
+  const shown = rows.filter(function (r) { return !cutoff || r.completedOn <= cutoff })
+  const picked = shown.filter(function (r) { return !excluded.has(r.enrId) })
+
+  function toggle(id) {
+    setExcluded(function (prev) {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  function setAll(on) {
+    setExcluded(on ? new Set() : new Set(shown.map(function (r) { return r.enrId })))
+  }
+
+  async function save() {
+    if (!picked.length) return
+    setSaving(true)
+    const patch = { cert_issued_at: new Date().toISOString(), cert_issued_by: userEmail || null, cert_issued_note: 'Marked as issued in bulk (handed over outside the app)' }
+    const ids = picked.map(function (r) { return r.enrId })
+    for (let i = 0; i < ids.length; i += 100) {
+      const { error } = await sb.from('enrollments').update(patch).in('id', ids.slice(i, i + 100))
+      if (error) { setSaving(false); showToast('Failed: ' + error.message, 'err'); return }
+    }
+    setSaving(false)
+    showToast(ids.length + ' certificate' + (ids.length > 1 ? 's' : '') + ' marked as issued ✓')
+    onDone(ids, patch)
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget && !saving) onClose() }}>
+      <div className="modal" style={{ maxWidth: 560 }}>
+        <ModalHeader flush title="Mark certificates as issued" subtitle="Already handed over outside the app — nothing is sent" onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p className="hint" style={{ margin: 0 }}>
+            These completed courses have no certificate recorded as sent. Tick the ones that were already issued; they'll leave Needs attention. Anything you leave unticked stays pending.
+          </p>
+          <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Completed on or before (optional)
+            <input type="date" value={cutoff} onChange={function (e) { setCutoff(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
+          </label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button type="button" className="btn-s" style={{ fontSize: 11 }} onClick={function () { setAll(true) }}>Select all</button>
+            <button type="button" className="btn-s" style={{ fontSize: 11 }} onClick={function () { setAll(false) }}>Select none</button>
+            <span className="hint" style={{ marginLeft: 'auto' }}>{picked.length} of {shown.length} selected</span>
+          </div>
+          <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            {shown.length === 0 && <div className="empty" style={{ padding: 16 }}>No pending certificates in that range.</div>}
+            {shown.map(function (r) {
+              return (
+                <label key={r.enrId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '1px solid var(--border)', cursor: 'pointer', font: '500 12px var(--font)' }}>
+                  <input type="checkbox" checked={!excluded.has(r.enrId)} onChange={function () { toggle(r.enrId) }} />
+                  <span style={{ flex: 1 }}>
+                    <b>{r.studentName}</b>
+                    <span style={{ color: 'var(--text3)' }}> · {r.course}</span>
+                  </span>
+                  <span className="mono" style={{ color: 'var(--text3)', fontSize: 11 }}>{fmtDate(r.completedOn)}</span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving || picked.length === 0}>
+            {saving ? 'Saving…' : 'Mark ' + picked.length + ' as issued'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── StudentsPage ───────────────────────────────────────────────────────────────
 
 export default function StudentsPage() {
-  const { currentRole, currentFranchiseeId, can } = useAuth()
+  const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
   const admin = isAdminRole(currentRole)
 
   const [students, setStudents]   = useState([])
@@ -4202,6 +4270,7 @@ export default function StudentsPage() {
   const [sortBy, setSortBy] = useState('activity')   // activity | name | joined | balance
   const [showClosed, setShowClosed] = useState(false)
   const [viewTab, setViewTab] = useState('current')   // current | attention | completed | all
+  const [showCertBulk, setShowCertBulk] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -4217,7 +4286,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -4272,34 +4341,38 @@ export default function StudentsPage() {
       })
       if (monthlyEnrIds.length > 0) {
         const { data: bsRows } = await sb.from('batch_students')
-          .select('enrollment_id, batch_id').in('enrollment_id', monthlyEnrIds).is('removed_at', null)
-        const batchByEnr = {}
-        ;(bsRows || []).forEach(function (bs) { batchByEnr[bs.enrollment_id] = bs.batch_id })
+          .select('enrollment_id, batch_id, batches(schedule_days)').in('enrollment_id', monthlyEnrIds).is('removed_at', null)
+        const batchByEnr = {}, daysByEnr = {}
+        ;(bsRows || []).forEach(function (bs) { batchByEnr[bs.enrollment_id] = bs.batch_id; daysByEnr[bs.enrollment_id] = bs.batches?.schedule_days || '' })
         const batchIds = Array.from(new Set(Object.values(batchByEnr)))
-        if (batchIds.length > 0) {
-          try {
+        try {
+          let sessRows = [], attRows = []
+          if (batchIds.length > 0) {
             const anchors = (data || []).flatMap(function (s) { return (s.enrollments || []).filter(isMonthlyActive).map(cycleAnchor) }).filter(Boolean).sort()
-            const sessRows = await fetchAllRows(function (from, to) {
-              return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday')
-                .in('batch_id', batchIds)
-                .gte('session_date', anchors[0])
-                .lte('session_date', new Date().toISOString().slice(0, 10))
-                .order('id').range(from, to)
+            ;[sessRows, attRows] = await Promise.all([
+              // No upper date bound: a holiday declared for a later day in the
+              // month lowers that cycle's target.
+              fetchAllRows(function (from, to) {
+                return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday')
+                  .in('batch_id', batchIds).gte('session_date', anchors[0]).order('id').range(from, to)
+              }),
+              fetchAllRows(function (from, to) {
+                return sb.from('session_attendance').select('id, enrollment_id, session_id')
+                  .in('enrollment_id', monthlyEnrIds).eq('attended', true).order('id').range(from, to)
+              }),
+            ])
+          }
+          const attendedByEnr = {}
+          attRows.forEach(function (a) { (attendedByEnr[a.enrollment_id] = attendedByEnr[a.enrollment_id] || new Set()).add(a.session_id) })
+          const cm = {}
+          ;(data || []).forEach(function (s) {
+            (s.enrollments || []).filter(isMonthlyActive).forEach(function (e) {
+              const bId = batchByEnr[e.id]
+              cm[e.id] = computeCycle(e, sessRows.filter(function (r) { return r.batch_id === bId }), attendedByEnr[e.id], daysByEnr[e.id])
             })
-            const cm = {}
-            ;(data || []).forEach(function (s) {
-              (s.enrollments || []).filter(isMonthlyActive).forEach(function (e) {
-                const bId = batchByEnr[e.id]
-                const anchor = cycleAnchor(e)
-                if (!bId || !anchor) return
-                cm[e.id] = sessRows.filter(function (r) {
-                  return r.batch_id === bId && !r.is_holiday && r.session_date >= anchor
-                }).length
-              })
-            })
-            setCycleMap(cm)
-          } catch (e) { console.error('Cycle progress load error:', e); setCycleMap({}) }
-        }
+          })
+          setCycleMap(cm)
+        } catch (e) { console.error('Cycle progress load error:', e); setCycleMap({}) }
       } else {
         setCycleMap({})
       }
@@ -4377,6 +4450,32 @@ export default function StudentsPage() {
     if (lc.reasons.length > 0) tabCounts.attention++
   })
 
+  // Completed courses with no certificate recorded — what the bulk
+  // "mark as issued" option works on (respects the centre filter).
+  const pendingCertRows = []
+  students.filter(inCentreScope).forEach(function (s) {
+    (s.enrollments || []).filter(certPending).forEach(function (e) {
+      pendingCertRows.push({
+        enrId: e.id, studentName: s.full_name,
+        course: (e.skus?.courses?.group_name || 'Course') + (e.skus?.level_name ? ' — ' + e.skus.level_name : ''),
+        completedOn: String(e.completed_at).slice(0, 10),
+      })
+    })
+  })
+  pendingCertRows.sort(function (a, b) { return a.completedOn < b.completedOn ? 1 : -1 })
+
+  function handleCertsIssued(ids, patch) {
+    const idSet = new Set(ids)
+    setStudents(function (ss) {
+      return ss.map(function (s) {
+        return (s.enrollments || []).some(function (e) { return idSet.has(e.id) })
+          ? { ...s, enrollments: s.enrollments.map(function (e) { return idSet.has(e.id) ? { ...e, ...patch } : e }) }
+          : s
+      })
+    })
+    setShowCertBulk(false)
+  }
+
   const filtered = students.filter(function (s) {
     const q = search.toLowerCase()
     const matchesSearch = !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
@@ -4433,7 +4532,7 @@ export default function StudentsPage() {
     const loaded = students.find(function (s) { return s.id === st.id })
     if (loaded) { setSelected(loaded); return }
     const { data } = await sb.from('students')
-      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
       .eq('id', st.id).single()
     setSelected(data || st)
   }
@@ -4596,6 +4695,13 @@ export default function StudentsPage() {
             {search.trim() && viewTab !== 'all' && (
               <span style={{ alignSelf: 'center', marginLeft: 8, font: '500 11px var(--font)', color: 'var(--text3)' }}>Searching across all students</span>
             )}
+            {can('students.edit') && pendingCertRows.length > 0 && (viewTab === 'attention' || viewTab === 'completed') && (
+              <button className="btn-s" style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 12 }}
+                title="Certificates that were already handed over outside the app"
+                onClick={function () { setShowCertBulk(true) }}>
+                🎓 Mark certificates issued ({pendingCertRows.length})
+              </button>
+            )}
           </div>
         )}
 
@@ -4697,15 +4803,17 @@ export default function StudentsPage() {
                                   txt = '✓ done ' + shortDay(String(e.completed_at).slice(0, 10)); color = 'var(--green)'; bg = 'var(--green-bg)'
                                   extra = certPending(e)
                                     ? { t: 'cert pending', color: '#B45309', bg: '#FEF3C7' }
-                                    : { t: '🎓 sent', color: 'var(--text3)', bg: 'var(--bg2)' }
+                                    : { t: (e.cert_wa_sent_at || e.cert_emailed_at) ? '🎓 sent' : '🎓 issued', color: 'var(--text3)', bg: 'var(--bg2)' }
                                 }
                                 else if (bucket === 'dropped') { txt = '⊘ dropped'; color = '#991b1b'; bg = '#fef2f2' }
                                 else if (bt === 'monthly') {
-                                  // Monthly: 22 classes a cycle, renewing on the same
-                                  // date next month — and the date is shown, not just
-                                  // implied by a chip that appears.
-                                  const held = cycleMap[e.id] || 0
-                                  const target = e.sessions_per_cycle || CYCLE_SESSIONS
+                                  // Monthly: classes done / this cycle's Mon–Fri target
+                                  // (Saturday revision only makes up absences), renewing
+                                  // on the same date next month — and the date is shown,
+                                  // not just implied by a chip that appears.
+                                  const cyc = cycleMap[e.id] || computeCycle(e, [], null, '')
+                                  const held = cyc ? cyc.done : 0
+                                  const target = cyc ? cyc.target : 0
                                   const ri = renewalInfo(e)
                                   if (ri && ri.state === 'overdue') { txt = 'Overdue ' + (-ri.daysLeft) + 'd · due ' + shortDay(ri.due); color = '#991b1b'; bg = '#fef2f2' }
                                   else if (ri && ri.state === 'soon') { txt = held + '/' + target + ' · renew ' + shortDay(ri.due); color = '#B45309'; bg = '#FEF3C7' }
@@ -4773,6 +4881,15 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
+
+      {showCertBulk && (
+        <MarkCertsIssuedModal
+          rows={pendingCertRows}
+          userEmail={currentUser && currentUser.email}
+          onClose={function () { setShowCertBulk(false) }}
+          onDone={handleCertsIssued}
+        />
+      )}
 
       {showAdd && (
         <AddStudentModal
