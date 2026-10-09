@@ -1501,3 +1501,7 @@ vercel-toolbar { display: none !important; }
   .tb-r .btn-p { width: 40px; overflow: hidden; }
   .tb-r .btn-p .btn-label { display: none; }
 }
+
+/* Students list: ten-ish columns plus wrapping chips — tighter cell padding so
+   the table fits the page instead of scrolling sideways and cutting off View. */
+.stu-tbl th, .stu-tbl td { padding-left: 12px; padding-right: 12px; }

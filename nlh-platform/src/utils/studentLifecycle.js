@@ -147,7 +147,7 @@ export function attentionReasons(student, attMap) {
     const tot = en.skus?.total_sessions || 0
     return enrolmentBucket(en) === 'active' && en.skus?.courses?.billing_type !== 'monthly' && tot > 0 && (attMap[en.id] || 0) >= tot
   })
-  if (sessionsDone.length) out.push({ key: 'sessions_done', label: 'Sessions done — mark complete', tone: 'amber' })
+  if (sessionsDone.length) out.push({ key: 'sessions_done', label: 'Sessions done', tone: 'amber' })
 
   const certs = ens.filter(certPending).length
   if (certs) out.push({ key: 'cert_pending', label: certs > 1 ? certs + ' certificates pending' : 'Certificate pending', tone: 'amber' })

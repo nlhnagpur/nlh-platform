@@ -4721,7 +4721,7 @@ export default function StudentsPage() {
           <div className="loading">Loading students…</div>
         ) : (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
-            <table className="big-tbl">
+            <table className="big-tbl stu-tbl">
               <thead>
                 <tr>
                   <th>Student</th>
@@ -4732,13 +4732,12 @@ export default function StudentsPage() {
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Paid</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Balance</th>
                   <th>Learning</th>
-                  <th>Payment</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={centreColVisible ? 10 : 9} className="empty">
+                  <tr><td colSpan={centreColVisible ? 9 : 8} className="empty">
                     {viewTab === 'current' ? 'No current students.' : viewTab === 'attention' ? 'Nothing needs attention.' : viewTab === 'completed' ? 'No completed students.' : 'No students found'}
                   </td></tr>
                 )}
@@ -4841,6 +4840,7 @@ export default function StudentsPage() {
                       <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</div></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</div>
+                        <div style={{ marginTop: 4 }}><StatusBadge status={s.payment_status} /></div>
                       </td>
                       <td>
                         {(function () {
@@ -4863,13 +4863,12 @@ export default function StudentsPage() {
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
                               {pills.map(function (p) {
-                                return <span key={p.key} style={{ font: '600 10px var(--font)', color: tone[p.tone].color, background: tone[p.tone].bg, borderRadius: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}>{p.label}</span>
+                                return <span key={p.key} title={p.label} style={{ font: '600 10px var(--font)', color: tone[p.tone].color, background: tone[p.tone].bg, borderRadius: 10, padding: '2px 8px', maxWidth: 150 }}>{p.label}</span>
                               })}
                             </div>
                           )
                         })()}
                       </td>
-                      <td><StatusBadge status={s.payment_status} /></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         <button className="row-action" onClick={function (e) { e.stopPropagation(); setSelected(s) }}>View</button>
                       </td>
