@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
-import { computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
+import { addOneMonth, todayIso, WEEKDAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -299,6 +299,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [certifySaving,   setCertifySaving]   = useState(false)
   const [certifyRejectNote, setCertifyRejectNote] = useState('')
   const [showAttSheet,    setShowAttSheet]    = useState(false) // monthly attendance sheet open
+  const [renewDays,       setRenewDays]       = useState([])    // weekday names picked in the Renew Cycle dialog
   const [renewingEn,      setRenewingEn]      = useState(null)  // monthly enrollment pending cycle renewal
   const [renewDate,       setRenewDate]       = useState(new Date().toISOString().slice(0, 10))
   const [renewFee,        setRenewFee]        = useState('')
@@ -1057,6 +1058,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const ri = renewalInfo(en)
     setRenewDate(ri ? ri.due : new Date().toISOString().slice(0, 10))
     setRenewFee(String(en.fee_amount || 0))
+    // Start from the days already in force: this student's own, else the
+    // batch's, else every Mon-Fri.
+    setRenewDays(parseCycleDays(en.cycle_days || (batchAssignments[en.id] && batchAssignments[en.id].batches && batchAssignments[en.id].batches.schedule_days)))
     setRenewingEn(en)
   }
 
@@ -1069,7 +1073,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // Only the start date moves. The next cycle's target is worked out from
     // its own Mon–Fri window; a student who missed weekday classes makes them
     // up at Saturday revision, so nothing is carried between cycles.
-    const patch = { cycle_started_at: renewDate }
+    if (renewDays.length === 0) { setRenewSaving(false); showToast('Pick at least one day of the week', 'warn'); return }
+    const patch = { cycle_started_at: renewDate, cycle_days: formatCycleDays(renewDays) }
     const { error: enrErr } = await sb.from('enrollments').update(patch).eq('id', en.id)
     if (enrErr) { setRenewSaving(false); showToast('Failed: ' + enrErr.message, 'err'); return }
 
@@ -1199,7 +1204,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     showToast('Course removed')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -1300,7 +1305,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       }
     })
     const { data, error } = await sb.from('enrollments').insert(rows)
-      .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name))')
+      .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name))')
     if (error) { setAddingEnrollment(false); showToast('Failed: ' + error.message, 'err'); return }
     const added = data || []
 
@@ -1429,7 +1434,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setAddingEnrollment(false)
     showToast(added.length + ' course' + (added.length !== 1 ? 's' : '') + ' added · ₹' + fmtAmt(netAdded) + ' added to fees')
     const { data: updated } = await sb.from('students')
-      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
+      .select('*, enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
       .eq('id', student.id).single()
     if (updated) onSaved(updated)
   }
@@ -3135,6 +3140,35 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     style={{ marginTop: 6, fontSize: 13, width: '100%' }}
                   />
                 </label>
+                {/* The days this student attends set the cycle's class target:
+                    the number of those weekdays between the start date and the
+                    same date next month, less any declared holidays. Saturday
+                    revision is free and isn't part of the target. */}
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ font: '600 12px var(--font)', color: 'var(--text2)', marginBottom: 6 }}>Days of the week</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {WEEKDAY_NAMES.map(function (d) {
+                      const on = renewDays.includes(d)
+                      return (
+                        <button key={d} type="button"
+                          onClick={function () { setRenewDays(function (prev) { return prev.includes(d) ? prev.filter(function (x) { return x !== d }) : prev.concat(d) }) }}
+                          style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', font: '600 12px var(--font)', border: '1.5px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : '#fff', color: on ? 'var(--purple)' : 'var(--text3)' }}>
+                          {d}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    {[['Mon–Fri', WEEKDAY_NAMES], ['Mon, Wed, Fri', ['Mon', 'Wed', 'Fri']], ['Tue, Thu', ['Tue', 'Thu']]].map(function (p) {
+                      return <button key={p[0]} type="button" className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} onClick={function () { setRenewDays(p[1]) }}>{p[0]}</button>
+                    })}
+                  </div>
+                  <span className="hint" style={{ display: 'block', marginTop: 6 }}>
+                    {renewDays.length === 0
+                      ? 'Pick at least one day.'
+                      : countCycleDays(renewDate || todayIso(), renewDays) + ' class days from ' + fmtDate(renewDate || todayIso()) + ' to ' + fmtDate(addOneMonth(renewDate || todayIso())) + ' (declared holidays come off the target). Saturday revision is free and not counted.'}
+                  </span>
+                </div>
                 {(
                   <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>
                     Fee to add for the next cycle (₹)
@@ -3705,7 +3739,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
       try { await mirrorStudentToTransaction(st.id) } catch (e) { console.warn('[Phase 3 dual-write] student create mirror failed:', e.message) }
       // Re-fetch with full joins so the list shows enrollments immediately
       const { data: fullSt } = await sb.from('students')
-        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
+        .select('*, franchisees(business_name, city), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, courses(group_name)))')
         .eq('id', st.id)
         .single()
       onSaved(fullSt || st)
@@ -4315,7 +4349,7 @@ export default function StudentsPage() {
     async function load() {
       setLoading(true)
       let q = sb.from('students')
-        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+        .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
         // Most recent activity first; final ordering is by last enrolment (below)
         .order('registered_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
@@ -4563,7 +4597,7 @@ export default function StudentsPage() {
     const loaded = students.find(function (s) { return s.id === st.id })
     if (loaded) { setSelected(loaded); return }
     const { data } = await sb.from('students')
-      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
+      .select('*, franchisees(business_name, city, tier), enrollments(id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, total_sessions, courses(group_name, billing_type)))')
       .eq('id', st.id).single()
     setSelected(data || st)
   }

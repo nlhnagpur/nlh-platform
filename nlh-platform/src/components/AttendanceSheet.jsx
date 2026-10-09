@@ -51,7 +51,9 @@ function memberOn(bs, dateIso) {
 function tally(cells) {
   const t = { S: 0, P: 0, A: 0, N: 0 }
   cells.forEach(function (c) {
-    if (!c || c.code === 'H') return
+    // Holidays aren't classes, and Sunday classes sit outside the Mon-Fri +
+    // Saturday revision fee rule — shown on the sheet, never counted.
+    if (!c || c.code === 'H' || (c.date && dowOf(c.date) === 0)) return
     t.S++
     t[c.code]++
   })
@@ -144,7 +146,8 @@ async function loadInstructorSheet(instructor, ym) {
         cells[s.id] = { code: a === true ? 'P' : a === false ? 'A' : 'N', date: s.session_date }
       })
       const totals = tally(Object.values(cells))
-      if (totals.P > 0) taught.add(m.en.student_id)
+      // "Taught" = present at least once, Sunday classes included — the CI did teach them.
+      if (Object.values(cells).some(function (c) { return c.code === 'P' })) taught.add(m.en.student_id)
       return { id: m.en.id, name: (m.en.students && m.en.students.full_name) || 'Student', course: courseLabel(m.en.skus), cells: cells, totals: totals }
     }).filter(function (s) { return Object.keys(s.cells).length > 0 })
       .sort(function (a, c) { return a.name.localeCompare(c.name) })
@@ -166,9 +169,10 @@ function Cell({ c }) {
   if (!c) return <td style={{ width: 24, minWidth: 24, border: '1px solid #e5e7eb' }}></td>
   const t = TONE[c.code]
   const tip = c.code === 'H' ? 'Holiday' : { P: 'Present', A: 'Absent', N: 'Not marked' }[c.code]
+  const isSun = c.date && dowOf(c.date) === 0
   return (
-    <td title={tip + (c.date ? ' · ' + fmtDate(c.date) : '') + (c.ci ? ' · ' + c.ci + (c.sub ? ' (substitute)' : '') : '')}
-      style={{ width: 24, minWidth: 24, textAlign: 'center', font: '700 11px var(--mono)', color: t.color, background: t.bg, border: '1px solid #e5e7eb' }}>
+    <td title={tip + (c.date ? ' · ' + fmtDate(c.date) : '') + (c.ci ? ' · ' + c.ci + (c.sub ? ' (substitute)' : '') : '') + (isSun && c.code !== 'H' ? ' · Sunday — not counted in S/P/A/N' : '')}
+      style={{ width: 24, minWidth: 24, textAlign: 'center', font: '700 11px var(--mono)', color: t.color, background: t.bg, border: '1px solid #e5e7eb', opacity: isSun && c.code !== 'H' ? 0.45 : 1 }}>
       {c.code}
     </td>
   )
@@ -300,7 +304,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
           </span>
         </div>
         <div style={{ padding: '0 20px 6px', font: '500 11px var(--font)', color: 'var(--text3)' }}>
-          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.N.color }}>N</b> not marked (attendance never recorded) · <b>H</b> holiday · blank no class · <b>S</b> sessions held (S = P + A + N)
+          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.N.color }}>N</b> not marked (attendance never recorded) · <b>H</b> holiday · blank no class · <b>S</b> sessions held (S = P + A + N). Sunday classes are shown faded and not counted in S / P / A / N.
         </div>
         <div style={{ padding: '8px 20px 18px', overflow: 'auto', flex: 1 }}>
           {loading && <div className="loading"><span className="spinner" />Loading attendance…</div>}

@@ -59,6 +59,30 @@ function prevDay(iso) {
   return isoDay(d)
 }
 
+export const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+
+// "Mon, Wed, Fri" — the selected weekdays in calendar order, for storing.
+export function formatCycleDays(names) {
+  return WEEKDAY_NAMES.filter(function (n) { return names.includes(n) }).join(', ')
+}
+
+// Weekday names (Mon-Fri) in a stored/batch days string; blank = all five.
+export function parseCycleDays(str) {
+  const set = scheduledWeekdays(str)
+  return WEEKDAY_NAMES.filter(function (n, i) { return set.has(i + 1) })
+}
+
+// How many class days a cycle starting on startIso would have for the chosen
+// weekdays, before any declared holidays come off — for the renew dialog's
+// preview. Same window as computeCycle: start up to the same date next month.
+export function countCycleDays(startIso, names) {
+  const sched = new Set(names.map(function (n) { return DOW_KEYS[n] }))
+  const due = addOneMonth(startIso)
+  let n = 0
+  for (let d = startIso; d < due; d = nextDay(d)) if (sched.has(dowOf(d))) n++
+  return n
+}
+
 // Progress through one monthly cycle.
 //   sessions    batch_sessions rows { id, session_date, is_holiday } for the student's batch
 //   attendance  Map(session_id -> attended boolean) for this student's enrolment.
@@ -74,7 +98,9 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today) {
   if (!start) return null
   const due = addOneMonth(start)
   const todayStr = today || todayIso()
-  const sched = scheduledWeekdays(scheduleDays)
+  // Days chosen for this student at renewal win; otherwise the batch's days;
+  // otherwise every Mon-Fri.
+  const sched = scheduledWeekdays(en.cycle_days || scheduleDays)
   const att = attendance || new Map()
   const inWindow = (sessions || []).filter(function (s) { return s.session_date >= start && s.session_date < due })
   const holidayDates = new Set(inWindow.filter(function (s) { return s.is_holiday }).map(function (s) { return s.session_date }))
@@ -93,15 +119,18 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today) {
   const attendedSat = saturday.filter(function (s) { return att.get(s.id) === true }).length
   const makeUp = Math.min(absent, attendedSat)
   // Plain tally of every class that ran in the cycle so far (Saturday revision
-  // included): S sessions, P present, A absent, N not marked. S = P + A + N.
-  const sP = ran.filter(function (s) { return att.get(s.id) === true }).length
-  const sA = ran.filter(function (s) { return att.get(s.id) === false }).length
+  // included, Sunday classes not — they sit outside the Mon-Fri + Saturday
+  // revision fee rule): S sessions, P present, A absent, N not marked.
+  // S = P + A + N.
+  const counted = ran.filter(function (s) { return dowOf(s.session_date) !== 0 })
+  const sP = counted.filter(function (s) { return att.get(s.id) === true }).length
+  const sA = counted.filter(function (s) { return att.get(s.id) === false }).length
   return {
     start: start, due: due, end: prevDay(due), target: target,
     done: Math.min(target, attendedWeekday + makeUp),
     held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat,
     absent: absent, unmarked: unmarked, makeUp: makeUp,
-    spa: { S: ran.length, P: sP, A: sA, N: ran.length - sP - sA },
+    spa: { S: counted.length, P: sP, A: sA, N: counted.length - sP - sA },
   }
 }
 
