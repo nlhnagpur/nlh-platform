@@ -92,11 +92,16 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today) {
   const unmarked = weekday.filter(function (s) { return !att.has(s.id) }).length
   const attendedSat = saturday.filter(function (s) { return att.get(s.id) === true }).length
   const makeUp = Math.min(absent, attendedSat)
+  // Plain tally of every class that ran in the cycle so far (Saturday revision
+  // included): S sessions, P present, A absent, N not marked. S = P + A + N.
+  const sP = ran.filter(function (s) { return att.get(s.id) === true }).length
+  const sA = ran.filter(function (s) { return att.get(s.id) === false }).length
   return {
     start: start, due: due, end: prevDay(due), target: target,
     done: Math.min(target, attendedWeekday + makeUp),
     held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat,
     absent: absent, unmarked: unmarked, makeUp: makeUp,
+    spa: { S: ran.length, P: sP, A: sA, N: ran.length - sP - sA },
   }
 }
 

@@ -5,6 +5,7 @@ import { fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
+import AttendanceSheet from '../components/AttendanceSheet'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [batchSaving,     setBatchSaving]     = useState(false)
   const [editBatchModal,  setEditBatchModal]  = useState(null) // batch object
   const [attendanceBatch, setAttendanceBatch] = useState(null) // batch object
+  const [showCiSheet, setShowCiSheet] = useState(false)          // monthly attendance sheet for this CI
 
   function fld(k)  { return function (e) { setForm(f    => ({ ...f, [k]: e.target.value })) } }
   function cfd(k)  { return function (e) { setCaution(c => ({ ...c, [k]: e.target.value })) } }
@@ -1035,12 +1037,18 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               <span style={{ fontSize: 12, color: 'var(--text3)' }}>
                 {batchList.filter(function (b) { return b.is_active }).length} active batch{batchList.filter(function (b) { return b.is_active }).length !== 1 ? 'es' : ''}
               </span>
-              {!showAddBatch && (
-                <button className="btn-s" style={{ fontSize: 11 }}
-                  onClick={function () { setShowAddBatch(true); setBatchForm({ ...BLANK_BATCH }) }}>
-                  + New Batch
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { setShowCiSheet(true) }}
+                  title="Month-by-month: the classes this CI took and the students taught">
+                  📋 Attendance sheet
                 </button>
-              )}
+                {!showAddBatch && (
+                  <button className="btn-s" style={{ fontSize: 11 }}
+                    onClick={function () { setShowAddBatch(true); setBatchForm({ ...BLANK_BATCH }) }}>
+                    + New Batch
+                  </button>
+                )}
+              </div>
             </div>
 
             {batchList.length === 0 && !showAddBatch && (
@@ -1275,6 +1283,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           onClose={function () { setEditBatchModal(null) }}
           onSaved={function () { setEditBatchModal(null); setTabLoaded(function(tl) { return { ...tl, batches: false } }); loadTab('batches') }}
         />
+      )}
+
+      {showCiSheet && (
+        <AttendanceSheet mode="instructor" instructor={instructor} onClose={function () { setShowCiSheet(false) }} />
       )}
 
       {/* ── Attendance Modal ── */}

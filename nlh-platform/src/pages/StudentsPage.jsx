@@ -13,6 +13,7 @@ import { printStudentInvoice, printStudentReceipt } from '../components/studentD
 import { captureDocPng } from '../utils/captureReceipt'
 import ModalHeader from '../components/ModalHeader'
 import ActionsMenu from '../components/ActionsMenu'
+import AttendanceSheet from '../components/AttendanceSheet'
 import StudentCertModal from '../components/StudentCertModal'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
@@ -297,6 +298,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [certifyingEn,    setCertifyingEn]    = useState(null)  // admin reviewing a school's pending-review enrollment
   const [certifySaving,   setCertifySaving]   = useState(false)
   const [certifyRejectNote, setCertifyRejectNote] = useState('')
+  const [showAttSheet,    setShowAttSheet]    = useState(false) // monthly attendance sheet open
   const [renewingEn,      setRenewingEn]      = useState(null)  // monthly enrollment pending cycle renewal
   const [renewDate,       setRenewDate]       = useState(new Date().toISOString().slice(0, 10))
   const [renewFee,        setRenewFee]        = useState('')
@@ -2018,6 +2020,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {/* ── COURSES & BATCHES TAB ── */}
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
+            {localEnrollments.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                <button className="btn-s" style={{ fontSize: 12 }} onClick={function () { setShowAttSheet(true) }}
+                  title="Month-by-month present / absent / not marked for every course, and the classes attended">
+                  📋 Attendance sheet
+                </button>
+              </div>
+            )}
             {form.is_active === false && (
               <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10,
                 background: '#fef2f2', border: '1px solid #fca5a5',
@@ -2246,18 +2256,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                   style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                                   {cycleHeld} / {cycleTarget} this cycle · {shortDay(cycle.start)}–{shortDay(cycle.end)}
                                 </span>
-                                {cycle.absent > 0 && (
-                                  <span title="Weekday classes marked absent. A Saturday revision class attended makes up one absence."
-                                    style={{ font: '600 10px var(--font)', color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                    {cycle.absent} absent{cycle.makeUp > 0 ? ' · ' + cycle.makeUp + ' made up on Sat' : ''}
-                                  </span>
-                                )}
-                                {cycle.unmarked > 0 && (
-                                  <span title={'No attendance was recorded for ' + cycle.unmarked + ' weekday class' + (cycle.unmarked > 1 ? 'es' : '') + ' this cycle — mark it (present or absent) so it is counted.'}
-                                    style={{ font: '600 10px var(--font)', color: '#B45309', background: '#FEF3C7', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                    {cycle.unmarked} not marked
-                                  </span>
-                                )}
+                                {/* S sessions held this cycle, P present, A absent, N not
+                                    marked (S = P + A + N). Includes Saturday revision. */}
+                                <span title={'This cycle so far — S: ' + cycle.spa.S + ' classes held, P: ' + cycle.spa.P + ' present, A: ' + cycle.spa.A + ' absent, N: ' + cycle.spa.N + ' not marked (attendance never recorded — mark it so it is counted).'
+                                  + (cycle.makeUp > 0 ? ' ' + cycle.makeUp + ' absence' + (cycle.makeUp > 1 ? 's' : '') + ' made up at Saturday revision.' : '')}
+                                  style={{ font: '600 10px var(--mono)', color: cycle.spa.N > 0 ? '#B45309' : 'var(--text2)', background: cycle.spa.N > 0 ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                  S {cycle.spa.S} · P {cycle.spa.P} · A {cycle.spa.A} · N {cycle.spa.N}
+                                </span>
                                 <span style={{ font: '600 10px var(--font)', color: renewal.state === 'overdue' ? '#991b1b' : renewal.state === 'soon' ? '#B45309' : 'var(--text3)', background: renewal.state === 'overdue' ? '#fef2f2' : renewal.state === 'soon' ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                                   {renewal.state === 'overdue' ? 'Renewal overdue since ' : 'Renews '}{fmtDate(renewal.due)}
                                 </span>
@@ -3094,6 +3099,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
               </div>
             </div>
           </div>
+        )}
+
+        {showAttSheet && (
+          <AttendanceSheet mode="student" student={{ ...student, enrollments: localEnrollments }} onClose={function () { setShowAttSheet(false) }} />
         )}
 
         {/* Renew a monthly billing cycle (renewing on the same date next month). */}
