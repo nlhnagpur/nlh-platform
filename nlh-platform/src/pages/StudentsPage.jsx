@@ -5,6 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
+import { CYCLE_SESSIONS, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -298,7 +299,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [renewingEn,      setRenewingEn]      = useState(null)  // monthly enrollment pending cycle renewal
   const [renewDate,       setRenewDate]       = useState(new Date().toISOString().slice(0, 10))
   const [renewFee,        setRenewFee]        = useState('')
-  const [renewPerWeek,    setRenewPerWeek]    = useState('')   // only asked when no target is set yet
   const [renewSaving,     setRenewSaving]     = useState(false)
   const [reviewingEn,     setReviewingEn]     = useState(null)  // enrollment pending review-send
   const [reviewPhone,     setReviewPhone]     = useState('')
@@ -726,16 +726,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       // of fees is paying for.
       const cycleBatchIds = Array.from(new Set(Object.values(map).map(function (bs) { return bs.batch_id }).filter(Boolean)))
       if (cycleBatchIds.length > 0) {
-        const { data: sessRows } = await sb.from('batch_sessions')
-          .select('batch_id, session_date, is_holiday')
-          .in('batch_id', cycleBatchIds)
-          .lte('session_date', new Date().toISOString().slice(0, 10))
+        const sessRows = await fetchAllRows(function (from, to) {
+          return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday')
+            .in('batch_id', cycleBatchIds)
+            .lte('session_date', new Date().toISOString().slice(0, 10))
+            .order('id').range(from, to)
+        })
         const progress = {}
         localEnrollments.forEach(function (en) {
           const bsRow = map[en.id]
-          if (!bsRow || !en.cycle_started_at) return
-          progress[en.id] = (sessRows || []).filter(function (s) {
-            return s.batch_id === bsRow.batch_id && !s.is_holiday && s.session_date >= en.cycle_started_at
+          const anchor = cycleAnchor(en)
+          if (!bsRow || !anchor) return
+          progress[en.id] = sessRows.filter(function (s) {
+            return s.batch_id === bsRow.batch_id && !s.is_holiday && s.session_date >= anchor
           }).length
         })
         setCycleProgress(progress)
@@ -1022,9 +1025,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // folded into where the next cycle actually begins, same as the old
   // cycle's progress was counted strictly from its own start date.
   function openRenewCycle(en) {
-    setRenewDate(new Date().toISOString().slice(0, 10))
-    setRenewFee(en.sessions_per_cycle ? String(en.fee_amount || 0) : '0')
-    setRenewPerWeek(en.sessions_per_week ? String(en.sessions_per_week) : '3')
+    // Defaults to the cycle's own due date (same date next month), not today —
+    // a renewal collected a few days late still counts classes date-to-date
+    // from where the paid month actually began. Editable to nudge it.
+    const ri = renewalInfo(en)
+    setRenewDate(ri ? ri.due : new Date().toISOString().slice(0, 10))
+    setRenewFee(String(en.fee_amount || 0))
     setRenewingEn(en)
   }
 
@@ -1032,23 +1038,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (!renewingEn) return
     const en = renewingEn
     const fee = Number(renewFee) || 0
-    const isFirstSetup = !en.sessions_per_cycle   // no target yet — this is "set schedule", not a real renewal
     setRenewSaving(true)
 
     const patch = { cycle_started_at: renewDate }
-    if (isFirstSetup) {
-      const perWeek = Number(renewPerWeek) || 0
-      patch.sessions_per_week = perWeek || null
-      patch.sessions_per_cycle = perWeek ? Math.round(perWeek * 4) : null
-    } else {
-      // Ran short (holidays, a schedule gap) → the missed classes are owed,
-      // not lost — carry them into next cycle's target. Ran over → those
-      // extra classes were complimentary; nothing carries the other way.
+    {
+      // A cycle is CYCLE_SESSIONS classes. Ran short (holidays, a schedule
+      // gap) → the missed classes are owed, not lost — carry them into next
+      // cycle's target. Ran over → those extra classes were complimentary;
+      // nothing carries the other way.
       const held = cycleProgress[en.id] || 0
-      const target = en.sessions_per_cycle || 0
+      const target = en.sessions_per_cycle || CYCLE_SESSIONS
       const shortfall = Math.max(0, target - held)
-      const baseTarget = en.sessions_per_week ? Math.round(en.sessions_per_week * 4) : target
-      patch.sessions_per_cycle = baseTarget + shortfall
+      patch.sessions_per_cycle = CYCLE_SESSIONS + shortfall
     }
     const { error: enrErr } = await sb.from('enrollments').update(patch).eq('id', en.id)
     if (enrErr) { setRenewSaving(false); showToast('Failed: ' + enrErr.message, 'err'); return }
@@ -1067,9 +1068,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setCycleProgress(function (prev) { return { ...prev, [en.id]: 0 } })
     setRenewSaving(false)
     setRenewingEn(null)
-    showToast(isFirstSetup
-      ? 'Schedule set — tracking from ' + fmtDate(renewDate) + ' ✓'
-      : 'Cycle renewed from ' + fmtDate(renewDate) + (fee > 0 ? ' · ₹' + fmtAmt(fee) + ' added to Fee Total ✓' : ' ✓'))
+    showToast('Cycle renewed from ' + fmtDate(renewDate) + (fee > 0 ? ' · ₹' + fmtAmt(fee) + ' added to Fee Total ✓' : ' ✓'))
     if (onSaved) onSaved({ ...student, ...form, fee_total: fee > 0 ? (Number(form.fee_total) || 0) + fee : form.fee_total, enrollments: next })
   }
 
@@ -2132,12 +2131,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   // schedule gap) still gets prompted once the month's actually
                   // up rather than waiting forever for a count that may never
                   // arrive — the shortfall carries into the next cycle instead.
+                  // A cycle is CYCLE_SESSIONS (22) classes and renews on the
+                  // same date next month; enrolments with no stored cycle
+                  // start use their enrolment date. Same rule the Students
+                  // list uses (utils/studentLifecycle.js) so the two agree.
                   const cycleHeld    = cycleProgress[en.id] || 0
-                  const cycleTarget  = en.sessions_per_cycle || 0
-                  const daysSinceCycleStart = en.cycle_started_at
-                    ? Math.floor((Date.now() - new Date(en.cycle_started_at + 'T00:00:00').getTime()) / 86400000)
-                    : 0
-                  const monthEnding  = !isCompleted && billingType === 'monthly' && cycleTarget > 0 && daysSinceCycleStart >= 28
+                  const cycleTarget  = billingType === 'monthly' ? (en.sessions_per_cycle || CYCLE_SESSIONS) : 0
+                  const renewal      = billingType === 'monthly' && !isCompleted && !isDiscontinued ? renewalInfo(en) : null
+                  const monthEnding  = !!renewal && renewal.state !== 'ok'
                   const kitItems     = kitDefs[en.sku_id] || []
                   const kitGivenForEnr = kitGiven[en.id] || {}
                   const kitPanelOpen = kitPanelEnrId === en.id
@@ -2202,27 +2203,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 ⚠ Sessions done — review
                               </span>
                             )}
-                            {!isCompleted && billingType === 'monthly' && cycleTarget > 0 && (
-                              <span title={'This billing cycle: ' + cycleHeld + ' of ' + cycleTarget + ' classes held since ' + fmtDate(en.cycle_started_at)}
+                            {renewal && (
+                              <span title={'This billing cycle: ' + cycleHeld + ' of ' + cycleTarget + ' classes held since ' + fmtDate(cycleAnchor(en))}
                                 style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                {cycleHeld} / {cycleTarget} this cycle
+                                {cycleHeld} / {cycleTarget} this cycle · {renewal.state === 'overdue' ? 'renewal overdue since ' : 'renews '}{fmtDate(renewal.due)}
                               </span>
-                            )}
-                            {/* Older enrollments (from before this feature existed) have no
-                                sessions/week target set yet — offer to set one instead of
-                                silently showing nothing. */}
-                            {!isCompleted && billingType === 'monthly' && !cycleTarget && (
-                              <button
-                                onClick={function () { openRenewCycle(en) }}
-                                title="No weekly schedule set for this enrollment yet — set it to start tracking cycle progress"
-                                style={{ font: '600 10px var(--font)', color: 'var(--text3)', background: 'var(--bg2)', border: '1px dashed var(--border)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                                📅 Set schedule
-                              </button>
                             )}
                             {monthEnding && (
                               <button
                                 onClick={function () { openRenewCycle(en) }}
-                                title={"About a month since this cycle started — " + cycleHeld + " of " + cycleTarget + " classes held. Collect the next fee and start a new cycle."}
+                                title={'Renewal ' + (renewal.state === 'overdue' ? 'was due ' : 'is due ') + fmtDate(renewal.due) + ' — ' + cycleHeld + ' of ' + cycleTarget + ' classes held. Collect the next fee and start a new cycle.'}
                                 style={{ font: '600 10px var(--font)', color: '#1D4ED8', background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                                 📅 Renew cycle
                               </button>
@@ -3095,52 +3085,32 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           </div>
         )}
 
-        {/* Renew a monthly billing cycle — or, for an enrollment made before
-            this feature existed, set its weekly schedule for the first time. */}
+        {/* Renew a monthly billing cycle (CYCLE_SESSIONS classes, renewing on
+            the same date next month). */}
         {renewingEn && (function () {
-          const isFirstSetup = !renewingEn.sessions_per_cycle
           const held = cycleProgress[renewingEn.id] || 0
-          const target = renewingEn.sessions_per_cycle || 0
+          const target = renewingEn.sessions_per_cycle || CYCLE_SESSIONS
           const shortfall = Math.max(0, target - held)
           const surplus = Math.max(0, held - target)
-          const baseTarget = renewingEn.sessions_per_week ? Math.round(renewingEn.sessions_per_week * 4) : target
-          const nextTarget = baseTarget + shortfall
+          const nextTarget = CYCLE_SESSIONS + shortfall
           return (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setRenewingEn(null) }}>
             <div className="modal" style={{ maxWidth: 380 }}>
-              <ModalHeader flush title={isFirstSetup ? 'Set Class Schedule' : 'Renew Cycle'}
+              <ModalHeader flush title="Renew Cycle"
                 subtitle={(renewingEn.skus?.courses?.group_name || 'Course') + (renewingEn.skus?.level_name ? ' · ' + renewingEn.skus.level_name : '')}
                 onClose={function () { setRenewingEn(null) }} />
               <div style={{ padding: '4px 20px 16px' }}>
-                {isFirstSetup ? (
-                  <p className="hint" style={{ marginBottom: 12 }}>
-                    This enrollment predates cycle tracking — set the agreed weekly frequency to start tracking it.
-                  </p>
-                ) : (
-                  <p className="hint" style={{ marginBottom: 12 }}>
-                    {held} of {target} classes were held in the cycle that started {fmtDate(renewingEn.cycle_started_at)}.{' '}
-                    {shortfall > 0
-                      ? <b style={{ color: 'var(--text2)' }}>{shortfall} short — carried into next cycle's target ({nextTarget} classes).</b>
-                      : surplus > 0
-                        ? <b style={{ color: 'var(--text2)' }}>{surplus} extra — complimentary, nothing carries forward.</b>
-                        : 'Right on target.'}
-                    {' '}Set where the next cycle starts — nudge it a day or two either way to fold in a session that ran early or late.
-                  </p>
-                )}
-                {isFirstSetup && (
-                  <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginBottom: 12 }}>
-                    Classes per week
-                    <input
-                      type="number" min={1} max={7}
-                      value={renewPerWeek}
-                      onChange={function (e) { setRenewPerWeek(e.target.value) }}
-                      style={{ marginTop: 6, fontSize: 13, width: '100%' }}
-                    />
-                    <span className="hint" style={{ display: 'block', marginTop: 4 }}>≈ {Math.round((Number(renewPerWeek) || 0) * 4)} classes make up one billing cycle</span>
-                  </label>
-                )}
+                <p className="hint" style={{ marginBottom: 12 }}>
+                  {held} of {target} classes were held in the cycle that started {fmtDate(cycleAnchor(renewingEn))}.{' '}
+                  {shortfall > 0
+                    ? <b style={{ color: 'var(--text2)' }}>{shortfall} short — carried into next cycle's target ({nextTarget} classes).</b>
+                    : surplus > 0
+                      ? <b style={{ color: 'var(--text2)' }}>{surplus} extra — complimentary, nothing carries forward.</b>
+                      : 'Right on target.'}
+                  {' '}The next cycle starts on the due date (same date next month) — nudge it a day or two either way to fold in a session that ran early or late.
+                </p>
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
-                  {isFirstSetup ? 'Cycle start date' : 'New cycle start date'}
+                  New cycle start date
                   <input
                     type="date"
                     value={renewDate}
@@ -3148,7 +3118,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     style={{ marginTop: 6, fontSize: 13, width: '100%' }}
                   />
                 </label>
-                {!isFirstSetup && (
+                {(
                   <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>
                     Fee to add for the next cycle (₹)
                     <input
@@ -3164,7 +3134,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
               <div className="modal-actions">
                 <button className="btn" onClick={function () { setRenewingEn(null) }} disabled={renewSaving}>Cancel</button>
                 <button className="btn-p" disabled={!renewDate || renewSaving} onClick={renewCycle}>
-                  {renewSaving ? 'Saving…' : isFirstSetup ? 'Set Schedule' : 'Renew Cycle'}
+                  {renewSaving ? 'Saving…' : 'Renew Cycle'}
                 </button>
               </div>
             </div>
@@ -4231,6 +4201,7 @@ export default function StudentsPage() {
   const [centreFilterTouched, setCentreFilterTouched] = useState(false)
   const [sortBy, setSortBy] = useState('activity')   // activity | name | joined | balance
   const [showClosed, setShowClosed] = useState(false)
+  const [viewTab, setViewTab] = useState('current')   // current | attention | completed | all
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -4269,26 +4240,35 @@ export default function StudentsPage() {
       setStudents(data || [])
       setLoading(false)
 
-      // Attended-session counts per enrollment (for the Sessions column)
-      const enrIds = (data || []).flatMap(function (s) { return (s.enrollments || []).map(function (e) { return e.id }) })
+      // Attended-session counts per enrollment (for the Sessions column).
+      // Only enrolments still running need a live count — a completed one just
+      // shows "done". Paged: PostgREST caps one response at 1000 rows and
+      // attendance is well past that, which used to drop the newest rows
+      // (current handwriting students showed 0/15 despite 19 attended).
+      const enrIds = (data || []).flatMap(function (s) {
+        return (s.enrollments || []).filter(function (e) { return !e.completed_at }).map(function (e) { return e.id })
+      })
       if (enrIds.length > 0) {
-        const { data: attRows } = await sb.from('session_attendance')
-          .select('enrollment_id').in('enrollment_id', enrIds).eq('attended', true)
-        const m = {}
-        ;(attRows || []).forEach(function (a) { m[a.enrollment_id] = (m[a.enrollment_id] || 0) + 1 })
-        setAttMap(m)
+        try {
+          const attRows = await fetchAllRows(function (from, to) {
+            return sb.from('session_attendance').select('id, enrollment_id')
+              .in('enrollment_id', enrIds).eq('attended', true).order('id').range(from, to)
+          })
+          const m = {}
+          attRows.forEach(function (a) { m[a.enrollment_id] = (m[a.enrollment_id] || 0) + 1 })
+          setAttMap(m)
+        } catch (e) { console.error('Attendance load error:', e); setAttMap({}) }
       } else {
         setAttMap({})
       }
 
       // Monthly-billing cycle progress for the whole list — same logic as
       // the student detail view: actual class dates held for each
-      // enrollment's assigned batch since ITS OWN cycle_started_at, not
-      // the calendar month. One batched query, not one per row.
+      // enrollment's assigned batch since ITS OWN cycle start (or the
+      // enrolment date for ones that predate cycle tracking), not the
+      // calendar month. Batched, not one query per row.
       const monthlyEnrIds = (data || []).flatMap(function (s) {
-        return (s.enrollments || []).filter(function (e) {
-          return !e.completed_at && e.skus?.courses?.billing_type === 'monthly' && e.cycle_started_at
-        }).map(function (e) { return e.id })
+        return (s.enrollments || []).filter(isMonthlyActive).map(function (e) { return e.id })
       })
       if (monthlyEnrIds.length > 0) {
         const { data: bsRows } = await sb.from('batch_students')
@@ -4297,21 +4277,28 @@ export default function StudentsPage() {
         ;(bsRows || []).forEach(function (bs) { batchByEnr[bs.enrollment_id] = bs.batch_id })
         const batchIds = Array.from(new Set(Object.values(batchByEnr)))
         if (batchIds.length > 0) {
-          const { data: sessRows } = await sb.from('batch_sessions')
-            .select('batch_id, session_date, is_holiday')
-            .in('batch_id', batchIds)
-            .lte('session_date', new Date().toISOString().slice(0, 10))
-          const cm = {}
-          ;(data || []).forEach(function (s) {
-            (s.enrollments || []).forEach(function (e) {
-              const bId = batchByEnr[e.id]
-              if (!bId || !e.cycle_started_at) return
-              cm[e.id] = (sessRows || []).filter(function (r) {
-                return r.batch_id === bId && !r.is_holiday && r.session_date >= e.cycle_started_at
-              }).length
+          try {
+            const anchors = (data || []).flatMap(function (s) { return (s.enrollments || []).filter(isMonthlyActive).map(cycleAnchor) }).filter(Boolean).sort()
+            const sessRows = await fetchAllRows(function (from, to) {
+              return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday')
+                .in('batch_id', batchIds)
+                .gte('session_date', anchors[0])
+                .lte('session_date', new Date().toISOString().slice(0, 10))
+                .order('id').range(from, to)
             })
-          })
-          setCycleMap(cm)
+            const cm = {}
+            ;(data || []).forEach(function (s) {
+              (s.enrollments || []).filter(isMonthlyActive).forEach(function (e) {
+                const bId = batchByEnr[e.id]
+                const anchor = cycleAnchor(e)
+                if (!bId || !anchor) return
+                cm[e.id] = sessRows.filter(function (r) {
+                  return r.batch_id === bId && !r.is_holiday && r.session_date >= anchor
+                }).length
+              })
+            })
+            setCycleMap(cm)
+          } catch (e) { console.error('Cycle progress load error:', e); setCycleMap({}) }
         }
       } else {
         setCycleMap({})
@@ -4357,7 +4344,39 @@ export default function StudentsPage() {
     return t
   }
 
+  // Completed view orders by when they last finished something, newest first.
+  function lastCompletion(s) {
+    let t = 0
+    ;(s.enrollments || []).forEach(function (e) { if (e.completed_at) { const x = new Date(e.completed_at).getTime(); if (x > t) t = x } })
+    return t
+  }
+
   const closedCount = students.filter(function (s) { return s.is_active === false }).length
+
+  // Derived per student from their enrolments — no manual flag to maintain.
+  // Current = at least one course still running; Completed = none running;
+  // Needs attention = any open follow-up (renewal, sessions finished,
+  // certificate not yet sent, balance) and is independent of the other two,
+  // so a student can be in Completed AND Needs attention until the
+  // certificate goes out.
+  const lifecycle = {}
+  students.forEach(function (s) {
+    lifecycle[s.id] = { bucket: studentBucket(s), reasons: attentionReasons(s, attMap) }
+  })
+
+  const q0 = search.toLowerCase()
+  function inCentreScope(s) {
+    return (!centreFilter || s.franchisee_id === centreFilter) && (showClosed || s.is_active !== false || (q0 && (s.full_name?.toLowerCase().includes(q0) || s.parent_name?.toLowerCase().includes(q0) || s.phone?.includes(q0))))
+  }
+  const tabCounts = { current: 0, attention: 0, completed: 0, all: 0 }
+  students.filter(inCentreScope).forEach(function (s) {
+    const lc = lifecycle[s.id]
+    tabCounts.all++
+    if (lc.bucket === 'current') tabCounts.current++
+    else tabCounts.completed++
+    if (lc.reasons.length > 0) tabCounts.attention++
+  })
+
   const filtered = students.filter(function (s) {
     const q = search.toLowerCase()
     const matchesSearch = !q || s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
@@ -4366,8 +4385,16 @@ export default function StudentsPage() {
     // totals reflect who is actually studying. A search match reveals them
     // regardless, so a closed student is never truly lost.
     const matchesActive = showClosed || s.is_active !== false || (q && matchesSearch)
-    return matchesSearch && matchesCentre && matchesActive
+    // Same rule for the view tabs: searching looks across everyone, so a
+    // student who has moved to Completed is still one search away.
+    const lc = lifecycle[s.id]
+    const matchesTab = !!q || viewTab === 'all'
+      || (viewTab === 'current' && lc.bucket === 'current')
+      || (viewTab === 'completed' && lc.bucket === 'past')
+      || (viewTab === 'attention' && lc.reasons.length > 0)
+    return matchesSearch && matchesCentre && matchesActive && matchesTab
   }).sort(function (a, b) {
+    if (viewTab === 'completed' && sortBy === 'activity') return lastCompletion(b) - lastCompletion(a)
     if (sortBy === 'name')    return (a.full_name || '').localeCompare(b.full_name || '')
     if (sortBy === 'joined')  return new Date(b.registered_at || b.created_at || 0) - new Date(a.registered_at || a.created_at || 0)
     if (sortBy === 'balance') {
@@ -4505,12 +4532,12 @@ export default function StudentsPage() {
             <div className="ph-eyebrow"><span className="dot"></span>Enrollment</div>
             <h1 className="ph-title">Students</h1>
             <div className="ph-sub">
+              <b>{tabCounts.current} current</b> · {tabCounts.completed} completed
               {currentRole === 'uf'
-                ? <><b>{filtered.length} students</b> enrolled at your centre.</>
+                ? ' at your centre.'
                 : centreFilter
-                  ? <><b>{filtered.length} students</b> enrolled at this centre.</>
-                  : <><b>{filtered.length} students</b>{showCentreCol ? ' enrolled across your territory.' : ' enrolled across all centres.'}</>
-              }
+                  ? ' at this centre.'
+                  : showCentreCol ? ' across your territory.' : ' across all centres.'}
             </div>
           </div>
         </div>
@@ -4527,7 +4554,7 @@ export default function StudentsPage() {
               <div className="mini">
                 <div className="mini-ic" style={{ background: 'var(--purple-bg)' }}>🎓</div>
                 <div className="mini-num">{filtered.length}</div>
-                <div className="mini-lbl">Total enrolled</div>
+                <div className="mini-lbl">{viewTab === 'current' ? 'Current students' : viewTab === 'attention' ? 'Need attention' : viewTab === 'completed' ? 'Completed' : 'All students'}</div>
               </div>
               <div className="mini">
                 <div className="mini-ic" style={{ background: 'var(--sun-bg)' }}>💰</div>
@@ -4547,6 +4574,30 @@ export default function StudentsPage() {
             </div>
           )
         })()}
+
+        {/* View tabs — Current is the working roster; finished students live
+            under Completed (nothing is deleted or moved, it's a filter), and
+            Needs attention is a cross-cutting follow-up list. Searching
+            ignores the tab so nobody is ever hidden from a search. */}
+        {!selected && (
+          <div className="tabs" style={{ marginTop: 4 }}>
+            {[
+              { id: 'current',   label: 'Current' },
+              { id: 'attention', label: 'Needs attention' },
+              { id: 'completed', label: 'Completed' },
+              { id: 'all',       label: 'All' },
+            ].map(function (t) {
+              return (
+                <button key={t.id} className={'tab' + (viewTab === t.id ? ' active' : '')} onClick={function () { setViewTab(t.id) }}>
+                  {t.label} <span style={{ font: '600 11px var(--mono)', color: t.id === 'attention' && tabCounts.attention > 0 ? '#B45309' : 'var(--text3)', marginLeft: 3 }}>{tabCounts[t.id]}</span>
+                </button>
+              )
+            })}
+            {search.trim() && viewTab !== 'all' && (
+              <span style={{ alignSelf: 'center', marginLeft: 8, font: '500 11px var(--font)', color: 'var(--text3)' }}>Searching across all students</span>
+            )}
+          </div>
+        )}
 
         {/* Inline student detail (opens in the main window, below the stats) */}
         {selected ? (
@@ -4574,13 +4625,16 @@ export default function StudentsPage() {
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Total</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Fee Paid</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Balance</th>
-                  <th>Status</th>
+                  <th>Learning</th>
+                  <th>Payment</th>
                   <th className="hide-mobile" style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={centreColVisible ? 9 : 8} className="empty">No students found</td></tr>
+                  <tr><td colSpan={centreColVisible ? 10 : 9} className="empty">
+                    {viewTab === 'current' ? 'No current students.' : viewTab === 'attention' ? 'Nothing needs attention.' : viewTab === 'completed' ? 'No completed students.' : 'No students found'}
+                  </td></tr>
                 )}
                 {filtered.map(function (s) {
                   // Waivers already reduced fee_total, so this is the true owed.
@@ -4617,47 +4671,95 @@ export default function StudentsPage() {
                         {s.phone && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{s.phone}</div>}
                       </td>
                       <td style={{ fontSize: 11 }}>
-                        {(s.enrollments || []).length === 0
-                          ? <span style={{ color: 'var(--text3)' }}>None</span>
-                          : (s.enrollments || []).map(function (e) {
-                              const group = e.skus?.courses?.group_name || 'Course'
-                              const cn = group + (e.skus?.level_name ? ' — ' + e.skus.level_name : '')
-                              const bt  = e.skus?.courses?.billing_type
-                              const tot = e.skus?.total_sessions || 0
-                              const att = attMap[e.id] || 0
-                              const done = !e.completed_at && tot > 0 && att >= tot
-                              let txt, color, bg
-                              if (e.completed_at) { txt = '✓ done'; color = 'var(--green)'; bg = 'var(--green-bg)' }
-                              else if (bt === 'monthly') {
-                                const held = cycleMap[e.id] || 0
-                                const target = e.sessions_per_cycle || 0
-                                // Date-driven, same as the detail view — not
-                                // gated on hitting the session count, since a
-                                // short cycle (holidays, a schedule gap) should
-                                // still prompt renewal instead of never
-                                // reaching its target.
-                                const daysSince = e.cycle_started_at
-                                  ? Math.floor((Date.now() - new Date(e.cycle_started_at + 'T00:00:00').getTime()) / 86400000)
-                                  : 0
-                                if (target > 0 && daysSince >= 28) { txt = '📅 renew'; color = '#1D4ED8'; bg = '#DBEAFE' }
-                                else if (target > 0) { txt = held + '/' + target; color = 'var(--text2)'; bg = 'var(--bg2)' }
-                                else { txt = 'monthly'; color = 'var(--text2)'; bg = 'var(--bg2)' }
-                              }
-                              else if (tot > 0) { txt = att + '/' + tot; color = done ? '#B45309' : 'var(--text2)'; bg = done ? '#FEF3C7' : 'var(--bg2)' }
-                              else { txt = att + ' sess'; color = 'var(--text2)'; bg = 'var(--bg2)' }
-                              return (
-                                <span key={e.id} className={'stu-chip stu-chip-' + courseTone(group)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                  <span>{cn}</span>
-                                  <span style={{ color: color, background: bg, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{txt}</span>
-                                </span>
-                              )
-                            })
-                        }
+                        {(function () {
+                          const ens = s.enrollments || []
+                          if (ens.length === 0) return <span style={{ color: 'var(--text3)' }}>None</span>
+                          // Running courses by default; the Completed/All views
+                          // show history. A student with nothing running (found
+                          // via search or Needs attention) shows their history
+                          // rather than an empty cell.
+                          const showHistory = viewTab === 'completed' || viewTab === 'all'
+                          let visible = showHistory ? ens : ens.filter(function (e) { return enrolmentBucket(e) === 'active' })
+                          if (visible.length === 0) visible = ens
+                          const hidden = ens.length - visible.length
+                          return (
+                            <>
+                              {visible.map(function (e) {
+                                const group = e.skus?.courses?.group_name || 'Course'
+                                const cn = group + (e.skus?.level_name ? ' — ' + e.skus.level_name : '')
+                                const bt  = e.skus?.courses?.billing_type
+                                const tot = e.skus?.total_sessions || 0
+                                const att = attMap[e.id] || 0
+                                const done = !e.completed_at && tot > 0 && att >= tot
+                                const bucket = enrolmentBucket(e)
+                                let txt, color, bg, extra = null
+                                if (bucket === 'completed') {
+                                  txt = '✓ done ' + shortDay(String(e.completed_at).slice(0, 10)); color = 'var(--green)'; bg = 'var(--green-bg)'
+                                  extra = certPending(e)
+                                    ? { t: 'cert pending', color: '#B45309', bg: '#FEF3C7' }
+                                    : { t: '🎓 sent', color: 'var(--text3)', bg: 'var(--bg2)' }
+                                }
+                                else if (bucket === 'dropped') { txt = '⊘ dropped'; color = '#991b1b'; bg = '#fef2f2' }
+                                else if (bt === 'monthly') {
+                                  // Monthly: 22 classes a cycle, renewing on the same
+                                  // date next month — and the date is shown, not just
+                                  // implied by a chip that appears.
+                                  const held = cycleMap[e.id] || 0
+                                  const target = e.sessions_per_cycle || CYCLE_SESSIONS
+                                  const ri = renewalInfo(e)
+                                  if (ri && ri.state === 'overdue') { txt = 'Overdue ' + (-ri.daysLeft) + 'd · due ' + shortDay(ri.due); color = '#991b1b'; bg = '#fef2f2' }
+                                  else if (ri && ri.state === 'soon') { txt = held + '/' + target + ' · renew ' + shortDay(ri.due); color = '#B45309'; bg = '#FEF3C7' }
+                                  else if (ri) { txt = held + '/' + target + ' · renews ' + shortDay(ri.due); color = 'var(--text2)'; bg = 'var(--bg2)' }
+                                  else { txt = held + '/' + target; color = 'var(--text2)'; bg = 'var(--bg2)' }
+                                }
+                                else if (tot > 0) { txt = att + '/' + tot; color = done ? '#B45309' : 'var(--text2)'; bg = done ? '#FEF3C7' : 'var(--bg2)' }
+                                else { txt = att + ' sess'; color = 'var(--text2)'; bg = 'var(--bg2)' }
+                                return (
+                                  <span key={e.id} className={'stu-chip stu-chip-' + courseTone(group)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                    <span>{cn}</span>
+                                    <span style={{ color: color, background: bg, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{txt}</span>
+                                    {extra && <span style={{ color: extra.color, background: extra.bg, borderRadius: 10, padding: '0 6px', fontWeight: 600 }}>{extra.t}</span>}
+                                  </span>
+                                )
+                              })}
+                              {hidden > 0 && (
+                                <span title="Open the student to see completed courses" style={{ color: 'var(--text3)', alignSelf: 'center', marginLeft: 4 }}>+{hidden} completed</span>
+                              )}
+                            </>
+                          )
+                        })()}
                       </td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(s.fee_total)}</div></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</div></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
                         <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</div>
+                      </td>
+                      <td>
+                        {(function () {
+                          const lc = lifecycle[s.id]
+                          const tone = {
+                            red:   { color: '#991b1b', bg: '#fef2f2' },
+                            amber: { color: '#B45309', bg: '#FEF3C7' },
+                            green: { color: 'var(--green)', bg: 'var(--green-bg)' },
+                            grey:  { color: 'var(--text2)', bg: 'var(--bg2)' },
+                          }
+                          const pills = lc.reasons.length > 0
+                            ? lc.reasons.map(function (r) {
+                                return { key: r.key, tone: r.tone, label: r.key === 'renew_soon' ? 'Renews ' + shortDay(r.date) : r.label }
+                              })
+                            : [lc.bucket === 'current'
+                                ? { key: 'active', tone: 'green', label: 'Active' }
+                                : (s.enrollments || []).some(function (e) { return enrolmentBucket(e) === 'completed' })
+                                  ? { key: 'completed', tone: 'grey', label: 'Completed' }
+                                  : { key: 'dropped', tone: 'red', label: 'Discontinued' }]
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                              {pills.map(function (p) {
+                                return <span key={p.key} style={{ font: '600 10px var(--font)', color: tone[p.tone].color, background: tone[p.tone].bg, borderRadius: 10, padding: '2px 8px', whiteSpace: 'nowrap' }}>{p.label}</span>
+                              })}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td><StatusBadge status={s.payment_status} /></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
