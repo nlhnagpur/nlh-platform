@@ -53,10 +53,27 @@ function monthLabel(ym) {
   const [y, m] = ym.split('-').map(Number)
   return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
 }
+// A student can be taken out of a batch and put back (several batch_students
+// rows for one enrolment): one row on the register, in the batch on any of
+// its periods.
+function collapseMembers(rows) {
+  const byEnr = {}
+  const out = []
+  ;(rows || []).forEach(function (r) {
+    const k = r.enrollment_id
+    if (!byEnr[k]) { byEnr[k] = Object.assign({}, r, { periods: [] }); out.push(byEnr[k]) }
+    byEnr[k].periods.push({ assigned_at: r.assigned_at, removed_at: r.removed_at })
+  })
+  return out
+}
 function memberOn(bs, date) {
-  const from = bs.assigned_at ? String(bs.assigned_at).slice(0, 10) : '0000-00-00'
-  const to = bs.removed_at ? String(bs.removed_at).slice(0, 10) : '9999-12-31'
-  if (date < from || date > to) return false
+  const periods = bs.periods || [{ assigned_at: bs.assigned_at, removed_at: bs.removed_at }]
+  const inPeriod = periods.some(function (p) {
+    const from = p.assigned_at ? String(p.assigned_at).slice(0, 10) : '0000-00-00'
+    const to = p.removed_at ? String(p.removed_at).slice(0, 10) : '9999-12-31'
+    return date >= from && date <= to
+  })
+  if (!inPeriod) return false
   const en = bs.enrollments
   if (en && en.completed_at && String(en.completed_at).slice(0, 10) < date) return false
   return true
@@ -97,7 +114,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
       if (centreFilter) q = q.eq('franchisee_id', centreFilter)
       const bRes = await q
       if (bRes.error) throw bRes.error
-      const list = (bRes.data || []).slice().sort(function (a, b) {
+      const list = (bRes.data || []).map(function (b) { return Object.assign({}, b, { batch_students: collapseMembers(b.batch_students) }) }).slice().sort(function (a, b) {
         return String(a.schedule_time || '').localeCompare(String(b.schedule_time || '')) || String(a.name || '').localeCompare(String(b.name || ''))
       })
       const ids = list.map(function (b) { return b.id })
