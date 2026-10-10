@@ -1133,8 +1133,12 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
   async function save() {
     if (!form.name.trim()) { showToast('Batch name required', 'err'); return }
     setSaving(true)
+    // A batch belongs to its teacher's centre — without it the batch drops out
+    // of every centre-scoped list (attendance register, franchisee access).
+    const { data: ci } = await sb.from('instructors').select('franchisee_id').eq('id', instructorId).maybeSingle()
     const payload = {
       instructor_id:  instructorId,
+      franchisee_id:  ci && ci.franchisee_id ? ci.franchisee_id : null,
       name:           form.name.trim(),
       is_individual:  form.is_individual,
       schedule_days:  form.days.join(', '),
