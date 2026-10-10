@@ -136,7 +136,12 @@ export function allocateReceipt(o) {
     })
   })
 
-  // Oldest payment against the oldest charge, and so on.
+  // What each charge is for, net of discount, before any payment lands on it.
+  charges.forEach(function (c) { c.net = c.remaining })
+
+  // Oldest payment against the oldest charge, and so on. For the receipt's own
+  // payment, remember how much of each charge was still outstanding just
+  // before it — that's what decides "Part" vs "Balance" below.
   let current = []
   let ci = 0
   ;(o.payments || []).forEach(function (p) {
@@ -146,9 +151,10 @@ export function allocateReceipt(o) {
       const c = charges[ci]
       if (c.remaining <= 0) { ci++; continue }
       const take = Math.min(left, c.remaining)
+      const outstanding = c.remaining
       c.remaining -= take
       left -= take
-      parts.push({ charge: c, amount: take })
+      parts.push({ charge: c, amount: take, outstanding: outstanding })
       if (c.remaining <= 0) ci++
     }
     if (left > 0) parts.push({ charge: null, amount: left })
@@ -157,7 +163,8 @@ export function allocateReceipt(o) {
 
   // Month a charge covers: a monthly course's enrolment fee is its first cycle
   // (the enrolment month); the k-th renewal is the k-th cycle after it, or
-  // the course's live cycle start for its latest renewal.
+  // the course's live cycle start for its latest renewal. null for a course
+  // that isn't billed monthly (a one-time fee has no month of its own).
   const renewalsOf = function (course) {
     return lines.filter(function (l) { return l.kind === 'renewal' && l.course === course })
   }
@@ -166,20 +173,30 @@ export function allocateReceipt(o) {
   }
   function periodOf(c) {
     const en = c.course ? enrolmentFor(c.course) : null
-    if (!en || !en.cycle_started_at) return ''   // fixed-session course: no month
+    if (!en || !en.cycle_started_at) return null
     const anchor = dayOf(en.enrolled_at) || dayOf(en.cycle_started_at)
     const [ay, am] = anchor.split('-').map(Number)
+    let y = ay, m0 = am - 1
     if (c.kind === 'renewal') {
       const rs = renewalsOf(c.course)
       const k = rs.indexOf(lines.find(function (l) { return l.kind === 'renewal' && l.course === c.course && l.date === c.date && l.amount === c.amount })) + 1 || 1
       if (k === rs.length && en.cycle_started_at) {
         const [cy, cm] = dayOf(en.cycle_started_at).split('-').map(Number)
-        return 'Monthly renewal · ' + monthLabel(cy, cm - 1)
+        y = cy; m0 = cm - 1
+      } else {
+        m0 = am - 1 + k
       }
-      return 'Monthly renewal · ' + monthLabel(ay, am - 1 + k)
     }
-    return monthLabel(ay, am - 1)
+    const d = new Date(y, m0, 1)
+    return { y: d.getFullYear(), m: d.getMonth(), label: monthLabel(y, m0) }
   }
+
+  // "Previous" = its month is before the month of this receipt, or earlier
+  // payments had already part-paid it (so this payment is settling the rest).
+  const cur = (o.payments || []).find(function (p) { return p.current })
+  const monthKey = function (iso) { return Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1 }
+  const curMonthKey = cur && cur.date ? monthKey(cur.date) : null
+  const money = function (n) { return '₹' + new Intl.NumberFormat('en-IN').format(n) }
 
   const rows = []
   current.forEach(function (part) {
@@ -188,16 +205,23 @@ export function allocateReceipt(o) {
     let row = rows.find(function (r) { return r.course === course })
     if (!row) { row = { course: course, amount: 0, parts: [] }; rows.push(row) }
     row.amount += part.amount
-    if (c) {
-      const label = c.kind === 'renewal' && !periodOf(c) ? 'Monthly renewal' : periodOf(c)
-      row.parts.push({ label: label, amount: part.amount })
-    }
+    if (!c) return
+    const period = periodOf(c)
+    const paidBefore = c.net - part.outstanding
+    const clears = part.amount >= part.outstanding
+    const chargeKey = period ? period.y * 12 + period.m : (c.date ? monthKey(c.date) : null)
+    const previous = paidBefore > 0 || (curMonthKey != null && chargeKey != null && chargeKey < curMonthKey)
+    // Part = this payment leaves the fee only partly paid; Balance = it is
+    // settling a previous month's (or a part-paid) fee.
+    const tag = !clears ? (previous ? 'Balance · Part' : 'Part') : (previous ? 'Balance' : '')
+    row.parts.push({ text: [period ? period.label : '', tag].filter(Boolean).join(' · '), amount: part.amount })
   })
+
   return rows.map(function (r) {
-    const labelled = r.parts.filter(function (p) { return p.label })
+    const labelled = r.parts.filter(function (p) { return p.text })
     const sub = labelled.length === 0 ? ''
-      : labelled.length === 1 ? labelled[0].label
-      : labelled.map(function (p) { return p.label + ' ₹' + new Intl.NumberFormat('en-IN').format(p.amount) }).join('  +  ')
+      : r.parts.length === 1 ? labelled[0].text
+      : r.parts.map(function (p) { return (p.text || 'Fee') + ' ' + money(p.amount) }).join('  +  ')
     return { label: r.course, sub: sub, amount: r.amount }
   })
 }
