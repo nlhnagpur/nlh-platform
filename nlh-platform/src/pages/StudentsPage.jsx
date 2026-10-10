@@ -2017,15 +2017,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   <ModalHeader flush title="Edit invoice"
                     subtitle={(invoices.find(function (x) { return x.id === editInvId }) || {}).invoice_no || ''}
                     onClose={function () { setEditInvId(null) }} />
+                  {(function () { const iv = invoices.find(function (x) { return x.id === editInvId }); return iv ? <InvoiceLines inv={iv} /> : null })()}
                   <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
                     <label>Invoice date
                       <input type="date" value={editInv.invoice_date || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, invoice_date: e.target.value } }) }} /></label>
-                    <label>Amount paid (₹)
-                      <input type="number" value={editInv.amount_paid} onChange={function (e) { setEditInv(function (f) { return { ...f, amount_paid: e.target.value } }) }} /></label>
-                    <label>Status
-                      <select value={editInv.status} onChange={function (e) { setEditInv(function (f) { return { ...f, status: e.target.value } }) }}>
-                        {['unpaid', 'part', 'paid'].map(function (x) { return <option key={x} value={x}>{x}</option> })}
-                      </select></label>
                     <label>Notes
                       <input value={editInv.notes || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, notes: e.target.value } }) }} /></label>
                   </div>
@@ -4656,6 +4651,45 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
   )
 }
 
+// What an invoice is for — course lines (with the month a renewal covers),
+// kit, discount, total. Shown in the Edit invoice dialogs so you can see what
+// you are editing.
+function InvoiceLines({ inv }) {
+  const items = inv.items || []
+  const courses = items.filter(function (i) { return i && i.kind === 'course' })
+  const kit = items.filter(function (i) { return i && i.kind === 'kit' })
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg2)', margin: '0 20px 12px' }}>
+      {courses.map(function (c, i) {
+        const tag = c.cycle === 'renewal' ? 'Monthly renewal' + (c.period_label ? ' · ' + c.period_label : '')
+          : c.cycle === 'next_level' ? 'Next level' : 'Course fee'
+        return (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '3px 0' }}>
+            <div>
+              <div style={{ font: '600 13px var(--font)' }}>{c.name}</div>
+              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{tag}</div>
+            </div>
+            <div style={{ font: '700 13px var(--mono)' }}>₹{fmtAmt(c.amount)}</div>
+          </div>
+        )
+      })}
+      {kit.length > 0 && (
+        <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
+          Kit: {kit.map(function (k) { return k.name + (k.qty > 1 ? ' ×' + k.qty : '') }).join(', ')}
+        </div>
+      )}
+      {(inv.discount || 0) > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', color: 'var(--green)', marginTop: 6 }}>
+          <span>Discount{inv.coupon_code ? ' (' + inv.coupon_code + ')' : ''}</span><span>− ₹{fmtAmt(inv.discount)}</span>
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 6, font: '700 13px var(--font)' }}>
+        <span>Invoice total</span><span className="mono">₹{fmtAmt(inv.total)}</span>
+      </div>
+    </div>
+  )
+}
+
 // Edit one payment or invoice straight from the Receipts / Invoices registers
 // (admins). Same fields and rules as the Edit on the student's own tabs.
 function RegisterEditModal({ edit, onClose, onSaved }) {
@@ -4663,7 +4697,7 @@ function RegisterEditModal({ edit, onClose, onSaved }) {
   const isPay = edit.kind === 'payment'
   const [f, setF] = useState(isPay
     ? { amount: String(row.amount ?? ''), paid_at: (row.paid_at || '').slice(0, 10), mode: row.mode || '', reference: row.reference || '' }
-    : { invoice_date: (row.invoice_date || '').slice(0, 10), amount_paid: String(row.amount_paid || 0), status: row.status || 'unpaid', notes: row.notes || '' })
+    : { invoice_date: (row.invoice_date || '').slice(0, 10), notes: row.notes || '' })
   const [saving, setSaving] = useState(false)
   function set(k) { return function (e) { const v = e.target.value; setF(function (x) { return { ...x, [k]: v } }) } }
 
@@ -4682,7 +4716,7 @@ function RegisterEditModal({ edit, onClose, onSaved }) {
       onSaved(data, stu)
     } else {
       const { data, error } = await sb.from('student_invoices').update({
-        invoice_date: f.invoice_date, amount_paid: parseInt(f.amount_paid, 10) || 0, status: f.status, notes: f.notes || null,
+        invoice_date: f.invoice_date, notes: f.notes || null,
       }).eq('id', row.id).select().single()
       if (error) { setSaving(false); showToast('Save failed: ' + error.message, 'err'); return }
       showToast('Invoice updated ✓')
@@ -4696,6 +4730,7 @@ function RegisterEditModal({ edit, onClose, onSaved }) {
       <div className="modal" style={{ maxWidth: 440 }}>
         <ModalHeader flush title={isPay ? 'Edit payment' : 'Edit invoice'}
           subtitle={(isPay ? row.receipt_no : row.invoice_no) || ''} onClose={onClose} />
+        {!isPay && <InvoiceLines inv={row} />}
         <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
           {isPay ? (
             <>
@@ -4712,12 +4747,11 @@ function RegisterEditModal({ edit, onClose, onSaved }) {
           ) : (
             <>
               <label>Invoice date<input type="date" value={f.invoice_date} onChange={set('invoice_date')} /></label>
-              <label>Amount paid (₹)<input type="number" value={f.amount_paid} onChange={set('amount_paid')} /></label>
-              <label>Status
-                <select value={f.status} onChange={set('status')}>
-                  {['unpaid', 'part', 'paid'].map(function (x) { return <option key={x} value={x}>{x}</option> })}
-                </select></label>
               <label>Notes<input value={f.notes} onChange={set('notes')} /></label>
+              <p className="hint" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                Paid / Part / Unpaid is worked out from the student's receipts, so it isn't edited here.
+                To change a fee, edit the course fee on the student's Courses tab.
+              </p>
             </>
           )}
         </div>

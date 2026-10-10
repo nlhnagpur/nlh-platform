@@ -59,7 +59,17 @@ export function buildFeeStatement(o) {
   // counted twice — the change itself carries it).
   const lines = []
   let running = 0
+  // An invoice that a later logged fee change already carries (same amount,
+  // moments apart) is a charge raised AFTER the opening — never part of it.
+  const raisedLater = {}
+  events.forEach(function (e) {
+    const d = Number(e.delta) || 0
+    if (d <= 0) return
+    const m = invoices.find(function (i) { return Math.abs(new Date(i.created_at) - new Date(e.at)) < 120000 && Number(i.total) === d })
+    if (m) raisedLater[m.id] = true
+  })
   invoices.forEach(function (inv) {
+    if (inv.id && raisedLater[inv.id]) return
     const courses = (inv.items || []).filter(function (i) { return i && i.kind === 'course' })
     // Renewal / next-level invoices are charges raised later, never the opening.
     if (courses.some(function (c) { return c.cycle })) return
