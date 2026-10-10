@@ -312,11 +312,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [changeSaving,    setChangeSaving]    = useState(false)
   // Fee payment ledger
   const [payments,        setPayments]        = useState([])
-  const [showPayModal,    setShowPayModal]    = useState(false)
-  const [payForm,         setPayForm]         = useState({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
-  const [paySaving,       setPaySaving]       = useState(false)
-  const [sendReceipt,     setSendReceipt]     = useState(true)
-  const [receiptPhone,    setReceiptPhone]    = useState(student.phone || '')
+  const receiptPhone = student.phone || ''
   const [editPayId,       setEditPayId]       = useState(null)
   const [editPay,         setEditPay]         = useState({ amount: '', paid_at: '', mode: '', reference: '' })
 
@@ -416,82 +412,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     onSaved({ ...student, fee_paid: newPaid, payment_status: deriveStatus(form.fee_total, newPaid) })
   }
 
-  async function recordPayment() {
-    const amt = Number(payForm.amount)
-    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
-    // Every entry ADDS to the ledger, so re-keying a receipt that's already
-    // there silently doubles it. A student can never pay more than the fee.
-    const feeTotal   = Number(form.fee_total) || 0
-    const alreadyGot = payments.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
-    const feeBalance = Math.max(0, feeTotal - alreadyGot)
-    if (feeTotal > 0 && alreadyGot + amt > feeTotal) {
-      showToast(
-        feeBalance === 0
-          ? `Fees are already fully paid (₹${fmtAmt(feeTotal)}). Nothing more to record.`
-          : `That's more than the balance. Only ₹${fmtAmt(feeBalance)} is outstanding.`,
-        'warn'
-      )
-      return
-    }
-    setPaySaving(true)
-    const { data, error } = await sb.from('student_payments').insert({
-      student_id:    student.id,
-      franchisee_id: student.franchisee_id || null,
-      amount:        amt,
-      mode:          payForm.mode || null,
-      reference:     payForm.reference.trim() || null,
-      paid_at:       payForm.paid_at || new Date().toISOString().slice(0, 10),
-    }).select('id, amount, mode, reference, paid_at, note, receipt_no').single()
-    setPaySaving(false)
-    if (error) { showToast('Failed: ' + error.message, 'err'); return }
-    try {
-      await mirrorStudentPayment(student.id, {
-        amount: amt, paid_on: payForm.paid_at || new Date().toISOString().slice(0, 10),
-        mode: payForm.mode || null, reference: payForm.reference.trim() || null,
-        note: null, recorded_by: null, receipt_no: data && data.receipt_no,
-      })
-    } catch (e) { console.warn('[Phase 3 dual-write] student payment mirror failed:', e.message) }
-    const next = [data, ...payments]
-    setPayments(next)
-    applyPaid(next)
-    setShowPayModal(false)
-    setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
-    showToast('Payment of ₹' + fmtAmt(amt) + ' recorded ✓')
-
-    // ── Lock (redeem) the admission coupon on the FIRST payment received ──
-    if (payments.length === 0) {
-      const { data: sd } = await sb.from('students')
-        .select('coupon_code, franchisee_id, fee_total, discount_amount').eq('id', student.id).single()
-      if (sd && sd.coupon_code) {
-        const base = (Number(sd.fee_total) || 0) + (Number(sd.discount_amount) || 0)   // gross fee the coupon applied to
-        try {
-          const r = await sb.rpc('redeem_coupon', {
-            p_code: sd.coupon_code, p_context: 'student', p_amount: base,
-            p_franchisee: sd.franchisee_id, p_ref: student.id,
-          })
-          if (r && r.data && r.data.valid === false) {
-            showToast('Payment saved · coupon could not be locked: ' + (r.data.message || 'limit reached'), 'warn')
-          }
-        } catch (cErr) { console.warn('Coupon lock skipped:', cErr.message) }
-      }
-    }
-
-    // WhatsApp receipt to the parent
-    if (sendReceipt && receiptPhone) {
-      const newPaid = next.reduce(function (s, p) { return s + (p.amount || 0) }, 0)
-      const newBalance = Math.max(0, (Number(form.fee_total) || 0) - newPaid)
-      const r = await sendWAStudentReceipt(receiptPhone, {
-        name: student.parent_name || student.full_name,
-        receiptNo: data.receipt_no,
-        amount: fmtAmt(amt),
-        date: fmtDate(data.paid_at),
-        balance: newBalance,
-        imageUrl: await receiptPng(data, next),
-      })
-      if (r && r.success) showToast('Receipt ' + (data.receipt_no || '') + ' sent on WhatsApp ✓')
-      else showToast('Payment saved · WhatsApp receipt failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
-    }
-  }
+  // Payments are recorded from Students → Receipts (StudentReceiptModal), not
+  // here; this profile only shows the ledger and reprints / resends receipts.
 
   // ── Resend a receipt for a past payment ── (goes through waConfirm first)
   async function resendReceipt(p, phone) {
@@ -1236,7 +1158,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     try { await mirrorStudentToTransaction(student.id) } catch (e) { console.warn('[Phase 3 dual-write] discount mirror failed:', e.message) }
     // Coupon is applied to the fee but NOT locked yet — it redeems only when the
-    // first fee payment is received (see recordPayment).
+    // first fee payment is received (see StudentReceiptModal).
     setForm(function (f) { return { ...f, fee_total: newTotal } })
     showToast('Discount applied — ₹' + fmtAmt(disc) + ' off')
   }
@@ -1360,7 +1282,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       if (rejoining) { onSaved({ ...student, is_active: true, fee_total: newFeeTotal }); showToast('Welcome back — account reactivated for the new course') }
     }
     // Coupon applied to the added fee but not locked here — it redeems when the
-    // first fee payment is received (see recordPayment).
+    // first fee payment is received (see StudentReceiptModal).
 
     // 3b) Raise ONE invoice for this enrolment (courses w/ edited fees + selected kit items)
     const invLines = []
@@ -1795,15 +1717,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                       {remindSending ? '…' : '⏰ Remind'}
                     </button>
                   )}
-                  {canManageFees && (
-                    <button className="btn-p" style={{ fontSize: 12, padding: '5px 12px' }}
-                      onClick={function () {
-                        setPayForm({ amount: '', mode: 'cash', paid_at: new Date().toISOString().slice(0, 10), reference: '' })
-                        setShowPayModal(true)
-                      }}>
-                      + Record Payment
-                    </button>
-                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
@@ -1847,7 +1760,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   Payment history
                 </div>
                 {payments.length === 0 ? (
-                  <p className="hint" style={{ margin: 0 }}>No payments recorded yet.</p>
+                  <p className="hint" style={{ margin: 0 }}>No payments recorded yet. Record payments from Students → Receipts.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {payments.map(function (p) {
@@ -3255,81 +3168,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           </div>
         )}
 
-        {/* Record payment modal */}
-        {showPayModal && (
-          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setShowPayModal(false) }}>
-            <div className="modal" style={{ maxWidth: 420 }}>
-              <ModalHeader flush title="Record Payment"
-                subtitle={'Balance due: ' + (balance > 0 ? '₹' + fmtAmt(balance) : 'Cleared')}
-                onClose={function () { setShowPayModal(false) }} />
-              <div style={{ padding: '4px 20px 16px' }}>
-                {/* The amount only ever ADDS to the ledger — warn before it doubles */}
-                {(Number(form.fee_total) || 0) > 0 && balance === 0 && (
-                  <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8,
-                    padding:'10px 14px', margin:'8px 0 12px', fontSize:12, color:'#166534' }}>
-                    ✓ <b>Fees already fully paid.</b> Don't re-enter a receipt that's already
-                    listed below — it would be counted twice.
-                  </div>
-                )}
-                <div className="form-grid">
-                  <label>Amount received (₹) *
-                    <input type="number" autoFocus value={payForm.amount}
-                      max={balance > 0 ? balance : undefined}
-                      onChange={function (e) { setPayForm(function (f) { return { ...f, amount: e.target.value } }) }}
-                      placeholder="e.g. 1500" />
-                  </label>
-                  <label>Date
-                    <input type="date" value={payForm.paid_at}
-                      onChange={function (e) { setPayForm(function (f) { return { ...f, paid_at: e.target.value } }) }} />
-                  </label>
-                  <label>Mode
-                    <select value={payForm.mode}
-                      onChange={function (e) { setPayForm(function (f) { return { ...f, mode: e.target.value } }) }}>
-                      <option value="cash">Cash</option>
-                      <option value="upi">UPI</option>
-                      <option value="bank_transfer">Bank Transfer / NEFT</option>
-                      <option value="cheque">Cheque</option>
-                      <option value="card">Card</option>
-                      <option value="online">Online Payment</option>
-                    </select>
-                  </label>
-                  <label>Reference (optional)
-                    <input value={payForm.reference}
-                      onChange={function (e) { setPayForm(function (f) { return { ...f, reference: e.target.value } }) }}
-                      placeholder="UTR / cheque no. / note" />
-                  </label>
-                </div>
-                {payForm.amount && Number(payForm.amount) > 0 && (
-                  <p className="hint" style={{ marginTop: 8 }}>
-                    New paid: ₹{fmtAmt((Number(form.fee_paid) || 0) + Number(payForm.amount))}
-                    {' '}of ₹{fmtAmt(form.fee_total || 0)}
-                    {' · '}Balance ₹{fmtAmt(Math.max(0, (Number(form.fee_total) || 0) - ((Number(form.fee_paid) || 0) + Number(payForm.amount))))}
-                  </p>
-                )}
-
-                {/* WhatsApp receipt to parent */}
-                <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg)', border: '1px solid var(--green, #1D7A4F)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={sendReceipt} onChange={function (e) { setSendReceipt(e.target.checked) }} />
-                    💬 Send WhatsApp receipt to parent
-                  </label>
-                  {sendReceipt && (
-                    <input value={receiptPhone} onChange={function (e) { setReceiptPhone(e.target.value) }}
-                      placeholder="Parent WhatsApp number"
-                      style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
-                  )}
-                </div>
-              </div>
-              <div className="modal-actions">
-                <button className="btn" onClick={function () { setShowPayModal(false) }} disabled={paySaving}>Cancel</button>
-                <button className="btn-p" onClick={recordPayment} disabled={paySaving || !payForm.amount}>
-                  {paySaving ? 'Saving…' : 'Record Payment'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Footer actions */}
         <div className="modal-actions">
           {admin && can('students.delete') && (
@@ -3596,7 +3434,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
       // NOTE: the coupon is applied to the admission (stored on the student) but
       // not redeemed/locked here — it locks when the first fee payment is
-      // received (see recordPayment), mirroring 'lock on dispatch' for orders.
+      // received (see StudentReceiptModal), mirroring 'lock on dispatch' for orders.
 
       // Insert enrollments and capture IDs for batch assignment.
       // Start date = the registration date (one date threads enrolment + batch joining).
@@ -4318,6 +4156,377 @@ function MarkCertsIssuedModal({ rows, userEmail, onClose, onDone }) {
 
 // ── StudentsPage ───────────────────────────────────────────────────────────────
 
+// ── Student receipts ───────────────────────────────────────────────────────────
+// Fee payments are entered in ONE place — the Receipts tab's "New Receipt"
+// screen — and listed in the register beside it (same idea as Orders →
+// Receipts). A payment is held against the student, not one course, so a
+// single receipt covers however many courses the student owes for: the screen
+// shows the course-wise dues and how the amount being entered settles them
+// (oldest course first, the same computeCoverage pass the profile uses).
+
+const RECEIPT_MODES = [
+  ['cash', 'Cash'], ['upi', 'UPI'], ['bank_transfer', 'Bank Transfer / NEFT'],
+  ['cheque', 'Cheque'], ['card', 'Card'], ['online', 'Online Payment'],
+]
+
+function enrolmentLabel(en) {
+  return (en.skus?.courses?.group_name || 'Course') + (en.skus?.level_name ? ' — ' + en.skus.level_name : '')
+}
+
+// Totals as at one payment, so a reprint shows what the receipt showed when it
+// was issued. list = every payment of that student.
+function studentReceiptCtx(student, p, list) {
+  const total = Number(student.fee_total) || 0
+  const paidToDate = (list || [])
+    .filter(function (x) { return (x.paid_at || '') <= (p.paid_at || '') })
+    .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
+  return {
+    centre: student.franchisees?.business_name || '',
+    summary: { total: total, paid: paidToDate, balance: Math.max(0, total - paidToDate) },
+  }
+}
+
+async function studentReceiptPng(student, p, list) {
+  try {
+    const html = printStudentReceipt(student, p, { ...studentReceiptCtx(student, p, list), asHtml: true })
+    return await captureDocPng(html, p.receipt_no || 'receipt')
+  } catch (e) { return null }
+}
+
+function StudentReceiptModal({ students, onClose, onRecorded }) {
+  const [query,     setQuery]     = useState('')
+  const [student,   setStudent]   = useState(null)
+  const [payments,  setPayments]  = useState(null)   // this student's ledger; null while loading
+  const [form,      setForm]      = useState({ amount: '', mode: 'cash', paid_at: todayIso(), reference: '' })
+  const [sendWa,    setSendWa]    = useState(true)
+  const [waPhone,   setWaPhone]   = useState('')
+  const [saving,    setSaving]    = useState(false)
+
+  const q = query.trim().toLowerCase()
+  const matches = !q ? [] : students.filter(function (s) {
+    return s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)
+  }).slice(0, 8)
+
+  async function pickStudent(s) {
+    setStudent(s)
+    setPayments(null)
+    setWaPhone(s.phone || '')
+    const { data, error } = await sb.from('student_payments')
+      .select('id, amount, mode, reference, paid_at, note, receipt_no').eq('student_id', s.id)
+    if (error) { showToast('Could not load payments: ' + error.message, 'err'); setStudent(null); return }
+    const list = data || []
+    setPayments(list)
+    const got = list.reduce(function (sum, p) { return sum + (p.amount || 0) }, 0)
+    const due = Math.max(0, (Number(s.fee_total) || 0) - got)
+    setForm(function (f) { return { ...f, amount: due > 0 ? String(due) : '' } })
+  }
+
+  const feeTotal = student ? Number(student.fee_total) || 0 : 0
+  const paidSoFar = (payments || []).reduce(function (sum, p) { return sum + (p.amount || 0) }, 0)
+  const balance = Math.max(0, feeTotal - paidSoFar)
+  const amt = Number(form.amount) || 0
+  const enrs = student ? (student.enrollments || []) : []
+  const before = student && payments ? computeCoverage(enrs, payments, feeTotal, student.other_charges) : null
+  const after = before ? computeCoverage(enrs, payments.concat(amt > 0 ? [{ amount: amt }] : []), feeTotal, student.other_charges) : null
+  const tooMuch = feeTotal > 0 && amt > balance
+
+  async function save() {
+    if (!student || !payments) return
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    // Every entry ADDS to the ledger, so re-keying a receipt that's already
+    // there silently doubles it. A student can never pay more than the fee.
+    if (tooMuch) {
+      showToast(balance === 0
+        ? 'Fees are already fully paid (₹' + fmtAmt(feeTotal) + '). Nothing more to record.'
+        : "That's more than the balance. Only ₹" + fmtAmt(balance) + ' is outstanding.', 'warn')
+      return
+    }
+    setSaving(true)
+    const paidAt = form.paid_at || todayIso()
+    const { data, error } = await sb.from('student_payments').insert({
+      student_id:    student.id,
+      franchisee_id: student.franchisee_id || null,
+      amount:        amt,
+      mode:          form.mode || null,
+      reference:     form.reference.trim() || null,
+      paid_at:       paidAt,
+    }).select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at').single()
+    if (error) { setSaving(false); showToast('Failed: ' + error.message, 'err'); return }
+    try {
+      await mirrorStudentPayment(student.id, {
+        amount: amt, paid_on: paidAt, mode: form.mode || null, reference: form.reference.trim() || null,
+        note: null, recorded_by: null, receipt_no: data.receipt_no,
+      })
+    } catch (e) { console.warn('[Phase 3 dual-write] student payment mirror failed:', e.message) }
+
+    // Lock (redeem) the admission coupon on the FIRST payment received.
+    if (payments.length === 0) {
+      const { data: sd } = await sb.from('students')
+        .select('coupon_code, franchisee_id, fee_total, discount_amount').eq('id', student.id).single()
+      if (sd && sd.coupon_code) {
+        try {
+          const r = await sb.rpc('redeem_coupon', {
+            p_code: sd.coupon_code, p_context: 'student',
+            p_amount: (Number(sd.fee_total) || 0) + (Number(sd.discount_amount) || 0),
+            p_franchisee: sd.franchisee_id, p_ref: student.id,
+          })
+          if (r && r.data && r.data.valid === false) showToast('Payment saved · coupon could not be locked: ' + (r.data.message || 'limit reached'), 'warn')
+        } catch (cErr) { console.warn('Coupon lock skipped:', cErr.message) }
+      }
+    }
+
+    const all = [data].concat(payments)
+    const newPaid = paidSoFar + amt
+    showToast('Receipt ' + (data.receipt_no || '') + ' — ₹' + fmtAmt(amt) + ' recorded ✓')
+    onRecorded(data, { ...student, fee_paid: newPaid, payment_status: deriveStatus(feeTotal, newPaid) })
+
+    if (sendWa && waPhone.trim()) {
+      const r = await sendWAStudentReceipt(waPhone.trim(), {
+        name: student.parent_name || student.full_name,
+        receiptNo: data.receipt_no, amount: fmtAmt(amt), date: fmtDate(data.paid_at),
+        balance: Math.max(0, feeTotal - newPaid),
+        imageUrl: await studentReceiptPng(student, data, all),
+      })
+      if (r && r.success) showToast('Receipt ' + (data.receipt_no || '') + ' sent on WhatsApp ✓')
+      else showToast('Payment saved · WhatsApp receipt failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+    }
+    setSaving(false)
+    onClose()
+  }
+
+  const cell = { padding: '5px 8px', borderBottom: '1px solid var(--border)', font: '500 12px var(--font)' }
+  const num = Object.assign({}, cell, { textAlign: 'right', fontFamily: 'var(--mono)' })
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget && !saving) onClose() }}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <ModalHeader flush title="New Receipt"
+          subtitle={student ? student.full_name + (balance > 0 ? ' · balance ₹' + fmtAmt(balance) : ' · cleared') : 'Payment received from a student'}
+          onClose={onClose} />
+        <div style={{ padding: '4px 20px 16px' }}>
+          {!student ? (
+            <div>
+              <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Student
+                <input autoFocus value={query} onChange={function (e) { setQuery(e.target.value) }}
+                  placeholder="Search by student, parent or phone…" style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
+              </label>
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {q && matches.length === 0 && <p className="hint" style={{ margin: 0 }}>No student matches.</p>}
+                {matches.map(function (s) {
+                  const due = Math.max(0, (s.fee_total || 0) - (s.fee_paid || 0))
+                  return (
+                    <button key={s.id} type="button" onMouseDown={function (e) { e.preventDefault(); pickStudent(s) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{s.full_name}</div>
+                        <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                          {[s.parent_name, s.phone, s.franchisees?.business_name].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      <div style={{ font: '700 12px var(--mono)', color: due > 0 ? 'var(--red)' : 'var(--green)', whiteSpace: 'nowrap' }}>
+                        {due > 0 ? '₹' + fmtAmt(due) + ' due' : '✓ Cleared'}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : !payments ? (
+            <div className="loading">Loading…</div>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ flex: 1, font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                  {[student.parent_name, student.phone, student.franchisees?.business_name].filter(Boolean).join(' · ')}
+                </div>
+                <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { setStudent(null); setPayments(null) }} disabled={saving}>Change student</button>
+              </div>
+
+              {/* Course-wise dues, and what this receipt does to them. */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10 }}>
+                <thead>
+                  <tr>
+                    <th style={Object.assign({}, cell, { textAlign: 'left', font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' })}>Course</th>
+                    <th style={Object.assign({}, num, { font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' })}>Fee</th>
+                    <th style={Object.assign({}, num, { font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' })}>Due</th>
+                    <th style={Object.assign({}, num, { font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase' })}>This receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrs.filter(function (en) { return before.perId[en.id] && (before.perId[en.id].fee > 0 || !before.perId[en.id].dropped) }).map(function (en) {
+                    const b = before.perId[en.id], a = after.perId[en.id]
+                    const applied = a.paid - b.paid
+                    return (
+                      <tr key={en.id}>
+                        <td style={cell}>{enrolmentLabel(en)}{b.dropped ? <span style={{ color: 'var(--text3)' }}> · discontinued</span> : null}</td>
+                        <td style={num}>₹{fmtAmt(b.fee)}</td>
+                        <td style={Object.assign({}, num, { color: b.due > 0 ? 'var(--red)' : 'var(--green)' })}>{b.due > 0 ? '₹' + fmtAmt(b.due) : '✓'}</td>
+                        <td style={Object.assign({}, num, { color: applied > 0 ? 'var(--green)' : 'var(--text3)', fontWeight: 700 })}>{applied > 0 ? '₹' + fmtAmt(applied) : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                  {before.other.fee > 0 && (
+                    <tr>
+                      <td style={cell}>Other charges</td>
+                      <td style={num}>₹{fmtAmt(before.other.fee)}</td>
+                      <td style={Object.assign({}, num, { color: before.other.due > 0 ? 'var(--red)' : 'var(--green)' })}>{before.other.due > 0 ? '₹' + fmtAmt(before.other.due) : '✓'}</td>
+                      <td style={Object.assign({}, num, { color: after.other.paid - before.other.paid > 0 ? 'var(--green)' : 'var(--text3)', fontWeight: 700 })}>{after.other.paid - before.other.paid > 0 ? '₹' + fmtAmt(after.other.paid - before.other.paid) : '—'}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td style={Object.assign({}, cell, { fontWeight: 700, borderBottom: 'none' })}>Agreed fee ₹{fmtAmt(feeTotal)} · paid ₹{fmtAmt(paidSoFar)}</td>
+                    <td style={Object.assign({}, num, { borderBottom: 'none' })}></td>
+                    <td style={Object.assign({}, num, { fontWeight: 700, borderBottom: 'none', color: balance > 0 ? 'var(--red)' : 'var(--green)' })}>{balance > 0 ? '₹' + fmtAmt(balance) : '✓'}</td>
+                    <td style={Object.assign({}, num, { fontWeight: 700, borderBottom: 'none' })}>{amt > 0 ? '₹' + fmtAmt(amt) : '—'}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {feeTotal > 0 && balance === 0 && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', margin: '0 0 12px', fontSize: 12, color: '#166534' }}>
+                  ✓ <b>Fees already fully paid.</b> Don't re-enter a receipt that's already in the register — it would be counted twice.
+                </div>
+              )}
+
+              <div className="form-grid">
+                <label>Amount received (₹) *
+                  <input type="number" autoFocus value={form.amount} max={balance > 0 ? balance : undefined}
+                    onChange={function (e) { setForm(function (f) { return { ...f, amount: e.target.value } }) }} placeholder="e.g. 1500" />
+                </label>
+                <label>Date
+                  <input type="date" value={form.paid_at} onChange={function (e) { setForm(function (f) { return { ...f, paid_at: e.target.value } }) }} />
+                </label>
+                <label>Mode
+                  <select value={form.mode} onChange={function (e) { setForm(function (f) { return { ...f, mode: e.target.value } }) }}>
+                    {RECEIPT_MODES.map(function (m) { return <option key={m[0]} value={m[0]}>{m[1]}</option> })}
+                  </select>
+                </label>
+                <label>Reference (optional)
+                  <input value={form.reference} onChange={function (e) { setForm(function (f) { return { ...f, reference: e.target.value } }) }} placeholder="UTR / cheque no. / note" />
+                </label>
+              </div>
+              {amt > 0 && (
+                <p className="hint" style={{ marginTop: 8, color: tooMuch ? 'var(--red)' : undefined }}>
+                  {tooMuch
+                    ? 'More than the balance — only ₹' + fmtAmt(balance) + ' is outstanding.'
+                    : 'Balance after this receipt: ' + (balance - amt > 0 ? '₹' + fmtAmt(balance - amt) : 'cleared') + '. Applied to the oldest unpaid course first.'}
+                </p>
+              )}
+
+              <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg)', border: '1px solid var(--green, #1D7A4F)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={sendWa} onChange={function (e) { setSendWa(e.target.checked) }} />
+                  💬 Send WhatsApp receipt to parent
+                </label>
+                {sendWa && (
+                  <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
+                    placeholder="Parent WhatsApp number" style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving || !student || !payments || !amt || tooMuch}>
+            {saving ? 'Saving…' : 'Save Receipt'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// The register: every student payment the login can see, newest first.
+// receipts = student_payments rows (null while loading); students = the
+// page's already role-scoped list, used to name each row.
+function StudentReceiptsRegister({ receipts, students, search, centreFilter, showCentre }) {
+  const [waConfirm, setWaConfirm] = useState(null)
+  if (!receipts) return <div className="loading">Loading receipts…</div>
+
+  const byId = {}
+  students.forEach(function (s) { byId[s.id] = s })
+  const q = search.trim().toLowerCase()
+  const rows = receipts.filter(function (p) {
+    const s = byId[p.student_id]
+    if (centreFilter && p.franchisee_id !== centreFilter && (!s || s.franchisee_id !== centreFilter)) return false
+    if (!q) return true
+    return (p.receipt_no || '').toLowerCase().includes(q) || (p.reference || '').toLowerCase().includes(q)
+      || (s && (s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)))
+  })
+  const total = rows.reduce(function (sum, p) { return sum + (p.amount || 0) }, 0)
+
+  function ledgerOf(studentId) { return receipts.filter(function (x) { return x.student_id === studentId }) }
+
+  async function sendWa(p, s, phone) {
+    const list = ledgerOf(s.id)
+    const paid = list.reduce(function (sum, x) { return sum + (x.amount || 0) }, 0)
+    const r = await sendWAStudentReceipt(phone, {
+      name: s.parent_name || s.full_name, receiptNo: p.receipt_no, amount: fmtAmt(p.amount), date: fmtDate(p.paid_at),
+      balance: Math.max(0, (Number(s.fee_total) || 0) - paid),
+      imageUrl: await studentReceiptPng(s, p, list),
+    })
+    if (r && r.success) showToast('Receipt sent on WhatsApp ✓')
+    else showToast('Receipt failed' + (r && r.error ? ': ' + r.error : ''), 'err')
+  }
+
+  return (
+    <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
+      {rows.length === 0 ? (
+        <div className="empty">{receipts.length === 0 ? 'No receipts yet.' : 'No receipts match.'}</div>
+      ) : (
+        <table className="big-tbl">
+          <thead>
+            <tr>
+              <th>Receipt No.</th>
+              <th>Date</th>
+              <th>Student</th>
+              {showCentre && <th className="hide-mobile">Centre</th>}
+              <th className="hide-mobile">Mode</th>
+              <th className="hide-mobile">Reference</th>
+              <th style={{ textAlign: 'right' }}>Amount</th>
+              <th style={{ textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(function (p) {
+              const s = byId[p.student_id]
+              return (
+                <tr key={p.id}>
+                  <td className="mono" style={{ fontWeight: 600 }}>{p.receipt_no || '—'}</td>
+                  <td className="mono">{fmtDate(p.paid_at)}</td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{s ? s.full_name : '—'}</div>
+                    {s && s.parent_name && <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{s.parent_name}</div>}
+                  </td>
+                  {showCentre && <td className="hide-mobile">{s?.franchisees?.business_name || '—'}</td>}
+                  <td className="hide-mobile">{p.mode ? p.mode.replace(/_/g, ' ') : '—'}</td>
+                  <td className="mono hide-mobile">{p.reference || p.note || '—'}</td>
+                  <td style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(p.amount)}</div></td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {s && (
+                      <>
+                        <button className="row-action" onClick={function () { printStudentReceipt(s, p, studentReceiptCtx(s, p, ledgerOf(s.id))) }}>Print</button>
+                        <button className="row-action" onClick={function () { setWaConfirm({ label: 'Send receipt ' + (p.receipt_no || ''), phone: s.phone || '', send: function (phone) { return sendWa(p, s, phone) } }) }}>WhatsApp</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+            <tr>
+              <td colSpan={showCentre ? 6 : 5} style={{ textAlign: 'right', fontWeight: 700 }}>{rows.length} receipt{rows.length > 1 ? 's' : ''} · total</td>
+              <td style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)', fontWeight: 700 }}>₹{fmtAmt(total)}</div></td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+      {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
+    </div>
+  )
+}
+
 export default function StudentsPage() {
   const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
   const admin = isAdminRole(currentRole)
@@ -4329,7 +4538,11 @@ export default function StudentsPage() {
   const [centreFilterTouched, setCentreFilterTouched] = useState(false)
   const [sortBy, setSortBy] = useState('activity')   // activity | name | joined | balance
   const [showClosed, setShowClosed] = useState(false)
-  const [viewTab, setViewTab] = useState('current')   // current | attention | completed | all
+  const [viewTab, setViewTab] = useState('current')   // current | attention | completed | all | receipts
+  const [receipts, setReceipts] = useState(null)       // student_payments register; null until loaded
+  const [showReceipt, setShowReceipt] = useState(false)
+  // Same rule as the profile: any admin, or a franchisee for their own tree (RLS-scoped).
+  const canRecordFees = admin || ['uf', 'cf', 'smf'].includes(currentRole)
   const [showCertBulk, setShowCertBulk] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
@@ -4442,6 +4655,25 @@ export default function StudentsPage() {
     load()
   }, [admin, currentRole, currentFranchiseeId])
 
+  // Receipts register — every student payment this login can see (RLS scopes
+  // it the same way as students). Paged: it passes 1000 rows quickly.
+  useEffect(function () {
+    if (currentRole === null) return
+    let cancelled = false
+    fetchAllRows(function (from, to) {
+      return sb.from('student_payments')
+        .select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at')
+        .order('paid_at', { ascending: false }).order('created_at', { ascending: false }).order('id').range(from, to)
+    }).then(function (rows) { if (!cancelled) setReceipts(rows) })
+      .catch(function (e) { console.error('Receipts load error:', e); if (!cancelled) setReceipts([]) })
+    return function () { cancelled = true }
+  }, [currentRole, currentFranchiseeId])
+
+  function handleReceiptRecorded(row, updatedStudent) {
+    setReceipts(function (prev) { return [row].concat(prev || []) })
+    setStudents(function (ss) { return ss.map(function (s) { return s.id === updatedStudent.id ? { ...s, fee_paid: updatedStudent.fee_paid, payment_status: updatedStudent.payment_status } : s }) })
+  }
+
   // The Centre column itself is only useful when rows can come from more than
   // one centre — once a specific centre is picked in the filter, every row
   // shows the same centre, so the column is pure noise. The filter dropdown
@@ -4549,7 +4781,7 @@ export default function StudentsPage() {
     // Same rule for the view tabs: searching looks across everyone, so a
     // student who has moved to Completed is still one search away.
     const lc = lifecycle[s.id]
-    const matchesTab = !!q || viewTab === 'all'
+    const matchesTab = !!q || viewTab === 'all' || viewTab === 'receipts'
       || (viewTab === 'current' && lc.bucket === 'current')
       || (viewTab === 'completed' && lc.bucket === 'past')
       || (viewTab === 'attention' && lc.reasons.length > 0)
@@ -4747,14 +4979,15 @@ export default function StudentsPage() {
               { id: 'attention', label: 'Needs attention' },
               { id: 'completed', label: 'Completed' },
               { id: 'all',       label: 'All' },
+              { id: 'receipts',  label: '🧾 Receipts' },
             ].map(function (t) {
               return (
                 <button key={t.id} className={'tab' + (viewTab === t.id ? ' active' : '')} onClick={function () { setViewTab(t.id) }}>
-                  {t.label} <span style={{ font: '600 11px var(--mono)', color: t.id === 'attention' && tabCounts.attention > 0 ? '#B45309' : 'var(--text3)', marginLeft: 3 }}>{tabCounts[t.id]}</span>
+                  {t.label} <span style={{ font: '600 11px var(--mono)', color: t.id === 'attention' && tabCounts.attention > 0 ? '#B45309' : 'var(--text3)', marginLeft: 3 }}>{t.id === 'receipts' ? (receipts ? receipts.length : '') : tabCounts[t.id]}</span>
                 </button>
               )
             })}
-            {search.trim() && viewTab !== 'all' && (
+            {search.trim() && viewTab !== 'all' && viewTab !== 'receipts' && (
               <span style={{ alignSelf: 'center', marginLeft: 8, font: '500 11px var(--font)', color: 'var(--text3)' }}>Searching across all students</span>
             )}
             {can('students.edit') && pendingCertRows.length > 0 && (viewTab === 'attention' || viewTab === 'completed') && (
@@ -4762,6 +4995,12 @@ export default function StudentsPage() {
                 title="Certificates that were already handed over outside the app"
                 onClick={function () { setShowCertBulk(true) }}>
                 🎓 Mark certificates issued ({pendingCertRows.length})
+              </button>
+            )}
+            {canRecordFees && viewTab === 'receipts' && (
+              <button className="btn btn-p" style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 12 }}
+                onClick={function () { setShowReceipt(true) }}>
+                + New Receipt
               </button>
             )}
           </div>
@@ -4781,6 +5020,8 @@ export default function StudentsPage() {
           </div>
         ) : loading ? (
           <div className="loading">Loading students…</div>
+        ) : viewTab === 'receipts' ? (
+          <StudentReceiptsRegister receipts={receipts} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} />
         ) : (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
             <table className="big-tbl stu-tbl">
@@ -4945,6 +5186,14 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
+
+      {showReceipt && (
+        <StudentReceiptModal
+          students={students}
+          onClose={function () { setShowReceipt(false) }}
+          onRecorded={handleReceiptRecorded}
+        />
+      )}
 
       {showCertBulk && (
         <MarkCertsIssuedModal
