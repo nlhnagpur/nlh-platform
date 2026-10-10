@@ -5,6 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
+import { buildFeeStatement, paymentsUpTo } from '../utils/feeStatement'
 import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
@@ -560,26 +561,26 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // ── Printable branded payment receipt for one payment ──
   // Figures as at THAT payment, so a reprint or a resent image shows what the
   // receipt showed when it was issued — not today's running total.
-  function receiptCtx(p, list) {
-    const total = Number(form.fee_total) || 0
-    const paidToDate = (list || payments)
-      .filter(function (x) { return (x.paid_at || '') <= (p.paid_at || '') })
-      .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
-    return {
-      centre: student.franchisees?.business_name || '',
-      summary: { total: total, paid: paidToDate, balance: Math.max(0, total - paidToDate) },
-    }
+  // Fee breakdown + payment history on the receipt. The shared helper
+  // (studentReceiptCtxFull, also used by the Receipts tab) does the work; it's
+  // handed this profile's live fee total and enrolments so an unsaved-fresher
+  // value here wins over the list row's copy.
+  async function receiptCtxFull(p, list) {
+    return studentReceiptCtxFull(
+      { ...student, fee_total: form.fee_total, enrollments: localEnrollments },
+      p, list || payments
+    )
   }
 
-  function handlePrintReceipt(p) {
-    printStudentReceipt(student, p, receiptCtx(p))
+  async function handlePrintReceipt(p) {
+    printStudentReceipt(student, p, await receiptCtxFull(p))
   }
 
   // PNG of the receipt for the WhatsApp image header. Best-effort: on failure
   // the send falls back to the text template rather than not going at all.
   async function receiptPng(p, list) {
     try {
-      const html = printStudentReceipt(student, p, { ...receiptCtx(p, list), asHtml: true })
+      const html = printStudentReceipt(student, p, { ...(await receiptCtxFull(p, list)), asHtml: true })
       return await captureDocPng(html, p.receipt_no || 'receipt')
     } catch (e) { return null }
   }
@@ -4186,9 +4187,44 @@ function studentReceiptCtx(student, p, list) {
   }
 }
 
+// studentReceiptCtx plus the fee breakdown and payment history: rebuilt from the
+// fee-change log and invoices so the lines add up to the Total fee (see
+// utils/feeStatement.js). Used by every place a student receipt is printed or
+// imaged, so they all show the same thing. Falls back to the plain totals if
+// the log can't be read — a receipt must never fail to print.
+async function studentReceiptCtxFull(student, p, list) {
+  const base = studentReceiptCtx(student, p, list)
+  try {
+    const [evRes, invRes] = await Promise.all([
+      sb.from('student_fee_events').select('at, field, old_value, new_value, delta').eq('student_id', student.id).eq('field', 'fee_total'),
+      sb.from('student_invoices').select('created_at, items, total').eq('student_id', student.id),
+    ])
+    // The newest receipt shows the fee as it stands now (a payment is often
+    // dated a day before the fee change it settles, so cutting at its date
+    // would show a total below what was paid). An older receipt is cut at its
+    // own date, but never to less than what had been paid by then.
+    const all = list || []
+    const isLatest = !all.some(function (x) { return (x.paid_at || '') > (p.paid_at || '') })
+    const build = function (asOf) {
+      return buildFeeStatement({
+        feeTotalNow: Number(student.fee_total) || 0, events: evRes.data || [], invoices: invRes.data || [],
+        enrollments: student.enrollments || [], asOfDate: asOf,
+      })
+    }
+    let stmt = build(isLatest ? '9999-12-31' : p.paid_at)
+    if (stmt && !isLatest && stmt.total < base.summary.paid) stmt = build('9999-12-31')
+    if (stmt && stmt.lines.length) {
+      base.summary = { total: stmt.total, paid: base.summary.paid, balance: Math.max(0, stmt.total - base.summary.paid) }
+      base.feeLines = stmt.lines
+      base.paymentLines = paymentsUpTo(all, p)
+    }
+  } catch (e) { console.warn('Receipt fee details unavailable:', e.message) }
+  return base
+}
+
 async function studentReceiptPng(student, p, list) {
   try {
-    const html = printStudentReceipt(student, p, { ...studentReceiptCtx(student, p, list), asHtml: true })
+    const html = printStudentReceipt(student, p, { ...(await studentReceiptCtxFull(student, p, list)), asHtml: true })
     return await captureDocPng(html, p.receipt_no || 'receipt')
   } catch (e) { return null }
 }
@@ -4506,7 +4542,7 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {s && (
                       <>
-                        <button className="row-action" onClick={function () { printStudentReceipt(s, p, studentReceiptCtx(s, p, ledgerOf(s.id))) }}>Print</button>
+                        <button className="row-action" onClick={async function () { printStudentReceipt(s, p, await studentReceiptCtxFull(s, p, ledgerOf(s.id))) }}>Print</button>
                         <button className="row-action" onClick={function () { setWaConfirm({ label: 'Send receipt ' + (p.receipt_no || ''), phone: s.phone || '', send: function (phone) { return sendWa(p, s, phone) } }) }}>WhatsApp</button>
                       </>
                     )}
