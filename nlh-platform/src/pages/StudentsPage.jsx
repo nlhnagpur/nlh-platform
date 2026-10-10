@@ -5,7 +5,8 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
-import { studentReceiptCtx, studentReceiptCtxFull } from '../utils/studentReceipts'
+import { studentReceiptCtx, studentReceiptCtxFull, loadStatementLines } from '../utils/studentReceipts'
+import { receiptPreview } from '../utils/feeStatement'
 import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
@@ -4258,6 +4259,16 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
   const [sendWa,    setSendWa]    = useState(!editing)
   const [waPhone,   setWaPhone]   = useState(student ? student.phone || '' : '')
   const [saving,    setSaving]    = useState(false)
+  const [stLines,   setStLines]   = useState(null)   // fee statement lines for the course-wise table; null = not available
+  // The table is built from the same statement the printed receipt uses, so a
+  // package paid in advance (an opening balance) is not re-split across the
+  // student's courses.
+  useEffect(function () {
+    let cancelled = false
+    setStLines(null)
+    if (student) loadStatementLines(student).then(function (l) { if (!cancelled) setStLines(l) })
+    return function () { cancelled = true }
+  }, [student && student.id])
 
   useEffect(function () {
     if (!editing) return
@@ -4299,6 +4310,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
   const before = student && payments ? computeCoverage(enrs, payments, feeTotal, student.other_charges) : null
   const after = before ? computeCoverage(enrs, payments.concat(amt > 0 ? [{ amount: amt }] : []), feeTotal, student.other_charges) : null
   const tooMuch = feeTotal > 0 && amt > balance
+  const preview = stLines && payments ? receiptPreview({ lines: stLines, payments: payments, amount: amt }) : null
 
   async function saveEdit() {
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
@@ -4455,6 +4467,16 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                   </tr>
                 </thead>
                 <tbody>
+                  {preview ? preview.rows.map(function (r) {
+                    return (
+                      <tr key={r.course}>
+                        <td style={cell}>{r.course}</td>
+                        <td style={num}>₹{fmtAmt(r.fee)}</td>
+                        <td style={Object.assign({}, num, { color: r.due > 0 ? 'var(--red)' : 'var(--green)' })}>{r.due > 0 ? '₹' + fmtAmt(r.due) : '✓'}</td>
+                        <td style={Object.assign({}, num, { color: r.applied > 0 ? 'var(--green)' : 'var(--text3)', fontWeight: 700 })}>{r.applied > 0 ? '₹' + fmtAmt(r.applied) : '—'}</td>
+                      </tr>
+                    )
+                  }) : (<>
                   {enrs.filter(function (en) { return before.perId[en.id] && (before.perId[en.id].fee > 0 || !before.perId[en.id].dropped) }).map(function (en) {
                     const b = before.perId[en.id], a = after.perId[en.id]
                     const applied = a.paid - b.paid
@@ -4475,6 +4497,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                       <td style={Object.assign({}, num, { color: after.other.paid - before.other.paid > 0 ? 'var(--green)' : 'var(--text3)', fontWeight: 700 })}>{after.other.paid - before.other.paid > 0 ? '₹' + fmtAmt(after.other.paid - before.other.paid) : '—'}</td>
                     </tr>
                   )}
+                  </>)}
                   <tr>
                     <td style={Object.assign({}, cell, { fontWeight: 700, borderBottom: 'none' })}>Agreed fee ₹{fmtAmt(feeTotal)} · paid ₹{fmtAmt(paidSoFar)}</td>
                     <td style={Object.assign({}, num, { borderBottom: 'none' })}></td>

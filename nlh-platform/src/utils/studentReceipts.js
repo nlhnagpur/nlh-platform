@@ -53,3 +53,20 @@ export async function studentReceiptCtxFull(student, p, list) {
   return base
 }
 
+
+// The student's fee statement lines as they stand now (every charge and
+// discount), for the New Receipt screen's course-wise dues. null when the log
+// can't be read — the screen falls back to its per-enrolment table.
+export async function loadStatementLines(student) {
+  try {
+    const [evRes, invRes] = await Promise.all([
+      sb.from('student_fee_events').select('at, field, old_value, new_value, delta, enrollment_id').eq('student_id', student.id).in('field', ['fee_total', 'fee_amount']),
+      sb.from('student_invoices').select('id, invoice_no, invoice_date, created_at, items, total').eq('student_id', student.id),
+    ])
+    const stmt = buildFeeStatement({
+      feeTotalNow: Number(student.fee_total) || 0, events: evRes.data || [], invoices: invRes.data || [],
+      enrollments: student.enrollments || [], asOfDate: '9999-12-31',
+    })
+    return stmt && stmt.lines.length ? stmt.lines : null
+  } catch (e) { return null }
+}

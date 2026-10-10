@@ -177,18 +177,9 @@ export function paymentsUpTo(payments, current) {
     })
 }
 
-// Which courses did the `current` payment settle? One row per course, with the
-// month(s) it covered. Discounts are folded into the course's charge (never a
-// line of their own), and anything already cleared by earlier payments is not
-// shown — only what THIS payment went towards.
-//   lines     buildFeeStatement().lines
-//   payments  paymentsUpTo(...) — oldest first, `current` flagged
-//   enrollments  for the monthly-cycle month labels
-// Returns [{ label, sub, amount }] summing to the payment amount.
-export function allocateReceipt(o) {
-  const lines = o.lines || []
-  const enrolments = o.enrollments || []
-  const charges = lines
+// Charges net of discounts, each with `net` (what is payable) and `remaining`.
+function foldCharges(lines) {
+  const charges = (lines || [])
     .filter(function (l) { return l.kind !== 'discount' && l.amount > 0 })
     .map(function (l) { return Object.assign({}, l, { remaining: l.amount }) })
 
@@ -211,6 +202,70 @@ export function allocateReceipt(o) {
 
   // What each charge is for, net of discount, before any payment lands on it.
   charges.forEach(function (c) { c.net = c.remaining })
+  return charges
+}
+
+// Course-wise picture for the New Receipt screen: for each course (or the
+// opening lump of earlier fees) what it costs, what is still due after the
+// payments already on file, and how much of `amount` a new receipt would put
+// against it — oldest charge first. Built from the same statement as the
+// printed receipt, so the screen and the receipt always agree.
+//   lines     buildFeeStatement().lines
+//   payments  existing payments (amount, paid_at), any order
+//   amount    the receipt being entered
+// Returns { rows: [{ course, fee, due, applied }], paid, total, balance, advance }
+export function receiptPreview(o) {
+  const charges = foldCharges(o.lines || [])
+  const pays = (o.payments || []).slice().sort(function (a, b) {
+    return (dayOf(a.paid_at) + (a.created_at || '')).localeCompare(dayOf(b.paid_at) + (b.created_at || ''))
+  })
+  let paid = 0
+  function apply(amount, onTake) {
+    let left = amount
+    for (let i = 0; i < charges.length && left > 0; i++) {
+      const c = charges[i]
+      if (c.remaining <= 0) continue
+      const take = Math.min(left, c.remaining)
+      c.remaining -= take
+      left -= take
+      if (onTake) onTake(c, take)
+    }
+    return left
+  }
+  pays.forEach(function (p) { const amt = Number(p.amount) || 0; paid += amt; apply(amt) })
+  const dueBefore = charges.map(function (c) { return c.remaining })
+  const applied = charges.map(function () { return 0 })
+  const left = apply(Number(o.amount) || 0, function (c, take) { applied[charges.indexOf(c)] += take })
+
+  const order = []
+  const byCourse = {}
+  charges.forEach(function (c, i) {
+    const key = c.kind === 'other' ? '__other' : (c.course || c.label)
+    if (!byCourse[key]) {
+      byCourse[key] = { course: c.kind === 'other' ? 'Earlier course fees' : key, fee: 0, due: 0, applied: 0 }
+      order.push(key)
+    }
+    byCourse[key].fee += c.net
+    byCourse[key].due += dueBefore[i]
+    byCourse[key].applied += applied[i]
+  })
+  const rows = order.map(function (k) { return byCourse[k] })
+  const total = charges.reduce(function (t, c) { return t + c.net }, 0)
+  return { rows: rows, paid: paid, total: total, balance: Math.max(0, total - paid), advance: left }
+}
+
+// Which courses did the `current` payment settle? One row per course, with the
+// month(s) it covered. Discounts are folded into the course's charge (never a
+// line of their own), and anything already cleared by earlier payments is not
+// shown — only what THIS payment went towards.
+//   lines     buildFeeStatement().lines
+//   payments  paymentsUpTo(...) — oldest first, `current` flagged
+//   enrollments  for the monthly-cycle month labels
+// Returns [{ label, sub, amount }] summing to the payment amount.
+export function allocateReceipt(o) {
+  const lines = o.lines || []
+  const enrolments = o.enrollments || []
+  const charges = foldCharges(lines)
 
   // Oldest payment against the oldest charge, and so on. For the receipt's own
   // payment, remember how much of each charge was still outstanding just
