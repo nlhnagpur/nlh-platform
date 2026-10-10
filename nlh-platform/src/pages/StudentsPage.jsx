@@ -16,6 +16,7 @@ import { captureDocPng } from '../utils/captureReceipt'
 import ModalHeader from '../components/ModalHeader'
 import ActionsMenu from '../components/ActionsMenu'
 import AttendanceSheet from '../components/AttendanceSheet'
+import AttendanceRegister from '../components/AttendanceRegister'
 import StudentLedgerView from '../components/StudentLedgerView'
 import { invoiceSettlement } from '../utils/studentLedger'
 import StudentCertModal from '../components/StudentCertModal'
@@ -621,10 +622,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       ])
       const attendanceByEnr = {}
       attRows.forEach(function (a) { (attendanceByEnr[a.enrollment_id] = attendanceByEnr[a.enrollment_id] || new Map()).set(a.session_id, !!a.attended) })
+      const noClassByEnr = await loadNoClassMap(monthly.map(function (en) { return en.id }))
       const progress = {}
       monthly.forEach(function (en) {
         const bsRow = assignMap[en.id]
-        progress[en.id] = computeCycle(en, sessRows.filter(function (s) { return s.batch_id === bsRow.batch_id }), attendanceByEnr[en.id], bsRow.batches?.schedule_days)
+        progress[en.id] = computeCycle(en, sessRows.filter(function (s) { return s.batch_id === bsRow.batch_id }), attendanceByEnr[en.id], bsRow.batches?.schedule_days, undefined, noClassByEnr[en.id])
       })
       setCycleProgress(progress)
     } catch (e) { console.error('Cycle progress load error:', e); setCycleProgress({}) }
@@ -2222,10 +2224,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 </span>
                                 {/* S sessions held this cycle, P present, A absent, N not
                                     marked (S = P + A + N). Includes Saturday revision. */}
-                                <span title={'This cycle so far — S: ' + cycle.spa.S + ' classes held, P: ' + cycle.spa.P + ' present, A: ' + cycle.spa.A + ' absent, N: ' + cycle.spa.N + ' not marked (attendance never recorded — mark it so it is counted).'
+                                <span title={'This cycle so far — S: ' + cycle.spa.S + ' classes held, P: ' + cycle.spa.P + ' present, A: ' + cycle.spa.A + ' absent, N: ' + cycle.spa.N + ' days with no class for the student' + (cycle.spa.U > 0 ? ', ' + cycle.spa.U + ' not marked (attendance never recorded — mark it so it is counted).' : '.')
                                   + (cycle.makeUp > 0 ? ' ' + cycle.makeUp + ' absence' + (cycle.makeUp > 1 ? 's' : '') + ' made up at Saturday revision.' : '')}
-                                  style={{ font: '600 10px var(--mono)', color: cycle.spa.N > 0 ? '#B45309' : 'var(--text2)', background: cycle.spa.N > 0 ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                  S {cycle.spa.S} · P {cycle.spa.P} · A {cycle.spa.A} · N {cycle.spa.N}
+                                  style={{ font: '600 10px var(--mono)', color: cycle.spa.U > 0 ? '#B45309' : 'var(--text2)', background: cycle.spa.U > 0 ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                                  S {cycle.spa.S} · P {cycle.spa.P} · A {cycle.spa.A}{cycle.spa.N > 0 ? ' · N ' + cycle.spa.N : ''}{cycle.spa.U > 0 ? ' · not marked ' + cycle.spa.U : ''}
                                 </span>
                                 <span style={{ font: '600 10px var(--font)', color: renewal.state === 'overdue' ? '#991b1b' : renewal.state === 'soon' ? '#B45309' : 'var(--text3)', background: renewal.state === 'overdue' ? '#fef2f2' : renewal.state === 'soon' ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                                   {renewal.state === 'overdue' ? 'Renewal overdue since ' : 'Renews '}{fmtDate(renewal.due)}
@@ -4219,6 +4221,20 @@ function enrolmentLabel(en) {
   return (en.skus?.courses?.group_name || 'Course') + (en.skus?.level_name ? ' — ' + en.skus.level_name : '')
 }
 
+// { [enrollment_id]: Set(ISO dates) } — days a student has no class (the
+// register's N). Best-effort: if it can't be read the cycle maths just ignores it.
+async function loadNoClassMap(enrIds) {
+  const map = {}
+  if (!enrIds || enrIds.length === 0) return map
+  try {
+    const rows = await fetchAllRows(function (from, to) {
+      return sb.from('student_no_class').select('id, enrollment_id, class_date').in('enrollment_id', enrIds).order('id').range(from, to)
+    })
+    rows.forEach(function (r) { (map[r.enrollment_id] = map[r.enrollment_id] || new Set()).add(String(r.class_date).slice(0, 10)) })
+  } catch (e) { console.warn('No-class days unavailable:', e.message) }
+  return map
+}
+
 // Prints a stored student invoice. `settle` (from the Accounts ledger) carries
 // how much of it the student's payments have covered; without it the
 // invoice's own amount_paid is used.
@@ -4888,6 +4904,7 @@ export default function StudentsPage() {
   const [viewTab, setViewTab] = useState('current')   // current | attention | completed | all | receipts
   const [receipts, setReceipts] = useState(null)       // student_payments register; null until loaded
   const [invoiceRows, setInvoiceRows] = useState(null)  // student_invoices register; null until loaded
+  const [attStudent, setAttStudent] = useState(null)   // student whose monthly sheet is open from the Attendance tab
   const [regEdit, setRegEdit] = useState(null)           // { kind: 'payment'|'invoice', row } — register Edit dialog
   const [showReceipt, setShowReceipt] = useState(false)
   // Same rule as the profile: any admin, or a franchisee for their own tree (RLS-scoped).
@@ -4988,11 +5005,12 @@ export default function StudentsPage() {
           }
           const attendanceByEnr = {}
           attRows.forEach(function (a) { (attendanceByEnr[a.enrollment_id] = attendanceByEnr[a.enrollment_id] || new Map()).set(a.session_id, !!a.attended) })
+          const noClassByEnr = await loadNoClassMap(monthlyEnrIds)
           const cm = {}
           ;(data || []).forEach(function (s) {
             (s.enrollments || []).filter(isMonthlyActive).forEach(function (e) {
               const bId = batchByEnr[e.id]
-              cm[e.id] = computeCycle(e, sessRows.filter(function (r) { return r.batch_id === bId }), attendanceByEnr[e.id], daysByEnr[e.id])
+              cm[e.id] = computeCycle(e, sessRows.filter(function (r) { return r.batch_id === bId }), attendanceByEnr[e.id], daysByEnr[e.id], undefined, noClassByEnr[e.id])
             })
           })
           setCycleMap(cm)
@@ -5144,7 +5162,7 @@ export default function StudentsPage() {
     // Same rule for the view tabs: searching looks across everyone, so a
     // student who has moved to Completed is still one search away.
     const lc = lifecycle[s.id]
-    const matchesTab = !!q || viewTab === 'all' || viewTab === 'receipts' || viewTab === 'invoices'
+    const matchesTab = !!q || viewTab === 'all' || viewTab === 'receipts' || viewTab === 'invoices' || viewTab === 'attendance'
       || (viewTab === 'current' && lc.bucket === 'current')
       || (viewTab === 'completed' && lc.bucket === 'past')
       || (viewTab === 'attention' && lc.reasons.length > 0)
@@ -5342,16 +5360,17 @@ export default function StudentsPage() {
               { id: 'attention', label: 'Needs attention' },
               { id: 'completed', label: 'Completed' },
               { id: 'all',       label: 'All' },
+              { id: 'attendance', label: '✅ Attendance' },
               { id: 'invoices',  label: '📄 Invoices' },
               { id: 'receipts',  label: '🧾 Receipts' },
             ].map(function (t) {
               return (
                 <button key={t.id} className={'tab' + (viewTab === t.id ? ' active' : '')} onClick={function () { setViewTab(t.id) }}>
-                  {t.label} <span style={{ font: '600 11px var(--mono)', color: t.id === 'attention' && tabCounts.attention > 0 ? '#B45309' : 'var(--text3)', marginLeft: 3 }}>{t.id === 'receipts' ? (receipts ? receipts.length : '') : t.id === 'invoices' ? (invoiceRows ? invoiceRows.length : '') : tabCounts[t.id]}</span>
+                  {t.label} <span style={{ font: '600 11px var(--mono)', color: t.id === 'attention' && tabCounts.attention > 0 ? '#B45309' : 'var(--text3)', marginLeft: 3 }}>{t.id === 'attendance' ? '' : t.id === 'receipts' ? (receipts ? receipts.length : '') : t.id === 'invoices' ? (invoiceRows ? invoiceRows.length : '') : tabCounts[t.id]}</span>
                 </button>
               )
             })}
-            {search.trim() && viewTab !== 'all' && viewTab !== 'receipts' && viewTab !== 'invoices' && (
+            {search.trim() && viewTab !== 'all' && viewTab !== 'receipts' && viewTab !== 'invoices' && viewTab !== 'attendance' && (
               <span style={{ alignSelf: 'center', marginLeft: 8, font: '500 11px var(--font)', color: 'var(--text3)' }}>Searching across all students</span>
             )}
             {can('students.edit') && pendingCertRows.length > 0 && (viewTab === 'attention' || viewTab === 'completed') && (
@@ -5407,6 +5426,14 @@ export default function StudentsPage() {
           </div>
         ) : loading ? (
           <div className="loading">Loading students…</div>
+        ) : viewTab === 'attendance' ? (
+          <AttendanceRegister
+            centreFilter={centreFilter}
+            search={search}
+            canEdit={canRecordFees || can('students.edit')}
+            students={students}
+            onOpenSheet={setAttStudent}
+          />
         ) : viewTab === 'invoices' ? (
           <StudentInvoicesRegister invoices={invoiceRows} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} onEdit={admin ? function (row) { setRegEdit({ kind: 'invoice', row: row }) } : null} />
         ) : viewTab === 'receipts' ? (
@@ -5575,6 +5602,10 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
+
+      {attStudent && (
+        <AttendanceSheet mode="student" student={attStudent} onClose={function () { setAttStudent(null) }} />
+      )}
 
       {showReceipt && (
         <StudentReceiptModal

@@ -109,22 +109,25 @@ export function countCycleDays(startIso, names) {
 //           Saturday is a regular class, not revision, for a student who has
 //           Saturday as a class day; likewise Sunday only counts for a student
 //           who has Sunday as a class day.
-export function computeCycle(en, sessions, attendance, scheduleDays, today) {
+export function computeCycle(en, sessions, attendance, scheduleDays, today, noClass) {
   const start = cycleAnchor(en)
   if (!start) return null
   const due = addOneMonth(start)
   const todayStr = today || todayIso()
   const sched = cycleDows(en.cycle_days, scheduleDays)
   const att = attendance || new Map()
+  // Dates this student has no class (a personal off day): not a class for them,
+  // so out of their target, sessions held and absences.
+  const nc = noClass || new Set()
   const inWindow = (sessions || []).filter(function (s) { return s.session_date >= start && s.session_date < due })
   const holidayDates = new Set(inWindow.filter(function (s) { return s.is_holiday }).map(function (s) { return s.session_date }))
 
   let target = 0
   for (let d = start; d < due; d = nextDay(d)) {
-    if (sched.has(dowOf(d)) && !holidayDates.has(d)) target++
+    if (sched.has(dowOf(d)) && !holidayDates.has(d) && !nc.has(d)) target++
   }
 
-  const ran = inWindow.filter(function (s) { return !s.is_holiday && s.session_date <= todayStr })
+  const ran = inWindow.filter(function (s) { return !s.is_holiday && s.session_date <= todayStr && !nc.has(s.session_date) })
   const weekday = ran.filter(function (s) { const w = dowOf(s.session_date); return (w >= 1 && w <= 5) || sched.has(w) })
   const saturday = ran.filter(function (s) { return dowOf(s.session_date) === 6 && !sched.has(6) })
   const attendedWeekday = weekday.filter(function (s) { return att.get(s.id) === true }).length
@@ -134,7 +137,7 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today) {
   const makeUp = Math.min(absent, attendedSat)
   // Plain tally of every class that ran in the cycle so far (Saturday revision
   // included; Sunday classes only for a student who has Sunday as a class
-  // day): S sessions, P present, A absent, N not marked. S = P + A + N.
+  // day): S sessions, P present, A absent, U not marked. S = P + A + U.
   const counted = ran.filter(function (s) { return dowOf(s.session_date) !== 0 || sched.has(0) })
   const sP = counted.filter(function (s) { return att.get(s.id) === true }).length
   const sA = counted.filter(function (s) { return att.get(s.id) === false }).length
@@ -143,7 +146,9 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today) {
     done: Math.min(target, attendedWeekday + makeUp),
     held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat,
     absent: absent, unmarked: unmarked, makeUp: makeUp,
-    spa: { S: counted.length, P: sP, A: sA, N: counted.length - sP - sA },
+    // S sessions held for this student, P present, A absent, U not marked
+    // (S = P + A + U), N days with no class for them.
+    spa: { S: counted.length, P: sP, A: sA, U: counted.length - sP - sA, N: Array.from(nc).filter(function (d) { return d >= start && d < due && d <= todayStr }).length },
     days: CYCLE_DAY_NAMES.filter(function (n) { return sched.has(DOW_KEYS[n]) }),
     satRevision: !sched.has(6),
   }

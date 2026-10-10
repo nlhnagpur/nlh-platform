@@ -17,7 +17,9 @@ const DOW2 = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 const TONE = {
   P: { color: '#166534', bg: '#dcfce7' },
   A: { color: '#991b1b', bg: '#fee2e2' },
-  N: { color: '#92400e', bg: '#fef3c7' },
+  N: { color: '#1e40af', bg: '#dbeafe' },    // no class for the student
+  NC: { color: '#1e40af', bg: '#dbeafe' },
+  U: { color: '#92400e', bg: '#fef3c7' },    // class held, not marked
   H: { color: '#6b7280', bg: '#f3f4f6' },
 }
 
@@ -53,17 +55,32 @@ function offDay(dateIso, en, scheduleDays) {
   return dowOf(dateIso) === 0 && !cycleDows(en && en.cycle_days, scheduleDays).has(0)
 }
 
+// S sessions held for the student = P + A + U. N (no class for the student)
+// and H (holiday) aren't classes, so they're outside S.
 function tally(cells) {
-  const t = { S: 0, P: 0, A: 0, N: 0 }
+  const t = { S: 0, P: 0, A: 0, N: 0, U: 0 }
   cells.forEach(function (c) {
-    // Holidays aren't classes, and a Sunday class is only counted for a
-    // student who has Sunday as a class day (c.off otherwise) — it's still
-    // shown on the sheet.
-    if (!c || c.code === 'H' || c.off) return
+    // A Sunday class is only counted for a student who has Sunday as a class
+    // day (c.off otherwise) — it's still shown on the sheet.
+    if (!c || c.code === 'H') return
+    if (c.code === 'N') { t.N++; return }
+    if (c.off) return
     t.S++
     t[c.code]++
   })
   return t
+}
+
+// { 'enrollment_id:YYYY-MM-DD': true } — days a student has no class.
+async function fetchNoClass(enrolmentIds, start, end) {
+  const set = new Set()
+  if (!enrolmentIds || !enrolmentIds.length) return set
+  const rows = await fetchAllRows(function (from, to) {
+    return sb.from('student_no_class').select('id, enrollment_id, class_date')
+      .in('enrollment_id', enrolmentIds).gte('class_date', start).lte('class_date', end).order('id').range(from, to)
+  })
+  rows.forEach(function (r) { set.add(r.enrollment_id + ':' + String(r.class_date).slice(0, 10)) })
+  return set
 }
 
 // Attendance rows for a set of sessions, chunked (URL length) and paged (1000-row cap).
@@ -95,6 +112,7 @@ async function loadStudentSheet(student, ym) {
       .in('batch_id', batchIds).gte('session_date', b.start).lte('session_date', b.end).order('id').range(from, to)
   }) : []
   const att = await fetchAttendance(sessions.map(function (s) { return s.id }), enrIds)
+  const noClass = await fetchNoClass(enrIds, b.start, b.end)
 
   const attended = []
   const rows = enrs.map(function (en) {
@@ -103,10 +121,23 @@ async function loadStudentSheet(student, ym) {
       sessions.filter(function (s) { return s.batch_id === m.batch_id && memberOn(m, s.session_date) }).forEach(function (s) {
         let code
         if (s.is_holiday) code = 'H'
-        else { const a = att.get(s.id + ':' + en.id); code = a === true ? 'P' : a === false ? 'A' : 'N' }
+        else if (noClass.has(en.id + ':' + s.session_date)) code = 'N'
+        else { const a = att.get(s.id + ':' + en.id); code = a === true ? 'P' : a === false ? 'A' : 'U' }
         const day = dayNum(s.session_date)
         if (!cells[day] || cells[day].code === 'H') {
           cells[day] = { code: code, date: s.session_date, off: offDay(s.session_date, en, m.batches && m.batches.schedule_days), batch: m.batches && m.batches.name, ci: s.instructors && s.instructors.full_name, sub: s.is_substitute }
+        }
+      })
+    })
+    // A no-class day shows even when no class was held that day.
+    ;(bsRows || []).filter(function (m) { return m.enrollment_id === en.id }).forEach(function (m) {
+      noClass.forEach(function (key) {
+        if (!key.startsWith(en.id + ':')) return
+        const date = key.slice(en.id.length + 1)
+        if (date < b.start || date > b.end || !memberOn(m, date)) return
+        const day = dayNum(date)
+        if (!cells[day] || cells[day].code === 'U' || cells[day].code === 'A' || cells[day].code === 'P') {
+          cells[day] = { code: 'N', date: date, off: false, batch: m.batches && m.batches.name }
         }
       })
     })
@@ -135,6 +166,7 @@ async function loadInstructorSheet(instructor, ym) {
     .in('batch_id', batchIds)
   if (error) throw error
   const att = await fetchAttendance(sessions.map(function (s) { return s.id }), null)
+  const noClass = await fetchNoClass((bsRows || []).map(function (r) { return r.enrollment_id }), b.start, b.end)
 
   const taught = new Set()
   const batches = batchIds.map(function (bid) {
@@ -149,7 +181,8 @@ async function loadInstructorSheet(instructor, ym) {
       bsess.forEach(function (s) {
         if (!m.ms.some(function (x) { return memberOn(x, s.session_date) })) return
         const a = att.get(s.id + ':' + m.en.id)
-        cells[s.id] = { code: a === true ? 'P' : a === false ? 'A' : 'N', date: s.session_date, off: offDay(s.session_date, m.en, s.batches && s.batches.schedule_days) }
+        const none = noClass.has(m.en.id + ':' + s.session_date)
+        cells[s.id] = { code: none ? 'N' : a === true ? 'P' : a === false ? 'A' : 'U', date: s.session_date, off: offDay(s.session_date, m.en, s.batches && s.batches.schedule_days) }
       })
       const totals = tally(Object.values(cells))
       // "Taught" = present at least once, Sunday classes included — the CI did teach them.
@@ -174,12 +207,12 @@ async function loadInstructorSheet(instructor, ym) {
 function Cell({ c }) {
   if (!c) return <td style={{ width: 24, minWidth: 24, border: '1px solid #e5e7eb' }}></td>
   const t = TONE[c.code]
-  const tip = c.code === 'H' ? 'Holiday' : { P: 'Present', A: 'Absent', N: 'Not marked' }[c.code]
+  const tip = c.code === 'H' ? 'Holiday' : { P: 'Present', A: 'Absent', N: 'No class for the student', U: 'Not marked' }[c.code]
   const isSun = !!c.off
   return (
     <td title={tip + (c.date ? ' · ' + fmtDate(c.date) : '') + (c.ci ? ' · ' + c.ci + (c.sub ? ' (substitute)' : '') : '') + (isSun && c.code !== 'H' ? ' · Sunday is not a class day for this student — not counted in S/P/A/N' : '')}
       style={{ width: 24, minWidth: 24, textAlign: 'center', font: '700 11px var(--mono)', color: t.color, background: t.bg, border: '1px solid #e5e7eb', opacity: isSun && c.code !== 'H' ? 0.45 : 1 }}>
-      {c.code}
+      {c.code === 'U' ? '' : c.code}
     </td>
   )
 }
@@ -191,7 +224,8 @@ function TotalsCells({ t }) {
       <td style={Object.assign({}, base, { background: '#f9fafb' })}>{t.S}</td>
       <td style={Object.assign({}, base, { color: TONE.P.color })}>{t.P}</td>
       <td style={Object.assign({}, base, { color: TONE.A.color })}>{t.A}</td>
-      <td style={Object.assign({}, base, { color: t.N > 0 ? TONE.N.color : '#9ca3af', background: t.N > 0 ? TONE.N.bg : undefined })}>{t.N}</td>
+      <td style={Object.assign({}, base, { color: t.N > 0 ? TONE.NC.color : '#9ca3af', background: t.N > 0 ? TONE.NC.bg : undefined })}>{t.N}</td>
+      <td style={Object.assign({}, base, { color: t.U > 0 ? TONE.U.color : '#9ca3af', background: t.U > 0 ? TONE.U.bg : undefined })}>{t.U}</td>
     </>
   )
 }
@@ -203,7 +237,8 @@ function TotalsHead() {
       <th style={th} title="Sessions held">S</th>
       <th style={Object.assign({}, th, { color: TONE.P.color })} title="Present">P</th>
       <th style={Object.assign({}, th, { color: TONE.A.color })} title="Absent">A</th>
-      <th style={Object.assign({}, th, { color: TONE.N.color })} title="Not marked">N</th>
+      <th style={Object.assign({}, th, { color: TONE.NC.color })} title="No class for the student">N</th>
+      <th style={Object.assign({}, th, { color: TONE.U.color })} title="Class held but attendance not marked">?</th>
     </>
   )
 }
@@ -239,12 +274,12 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
     const out = []
     out.push(['New Learning Horizons — Monthly Attendance Sheet'])
     out.push([(isStudent ? 'Student: ' : 'CI: ') + subjectName, 'Month: ' + monthLabel(ym)])
-    out.push(['P present · A absent · N not marked · H holiday · S sessions held'])
+    out.push(['P present · A absent · N no class for the student · H holiday · ? class held, not marked · S sessions held'])
     out.push([])
     if (isStudent) {
-      out.push(['Course'].concat(dayCols.map(String), ['S', 'P', 'A', 'N']))
+      out.push(['Course'].concat(dayCols.map(String), ['S', 'P', 'A', 'N', '?']))
       data.rows.forEach(function (r) {
-        out.push([r.label].concat(dayCols.map(function (d) { return r.cells[d] ? r.cells[d].code : '' }), [r.totals.S, r.totals.P, r.totals.A, r.totals.N]))
+        out.push([r.label].concat(dayCols.map(function (d) { return r.cells[d] ? (r.cells[d].code === 'U' ? '?' : r.cells[d].code) : '' }), [r.totals.S, r.totals.P, r.totals.A, r.totals.N, r.totals.U]))
       })
       out.push([])
       out.push(['Classes attended'])
@@ -255,9 +290,9 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
       data.batches.forEach(function (bt) {
         out.push([])
         out.push([bt.name + ' — ' + bt.course])
-        out.push(['Student', 'Course'].concat(bt.sessions.map(function (s) { return s.session_date }), ['S', 'P', 'A', 'N']))
+        out.push(['Student', 'Course'].concat(bt.sessions.map(function (s) { return s.session_date }), ['S', 'P', 'A', 'N', '?']))
         bt.students.forEach(function (st) {
-          out.push([st.name, st.course].concat(bt.sessions.map(function (s) { return st.cells[s.id] ? st.cells[s.id].code : '' }), [st.totals.S, st.totals.P, st.totals.A, st.totals.N]))
+          out.push([st.name, st.course].concat(bt.sessions.map(function (s) { return st.cells[s.id] ? (st.cells[s.id].code === 'U' ? '?' : st.cells[s.id].code) : '' }), [st.totals.S, st.totals.P, st.totals.A, st.totals.N, st.totals.U]))
         })
       })
     }
@@ -310,7 +345,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
           </span>
         </div>
         <div style={{ padding: '0 20px 6px', font: '500 11px var(--font)', color: 'var(--text3)' }}>
-          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.N.color }}>N</b> not marked (attendance never recorded) · <b>H</b> holiday · blank no class · <b>S</b> sessions held (S = P + A + N). Sunday classes are shown faded and not counted in S / P / A / N, unless Sunday is one of the student's class days.
+          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.NC.color }}>N</b> no class for the student that day · <b>H</b> holiday · <span style={{ background: TONE.U.bg, padding: '0 6px', borderRadius: 3 }}>&nbsp;</span> / <b style={{ color: TONE.U.color }}>?</b> class held, attendance not marked · blank no class scheduled · <b>S</b> sessions held (S = P + A + ?). Sunday classes are shown faded and not counted in S / P / A / N, unless Sunday is one of the student's class days.
         </div>
         <div style={{ padding: '8px 20px 18px', overflow: 'auto', flex: 1 }}>
           {loading && <div className="loading"><span className="spinner" />Loading attendance…</div>}
