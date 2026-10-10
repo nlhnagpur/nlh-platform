@@ -27,6 +27,16 @@ function courseLabel(en) {
   return ((sku && sku.courses && sku.courses.group_name) || 'Course') + (sku && sku.level_name ? ' — ' + sku.level_name : '')
 }
 
+// An invoice's amounts as first billed. Editing an invoice keeps the original
+// on each item (original_amount) so it can still be tied to the fee change
+// that raised it; the edit itself is a separate, later fee change.
+function origAmt(x) { return Number(x.original_amount != null ? x.original_amount : x.amount) || 0 }
+function origTotal(inv) {
+  let t = Number(inv.total) || 0
+  ;(inv.items || []).forEach(function (x) { if (x && x.original_amount != null) t += Number(x.original_amount) - Number(x.amount) })
+  return t
+}
+
 // What a ledger/receipt line needs to point at its invoice document.
 function invRef(inv) {
   return { id: inv.id || null, invoice_no: inv.invoice_no || null, invoice_date: dayOf(inv.invoice_date || inv.created_at), total: Number(inv.total) || 0 }
@@ -65,7 +75,7 @@ export function buildFeeStatement(o) {
   events.forEach(function (e) {
     const d = Number(e.delta) || 0
     if (d <= 0) return
-    const m = invoices.find(function (i) { return Math.abs(new Date(i.created_at) - new Date(e.at)) < 120000 && Number(i.total) === d })
+    const m = invoices.find(function (i) { return Math.abs(new Date(i.created_at) - new Date(e.at)) < 120000 && origTotal(i) === d })
     if (m) raisedLater[m.id] = true
   })
   invoices.forEach(function (inv) {
@@ -73,11 +83,11 @@ export function buildFeeStatement(o) {
     const courses = (inv.items || []).filter(function (i) { return i && i.kind === 'course' })
     // Renewal / next-level invoices are charges raised later, never the opening.
     if (courses.some(function (c) { return c.cycle })) return
-    const invSum = courses.reduce(function (s, c) { return s + (Number(c.amount) || 0) }, 0)
+    const invSum = courses.reduce(function (s, c) { return s + origAmt(c) }, 0)
     if (!courses.length || running + invSum > opening) return
     courses.forEach(function (c) {
       lines.push({
-        kind: 'enrolment', course: c.name || 'Course fee', label: c.name || 'Course fee', amount: Number(c.amount) || 0,
+        kind: 'enrolment', course: c.name || 'Course fee', label: c.name || 'Course fee', amount: origAmt(c),
         date: dayOf(inv.invoice_date || inv.created_at), invoice: invRef(inv),
       })
     })
@@ -92,6 +102,26 @@ export function buildFeeStatement(o) {
   events.filter(function (e) { return dayOf(e.at) <= asOf }).forEach(function (e) {
     const d = Number(e.delta) || 0
     total += d
+    // A fee change made by editing an invoice's amount: tie it to that course.
+    let editedItem = null
+    let editedInv = null
+    invoices.forEach(function (i) {
+      (i.items || []).forEach(function (x) {
+        if (editedItem || !x || x.kind !== 'course' || !x.edited_at) return
+        if (Math.abs(new Date(x.edited_at) - new Date(e.at)) < 120000 && (Number(x.amount) - origAmt(x)) === d) { editedItem = x; editedInv = i }
+      })
+    })
+    if (editedItem) {
+      if (d < 0) {
+        lines.push({ kind: 'discount', course: editedItem.name || null, label: 'Fee adjustment — ' + (editedItem.name || 'Course'), amount: d, date: dayOf(e.at), invoice: invRef(editedInv) })
+      } else {
+        lines.push({
+          kind: 'added', course: editedItem.name || null, label: 'Fee adjustment — ' + (editedItem.name || 'Course'),
+          amount: d, date: dayOf(e.at), invoice: invRef(editedInv),
+        })
+      }
+      return
+    }
     if (d < 0) {
       // Which course was discounted: the course-fee edit made moments earlier.
       const edit = courseEdits.find(function (x) { return Number(x.delta) === d && Math.abs(new Date(x.at) - new Date(e.at)) < 180000 })
@@ -99,7 +129,7 @@ export function buildFeeStatement(o) {
       lines.push({ kind: 'discount', course: en ? courseLabel(en) : null, label: 'Discount / fee adjustment', amount: d, date: dayOf(e.at) })
       return
     }
-    const inv = invoices.find(function (i) { return Math.abs(new Date(i.created_at) - new Date(e.at)) < 120000 && Number(i.total) === d })
+    const inv = invoices.find(function (i) { return Math.abs(new Date(i.created_at) - new Date(e.at)) < 120000 && origTotal(i) === d })
     if (inv) {
       const items = (inv.items || []).filter(function (x) { return x && x.kind === 'course' })
       const names = items.map(function (x) { return x.name })
@@ -111,7 +141,7 @@ export function buildFeeStatement(o) {
           const ps = dayOf(x.period_start)
           lines.push({
             kind: 'renewal', course: x.name || null, enrollmentId: x.enrollment_id || null,
-            label: 'Monthly fee — ' + (x.name || 'Course'), amount: Number(x.amount) || 0, date: dayOf(e.at), invoice: invRef(inv),
+            label: 'Monthly fee — ' + (x.name || 'Course'), amount: origAmt(x), date: dayOf(e.at), invoice: invRef(inv),
             period: ps ? { y: Number(ps.slice(0, 4)), m: Number(ps.slice(5, 7)) - 1, label: x.period_label || '' } : null,
           })
         })
@@ -166,7 +196,11 @@ export function allocateReceipt(o) {
   // else the most recent enrolment charge.
   lines.filter(function (l) { return l.kind === 'discount' }).forEach(function (d) {
     let left = -d.amount
-    const same = d.course ? charges.filter(function (c) { return c.course === d.course }) : []
+    // An adjustment made on a specific invoice comes off that invoice's charge.
+    const onInvoice = d.invoice && d.invoice.id
+      ? charges.filter(function (c) { return c.invoice && c.invoice.id === d.invoice.id && (!d.course || c.course === d.course) })
+      : []
+    const same = onInvoice.length ? onInvoice : (d.course ? charges.filter(function (c) { return c.course === d.course }) : [])
     const pool = same.length ? same : charges.filter(function (c) { return c.kind === 'enrolment' || c.kind === 'added' || c.kind === 'nextlevel' }).slice().reverse()
     pool.forEach(function (c) {
       const take = Math.min(left, c.remaining)

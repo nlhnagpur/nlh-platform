@@ -533,15 +533,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setEditInvId(inv.id)
     setEditInv({ invoice_date: inv.invoice_date, amount_paid: inv.amount_paid || 0, status: inv.status || 'unpaid', notes: inv.notes || '' })
   }
-  async function saveInvoiceEdit() {
-    const { data, error } = await sb.from('student_invoices').update({
-      invoice_date: editInv.invoice_date, amount_paid: parseInt(editInv.amount_paid, 10) || 0,
-      status: editInv.status, notes: editInv.notes || null,
-    }).eq('id', editInvId).select().single()
-    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
-    setInvoices(function (prev) { return prev.map(function (i) { return i.id === editInvId ? data : i }) })
-    setEditInvId(null); showToast('Invoice updated ✓')
-  }
   async function deleteInvoice(id) {
     const { error } = await sb.from('student_invoices').delete().eq('id', id)
     if (error) { showToast('Delete failed: ' + error.message, 'err'); return }
@@ -603,22 +594,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
   }
 
-  async function savePaymentEdit() {
-    const amt = Number(editPay.amount)
-    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
-    const { data, error } = await sb.from('student_payments').update({
-      amount:    amt,
-      paid_at:   editPay.paid_at || null,
-      mode:      editPay.mode || null,
-      reference: editPay.reference.trim() || null,
-    }).eq('id', editPayId).select('id, amount, mode, reference, paid_at, note, receipt_no').single()
-    if (error) { showToast('Update failed: ' + error.message, 'err'); return }
-    const next = payments.map(function (p) { return p.id === editPayId ? { ...p, ...data } : p })
-    setPayments(next)
-    applyPaid(next)
-    setEditPayId(null)
-    showToast('Payment updated ✓')
-  }
 
   // Monthly-billing cycle progress for each running monthly enrolment — see
   // computeCycle (utils/studentLifecycle.js): target is the student's class
@@ -1811,26 +1786,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {payments.map(function (p) {
-                      if (admin && editPayId === p.id) {
-                        return (
-                          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'var(--bg)', border: '1.5px solid var(--purple)' }}>
-                            <input type="number" value={editPay.amount} onChange={function (e) { setEditPay(function (f) { return { ...f, amount: e.target.value } }) }}
-                              placeholder="Amount" style={{ width: 90, fontSize: 12 }} />
-                            <input type="date" value={editPay.paid_at} onChange={function (e) { setEditPay(function (f) { return { ...f, paid_at: e.target.value } }) }}
-                              style={{ fontSize: 12 }} />
-                            <select value={editPay.mode} onChange={function (e) { setEditPay(function (f) { return { ...f, mode: e.target.value } }) }} style={{ fontSize: 12 }}>
-                              <option value="">— mode —</option>
-                              {['cash', 'upi', 'cheque', 'card', 'online'].concat(
-                                editPay.mode && !['cash', 'upi', 'cheque', 'card', 'online'].includes(editPay.mode) ? [editPay.mode] : []
-                              ).map(function (m) { return <option key={m} value={m}>{m}</option> })}
-                            </select>
-                            <input value={editPay.reference} onChange={function (e) { setEditPay(function (f) { return { ...f, reference: e.target.value } }) }}
-                              placeholder="Reference / UTR" style={{ flex: 1, minWidth: 110, fontSize: 12 }} />
-                            <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }} onClick={savePaymentEdit}>Save</button>
-                            <button className="btn-s" style={{ fontSize: 10, padding: '3px 10px' }} onClick={function () { setEditPayId(null) }}>Cancel</button>
-                          </div>
-                        )
-                      }
                       return (
                         <div key={p.id} style={{
                           display: 'flex', alignItems: 'center', gap: 10,
@@ -1890,20 +1845,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {invoices.map(function (inv) {
                       const bal = Math.max(0, (inv.total || 0) - (inv.amount_paid || 0))
-                      if (admin && editInvId === inv.id) {
-                        return (
-                          <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'var(--bg)', border: '1.5px solid var(--purple)' }}>
-                            <span style={{ font: '700 11px var(--mono)', color: 'var(--purple)' }}>{inv.invoice_no}</span>
-                            <input type="date" value={editInv.invoice_date || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, invoice_date: e.target.value } }) }} style={{ fontSize: 12 }} />
-                            <input type="number" value={editInv.amount_paid} onChange={function (e) { setEditInv(function (f) { return { ...f, amount_paid: e.target.value } }) }} placeholder="Paid" style={{ width: 80, fontSize: 12 }} />
-                            <select value={editInv.status} onChange={function (e) { setEditInv(function (f) { return { ...f, status: e.target.value } }) }} style={{ fontSize: 12 }}>
-                              {['unpaid', 'part', 'paid'].map(function (s) { return <option key={s} value={s}>{s}</option> })}
-                            </select>
-                            <button className="btn-p" style={{ fontSize: 10, padding: '3px 10px' }} onClick={saveInvoiceEdit}>Save</button>
-                            <button className="btn-s" style={{ fontSize: 10, padding: '3px 10px' }} onClick={function () { setEditInvId(null) }}>Cancel</button>
-                          </div>
-                        )
-                      }
                       return (
                         <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)' }}>
                           <div style={{ font: '700 12px var(--mono)', color: 'var(--purple)', minWidth: 120 }}>{inv.invoice_no}</div>
@@ -1984,60 +1925,45 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         )}
 
         {/* ── COURSES & BATCHES TAB ── */}
-        {tab === 'accounts' && admin && (editPayId || editInvId) && (
-          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) { setEditPayId(null); setEditInvId(null) } }}>
-            <div className="modal" style={{ maxWidth: 440 }}>
-              {editPayId ? (
-                <>
-                  <ModalHeader flush title="Edit payment"
-                    subtitle={(payments.find(function (x) { return x.id === editPayId }) || {}).receipt_no || ''}
-                    onClose={function () { setEditPayId(null) }} />
-                  <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
-                    <label>Amount (₹)
-                      <input type="number" value={editPay.amount} onChange={function (e) { setEditPay(function (f) { return { ...f, amount: e.target.value } }) }} /></label>
-                    <label>Date
-                      <input type="date" value={editPay.paid_at} onChange={function (e) { setEditPay(function (f) { return { ...f, paid_at: e.target.value } }) }} /></label>
-                    <label>Mode
-                      <select value={editPay.mode} onChange={function (e) { setEditPay(function (f) { return { ...f, mode: e.target.value } }) }}>
-                        <option value="">— mode —</option>
-                        {['cash', 'upi', 'cheque', 'card', 'online'].concat(
-                          editPay.mode && !['cash', 'upi', 'cheque', 'card', 'online'].includes(editPay.mode) ? [editPay.mode] : []
-                        ).map(function (m) { return <option key={m} value={m}>{m}</option> })}
-                      </select></label>
-                    <label>Reference / UTR
-                      <input value={editPay.reference} onChange={function (e) { setEditPay(function (f) { return { ...f, reference: e.target.value } }) }} /></label>
-                  </div>
-                  <div className="modal-actions">
-                    <button className="btn" onClick={function () { setEditPayId(null) }}>Cancel</button>
-                    <button className="btn-p" onClick={savePaymentEdit}>Save</button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <ModalHeader flush title="Edit invoice"
-                    subtitle={(invoices.find(function (x) { return x.id === editInvId }) || {}).invoice_no || ''}
-                    onClose={function () { setEditInvId(null) }} />
-                  {(function () { const iv = invoices.find(function (x) { return x.id === editInvId }); return iv ? <InvoiceLines inv={iv} /> : null })()}
-                  <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
-                    <label>Invoice date
-                      <input type="date" value={editInv.invoice_date || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, invoice_date: e.target.value } }) }} /></label>
-                    <label>Notes
-                      <input value={editInv.notes || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, notes: e.target.value } }) }} /></label>
-                  </div>
-                  <div className="modal-actions">
-                    <button className="btn" onClick={function () { setEditInvId(null) }}>Cancel</button>
-                    <button className="btn-p" onClick={saveInvoiceEdit}>Save</button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+        {admin && editPayId && (function () {
+          const pay = payments.find(function (x) { return x.id === editPayId })
+          if (!pay) return null
+          return (
+            <StudentReceiptModal
+              students={[{ ...student, fee_total: form.fee_total, other_charges: form.other_charges, enrollments: localEnrollments }]}
+              editPayment={{ ...pay, student_id: student.id }}
+              onClose={function () { setEditPayId(null) }}
+              onUpdated={function (row) {
+                const next = payments.map(function (x) { return x.id === row.id ? { ...x, ...row } : x })
+                setPayments(next)
+                applyPaid(next)
+              }}
+            />
+          )
+        })()}
+        {admin && editInvId && (function () {
+          const iv = invoices.find(function (x) { return x.id === editInvId })
+          if (!iv) return null
+          return (
+            <InvoiceEditModal
+              invoice={iv}
+              onClose={function () { setEditInvId(null) }}
+              onSaved={function (row, newFeeTotal) {
+                setInvoices(function (prev) { return prev.map(function (x) { return x.id === row.id ? row : x }) })
+                setEditInvId(null)
+                if (newFeeTotal != null) {
+                  setForm(function (f) { return { ...f, fee_total: newFeeTotal } })
+                  if (onSaved) onSaved({ ...student, ...form, fee_total: newFeeTotal, enrollments: localEnrollments })
+                }
+              }}
+            />
+          )
+        })()}
 
         {tab === 'accounts' && (
           <StudentLedgerView
             studentId={student.id}
-            reloadKey={form.fee_total + ':' + payments.map(function (x) { return x.id + x.paid_at + x.amount }).join() + ':' + invoices.map(function (x) { return x.id + x.invoice_date + x.amount_paid + x.status }).join()}
+            reloadKey={form.fee_total + ':' + payments.map(function (x) { return x.id + x.paid_at + x.amount }).join() + ':' + invoices.map(function (x) { return x.id + x.invoice_date + x.amount_paid + x.status + x.total }).join()}
             onPrintInvoice={handlePrintInvoice}
             onPrintReceipt={handlePrintReceipt}
             onEditInvoice={admin ? startEditInvoice : null}
@@ -4316,14 +4242,35 @@ async function studentReceiptPng(student, p, list) {
   } catch (e) { return null }
 }
 
-function StudentReceiptModal({ students, onClose, onRecorded }) {
+// New receipt — or, with `editPayment`, the same screen to correct an existing
+// one: the student is fixed, the balance and course-wise dues are worked out
+// from this student's OTHER receipts, and Save updates the receipt in place.
+function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpdated }) {
+  const editing = !!editPayment
   const [query,     setQuery]     = useState('')
-  const [student,   setStudent]   = useState(null)
+  const [student,   setStudent]   = useState(function () {
+    return editing ? (students.find(function (x) { return x.id === editPayment.student_id }) || null) : null
+  })
   const [payments,  setPayments]  = useState(null)   // this student's ledger; null while loading
-  const [form,      setForm]      = useState({ amount: '', mode: 'cash', paid_at: todayIso(), reference: '' })
-  const [sendWa,    setSendWa]    = useState(true)
-  const [waPhone,   setWaPhone]   = useState('')
+  const [form,      setForm]      = useState(editing
+    ? { amount: String(editPayment.amount ?? ''), mode: editPayment.mode || 'cash', paid_at: (editPayment.paid_at || '').slice(0, 10) || todayIso(), reference: editPayment.reference || '' }
+    : { amount: '', mode: 'cash', paid_at: todayIso(), reference: '' })
+  const [sendWa,    setSendWa]    = useState(!editing)
+  const [waPhone,   setWaPhone]   = useState(student ? student.phone || '' : '')
   const [saving,    setSaving]    = useState(false)
+
+  useEffect(function () {
+    if (!editing) return
+    if (!student) { showToast('Could not find this receipt\'s student in the list', 'err'); onClose(); return }
+    let cancelled = false
+    sb.from('student_payments').select('id, amount, mode, reference, paid_at, note, receipt_no').eq('student_id', student.id)
+      .then(function (res) {
+        if (cancelled) return
+        if (res.error) { showToast('Could not load payments: ' + res.error.message, 'err'); onClose(); return }
+        setPayments((res.data || []).filter(function (x) { return x.id !== editPayment.id }))
+      })
+    return function () { cancelled = true }
+  }, [])
 
   const q = query.trim().toLowerCase()
   const matches = !q ? [] : students.filter(function (s) {
@@ -4353,8 +4300,37 @@ function StudentReceiptModal({ students, onClose, onRecorded }) {
   const after = before ? computeCoverage(enrs, payments.concat(amt > 0 ? [{ amount: amt }] : []), feeTotal, student.other_charges) : null
   const tooMuch = feeTotal > 0 && amt > balance
 
+  async function saveEdit() {
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
+    if (tooMuch) { showToast("That's more than the balance. Only ₹" + fmtAmt(balance) + ' is outstanding on the other receipts.', 'warn'); return }
+    setSaving(true)
+    const { data, error } = await sb.from('student_payments').update({
+      amount: amt, paid_at: form.paid_at || null, mode: form.mode || null, reference: form.reference.trim() || null,
+    }).eq('id', editPayment.id)
+      .select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at').single()
+    if (error) { setSaving(false); showToast('Update failed: ' + error.message, 'err'); return }
+    // Student's paid total / status are kept by the database; re-read them.
+    const { data: stu } = await sb.from('students').select('id, fee_paid, payment_status').eq('id', student.id).single()
+    showToast('Receipt ' + (data.receipt_no || '') + ' updated ✓')
+    onUpdated(data, stu)
+    if (sendWa && waPhone.trim()) {
+      const all = [data].concat(payments)
+      const r = await sendWAStudentReceipt(waPhone.trim(), {
+        name: student.parent_name || student.full_name,
+        receiptNo: data.receipt_no, amount: fmtAmt(amt), date: fmtDate(data.paid_at),
+        balance: Math.max(0, feeTotal - (paidSoFar + amt)),
+        imageUrl: await studentReceiptPng(student, data, all),
+      })
+      if (r && r.success) showToast('Corrected receipt sent on WhatsApp ✓')
+      else showToast('Receipt updated · WhatsApp failed' + (r && r.error ? ': ' + r.error : ''), 'warn')
+    }
+    setSaving(false)
+    onClose()
+  }
+
   async function save() {
     if (!student || !payments) return
+    if (editing) { await saveEdit(); return }
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'warn'); return }
     // Every entry ADDS to the ledger, so re-keying a receipt that's already
     // there silently doubles it. A student can never pay more than the fee.
@@ -4423,8 +4399,10 @@ function StudentReceiptModal({ students, onClose, onRecorded }) {
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget && !saving) onClose() }}>
       <div className="modal" style={{ maxWidth: 520 }}>
-        <ModalHeader flush title="New Receipt"
-          subtitle={student ? student.full_name + (balance > 0 ? ' · balance ₹' + fmtAmt(balance) : ' · cleared') : 'Payment received from a student'}
+        <ModalHeader flush title={editing ? 'Edit Receipt' : 'New Receipt'}
+          subtitle={editing && student
+            ? student.full_name + (editPayment.receipt_no ? ' · ' + editPayment.receipt_no : '')
+            : student ? student.full_name + (balance > 0 ? ' · balance ₹' + fmtAmt(balance) : ' · cleared') : 'Payment received from a student'}
           onClose={onClose} />
         <div style={{ padding: '4px 20px 16px' }}>
           {!student ? (
@@ -4462,7 +4440,7 @@ function StudentReceiptModal({ students, onClose, onRecorded }) {
                 <div style={{ flex: 1, font: '500 11px var(--font)', color: 'var(--text3)' }}>
                   {[student.parent_name, student.phone, student.franchisees?.business_name].filter(Boolean).join(' · ')}
                 </div>
-                <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { setStudent(null); setPayments(null) }} disabled={saving}>Change student</button>
+                {!editing && <button className="btn-s" style={{ fontSize: 11 }} onClick={function () { setStudent(null); setPayments(null) }} disabled={saving}>Change student</button>}
               </div>
 
               {/* Course-wise dues, and what this receipt does to them. */}
@@ -4505,7 +4483,7 @@ function StudentReceiptModal({ students, onClose, onRecorded }) {
                 </tbody>
               </table>
 
-              {feeTotal > 0 && balance === 0 && (
+              {!editing && feeTotal > 0 && balance === 0 && (
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', margin: '0 0 12px', fontSize: 12, color: '#166534' }}>
                   ✓ <b>Fees already fully paid.</b> Don't re-enter a receipt that's already in the register — it would be counted twice.
                 </div>
@@ -4532,14 +4510,14 @@ function StudentReceiptModal({ students, onClose, onRecorded }) {
                 <p className="hint" style={{ marginTop: 8, color: tooMuch ? 'var(--red)' : undefined }}>
                   {tooMuch
                     ? 'More than the balance — only ₹' + fmtAmt(balance) + ' is outstanding.'
-                    : 'Balance after this receipt: ' + (balance - amt > 0 ? '₹' + fmtAmt(balance - amt) : 'cleared') + '. Applied to the oldest unpaid course first.'}
+                    : 'Balance after this receipt: ' + (balance - amt > 0 ? '₹' + fmtAmt(balance - amt) : 'cleared') + '. Applied to the oldest unpaid course first.' + (editing ? ' (Figures above are without this receipt.)' : '')}
                 </p>
               )}
 
               <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg)', border: '1px solid var(--green, #1D7A4F)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
                   <input type="checkbox" checked={sendWa} onChange={function (e) { setSendWa(e.target.checked) }} />
-                  💬 Send WhatsApp receipt to parent
+                  {editing ? '💬 Re-send the corrected receipt on WhatsApp' : '💬 Send WhatsApp receipt to parent'}
                 </label>
                 {sendWa && (
                   <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
@@ -4552,7 +4530,7 @@ function StudentReceiptModal({ students, onClose, onRecorded }) {
         <div className="modal-actions">
           <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving || !student || !payments || !amt || tooMuch}>
-            {saving ? 'Saving…' : 'Save Receipt'}
+            {saving ? 'Saving…' : editing ? 'Save Changes' : 'Save Receipt'}
           </button>
         </div>
       </div>
@@ -4651,110 +4629,105 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
   )
 }
 
-// What an invoice is for — course lines (with the month a renewal covers),
-// kit, discount, total. Shown in the Edit invoice dialogs so you can see what
-// you are editing.
-function InvoiceLines({ inv }) {
-  const items = inv.items || []
-  const courses = items.filter(function (i) { return i && i.kind === 'course' })
-  const kit = items.filter(function (i) { return i && i.kind === 'kit' })
-  return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg2)', margin: '0 20px 12px' }}>
-      {courses.map(function (c, i) {
-        const tag = c.cycle === 'renewal' ? 'Monthly renewal' + (c.period_label ? ' · ' + c.period_label : '')
-          : c.cycle === 'next_level' ? 'Next level' : 'Course fee'
-        return (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '3px 0' }}>
-            <div>
-              <div style={{ font: '600 13px var(--font)' }}>{c.name}</div>
-              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{tag}</div>
-            </div>
-            <div style={{ font: '700 13px var(--mono)' }}>₹{fmtAmt(c.amount)}</div>
-          </div>
-        )
-      })}
-      {kit.length > 0 && (
-        <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
-          Kit: {kit.map(function (k) { return k.name + (k.qty > 1 ? ' ×' + k.qty : '') }).join(', ')}
-        </div>
-      )}
-      {(inv.discount || 0) > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', color: 'var(--green)', marginTop: 6 }}>
-          <span>Discount{inv.coupon_code ? ' (' + inv.coupon_code + ')' : ''}</span><span>− ₹{fmtAmt(inv.discount)}</span>
-        </div>
-      )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 6, font: '700 13px var(--font)' }}>
-        <span>Invoice total</span><span className="mono">₹{fmtAmt(inv.total)}</span>
-      </div>
-    </div>
-  )
-}
-
-// Edit one payment or invoice straight from the Receipts / Invoices registers
-// (admins). Same fields and rules as the Edit on the student's own tabs.
-function RegisterEditModal({ edit, onClose, onSaved }) {
-  const row = edit.row
-  const isPay = edit.kind === 'payment'
-  const [f, setF] = useState(isPay
-    ? { amount: String(row.amount ?? ''), paid_at: (row.paid_at || '').slice(0, 10), mode: row.mode || '', reference: row.reference || '' }
-    : { invoice_date: (row.invoice_date || '').slice(0, 10), notes: row.notes || '' })
+// Edit an invoice (admins): date, notes and each course's amount. A changed
+// amount moves the student's Fee Total by the difference — the change is
+// logged like any fee edit and the statement shows it as an adjustment against
+// that course — so the account, invoice and receipts stay in step.
+function InvoiceEditModal({ invoice, onClose, onSaved }) {
+  const items = invoice.items || []
+  const courseIdx = []
+  items.forEach(function (it, i) { if (it && it.kind === 'course') courseIdx.push(i) })
+  const [amts, setAmts] = useState(function () {
+    const o = {}
+    courseIdx.forEach(function (i) { o[i] = String(items[i].amount ?? 0) })
+    return o
+  })
+  const [date, setDate] = useState((invoice.invoice_date || '').slice(0, 10))
+  const [notes, setNotes] = useState(invoice.notes || '')
   const [saving, setSaving] = useState(false)
-  function set(k) { return function (e) { const v = e.target.value; setF(function (x) { return { ...x, [k]: v } }) } }
+
+  const discount = Number(invoice.discount) || 0
+  const subtotal = courseIdx.reduce(function (t, i) { return t + (Number(amts[i]) || 0) }, 0)
+  const total = Math.max(0, subtotal - discount)
+  const delta = total - (Number(invoice.total) || 0)
 
   async function save() {
+    for (const i of courseIdx) {
+      const v = Number(amts[i])
+      if (!(v >= 0) || amts[i] === '') { showToast('Enter an amount for ' + items[i].name, 'warn'); return }
+    }
     setSaving(true)
-    if (isPay) {
-      const amt = Number(f.amount)
-      if (!amt || amt <= 0) { setSaving(false); showToast('Enter a valid amount', 'warn'); return }
-      const { data, error } = await sb.from('student_payments').update({
-        amount: amt, paid_at: f.paid_at || null, mode: f.mode || null, reference: f.reference.trim() || null,
-      }).eq('id', row.id).select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at').single()
-      if (error) { setSaving(false); showToast('Update failed: ' + error.message, 'err'); return }
-      // Student's paid total / status are kept by the database; re-read them.
-      const { data: stu } = await sb.from('students').select('id, fee_paid, payment_status').eq('id', row.student_id).single()
-      showToast('Payment updated ✓')
-      onSaved(data, stu)
-    } else {
-      const { data, error } = await sb.from('student_invoices').update({
-        invoice_date: f.invoice_date, notes: f.notes || null,
-      }).eq('id', row.id).select().single()
-      if (error) { setSaving(false); showToast('Save failed: ' + error.message, 'err'); return }
-      showToast('Invoice updated ✓')
-      onSaved(data, null)
+    const at = new Date().toISOString()
+    const nextItems = items.map(function (it, i) {
+      if (!it || it.kind !== 'course') return it
+      const nv = Number(amts[i])
+      if (nv === Number(it.amount)) return it
+      // Keep the amount first billed so the statement can still tie this
+      // invoice to the fee change that originally raised it.
+      return { ...it, original_amount: it.original_amount != null ? it.original_amount : it.amount, edited_at: at, amount: nv, rate: nv }
+    })
+    const { data, error } = await sb.from('student_invoices').update({
+      items: nextItems, subtotal: subtotal, total: total, invoice_date: date || invoice.invoice_date, notes: notes || null,
+    }).eq('id', invoice.id).select().single()
+    if (error) { setSaving(false); showToast('Save failed: ' + error.message, 'err'); return }
+
+    let newFeeTotal = null
+    if (delta !== 0) {
+      const { data: stu } = await sb.from('students').select('fee_total').eq('id', invoice.student_id).single()
+      newFeeTotal = Math.max(0, (Number(stu && stu.fee_total) || 0) + delta)
+      const { error: fErr } = await sb.from('students').update({ fee_total: newFeeTotal }).eq('id', invoice.student_id)
+      if (fErr) { setSaving(false); showToast('Invoice saved, but the Fee Total could not be updated: ' + fErr.message, 'err'); onSaved(data, null); return }
     }
     setSaving(false)
+    showToast('Invoice updated ✓' + (delta !== 0 ? ' · Fee Total ' + (delta > 0 ? '+' : '−') + '₹' + fmtAmt(Math.abs(delta)) : ''))
+    onSaved(data, newFeeTotal)
   }
 
+  const kit = items.filter(function (i) { return i && i.kind === 'kit' })
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 440 }}>
-        <ModalHeader flush title={isPay ? 'Edit payment' : 'Edit invoice'}
-          subtitle={(isPay ? row.receipt_no : row.invoice_no) || ''} onClose={onClose} />
-        {!isPay && <InvoiceLines inv={row} />}
-        <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
-          {isPay ? (
-            <>
-              <label>Amount (₹)<input type="number" value={f.amount} onChange={set('amount')} /></label>
-              <label>Date<input type="date" value={f.paid_at} onChange={set('paid_at')} /></label>
-              <label>Mode
-                <select value={f.mode} onChange={set('mode')}>
-                  <option value="">— mode —</option>
-                  {['cash', 'upi', 'cheque', 'card', 'online'].concat(f.mode && !['cash', 'upi', 'cheque', 'card', 'online'].includes(f.mode) ? [f.mode] : [])
-                    .map(function (m) { return <option key={m} value={m}>{m}</option> })}
-                </select></label>
-              <label>Reference / UTR<input value={f.reference} onChange={set('reference')} /></label>
-            </>
-          ) : (
-            <>
-              <label>Invoice date<input type="date" value={f.invoice_date} onChange={set('invoice_date')} /></label>
-              <label>Notes<input value={f.notes} onChange={set('notes')} /></label>
-              <p className="hint" style={{ gridColumn: '1 / -1', margin: 0 }}>
-                Paid / Part / Unpaid is worked out from the student's receipts, so it isn't edited here.
-                To change a fee, edit the course fee on the student's Courses tab.
-              </p>
-            </>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <ModalHeader flush title="Edit invoice" subtitle={invoice.invoice_no || ''} onClose={onClose} />
+        <div style={{ padding: '4px 20px 0' }}>
+          {courseIdx.map(function (i) {
+            const c = items[i]
+            const tag = c.cycle === 'renewal' ? 'Monthly renewal' + (c.period_label ? ' · ' + c.period_label : '')
+              : c.cycle === 'next_level' ? 'Next level' : 'Course fee'
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ font: '600 13px var(--font)' }}>{c.name}</div>
+                  <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{tag}</div>
+                </div>
+                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', textAlign: 'right' }}>Amount (₹)
+                  <input type="number" min={0} value={amts[i]} onChange={function (e) { const v = e.target.value; setAmts(function (p0) { return { ...p0, [i]: v } }) }}
+                    style={{ display: 'block', marginTop: 4, width: 110, fontSize: 13 }} />
+                </label>
+              </div>
+            )
+          })}
+          {kit.length > 0 && (
+            <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', padding: '6px 0' }}>
+              Kit: {kit.map(function (k) { return k.name + (k.qty > 1 ? ' ×' + k.qty : '') }).join(', ')}
+            </div>
           )}
+          {discount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', color: 'var(--green)', padding: '6px 0' }}>
+              <span>Discount{invoice.coupon_code ? ' (' + invoice.coupon_code + ')' : ''}</span><span>− ₹{fmtAmt(discount)}</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', font: '700 14px var(--font)' }}>
+            <span>Invoice total</span>
+            <span className="mono">₹{fmtAmt(total)}{delta !== 0 && <span style={{ font: '600 11px var(--font)', color: delta > 0 ? 'var(--red,#dc2626)' : 'var(--green)', marginLeft: 8 }}>{delta > 0 ? '+' : '−'}₹{fmtAmt(Math.abs(delta))}</span>}</span>
+          </div>
         </div>
+        <div className="form-grid" style={{ padding: '4px 20px 8px' }}>
+          <label>Invoice date<input type="date" value={date} onChange={function (e) { setDate(e.target.value) }} /></label>
+          <label>Notes<input value={notes} onChange={function (e) { setNotes(e.target.value) }} /></label>
+        </div>
+        <p className="hint" style={{ margin: '0 20px 12px' }}>
+          Changing an amount also moves the student's Fee Total by the difference. Paid / Part / Unpaid is worked out from the receipts.
+        </p>
         <div className="modal-actions">
           <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
@@ -5368,17 +5341,24 @@ export default function StudentsPage() {
           </div>
         )}
 
-        {regEdit && (
-          <RegisterEditModal
-            edit={regEdit}
+        {regEdit && regEdit.kind === 'payment' && (
+          <StudentReceiptModal
+            students={students}
+            editPayment={regEdit.row}
             onClose={function () { setRegEdit(null) }}
-            onSaved={function (row, stu) {
-              if (regEdit.kind === 'payment') {
-                setReceipts(function (prev) { return (prev || []).map(function (x) { return x.id === row.id ? { ...x, ...row } : x }) })
-                if (stu) setStudents(function (ss) { return ss.map(function (x) { return x.id === stu.id ? { ...x, fee_paid: stu.fee_paid, payment_status: stu.payment_status } : x }) })
-              } else {
-                setInvoiceRows(function (prev) { return (prev || []).map(function (x) { return x.id === row.id ? { ...x, ...row } : x }) })
-              }
+            onUpdated={function (row, stu) {
+              setReceipts(function (prev) { return (prev || []).map(function (x) { return x.id === row.id ? { ...x, ...row } : x }) })
+              if (stu) setStudents(function (ss) { return ss.map(function (x) { return x.id === stu.id ? { ...x, fee_paid: stu.fee_paid, payment_status: stu.payment_status } : x }) })
+            }}
+          />
+        )}
+        {regEdit && regEdit.kind === 'invoice' && (
+          <InvoiceEditModal
+            invoice={regEdit.row}
+            onClose={function () { setRegEdit(null) }}
+            onSaved={function (row, newFeeTotal) {
+              setInvoiceRows(function (prev) { return (prev || []).map(function (x) { return x.id === row.id ? { ...x, ...row } : x }) })
+              if (newFeeTotal != null) setStudents(function (ss) { return ss.map(function (x) { return x.id === row.student_id ? { ...x, fee_total: newFeeTotal } : x }) })
               setRegEdit(null)
             }}
           />
