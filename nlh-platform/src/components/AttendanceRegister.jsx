@@ -14,6 +14,11 @@ import { todayIso } from '../utils/studentLifecycle'
 //          a class for them, so it is left out of their sessions and absences)
 //   H      holiday for the whole batch (a property of the class, not of one
 //          student)
+//
+// The teacher has a row too: P present, O off. A teacher's off day is theirs
+// across every batch they take. When a student is marked present on a day the
+// teacher is off, a list of teachers opens to pick the substitute who took the
+// class (stored on the day's session: instructor_id + is_substitute).
 // Saving writes the same batch_sessions / session_attendance rows the Batches
 // page does, so both stay in step.
 
@@ -88,6 +93,7 @@ const TONE = {
   A: { color: '#991b1b', bg: '#fee2e2' },
   H: { color: '#6b7280', bg: '#e5e7eb' },
   N: { color: '#1e40af', bg: '#dbeafe' },
+  O: { color: '#9a3412', bg: '#ffedd5' },
 }
 
 export default function AttendanceRegister({ centreFilter, search, canEdit, students, onOpenSheet }) {
@@ -100,6 +106,10 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   const [savingId, setSavingId] = useState(null)
   const [reload, setReload] = useState(0)
   const [findQ, setFindQ] = useState('')
+  const [tSaved, setTSaved] = useState({})   // 'instructor|date' -> 'P' | 'O'
+  const [tEdits, setTEdits] = useState({})   // 'instructor|date' -> 'P' | 'O' | null (cleared)
+  const [instructors, setInstructors] = useState([])   // active teachers, for the substitute list
+  const [picker, setPicker] = useState(null) // { b, date, action } — choosing a substitute
 
   const days = monthDays(ym)
   const today = todayIso()
@@ -124,7 +134,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
       let sess = []
       if (ids.length) {
         const sRes = await sb.from('batch_sessions')
-          .select('id, batch_id, session_date, is_holiday, session_attendance(enrollment_id, attended)')
+          .select('id, batch_id, session_date, is_holiday, instructor_id, is_substitute, session_attendance(enrollment_id, attended)')
           .in('batch_id', ids).gte('session_date', from).lte('session_date', to)
         if (sRes.error) throw sRes.error
         sess = sRes.data || []
@@ -138,13 +148,24 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
         if (nRes.error) throw nRes.error
         ncRows = nRes.data || []
       }
+      // teachers: who is active (for the substitute list) and who is off / present
+      const tRes = await sb.from('instructor_attendance').select('instructor_id, att_date, status')
+        .gte('att_date', days[0]).lte('att_date', days[days.length - 1])
+      if (tRes.error) throw tRes.error
+      const iRes = await sb.from('instructors').select('id, full_name, status').eq('status', 'active').order('full_name')
       if (cancelled) return
+
+      const tMap = {}
+      ;(tRes.data || []).forEach(function (r) { tMap[r.instructor_id + '|' + String(r.att_date).slice(0, 10)] = r.status })
 
       const sMap = {}
       sess.forEach(function (s) {
         const marks = {}
         ;(s.session_attendance || []).forEach(function (a) { marks[a.enrollment_id] = !!a.attended })
-        sMap[s.batch_id + '|' + s.session_date] = { id: s.id, hol: !!s.is_holiday, marks: marks, nc: {} }
+        sMap[s.batch_id + '|' + s.session_date] = {
+          id: s.id, hol: !!s.is_holiday, marks: marks, nc: {},
+          sub: s.is_substitute && s.instructor_id ? s.instructor_id : null,
+        }
       })
       // a no-class day belongs to the enrolment; attach it to each batch the
       // student is in, whether or not a class was recorded that day
@@ -153,7 +174,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
         list.forEach(function (b) {
           if (!(b.batch_students || []).some(function (bs) { return bs.enrollment_id === r.enrollment_id })) return
           const k = b.id + '|' + d
-          if (!sMap[k]) sMap[k] = { id: null, hol: false, marks: {}, nc: {} }
+          if (!sMap[k]) sMap[k] = { id: null, hol: false, marks: {}, nc: {}, sub: null }
           sMap[k].nc[r.enrollment_id] = true
         })
       })
@@ -174,6 +195,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
       miss.sort(function (a, b) { return a.date < b.date ? 1 : -1 })
 
       setBatches(list); setSaved(sMap); setEdits({}); setPending(miss)
+      setTSaved(tMap); setTEdits({}); setInstructors(iRes.data || [])
       setLoading(false)
     })().catch(function (e) {
       if (!cancelled) { setLoading(false); showToast('Could not load attendance: ' + e.message, 'err') }
@@ -186,7 +208,22 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     const k = bId + '|' + date
     if (edits[k]) return edits[k]
     const s = saved[k]
-    return s ? { hol: s.hol, marks: s.marks, nc: s.nc || {} } : { hol: false, marks: {}, nc: {} }
+    return s ? { hol: s.hol, marks: s.marks, nc: s.nc || {}, sub: s.sub || null } : { hol: false, marks: {}, nc: {}, sub: null }
+  }
+  // Teacher status for a day: P, O or null (blank).
+  function tStatus(instrId, date) {
+    if (!instrId) return null
+    const k = instrId + '|' + date
+    if (k in tEdits) return tEdits[k]
+    return tSaved[k] || null
+  }
+  function anyPresent(b, date) {
+    const st = dayState(b.id, date)
+    return !st.hol && Object.keys(st.marks).some(function (e) { return st.marks[e] === true && !st.nc[e] })
+  }
+  function nameOfInstructor(id) {
+    const i = instructors.find(function (x) { return x.id === id })
+    return i ? i.full_name : ''
   }
   function cellOf(b, bs, date) {
     const st = dayState(b.id, date)
@@ -208,15 +245,32 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
       const k = b.id + '|' + date
       const base = prev[k] || (function () {
         const s = saved[k]
-        return s ? { hol: s.hol, marks: Object.assign({}, s.marks), nc: Object.assign({}, s.nc || {}) } : { hol: false, marks: {}, nc: {} }
+        return s ? { hol: s.hol, marks: Object.assign({}, s.marks), nc: Object.assign({}, s.nc || {}), sub: s.sub || null } : { hol: false, marks: {}, nc: {}, sub: null }
       })()
-      const next = { hol: base.hol, marks: Object.assign({}, base.marks), nc: Object.assign({}, base.nc || {}) }
+      const next = { hol: base.hol, marks: Object.assign({}, base.marks), nc: Object.assign({}, base.nc || {}), sub: base.sub || null }
       fn(next)
       return { ...prev, [k]: next }
     })
   }
+  // Run `apply`, but first — if the class's teacher is off that day and no
+  // substitute is set yet — ask who took it. Cancelling the list applies nothing.
+  function withSubstitute(b, date, apply) {
+    if (b.instructor_id && tStatus(b.instructor_id, date) === 'O' && !dayState(b.id, date).sub) {
+      setPicker({ b: b, date: date, action: apply })
+      return
+    }
+    apply()
+  }
   function stepCell(b, bs, date) {
     if (!canEdit || date > today || !memberOn(bs, date)) return
+    const st0 = dayState(b.id, date)
+    const e0 = bs.enrollment_id
+    const was = st0.hol ? 'H' : st0.nc[e0] ? 'N' : st0.marks[e0] === true ? 'P' : st0.marks[e0] === false ? 'A' : null
+    const run = function () { doStep(b, bs, date) }
+    if (was === null) withSubstitute(b, date, run)   // blank -> P is the present mark
+    else run()
+  }
+  function doStep(b, bs, date) {
     editDay(b, date, function (st) {
       const e = bs.enrollment_id
       const cur = st.hol ? 'H' : st.nc[e] ? 'N' : st.marks[e] === true ? 'P' : st.marks[e] === false ? 'A' : null
@@ -229,18 +283,46 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   }
   function allPresent(b, date) {
     if (!canEdit || date > today) return
-    editDay(b, date, function (st) {
-      st.hol = false
-      ;(b.batch_students || []).forEach(function (bs) {
-        if (!memberOn(bs, date)) return
-        if (st.nc[bs.enrollment_id]) return      // no class for them that day — leave it
-        st.marks[bs.enrollment_id] = true
+    withSubstitute(b, date, function () {
+      editDay(b, date, function (st) {
+        st.hol = false
+        ;(b.batch_students || []).forEach(function (bs) {
+          if (!memberOn(bs, date)) return
+          if (st.nc[bs.enrollment_id]) return      // no class for them that day — leave it
+          st.marks[bs.enrollment_id] = true
+        })
       })
     })
   }
 
+  // Teacher cell: blank -> P present -> O off -> blank. Off is the teacher's,
+  // not the batch's, so it shows in every batch they take that day.
+  function stepTeacher(b, date) {
+    if (!canEdit || date > today || !b.instructor_id) return
+    const cur = tStatus(b.instructor_id, date)
+    const next = cur === null ? 'P' : cur === 'P' ? 'O' : null
+    setTEdits(function (prev) { return { ...prev, [b.instructor_id + '|' + date]: next } })
+    if (cur === 'O' && next !== 'O') {
+      // no longer off: whoever was covering is no longer needed
+      batches.filter(function (x) { return x.instructor_id === b.instructor_id }).forEach(function (x) {
+        if (dayState(x.id, date).sub) editDay(x, date, function (st) { st.sub = null })
+      })
+    }
+    if (next === 'O' && anyPresent(b, date) && !dayState(b.id, date).sub) setPicker({ b: b, date: date, action: null })
+  }
+  function chooseSubstitute(instrId) {
+    const pk = picker
+    if (!pk) return
+    editDay(pk.b, pk.date, function (st) { st.sub = instrId })
+    setPicker(null)
+    if (pk.action) pk.action()
+  }
+
   function dirtyDates(b) {
-    return Object.keys(edits).filter(function (k) { return k.startsWith(b.id + '|') }).map(function (k) { return k.slice(b.id.length + 1) })
+    const out = new Set()
+    Object.keys(edits).forEach(function (k) { if (k.startsWith(b.id + '|')) out.add(k.slice(b.id.length + 1)) })
+    if (b.instructor_id) Object.keys(tEdits).forEach(function (k) { if (k.startsWith(b.instructor_id + '|')) out.add(k.slice(b.instructor_id.length + 1)) })
+    return Array.from(out)
   }
 
   async function saveBatch(b) {
@@ -249,8 +331,23 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     setSavingId(b.id)
     try {
       for (const date of dates) {
+        // the teacher's own mark for the day (shared across their batches)
+        const tk = (b.instructor_id || '') + '|' + date
+        if (b.instructor_id && (tk in tEdits)) {
+          const tv = tEdits[tk]
+          if (tv) {
+            const up = await sb.from('instructor_attendance').upsert({ instructor_id: b.instructor_id, att_date: date, status: tv }, { onConflict: 'instructor_id,att_date' })
+            if (up.error) throw up.error
+          } else {
+            const dl = await sb.from('instructor_attendance').delete().eq('instructor_id', b.instructor_id).eq('att_date', date)
+            if (dl.error) throw dl.error
+          }
+        }
+        if (!edits[b.id + '|' + date]) continue     // only the teacher's mark changed
         const st = edits[b.id + '|' + date]
         const old = saved[b.id + '|' + date]
+        const off = b.instructor_id && tStatus(b.instructor_id, date) === 'O'
+        const sub = off ? (st.sub || null) : null
         const roster = (b.batch_students || []).filter(function (bs) { return memberOn(bs, date) })
         const rows = st.hol ? [] : roster.filter(function (bs) { return !st.nc[bs.enrollment_id] && (st.marks[bs.enrollment_id] === true || st.marks[bs.enrollment_id] === false) })
         // no-class days: replace this batch's students' rows for the date
@@ -276,14 +373,19 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
         }
         let sessId = old && old.id
         if (sessId) {
-          const u = await sb.from('batch_sessions').update({ is_holiday: st.hol }).eq('id', sessId)
+          const patch = { is_holiday: st.hol }
+          // The teacher's mark decides who took the class; a cover set on the
+          // Batches page is left alone unless the teacher's day was edited here.
+          if (off) { patch.instructor_id = sub || b.instructor_id || null; patch.is_substitute = !!sub }
+          else if (tk in tEdits) { patch.instructor_id = b.instructor_id || null; patch.is_substitute = false }
+          const u = await sb.from('batch_sessions').update(patch).eq('id', sessId)
           if (u.error) throw u.error
         } else {
           const last = await sb.from('batch_sessions').select('session_number').eq('batch_id', b.id).order('session_number', { ascending: false }).limit(1)
           const next = ((last.data && last.data[0] && last.data[0].session_number) || 0) + 1
           const ins = await sb.from('batch_sessions').insert({
-            batch_id: b.id, session_date: date, session_number: next, instructor_id: b.instructor_id || null,
-            is_substitute: false, is_holiday: st.hol,
+            batch_id: b.id, session_date: date, session_number: next, instructor_id: sub || b.instructor_id || null,
+            is_substitute: !!sub, is_holiday: st.hol,
           }).select('id').single()
           if (ins.error) throw ins.error
           sessId = ins.data.id
@@ -328,6 +430,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
       <p className="hint" style={{ margin: '0 0 10px' }}>
         Click a cell to step it: blank (not marked) → <b style={{ color: TONE.P.color }}>P</b> present → <b style={{ color: TONE.A.color }}>A</b> absent → <b style={{ color: TONE.N.color }}>N</b> no class for that student → <b>H</b> holiday (whole batch) → blank.
         The ✓ under a date marks everyone present. <span style={{ color: '#92400e' }}>?n</span> after a student's N total is how many held classes are still not marked.
+        The <b>Teacher</b> row steps blank → <b style={{ color: TONE.P.color }}>P</b> present → <b style={{ color: TONE.O.color }}>O</b> off → blank; when a student is marked present on a day the teacher is off, you pick the substitute who took the class.
       </p>
 
       {pending.length > 0 && (
@@ -415,6 +518,54 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                       )}
                     </thead>
                     <tbody>
+                      {b.instructor_id && (
+                        <>
+                          <tr style={{ background: 'var(--bg2, #f5f4f0)' }}>
+                            <td style={{ padding: '4px 10px', font: '700 12px var(--font)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--bg2, #f5f4f0)', borderBottom: '1px solid var(--border)' }}>
+                              Teacher · {b.instructors ? b.instructors.full_name : ''}
+                            </td>
+                            {days.map(function (d) {
+                              const v = tStatus(b.instructor_id, d)
+                              const tone = v ? TONE[v] : null
+                              const disabled = !canEdit || d > today
+                              return (
+                                <td key={d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center' }}>
+                                  <button type="button" disabled={disabled} onClick={function () { stepTeacher(b, d) }}
+                                    title={v === 'O' ? 'Teacher off' : v === 'P' ? 'Teacher present' : 'Teacher not marked'}
+                                    style={{ width: 24, height: 24, borderRadius: 5, border: 'none', font: '700 11px var(--mono)', cursor: disabled ? 'default' : 'pointer', color: tone ? tone.color : 'var(--text3)', background: tone ? tone.bg : 'transparent', opacity: d > today ? .35 : 1 }}>
+                                    {v || ''}
+                                  </button>
+                                </td>
+                              )
+                            })}
+                            <td colSpan={4} style={{ borderBottom: '1px solid var(--border)' }}></td>
+                          </tr>
+                          {days.some(function (d) { return tStatus(b.instructor_id, d) === 'O' }) && (
+                            <tr>
+                              <td style={{ padding: '2px 10px', font: '500 10px var(--font)', color: 'var(--text3)', position: 'sticky', left: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>cover (substitute)</td>
+                              {days.map(function (d) {
+                                const off = tStatus(b.instructor_id, d) === 'O'
+                                const sub = dayState(b.id, d).sub
+                                const need = off && !sub && anyPresent(b, d)
+                                const label = sub ? nameOfInstructor(sub) : ''
+                                return (
+                                  <td key={d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center' }}>
+                                    {off && (
+                                      <button type="button" disabled={!canEdit || d > today}
+                                        onClick={function () { setPicker({ b: b, date: d, action: null }) }}
+                                        title={sub ? 'Taken by ' + label + ' — click to change' : need ? 'Students were present — pick who took the class' : 'Pick the substitute'}
+                                        style={{ width: 24, height: 22, borderRadius: 5, border: need ? '1.5px solid #f59e0b' : 'none', background: sub ? '#ede9fe' : need ? '#FEF3C7' : 'transparent', color: sub ? '#5b21b6' : '#92400e', font: '700 9px var(--mono)', cursor: 'pointer', padding: 0 }}>
+                                        {sub ? label.split(/\s+/).map(function (w) { return w[0] }).join('').slice(0, 2).toUpperCase() : (need ? '?' : '+')}
+                                      </button>
+                                    )}
+                                  </td>
+                                )
+                              })}
+                              <td colSpan={4} style={{ borderBottom: '1px solid var(--border)' }}></td>
+                            </tr>
+                          )}
+                        </>
+                      )}
                       {roster.map(function (bs) {
                         let S = 0, P = 0, A = 0, N = 0, U = 0
                         const cells = days.map(function (d) {
@@ -469,6 +620,34 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
               </div>
             )
           })}
+        </div>
+      )}
+
+      {picker && (
+        <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setPicker(null) }}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div style={{ padding: '16px 20px 6px' }}>
+              <div style={{ font: '700 16px var(--font)' }}>Who took the class?</div>
+              <div style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
+                {picker.b.instructors ? picker.b.instructors.full_name : 'The teacher'} is off on {fmtDate(picker.date)} — {picker.b.name}. Pick the substitute.
+              </div>
+            </div>
+            <div style={{ padding: '8px 20px', maxHeight: '50vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {instructors.filter(function (i) { return i.id !== picker.b.instructor_id }).map(function (i) {
+                const offThen = tStatus(i.id, picker.date) === 'O'
+                return (
+                  <button key={i.id} type="button" disabled={offThen} onClick={function () { chooseSubstitute(i.id) }}
+                    style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: offThen ? 'not-allowed' : 'pointer', opacity: offThen ? .5 : 1, font: '600 13px var(--font)' }}>
+                    {i.full_name}{offThen ? <span style={{ font: '500 11px var(--font)', color: TONE.O.color }}> · off that day</span> : null}
+                  </button>
+                )
+              })}
+              {instructors.length <= 1 && <p className="hint">No other active teachers.</p>}
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={function () { setPicker(null) }}>Cancel</button>
+            </div>
+          </div>
         </div>
       )}
 
