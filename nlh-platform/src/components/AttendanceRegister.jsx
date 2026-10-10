@@ -86,6 +86,14 @@ function memberOn(bs, date) {
 function courseOf(b) {
   return (b.skus && b.skus.courses && b.skus.courses.group_name ? b.skus.courses.group_name : '') + (b.skus && b.skus.level_name ? ' — ' + b.skus.level_name : '')
 }
+// Nobody in the batch has a class that day (every student on its roster is
+// marked N) — the class wasn't held, so there's nothing left to record.
+function everyoneNoClass(b, date, entry) {
+  const roster = (b.batch_students || []).filter(function (bs) { return memberOn(bs, date) })
+  if (roster.length === 0) return false
+  const nc = (entry && entry.nc) || {}
+  return roster.every(function (bs) { return nc[bs.enrollment_id] })
+}
 function nameOf(bs) { return String(bs.enrollments && bs.enrollments.students ? bs.enrollments.students.full_name : '') }
 
 const TONE = {
@@ -190,6 +198,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
           if (!dows.has(dowOf(d))) continue
           if (sMap[b.id + '|' + d] && sMap[b.id + '|' + d].id) continue
           if (!(b.batch_students || []).some(function (bs) { return memberOn(bs, d) })) continue
+          if (everyoneNoClass(b, d, sMap[b.id + '|' + d])) continue   // class not held for anyone
           miss.push({ date: d, batch: b })
         }
       })
@@ -502,7 +511,8 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                         {days.map(function (d) {
                           const wd = dowOf(d)
                           const sched = dows.size ? dows.has(wd) : wd !== 0
-                          const missed = dows.size && sched && d < today && !(saved[b.id + '|' + d] && saved[b.id + '|' + d].id) && !edits[b.id + '|' + d]
+                          const dayEntry = edits[b.id + '|' + d] || saved[b.id + '|' + d]
+                          const missed = dows.size && sched && d < today && !(saved[b.id + '|' + d] && saved[b.id + '|' + d].id) && !edits[b.id + '|' + d] && !everyoneNoClass(b, d, dayEntry)
                           return (
                             <th key={d} id={'att-th-' + b.id + '-' + d} style={{ ...th, color: wd === 0 ? 'var(--text3)' : 'var(--text)', background: focus && focus.batchId === b.id && focus.date === d ? '#ddd6fe' : missed ? '#FEF3C7' : wd === 0 ? 'var(--bg2)' : 'var(--bg)', opacity: sched || wd !== 0 ? 1 : .6, outline: focus && focus.batchId === b.id && focus.date === d ? '2px solid #7c3aed' : undefined }}
                               title={missed ? 'Class scheduled — attendance not recorded' : fmtDate(d)}>
