@@ -228,7 +228,7 @@ export function allocateReceipt(o) {
       const outstanding = c.remaining
       c.remaining -= take
       left -= take
-      parts.push({ charge: c, amount: take, outstanding: outstanding })
+      parts.push({ charge: c, amount: take, outstanding: outstanding, after: c.remaining })
       if (c.remaining <= 0) ci++
     }
     if (left > 0) parts.push({ charge: null, amount: left })
@@ -288,15 +288,19 @@ export function allocateReceipt(o) {
     const previous = paidBefore > 0 || (curMonthKey != null && chargeKey != null && chargeKey < curMonthKey)
     // Part = this payment leaves the fee only partly paid; Balance = it is
     // settling a previous month's (or a part-paid) fee.
-    const tag = !clears ? (previous ? 'Balance · Part' : 'Part') : (previous ? 'Balance' : '')
-    row.parts.push({ text: [period ? period.label : '', tag].filter(Boolean).join(' · '), amount: part.amount })
+    // "Balance ₹x" = settling an earlier month's (or a part-paid) fee;
+    // "Part ₹x" = a first part-payment of this month's fee. The amount is what
+    // this receipt put against it; what remains is in the summary.
+    const amt = money(part.amount)
+    const tag = previous ? 'Balance ' + amt : (!clears ? 'Part ' + amt : '')
+    row.parts.push({ period: period ? period.label : '', tag: tag, amount: part.amount })
   })
 
   const outRows = rows.map(function (r) {
-    const labelled = r.parts.filter(function (p) { return p.text })
+    const labelled = r.parts.filter(function (p) { return p.period || p.tag })
     const sub = labelled.length === 0 ? ''
-      : r.parts.length === 1 ? labelled[0].text
-      : r.parts.map(function (p) { return (p.text || 'Fee') + ' ' + money(p.amount) }).join('  +  ')
+      : r.parts.length === 1 ? [r.parts[0].period, r.parts[0].tag].filter(Boolean).join(' · ')
+      : r.parts.map(function (p) { return [p.period || 'Fee', p.tag || money(p.amount)].join(' · ') }).join('  +  ')
     return { label: r.course, sub: sub, amount: r.amount }
   })
 
