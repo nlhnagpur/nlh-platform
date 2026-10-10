@@ -414,13 +414,13 @@ export function printStudentReceipt(student, payment, ctx) {
     <div class="items"><div class="ih"><div>#</div><div>Received with thanks — fee payment${alloc.length ? modeTxt + (payment.reference ? ' · ref ' + esc(payment.reference) : '') : ''}</div><div class="r">Amount (₹)</div></div>
       ${itemRows}
     </div>
-${receiptTotals(summaryRows, payment.amount)}`
+${receiptTotals(summaryRows, payment.amount, fmtLong(payment.paid_at || payment.receipt_date || new Date()))}`
 
   return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '—' },
-      { l: 'Date', v: fmtLong(payment.paid_at || new Date()) },
+      { l: 'Date', v: fmtLong(payment.receipt_date || payment.paid_at || new Date()) },
       { l: 'Mode', v: payment.mode ? String(payment.mode).replace(/_/g, ' ') : '—', sans: true },
       { l: 'Centre', v: ctx.centre || '—', sans: true },
     ],
@@ -695,7 +695,7 @@ export function printFranchiseeStatement(franchisee, transactions, opts) {
 // height of one stacked box, which is what leaves room for the mascot between
 // the item line and the footer.
 // rows: [{ l, v, c }] — v is pre-formatted HTML, c an optional colour.
-function receiptTotals(rows, amount) {
+function receiptTotals(rows, amount, paidOn) {
   const list  = rows || []
   const trows = list.map(function (r, i) {
     return '<div class="trow"' + (i === list.length - 1 ? ' style="border:none"' : '') + '>' +
@@ -712,6 +712,7 @@ function receiptTotals(rows, amount) {
       <div class="tot rcv"><div class="bl"></div>
         <div class="h">Amount Received</div>
         <div class="grand"><div class="gl">Received</div><div class="gv"><span style="font:700 12px 'DM Sans';margin-right:3px;opacity:.85">&#8377;</span>${fmtAmt(amount || 0)}</div></div>
+        ${paidOn ? `<div class="words">Paid on: <b style="color:#534AB7">${esc(paidOn)}</b></div>` : ''}
         <div class="words">In words: <b style="color:#534AB7">${esc(numToWords(amount || 0))}</b></div>
       </div>
     </div>`

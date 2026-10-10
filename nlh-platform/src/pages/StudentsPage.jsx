@@ -399,7 +399,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   useEffect(function () {
     let cancelled = false
     sb.from('student_payments')
-      .select('id, amount, mode, reference, paid_at, note, receipt_no')
+      .select('id, amount, mode, reference, paid_at, receipt_date, note, receipt_no')
       .eq('student_id', student.id)
       .order('paid_at', { ascending: false })
       .order('created_at', { ascending: false })
@@ -4263,7 +4263,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
     if (!editing) return
     if (!student) { showToast('Could not find this receipt\'s student in the list', 'err'); onClose(); return }
     let cancelled = false
-    sb.from('student_payments').select('id, amount, mode, reference, paid_at, note, receipt_no').eq('student_id', student.id)
+    sb.from('student_payments').select('id, amount, mode, reference, paid_at, receipt_date, note, receipt_no').eq('student_id', student.id)
       .then(function (res) {
         if (cancelled) return
         if (res.error) { showToast('Could not load payments: ' + res.error.message, 'err'); onClose(); return }
@@ -4282,7 +4282,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
     setPayments(null)
     setWaPhone(s.phone || '')
     const { data, error } = await sb.from('student_payments')
-      .select('id, amount, mode, reference, paid_at, note, receipt_no').eq('student_id', s.id)
+      .select('id, amount, mode, reference, paid_at, receipt_date, note, receipt_no').eq('student_id', s.id)
     if (error) { showToast('Could not load payments: ' + error.message, 'err'); setStudent(null); return }
     const list = data || []
     setPayments(list)
@@ -4307,7 +4307,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
     const { data, error } = await sb.from('student_payments').update({
       amount: amt, paid_at: form.paid_at || null, mode: form.mode || null, reference: form.reference.trim() || null,
     }).eq('id', editPayment.id)
-      .select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at').single()
+      .select('id, student_id, franchisee_id, amount, mode, reference, paid_at, receipt_date, note, receipt_no, created_at').single()
     if (error) { setSaving(false); showToast('Update failed: ' + error.message, 'err'); return }
     // Student's paid total / status are kept by the database; re-read them.
     const { data: stu } = await sb.from('students').select('id, fee_paid, payment_status').eq('id', student.id).single()
@@ -4349,7 +4349,8 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
       mode:          form.mode || null,
       reference:     form.reference.trim() || null,
       paid_at:       paidAt,
-    }).select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at').single()
+      receipt_date:  todayIso(),
+    }).select('id, student_id, franchisee_id, amount, mode, reference, paid_at, receipt_date, note, receipt_no, created_at').single()
     if (error) { setSaving(false); showToast('Failed: ' + error.message, 'err'); return }
     try {
       await mirrorStudentPayment(student.id, {
@@ -4494,7 +4495,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                   <input type="number" autoFocus value={form.amount} max={balance > 0 ? balance : undefined}
                     onChange={function (e) { setForm(function (f) { return { ...f, amount: e.target.value } }) }} placeholder="e.g. 1500" />
                 </label>
-                <label>Date
+                <label>Paid on
                   <input type="date" value={form.paid_at} onChange={function (e) { setForm(function (f) { return { ...f, paid_at: e.target.value } }) }} />
                 </label>
                 <label>Mode
@@ -4595,7 +4596,12 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
               return (
                 <tr key={p.id}>
                   <td className="mono" style={{ fontWeight: 600 }}>{p.receipt_no || '—'}</td>
-                  <td className="mono">{fmtDate(p.paid_at)}</td>
+                  <td className="mono">
+                    {fmtDate(p.receipt_date || p.paid_at)}
+                    {p.paid_at && p.receipt_date && String(p.paid_at).slice(0, 10) !== String(p.receipt_date).slice(0, 10) && (
+                      <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>paid {fmtDate(p.paid_at)}</div>
+                    )}
+                  </td>
                   <td>
                     <div style={{ fontWeight: 600 }}>{s ? s.full_name : '—'}</div>
                     {s && s.parent_name && <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{s.parent_name}</div>}
@@ -4982,8 +4988,8 @@ export default function StudentsPage() {
     let cancelled = false
     fetchAllRows(function (from, to) {
       return sb.from('student_payments')
-        .select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at')
-        .order('paid_at', { ascending: false }).order('created_at', { ascending: false }).order('id').range(from, to)
+        .select('id, student_id, franchisee_id, amount, mode, reference, paid_at, receipt_date, note, receipt_no, created_at')
+        .order('receipt_date', { ascending: false }).order('created_at', { ascending: false }).order('id').range(from, to)
     }).then(function (rows) { if (!cancelled) setReceipts(rows) })
       .catch(function (e) { console.error('Receipts load error:', e); if (!cancelled) setReceipts([]) })
     return function () { cancelled = true }

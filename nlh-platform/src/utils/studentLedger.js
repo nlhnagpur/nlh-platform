@@ -30,7 +30,7 @@ export async function loadStudentLedger(studentId) {
       .select('id, full_name, parent_name, phone, email, address, area, city, state, fee_total, fee_paid, franchisee_id, franchisees(business_name, city, tier)')
       .eq('id', studentId).single(),
     sb.from('student_invoices').select('*').eq('student_id', studentId).order('created_at'),
-    sb.from('student_payments').select('id, amount, mode, reference, paid_at, note, receipt_no, created_at').eq('student_id', studentId),
+    sb.from('student_payments').select('id, amount, mode, reference, paid_at, receipt_date, note, receipt_no, created_at').eq('student_id', studentId),
     sb.from('student_fee_events').select('at, field, old_value, new_value, delta, enrollment_id').eq('student_id', studentId).in('field', ['fee_total', 'fee_amount']),
     sb.from('enrollments').select('id, sku_id, fee_amount, cycle_started_at, enrolled_at, skus(level_name, courses(group_name))').eq('student_id', studentId),
   ])
