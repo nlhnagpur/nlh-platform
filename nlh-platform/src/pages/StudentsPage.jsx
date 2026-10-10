@@ -1951,12 +1951,69 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         )}
 
         {/* ── COURSES & BATCHES TAB ── */}
+        {tab === 'accounts' && admin && (editPayId || editInvId) && (
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) { setEditPayId(null); setEditInvId(null) } }}>
+            <div className="modal" style={{ maxWidth: 440 }}>
+              {editPayId ? (
+                <>
+                  <ModalHeader flush title="Edit payment"
+                    subtitle={(payments.find(function (x) { return x.id === editPayId }) || {}).receipt_no || ''}
+                    onClose={function () { setEditPayId(null) }} />
+                  <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
+                    <label>Amount (₹)
+                      <input type="number" value={editPay.amount} onChange={function (e) { setEditPay(function (f) { return { ...f, amount: e.target.value } }) }} /></label>
+                    <label>Date
+                      <input type="date" value={editPay.paid_at} onChange={function (e) { setEditPay(function (f) { return { ...f, paid_at: e.target.value } }) }} /></label>
+                    <label>Mode
+                      <select value={editPay.mode} onChange={function (e) { setEditPay(function (f) { return { ...f, mode: e.target.value } }) }}>
+                        <option value="">— mode —</option>
+                        {['cash', 'upi', 'cheque', 'card', 'online'].concat(
+                          editPay.mode && !['cash', 'upi', 'cheque', 'card', 'online'].includes(editPay.mode) ? [editPay.mode] : []
+                        ).map(function (m) { return <option key={m} value={m}>{m}</option> })}
+                      </select></label>
+                    <label>Reference / UTR
+                      <input value={editPay.reference} onChange={function (e) { setEditPay(function (f) { return { ...f, reference: e.target.value } }) }} /></label>
+                  </div>
+                  <div className="modal-actions">
+                    <button className="btn" onClick={function () { setEditPayId(null) }}>Cancel</button>
+                    <button className="btn-p" onClick={savePaymentEdit}>Save</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <ModalHeader flush title="Edit invoice"
+                    subtitle={(invoices.find(function (x) { return x.id === editInvId }) || {}).invoice_no || ''}
+                    onClose={function () { setEditInvId(null) }} />
+                  <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
+                    <label>Invoice date
+                      <input type="date" value={editInv.invoice_date || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, invoice_date: e.target.value } }) }} /></label>
+                    <label>Amount paid (₹)
+                      <input type="number" value={editInv.amount_paid} onChange={function (e) { setEditInv(function (f) { return { ...f, amount_paid: e.target.value } }) }} /></label>
+                    <label>Status
+                      <select value={editInv.status} onChange={function (e) { setEditInv(function (f) { return { ...f, status: e.target.value } }) }}>
+                        {['unpaid', 'part', 'paid'].map(function (x) { return <option key={x} value={x}>{x}</option> })}
+                      </select></label>
+                    <label>Notes
+                      <input value={editInv.notes || ''} onChange={function (e) { setEditInv(function (f) { return { ...f, notes: e.target.value } }) }} /></label>
+                  </div>
+                  <div className="modal-actions">
+                    <button className="btn" onClick={function () { setEditInvId(null) }}>Cancel</button>
+                    <button className="btn-p" onClick={saveInvoiceEdit}>Save</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {tab === 'accounts' && (
           <StudentLedgerView
             studentId={student.id}
-            reloadKey={payments.length + ':' + invoices.length + ':' + form.fee_total}
+            reloadKey={form.fee_total + ':' + payments.map(function (x) { return x.id + x.paid_at + x.amount }).join() + ':' + invoices.map(function (x) { return x.id + x.invoice_date + x.amount_paid + x.status }).join()}
             onPrintInvoice={handlePrintInvoice}
             onPrintReceipt={handlePrintReceipt}
+            onEditInvoice={admin ? startEditInvoice : null}
+            onEditPayment={admin ? startEditPay : null}
           />
         )}
 
@@ -4467,7 +4524,7 @@ function StudentReceiptModal({ students, onClose, onRecorded }) {
 // The register: every student payment the login can see, newest first.
 // receipts = student_payments rows (null while loading); students = the
 // page's already role-scoped list, used to name each row.
-function StudentReceiptsRegister({ receipts, students, search, centreFilter, showCentre }) {
+function StudentReceiptsRegister({ receipts, students, search, centreFilter, showCentre, onEdit }) {
   const [waConfirm, setWaConfirm] = useState(null)
   if (!receipts) return <div className="loading">Loading receipts…</div>
 
@@ -4537,6 +4594,7 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
                         <button className="row-action" onClick={function () { setWaConfirm({ label: 'Send receipt ' + (p.receipt_no || ''), phone: s.phone || '', send: function (phone) { return sendWa(p, s, phone) } }) }}>WhatsApp</button>
                       </>
                     )}
+                    {onEdit && <button className="row-action" onClick={function () { onEdit(p) }}>Edit</button>}
                   </td>
                 </tr>
               )
@@ -4554,10 +4612,84 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
   )
 }
 
+// Edit one payment or invoice straight from the Receipts / Invoices registers
+// (admins). Same fields and rules as the Edit on the student's own tabs.
+function RegisterEditModal({ edit, onClose, onSaved }) {
+  const row = edit.row
+  const isPay = edit.kind === 'payment'
+  const [f, setF] = useState(isPay
+    ? { amount: String(row.amount ?? ''), paid_at: (row.paid_at || '').slice(0, 10), mode: row.mode || '', reference: row.reference || '' }
+    : { invoice_date: (row.invoice_date || '').slice(0, 10), amount_paid: String(row.amount_paid || 0), status: row.status || 'unpaid', notes: row.notes || '' })
+  const [saving, setSaving] = useState(false)
+  function set(k) { return function (e) { const v = e.target.value; setF(function (x) { return { ...x, [k]: v } }) } }
+
+  async function save() {
+    setSaving(true)
+    if (isPay) {
+      const amt = Number(f.amount)
+      if (!amt || amt <= 0) { setSaving(false); showToast('Enter a valid amount', 'warn'); return }
+      const { data, error } = await sb.from('student_payments').update({
+        amount: amt, paid_at: f.paid_at || null, mode: f.mode || null, reference: f.reference.trim() || null,
+      }).eq('id', row.id).select('id, student_id, franchisee_id, amount, mode, reference, paid_at, note, receipt_no, created_at').single()
+      if (error) { setSaving(false); showToast('Update failed: ' + error.message, 'err'); return }
+      // Student's paid total / status are kept by the database; re-read them.
+      const { data: stu } = await sb.from('students').select('id, fee_paid, payment_status').eq('id', row.student_id).single()
+      showToast('Payment updated ✓')
+      onSaved(data, stu)
+    } else {
+      const { data, error } = await sb.from('student_invoices').update({
+        invoice_date: f.invoice_date, amount_paid: parseInt(f.amount_paid, 10) || 0, status: f.status, notes: f.notes || null,
+      }).eq('id', row.id).select().single()
+      if (error) { setSaving(false); showToast('Save failed: ' + error.message, 'err'); return }
+      showToast('Invoice updated ✓')
+      onSaved(data, null)
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 440 }}>
+        <ModalHeader flush title={isPay ? 'Edit payment' : 'Edit invoice'}
+          subtitle={(isPay ? row.receipt_no : row.invoice_no) || ''} onClose={onClose} />
+        <div className="form-grid" style={{ padding: '4px 20px 16px' }}>
+          {isPay ? (
+            <>
+              <label>Amount (₹)<input type="number" value={f.amount} onChange={set('amount')} /></label>
+              <label>Date<input type="date" value={f.paid_at} onChange={set('paid_at')} /></label>
+              <label>Mode
+                <select value={f.mode} onChange={set('mode')}>
+                  <option value="">— mode —</option>
+                  {['cash', 'upi', 'cheque', 'card', 'online'].concat(f.mode && !['cash', 'upi', 'cheque', 'card', 'online'].includes(f.mode) ? [f.mode] : [])
+                    .map(function (m) { return <option key={m} value={m}>{m}</option> })}
+                </select></label>
+              <label>Reference / UTR<input value={f.reference} onChange={set('reference')} /></label>
+            </>
+          ) : (
+            <>
+              <label>Invoice date<input type="date" value={f.invoice_date} onChange={set('invoice_date')} /></label>
+              <label>Amount paid (₹)<input type="number" value={f.amount_paid} onChange={set('amount_paid')} /></label>
+              <label>Status
+                <select value={f.status} onChange={set('status')}>
+                  {['unpaid', 'part', 'paid'].map(function (x) { return <option key={x} value={x}>{x}</option> })}
+                </select></label>
+              <label>Notes<input value={f.notes} onChange={set('notes')} /></label>
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // The invoice register: every student invoice the login can see — course
 // fees, monthly renewals, next levels — newest first, with how far each is
 // settled (payments are held against the student and applied oldest first).
-function StudentInvoicesRegister({ invoices, students, search, centreFilter, showCentre }) {
+function StudentInvoicesRegister({ invoices, students, search, centreFilter, showCentre, onEdit }) {
   if (!invoices) return <div className="loading">Loading invoices…</div>
 
   const byId = {}
@@ -4643,6 +4775,7 @@ function StudentInvoicesRegister({ invoices, students, search, centreFilter, sho
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {st && <button className="row-action" onClick={function () { printStoredInvoice(st, inv, sm) }}>Print</button>}
+                    {onEdit && <button className="row-action" onClick={function () { onEdit(inv) }}>Edit</button>}
                   </td>
                 </tr>
               )
@@ -4675,6 +4808,7 @@ export default function StudentsPage() {
   const [viewTab, setViewTab] = useState('current')   // current | attention | completed | all | receipts
   const [receipts, setReceipts] = useState(null)       // student_payments register; null until loaded
   const [invoiceRows, setInvoiceRows] = useState(null)  // student_invoices register; null until loaded
+  const [regEdit, setRegEdit] = useState(null)           // { kind: 'payment'|'invoice', row } — register Edit dialog
   const [showReceipt, setShowReceipt] = useState(false)
   // Same rule as the profile: any admin, or a franchisee for their own tree (RLS-scoped).
   const canRecordFees = admin || ['uf', 'cf', 'smf'].includes(currentRole)
@@ -5156,6 +5290,22 @@ export default function StudentsPage() {
           </div>
         )}
 
+        {regEdit && (
+          <RegisterEditModal
+            edit={regEdit}
+            onClose={function () { setRegEdit(null) }}
+            onSaved={function (row, stu) {
+              if (regEdit.kind === 'payment') {
+                setReceipts(function (prev) { return (prev || []).map(function (x) { return x.id === row.id ? { ...x, ...row } : x }) })
+                if (stu) setStudents(function (ss) { return ss.map(function (x) { return x.id === stu.id ? { ...x, fee_paid: stu.fee_paid, payment_status: stu.payment_status } : x }) })
+              } else {
+                setInvoiceRows(function (prev) { return (prev || []).map(function (x) { return x.id === row.id ? { ...x, ...row } : x }) })
+              }
+              setRegEdit(null)
+            }}
+          />
+        )}
+
         {/* Inline student detail (opens in the main window, below the stats) */}
         {selected ? (
           <div style={{ marginTop: 4 }}>
@@ -5171,9 +5321,9 @@ export default function StudentsPage() {
         ) : loading ? (
           <div className="loading">Loading students…</div>
         ) : viewTab === 'invoices' ? (
-          <StudentInvoicesRegister invoices={invoiceRows} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} />
+          <StudentInvoicesRegister invoices={invoiceRows} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} onEdit={admin ? function (row) { setRegEdit({ kind: 'invoice', row: row }) } : null} />
         ) : viewTab === 'receipts' ? (
-          <StudentReceiptsRegister receipts={receipts} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} />
+          <StudentReceiptsRegister receipts={receipts} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} onEdit={admin ? function (row) { setRegEdit({ kind: 'payment', row: row }) } : null} />
         ) : (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
             <table className="big-tbl stu-tbl">

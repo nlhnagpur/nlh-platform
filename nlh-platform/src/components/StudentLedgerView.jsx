@@ -14,7 +14,8 @@ const STATUS_CHIP = {
 // every discount and every payment (with its receipt), running balance.
 // The student counterpart of FranchiseeLedgerView.
 //   onPrintInvoice(invoice, settlement)  onPrintReceipt(payment)
-export default function StudentLedgerView({ studentId, reloadKey, onPrintInvoice, onPrintReceipt }) {
+//   onEditInvoice(invoice)  onEditPayment(payment)   (omit to hide the Edit buttons)
+export default function StudentLedgerView({ studentId, reloadKey, onPrintInvoice, onPrintReceipt, onEditInvoice, onEditPayment }) {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
   const [category, setCategory] = useState('all')
@@ -113,16 +114,24 @@ export default function StudentLedgerView({ studentId, reloadKey, onPrintInvoice
                         {t.credit ? '₹' + fmtAmt(t.credit) : '—'}
                       </td>
                       <td style={{ textAlign: 'right', font: '700 12px var(--mono)', color: t.balance > 0 ? 'var(--red,#dc2626)' : 'var(--text2)' }}>
-                        ₹{fmtAmt(t.balance)}
+                        {t.balance < 0 ? '₹' + fmtAmt(-t.balance) + ' Cr' : '₹' + fmtAmt(t.balance)}
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {t.doc && t.doc.type === 'invoice' && onPrintInvoice && (
                           <button className="btn-s" style={{ fontSize: 11, padding: '4px 8px' }}
                             onClick={function () { onPrintInvoice(t.doc.invoice, st) }}>🧾 Invoice</button>
                         )}
+                        {t.doc && t.doc.type === 'invoice' && onEditInvoice && (
+                          <button className="btn-s" style={{ fontSize: 11, padding: '4px 8px', marginLeft: 4 }}
+                            onClick={function () { onEditInvoice(t.doc.invoice) }}>✎ Edit</button>
+                        )}
                         {t.doc && t.doc.type === 'receipt' && onPrintReceipt && (
                           <button className="btn-s" style={{ fontSize: 11, padding: '4px 8px' }}
                             onClick={function () { onPrintReceipt(t.doc.payment) }}>🧾 Receipt</button>
+                        )}
+                        {t.doc && t.doc.type === 'receipt' && onEditPayment && (
+                          <button className="btn-s" style={{ fontSize: 11, padding: '4px 8px', marginLeft: 4 }}
+                            onClick={function () { onEditPayment(t.doc.payment) }}>✎ Edit</button>
                         )}
                       </td>
                     </tr>
