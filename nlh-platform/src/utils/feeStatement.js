@@ -27,6 +27,11 @@ function courseLabel(en) {
   return ((sku && sku.courses && sku.courses.group_name) || 'Course') + (sku && sku.level_name ? ' — ' + sku.level_name : '')
 }
 
+// What a ledger/receipt line needs to point at its invoice document.
+function invRef(inv) {
+  return { id: inv.id || null, invoice_no: inv.invoice_no || null, invoice_date: dayOf(inv.invoice_date || inv.created_at), total: Number(inv.total) || 0 }
+}
+
 function monthLabel(y, m0) {
   return new Date(y, m0, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
 }
@@ -56,10 +61,15 @@ export function buildFeeStatement(o) {
   let running = 0
   invoices.forEach(function (inv) {
     const courses = (inv.items || []).filter(function (i) { return i && i.kind === 'course' })
+    // Renewal / next-level invoices are charges raised later, never the opening.
+    if (courses.some(function (c) { return c.cycle })) return
     const invSum = courses.reduce(function (s, c) { return s + (Number(c.amount) || 0) }, 0)
     if (!courses.length || running + invSum > opening) return
     courses.forEach(function (c) {
-      lines.push({ kind: 'enrolment', course: c.name || 'Course fee', label: c.name || 'Course fee', amount: Number(c.amount) || 0, date: dayOf(inv.created_at) })
+      lines.push({
+        kind: 'enrolment', course: c.name || 'Course fee', label: c.name || 'Course fee', amount: Number(c.amount) || 0,
+        date: dayOf(inv.invoice_date || inv.created_at), invoice: invRef(inv),
+      })
     })
     running += invSum
   })
@@ -81,8 +91,24 @@ export function buildFeeStatement(o) {
     }
     const inv = invoices.find(function (i) { return Math.abs(new Date(i.created_at) - new Date(e.at)) < 120000 && Number(i.total) === d })
     if (inv) {
-      const names = (inv.items || []).filter(function (x) { return x && x.kind === 'course' }).map(function (x) { return x.name })
-      lines.push({ kind: 'added', course: names.join(', ') || null, label: 'Added: ' + names.join(', '), amount: d, date: dayOf(e.at) })
+      const items = (inv.items || []).filter(function (x) { return x && x.kind === 'course' })
+      const names = items.map(function (x) { return x.name })
+      const first = items[0] || {}
+      if (first.cycle === 'renewal') {
+        // The invoice itself records which month this renewal covers.
+        const ps = dayOf(first.period_start)
+        lines.push({
+          kind: 'renewal', course: first.name || names.join(', ') || null, enrollmentId: first.enrollment_id || null,
+          label: 'Monthly fee — ' + (first.name || 'Course'), amount: d, date: dayOf(e.at), invoice: invRef(inv),
+          period: ps ? { y: Number(ps.slice(0, 4)), m: Number(ps.slice(5, 7)) - 1, label: first.period_label || '' } : null,
+        })
+        return
+      }
+      lines.push({
+        kind: first.cycle === 'next_level' ? 'nextlevel' : 'added', course: names.join(', ') || null,
+        label: (first.cycle === 'next_level' ? 'Next level: ' : 'Added: ') + names.join(', '),
+        amount: d, date: dayOf(e.at), invoice: invRef(inv),
+      })
       return
     }
     // A renewal bumps the total by that course's monthly fee — name the
@@ -128,7 +154,7 @@ export function allocateReceipt(o) {
   lines.filter(function (l) { return l.kind === 'discount' }).forEach(function (d) {
     let left = -d.amount
     const same = d.course ? charges.filter(function (c) { return c.course === d.course }) : []
-    const pool = same.length ? same : charges.filter(function (c) { return c.kind === 'enrolment' || c.kind === 'added' }).slice().reverse()
+    const pool = same.length ? same : charges.filter(function (c) { return c.kind === 'enrolment' || c.kind === 'added' || c.kind === 'nextlevel' }).slice().reverse()
     pool.forEach(function (c) {
       const take = Math.min(left, c.remaining)
       c.remaining -= take
@@ -145,6 +171,7 @@ export function allocateReceipt(o) {
   let current = []
   let ci = 0
   ;(o.payments || []).forEach(function (p) {
+    if (p.current) charges.forEach(function (c) { c.before = c.remaining })
     let left = p.amount
     const parts = []
     while (left > 0 && ci < charges.length) {
@@ -172,6 +199,7 @@ export function allocateReceipt(o) {
     return enrolments.find(function (en) { return courseLabel(en) === course })
   }
   function periodOf(c) {
+    if (c.period && c.period.label) return c.period
     const en = c.course ? enrolmentFor(c.course) : null
     if (!en || !en.cycle_started_at) return null
     const anchor = dayOf(en.enrolled_at) || dayOf(en.cycle_started_at)
@@ -217,11 +245,28 @@ export function allocateReceipt(o) {
     row.parts.push({ text: [period ? period.label : '', tag].filter(Boolean).join(' · '), amount: part.amount })
   })
 
-  return rows.map(function (r) {
+  const outRows = rows.map(function (r) {
     const labelled = r.parts.filter(function (p) { return p.text })
     const sub = labelled.length === 0 ? ''
       : r.parts.length === 1 ? labelled[0].text
       : r.parts.map(function (p) { return (p.text || 'Fee') + ' ' + money(p.amount) }).join('  +  ')
     return { label: r.course, sub: sub, amount: r.amount }
   })
+
+  // Summary for just the courses printed above, so it reconciles with the
+  // lines: fee for those courses, what earlier payments had already covered,
+  // and what is still due on them. Anything owed on courses NOT on this
+  // receipt is reported separately rather than mixed in.
+  const shown = new Set(rows.map(function (r) { return r.course }))
+  let total = 0, earlier = 0, balance = 0, otherBalance = 0
+  charges.forEach(function (c) {
+    if (shown.has(c.course || c.label)) {
+      total += c.net
+      earlier += c.net - (c.before != null ? c.before : c.net)
+      balance += c.remaining
+    } else {
+      otherBalance += c.remaining
+    }
+  })
+  return { rows: outRows, summary: { total: total, earlier: earlier, balance: balance, otherBalance: otherBalance } }
 }

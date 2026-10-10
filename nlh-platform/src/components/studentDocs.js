@@ -330,7 +330,7 @@ export function printStudentInvoice(student, ctx) {
     const kitHtml = kits.length
       ? `<div class="kit"><span class="k1">Kit:</span>${kits.map(function (k) { return `<span class="k2">${esc(k.name)}${k.qty > 1 ? ' ×' + k.qty : ''}</span>` }).join('')}</div>`
       : ''
-    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(c.name)}</div>${kitHtml}</div><div class="amt r">₹${fmtAmt(netAmount(c, i))}</div></div>`
+    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(c.name)}</div>${c.cycle === 'renewal' && c.period_label ? `<div class="kit"><span class="k1">Monthly fee:</span><span class="k2">${esc(c.period_label)}</span></div>` : c.cycle === 'next_level' ? '<div class="kit"><span class="k1">Next level</span></div>' : ''}${kitHtml}</div><div class="amt r">₹${fmtAmt(netAmount(c, i))}</div></div>`
   }).join('') : `<div class="ir"><div></div><div class="nm" style="color:#9C9A92">No courses on this invoice.</div><div></div></div>`
 
   const trows =
@@ -395,15 +395,26 @@ export function printStudentReceipt(student, payment, ctx) {
     return `<div class="ir"><div class="num">${num}</div><div><div class="nm">${esc(a.label)}</div>${a.sub ? `<div class="kit"><span class="k2">${esc(a.sub)}</span></div>` : ''}</div>${amt}</div>`
   }).join('')
     : `<div class="ir"><div class="num">01</div><div><div class="nm">Fee payment${modeTxt}</div>${refHtml}</div><div class="amt r">₹${fmtAmt(payment.amount || 0)}</div></div>`
+  // Summary for the courses printed above, so it adds up with the lines:
+  // fee for those courses − paid earlier − received now = balance. (The whole
+  // account's total would drag in courses that were cleared earlier and are no
+  // longer listed.) Without a breakdown it's the account-level summary.
+  const as = ctx.allocSummary
+  const summaryRows = as ? [
+    { l: 'Fee for courses above', v: '&#8377;' + fmtAmt(as.total || 0) },
+    ...(as.earlier > 0 ? [{ l: 'Paid earlier', v: '&#8377;' + fmtAmt(as.earlier), c: '#1D7A4F' }] : []),
+    { l: 'Balance', v: as.balance > 0 ? '&#8377;' + fmtAmt(as.balance) : 'Cleared &#10003;', c: as.balance > 0 ? '#A32D2D' : '#1D7A4F' },
+    ...(as.otherBalance > 0 ? [{ l: 'Other courses due', v: '&#8377;' + fmtAmt(as.otherBalance), c: '#A32D2D' }] : []),
+  ] : [
+    { l: 'Total fee',    v: '&#8377;' + fmtAmt(s.total || 0) },
+    { l: 'Paid to date', v: '&#8377;' + fmtAmt(s.paid  || 0), c: '#1D7A4F' },
+    { l: 'Balance',      v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
+  ]
   const body = `
     <div class="items"><div class="ih"><div>#</div><div>Received with thanks — fee payment${alloc.length ? modeTxt + (payment.reference ? ' · ref ' + esc(payment.reference) : '') : ''}</div><div class="r">Amount (₹)</div></div>
       ${itemRows}
     </div>
-${receiptTotals([
-      { l: 'Total fee',    v: '&#8377;' + fmtAmt(s.total || 0) },
-      { l: 'Paid to date', v: '&#8377;' + fmtAmt(s.paid  || 0), c: '#1D7A4F' },
-      { l: 'Balance',      v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
-    ], payment.amount)}`
+${receiptTotals(summaryRows, payment.amount)}`
 
   return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',

@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
-import { buildFeeStatement, paymentsUpTo, allocateReceipt } from '../utils/feeStatement'
+import { studentReceiptCtx, studentReceiptCtxFull } from '../utils/studentReceipts'
 import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
@@ -15,6 +15,8 @@ import { captureDocPng } from '../utils/captureReceipt'
 import ModalHeader from '../components/ModalHeader'
 import ActionsMenu from '../components/ActionsMenu'
 import AttendanceSheet from '../components/AttendanceSheet'
+import StudentLedgerView from '../components/StudentLedgerView'
+import { invoiceSettlement } from '../utils/studentLedger'
 import StudentCertModal from '../components/StudentCertModal'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
@@ -524,17 +526,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   }
 
   // ── Print a stored invoice ──
-  function handlePrintInvoice(inv) {
-    printStudentInvoice(student, {
-      centre: student.franchisees?.business_name || '',
-      date: inv.invoice_date, refVal: inv.invoice_no,
-      items: inv.items || [],
-      summary: {
-        discount: inv.discount || 0, couponCode: inv.coupon_code,
-        total: inv.total || 0, paid: inv.amount_paid || 0,
-        balance: Math.max(0, (inv.total || 0) - (inv.amount_paid || 0)),
-      },
-    })
+  function handlePrintInvoice(inv, settle) {
+    printStoredInvoice(student, inv, settle)
   }
 
 
@@ -1009,6 +1002,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       const { error: stuErr } = await sb.from('students').update({ fee_total: newTotal }).eq('id', student.id)
       if (stuErr) { setRenewSaving(false); showToast('Cycle date saved, but fee update failed: ' + stuErr.message, 'err'); return }
       setForm(function (f) { return { ...f, fee_total: newTotal } })
+
+      // The charge gets its own invoice (SINV-…), flagged as a renewal with the
+      // month it covers, so the Accounts tab and receipts can name it.
+      const rd = new Date(renewDate + 'T00:00:00')
+      const periodLabel = rd.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+      const courseName = (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || '')
+      const { data: renInv, error: invErr } = await sb.from('student_invoices').insert({
+        student_id: student.id, franchisee_id: student.franchisee_id || null, enrollment_id: en.id,
+        invoice_date: renewDate,
+        items: [{ kind: 'course', cycle: 'renewal', sku_id: en.sku_id, enrollment_id: en.id, name: courseName,
+          period_start: renewDate, period_label: periodLabel, qty: 1, rate: fee, amount: fee }],
+        subtotal: fee, discount: 0, total: fee, amount_paid: 0, status: 'unpaid',
+        created_by: currentUser?.email || currentRole || null,
+      }).select().single()
+      if (invErr) showToast('Renewed, but the invoice could not be created: ' + invErr.message, 'warn')
+      else if (renInv) setInvoices(function (prev) { return [renInv, ...prev] })
     }
 
     const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, ...patch } : e })
@@ -1290,7 +1299,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     selectedNewSkus.forEach(function (sku) {
       const enr = added.find(function (e) { return e.sku_id === sku.id })
       const cname = (sku.courses?.group_name ? sku.courses.group_name + ' — ' : '') + sku.level_name
-      invLines.push({ kind: 'course', sku_id: sku.id, enrollment_id: enr?.id || null, name: cname, qty: 1, rate: feeFor(sku), amount: feeFor(sku) })
+      // A level in a course the student already has (or had) is a next level —
+      // flagged so the Accounts tab and receipts can call it that.
+      const grp = sku.courses?.group_name
+      const isNext = !!grp && localEnrollments.some(function (e) { return e.skus?.courses?.group_name === grp })
+      invLines.push({ kind: 'course', sku_id: sku.id, enrollment_id: enr?.id || null, name: cname, qty: 1, rate: feeFor(sku), amount: feeFor(sku), ...(isNext ? { cycle: 'next_level' } : {}) })
       const ex = addKitExcluded[sku.id] || {}
       ;(addKitData[sku.id] || []).filter(function (k) { return !ex[k.item_id] }).forEach(function (k) {
         invLines.push({ kind: 'kit', sku_id: sku.id, item_id: k.item_id, name: k.name, qty: k.quantity, rate: 0, amount: 0 })
@@ -1573,7 +1586,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, padding: '0 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
-          {['profile', 'courses'].map(function (t) {
+          {['profile', 'courses', 'accounts'].map(function (t) {
             return (
               <button
                 key={t}
@@ -1589,7 +1602,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   marginBottom: -1, transition: 'color 0.15s',
                 }}
               >
-                {t === 'profile' ? '👤 Profile' : '📚 Courses & Batches'}
+                {t === 'profile' ? '👤 Profile' : t === 'courses' ? '📚 Courses & Batches' : '💰 Accounts'}
               </button>
             )
           })}
@@ -1938,6 +1951,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         )}
 
         {/* ── COURSES & BATCHES TAB ── */}
+        {tab === 'accounts' && (
+          <StudentLedgerView
+            studentId={student.id}
+            reloadKey={payments.length + ':' + invoices.length + ':' + form.fee_total}
+            onPrintInvoice={handlePrintInvoice}
+            onPrintReceipt={handlePrintReceipt}
+          />
+        )}
+
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
             {localEnrollments.length > 0 && (
@@ -4174,54 +4196,21 @@ function enrolmentLabel(en) {
   return (en.skus?.courses?.group_name || 'Course') + (en.skus?.level_name ? ' — ' + en.skus.level_name : '')
 }
 
-// Totals as at one payment, so a reprint shows what the receipt showed when it
-// was issued. list = every payment of that student.
-function studentReceiptCtx(student, p, list) {
-  const total = Number(student.fee_total) || 0
-  const paidToDate = (list || [])
-    .filter(function (x) { return (x.paid_at || '') <= (p.paid_at || '') })
-    .reduce(function (s, x) { return s + (x.amount || 0) }, 0)
-  return {
+// Prints a stored student invoice. `settle` (from the Accounts ledger) carries
+// how much of it the student's payments have covered; without it the
+// invoice's own amount_paid is used.
+function printStoredInvoice(student, inv, settle) {
+  const total = Number(inv.total) || 0
+  const paid = settle ? settle.paid : (Number(inv.amount_paid) || 0)
+  printStudentInvoice(student, {
     centre: student.franchisees?.business_name || '',
-    summary: { total: total, paid: paidToDate, balance: Math.max(0, total - paidToDate) },
-  }
-}
-
-// studentReceiptCtx plus which courses this payment settled (one line each, with
-// the month it covered): rebuilt from the fee-change log and invoices (see
-// utils/feeStatement.js). Used by every place a student receipt is printed or
-// imaged, so they all show the same thing. Falls back to the plain totals if
-// the log can't be read — a receipt must never fail to print.
-async function studentReceiptCtxFull(student, p, list) {
-  const base = studentReceiptCtx(student, p, list)
-  try {
-    const [evRes, invRes] = await Promise.all([
-      sb.from('student_fee_events').select('at, field, old_value, new_value, delta, enrollment_id').eq('student_id', student.id).in('field', ['fee_total', 'fee_amount']),
-      sb.from('student_invoices').select('created_at, items, total').eq('student_id', student.id),
-    ])
-    // The newest receipt shows the fee as it stands now (a payment is often
-    // dated a day before the fee change it settles, so cutting at its date
-    // would show a total below what was paid). An older receipt is cut at its
-    // own date, but never to less than what had been paid by then.
-    const all = list || []
-    const isLatest = !all.some(function (x) { return (x.paid_at || '') > (p.paid_at || '') })
-    const build = function (asOf) {
-      return buildFeeStatement({
-        feeTotalNow: Number(student.fee_total) || 0, events: evRes.data || [], invoices: invRes.data || [],
-        enrollments: student.enrollments || [], asOfDate: asOf,
-      })
-    }
-    let stmt = build(isLatest ? '9999-12-31' : p.paid_at)
-    if (stmt && !isLatest && stmt.total < base.summary.paid) stmt = build('9999-12-31')
-    if (stmt && stmt.lines.length) {
-      base.summary = { total: stmt.total, paid: base.summary.paid, balance: Math.max(0, stmt.total - base.summary.paid) }
-      // One line per course this payment settled, with the month it covered.
-      base.allocLines = allocateReceipt({
-        lines: stmt.lines, payments: paymentsUpTo(all, p), enrollments: student.enrollments || [],
-      })
-    }
-  } catch (e) { console.warn('Receipt fee details unavailable:', e.message) }
-  return base
+    date: inv.invoice_date, refVal: inv.invoice_no,
+    items: inv.items || [],
+    summary: {
+      discount: inv.discount || 0, couponCode: inv.coupon_code,
+      total: total, paid: paid, balance: Math.max(0, total - paid),
+    },
+  })
 }
 
 async function studentReceiptPng(student, p, list) {
@@ -4565,6 +4554,113 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
   )
 }
 
+// The invoice register: every student invoice the login can see — course
+// fees, monthly renewals, next levels — newest first, with how far each is
+// settled (payments are held against the student and applied oldest first).
+function StudentInvoicesRegister({ invoices, students, search, centreFilter, showCentre }) {
+  if (!invoices) return <div className="loading">Loading invoices…</div>
+
+  const byId = {}
+  students.forEach(function (s) { byId[s.id] = s })
+  const perStudent = {}
+  invoices.forEach(function (i) { (perStudent[i.student_id] = perStudent[i.student_id] || []).push(i) })
+  const settle = {}
+  Object.keys(perStudent).forEach(function (sid) {
+    const st = byId[sid]
+    Object.assign(settle, invoiceSettlement(perStudent[sid], st ? st.fee_total : 0, st ? st.fee_paid : 0))
+  })
+
+  function kindOf(inv) {
+    const first = (inv.items || []).find(function (x) { return x && x.kind === 'course' }) || {}
+    if (first.cycle === 'renewal') return 'Renewal' + (first.period_label ? ' · ' + first.period_label : '')
+    if (first.cycle === 'next_level') return 'Next level'
+    return 'Course fee'
+  }
+  function courseOf(inv) {
+    return (inv.items || []).filter(function (x) { return x && x.kind === 'course' }).map(function (x) { return x.name }).join(', ') || '—'
+  }
+
+  const q = search.trim().toLowerCase()
+  const rows = invoices.filter(function (inv) {
+    const st = byId[inv.student_id]
+    if (centreFilter && inv.franchisee_id !== centreFilter && (!st || st.franchisee_id !== centreFilter)) return false
+    if (!q) return true
+    return (inv.invoice_no || '').toLowerCase().includes(q) || courseOf(inv).toLowerCase().includes(q)
+      || (st && (st.full_name?.toLowerCase().includes(q) || st.parent_name?.toLowerCase().includes(q) || st.phone?.includes(q)))
+  })
+  const total = rows.reduce(function (sum, i) { return sum + (Number(i.total) || 0) }, 0)
+  const due = rows.reduce(function (sum, i) { return sum + ((settle[i.id] || {}).due || 0) }, 0)
+
+  const CHIP = {
+    paid:   { t: 'Paid',   c: 'var(--green,#1D7A4F)', b: 'var(--green-bg,#e6f4ec)' },
+    part:   { t: 'Part',   c: '#a15c00',              b: '#fff4e0' },
+    unpaid: { t: 'Unpaid', c: 'var(--red,#dc2626)',   b: 'var(--red-bg,#fef2f2)' },
+  }
+
+  return (
+    <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
+      {rows.length === 0 ? (
+        <div className="empty">{invoices.length === 0 ? 'No invoices yet.' : 'No invoices match.'}</div>
+      ) : (
+        <table className="big-tbl">
+          <thead>
+            <tr>
+              <th>Invoice No.</th>
+              <th>Date</th>
+              <th>Student</th>
+              {showCentre && <th className="hide-mobile">Centre</th>}
+              <th>For</th>
+              <th style={{ textAlign: 'right' }}>Amount</th>
+              <th>Status</th>
+              <th style={{ textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(function (inv) {
+              const st = byId[inv.student_id]
+              const sm = settle[inv.id]
+              const chip = sm ? CHIP[sm.status] : null
+              return (
+                <tr key={inv.id}>
+                  <td className="mono" style={{ fontWeight: 600 }}>{inv.invoice_no || '—'}</td>
+                  <td className="mono">{fmtDate(inv.invoice_date)}</td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{st ? st.full_name : '—'}</div>
+                    {st && st.parent_name && <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{st.parent_name}</div>}
+                  </td>
+                  {showCentre && <td className="hide-mobile">{st?.franchisees?.business_name || '—'}</td>}
+                  <td>
+                    <div style={{ fontSize: 12 }}>{courseOf(inv)}</div>
+                    <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{kindOf(inv)}</div>
+                  </td>
+                  <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(inv.total)}</div></td>
+                  <td>
+                    {chip && (
+                      <span style={{ font: '700 10px var(--mono)', color: chip.c, background: chip.b, borderRadius: 4, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                        {chip.t}{sm.status === 'part' ? ' · due ₹' + fmtAmt(sm.due) : ''}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {st && <button className="row-action" onClick={function () { printStoredInvoice(st, inv, sm) }}>Print</button>}
+                  </td>
+                </tr>
+              )
+            })}
+            <tr>
+              <td colSpan={showCentre ? 5 : 4} style={{ textAlign: 'right', fontWeight: 700 }}>{rows.length} invoice{rows.length > 1 ? 's' : ''} · total</td>
+              <td style={{ textAlign: 'right' }}><div className="amt" style={{ fontWeight: 700 }}>₹{fmtAmt(total)}</div></td>
+              <td colSpan={2} style={{ fontWeight: 700, color: due > 0 ? 'var(--red,#dc2626)' : 'var(--green,#1D7A4F)' }}>
+                {due > 0 ? '₹' + fmtAmt(due) + ' still due' : '✓ all settled'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 export default function StudentsPage() {
   const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
   const admin = isAdminRole(currentRole)
@@ -4578,6 +4674,7 @@ export default function StudentsPage() {
   const [showClosed, setShowClosed] = useState(false)
   const [viewTab, setViewTab] = useState('current')   // current | attention | completed | all | receipts
   const [receipts, setReceipts] = useState(null)       // student_payments register; null until loaded
+  const [invoiceRows, setInvoiceRows] = useState(null)  // student_invoices register; null until loaded
   const [showReceipt, setShowReceipt] = useState(false)
   // Same rule as the profile: any admin, or a franchisee for their own tree (RLS-scoped).
   const canRecordFees = admin || ['uf', 'cf', 'smf'].includes(currentRole)
@@ -4707,6 +4804,20 @@ export default function StudentsPage() {
     return function () { cancelled = true }
   }, [currentRole, currentFranchiseeId])
 
+  // Invoices register — same scoping and paging as receipts. Reloaded when the
+  // detail view closes, since renewals/new courses raise invoices from there.
+  useEffect(function () {
+    if (currentRole === null || selected) return
+    let cancelled = false
+    fetchAllRows(function (from, to) {
+      return sb.from('student_invoices')
+        .select('id, student_id, franchisee_id, enrollment_id, invoice_no, invoice_date, items, subtotal, discount, coupon_code, total, amount_paid, status, created_at')
+        .order('invoice_date', { ascending: false }).order('created_at', { ascending: false }).order('id').range(from, to)
+    }).then(function (rows) { if (!cancelled) setInvoiceRows(rows) })
+      .catch(function (e) { console.error('Invoices load error:', e); if (!cancelled) setInvoiceRows([]) })
+    return function () { cancelled = true }
+  }, [currentRole, currentFranchiseeId, selected])
+
   function handleReceiptRecorded(row, updatedStudent) {
     setReceipts(function (prev) { return [row].concat(prev || []) })
     setStudents(function (ss) { return ss.map(function (s) { return s.id === updatedStudent.id ? { ...s, fee_paid: updatedStudent.fee_paid, payment_status: updatedStudent.payment_status } : s }) })
@@ -4819,7 +4930,7 @@ export default function StudentsPage() {
     // Same rule for the view tabs: searching looks across everyone, so a
     // student who has moved to Completed is still one search away.
     const lc = lifecycle[s.id]
-    const matchesTab = !!q || viewTab === 'all' || viewTab === 'receipts'
+    const matchesTab = !!q || viewTab === 'all' || viewTab === 'receipts' || viewTab === 'invoices'
       || (viewTab === 'current' && lc.bucket === 'current')
       || (viewTab === 'completed' && lc.bucket === 'past')
       || (viewTab === 'attention' && lc.reasons.length > 0)
@@ -5017,15 +5128,16 @@ export default function StudentsPage() {
               { id: 'attention', label: 'Needs attention' },
               { id: 'completed', label: 'Completed' },
               { id: 'all',       label: 'All' },
+              { id: 'invoices',  label: '📄 Invoices' },
               { id: 'receipts',  label: '🧾 Receipts' },
             ].map(function (t) {
               return (
                 <button key={t.id} className={'tab' + (viewTab === t.id ? ' active' : '')} onClick={function () { setViewTab(t.id) }}>
-                  {t.label} <span style={{ font: '600 11px var(--mono)', color: t.id === 'attention' && tabCounts.attention > 0 ? '#B45309' : 'var(--text3)', marginLeft: 3 }}>{t.id === 'receipts' ? (receipts ? receipts.length : '') : tabCounts[t.id]}</span>
+                  {t.label} <span style={{ font: '600 11px var(--mono)', color: t.id === 'attention' && tabCounts.attention > 0 ? '#B45309' : 'var(--text3)', marginLeft: 3 }}>{t.id === 'receipts' ? (receipts ? receipts.length : '') : t.id === 'invoices' ? (invoiceRows ? invoiceRows.length : '') : tabCounts[t.id]}</span>
                 </button>
               )
             })}
-            {search.trim() && viewTab !== 'all' && viewTab !== 'receipts' && (
+            {search.trim() && viewTab !== 'all' && viewTab !== 'receipts' && viewTab !== 'invoices' && (
               <span style={{ alignSelf: 'center', marginLeft: 8, font: '500 11px var(--font)', color: 'var(--text3)' }}>Searching across all students</span>
             )}
             {can('students.edit') && pendingCertRows.length > 0 && (viewTab === 'attention' || viewTab === 'completed') && (
@@ -5058,6 +5170,8 @@ export default function StudentsPage() {
           </div>
         ) : loading ? (
           <div className="loading">Loading students…</div>
+        ) : viewTab === 'invoices' ? (
+          <StudentInvoicesRegister invoices={invoiceRows} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} />
         ) : viewTab === 'receipts' ? (
           <StudentReceiptsRegister receipts={receipts} students={students} search={search} centreFilter={centreFilter} showCentre={centreColVisible} />
         ) : (
