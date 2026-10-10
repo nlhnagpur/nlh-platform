@@ -110,6 +110,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   const [tEdits, setTEdits] = useState({})   // 'instructor|date' -> 'P' | 'O' | null (cleared)
   const [instructors, setInstructors] = useState([])   // active teachers, for the substitute list
   const [picker, setPicker] = useState(null) // { b, date, action } — choosing a substitute
+  const [focus, setFocus] = useState(null)   // { batchId, date } — jumped to from the pending list
 
   const days = monthDays(ym)
   const today = todayIso()
@@ -202,6 +203,21 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     })
     return function () { cancelled = true }
   }, [ym, centreFilter, reload])
+
+  // Jump to a pending class: once the month has loaded, bring that batch and
+  // date into view and highlight the column for a few seconds.
+  useEffect(function () {
+    if (!focus || loading) return
+    if (focus.date.slice(0, 7) !== ym) return
+    const t1 = setTimeout(function () {
+      const th = document.getElementById('att-th-' + focus.batchId + '-' + focus.date)
+      const block = document.getElementById('att-batch-' + focus.batchId)
+      if (block) block.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (th) th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    }, 60)
+    const t2 = setTimeout(function () { setFocus(null) }, 5000)
+    return function () { clearTimeout(t1); clearTimeout(t2) }
+  }, [focus, loading, ym])
 
   // What a cell currently shows: the edit if there is one, else what's saved.
   function dayState(bId, date) {
@@ -441,7 +457,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {pending.slice(0, 24).map(function (p) {
               return (
-                <button key={p.date + p.batch.id} type="button" onClick={function () { setYm(p.date.slice(0, 7)) }}
+                <button key={p.date + p.batch.id} type="button" onClick={function () { setYm(p.date.slice(0, 7)); setFocus({ batchId: p.batch.id, date: p.date }) }}
                   style={{ font: '600 11px var(--font)', padding: '3px 9px', borderRadius: 20, border: '1px solid #FCD34D', background: '#fff', color: '#92400E', cursor: 'pointer' }}>
                   {DAY2[dowOf(p.date)]} {fmtDate(p.date)} · {p.batch.name}
                 </button>
@@ -464,7 +480,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
             const dows = dowSet(b.schedule_days)
             const dirty = dirtyDates(b).length
             return (
-              <div key={b.id} className="card" style={{ padding: 0, marginBottom: 0 }}>
+              <div key={b.id} id={'att-batch-' + b.id} className="card" style={{ padding: 0, marginBottom: 0, boxShadow: focus && focus.batchId === b.id ? '0 0 0 2px #7c3aed' : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', background: 'var(--bg2, #f5f4f0)', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ flex: 1, minWidth: 180 }}>
                     <div style={{ font: '700 14px var(--font)' }}>{b.name}</div>
@@ -488,7 +504,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                           const sched = dows.size ? dows.has(wd) : wd !== 0
                           const missed = dows.size && sched && d < today && !(saved[b.id + '|' + d] && saved[b.id + '|' + d].id) && !edits[b.id + '|' + d]
                           return (
-                            <th key={d} style={{ ...th, color: wd === 0 ? 'var(--text3)' : 'var(--text)', background: missed ? '#FEF3C7' : wd === 0 ? 'var(--bg2)' : 'var(--bg)', opacity: sched || wd !== 0 ? 1 : .6 }}
+                            <th key={d} id={'att-th-' + b.id + '-' + d} style={{ ...th, color: wd === 0 ? 'var(--text3)' : 'var(--text)', background: focus && focus.batchId === b.id && focus.date === d ? '#ddd6fe' : missed ? '#FEF3C7' : wd === 0 ? 'var(--bg2)' : 'var(--bg)', opacity: sched || wd !== 0 ? 1 : .6, outline: focus && focus.batchId === b.id && focus.date === d ? '2px solid #7c3aed' : undefined }}
                               title={missed ? 'Class scheduled — attendance not recorded' : fmtDate(d)}>
                               <div>{Number(d.slice(8, 10))}</div>
                               <div style={{ font: '500 9px var(--mono)', color: 'var(--text3)' }}>{DAY2[wd]}</div>
@@ -590,7 +606,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                               const tone = c.v ? TONE[c.v] : null
                               const disabled = !c.member || c.d > today || !canEdit
                               return (
-                                <td key={c.d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center', background: !c.member ? 'repeating-linear-gradient(45deg,var(--bg2),var(--bg2) 4px,var(--bg) 4px,var(--bg) 8px)' : dowOf(c.d) === 0 ? 'var(--bg2)' : 'var(--bg)' }}>
+                                <td key={c.d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center', boxShadow: focus && focus.batchId === b.id && focus.date === c.d ? 'inset 0 0 0 2px #7c3aed' : undefined, background: !c.member ? 'repeating-linear-gradient(45deg,var(--bg2),var(--bg2) 4px,var(--bg) 4px,var(--bg) 8px)' : dowOf(c.d) === 0 ? 'var(--bg2)' : 'var(--bg)' }}>
                                   {c.member && (
                                     <button type="button" disabled={disabled} onClick={function () { stepCell(b, bs, c.d) }}
                                       style={{
