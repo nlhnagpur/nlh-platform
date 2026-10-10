@@ -240,7 +240,7 @@ function BulkAttendanceModal({ batch, instructors, onClose, onSaved }) {
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 1000, width: '96vw' }}>
         <ModalHeader flush title={batch.name + ' — Mark Attendance'}
-          subtitle={(batch.instructors?.full_name || '—') + ' · ' + (batch.batch_students || []).filter(function (bs) { return !bs.removed_at }).length + ' students'}
+          subtitle={(batch.instructors?.full_name || '—') + ' · ' + dedupeByEnrollment((batch.batch_students || []).filter(function (bs) { return !bs.removed_at })).length + ' students'}
           onClose={onClose} />
 
         <div style={{ display: 'flex', minHeight: 320 }}>
@@ -1216,7 +1216,7 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
 
 function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
   const [students, setStudents] = useState(
-    (batch.batch_students || []).filter(function (bs) { return !bs.removed_at })
+    dedupeByEnrollment((batch.batch_students || []).filter(function (bs) { return !bs.removed_at }))
   )
   const [eligible,      setEligible]      = useState([])
   const [showAdd,       setShowAdd]       = useState(false)
@@ -1232,7 +1232,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
       .select('id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, students(id, full_name), skus(level_name, courses(group_name)))')
       .eq('batch_id', batch.id)
       .is('removed_at', null)
-      .then(function (res) { if (res.data) setStudents(res.data) })
+      .then(function (res) { if (res.data) setStudents(dedupeByEnrollment(res.data)) })
   }, [batch.id])
 
   useEffect(function () {
@@ -1673,7 +1673,7 @@ export default function BatchesPage() {
       {(function () {
         const activeBatches = batches.filter(function (b) { return b.is_active })
         const totalStudents = batches.reduce(function (s, b) {
-          return s + (b.batch_students || []).filter(function (bs) { return !bs.removed_at }).length
+          return s + dedupeByEnrollment((b.batch_students || []).filter(function (bs) { return !bs.removed_at })).length
         }, 0)
         const individualBatches = batches.filter(function (b) { return b.is_individual }).length
         return (
