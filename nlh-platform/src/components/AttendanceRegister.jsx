@@ -148,12 +148,14 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
         if (sRes.error) throw sRes.error
         sess = sRes.data || []
       }
-      // days a student has no class, for everyone in these batches this month
+      // days a student has no class, for everyone in these batches — over the same
+      // window as the sessions (this month plus the last two weeks), so the
+      // pending list agrees whichever month is on screen
       const enrIds = Array.from(new Set(list.flatMap(function (b) { return (b.batch_students || []).map(function (bs) { return bs.enrollment_id }) })))
       let ncRows = []
       if (enrIds.length) {
         const nRes = await sb.from('student_no_class').select('enrollment_id, class_date, batch_id')
-          .in('enrollment_id', enrIds).gte('class_date', days[0]).lte('class_date', days[days.length - 1])
+          .in('enrollment_id', enrIds).gte('class_date', from).lte('class_date', to)
         if (nRes.error) throw nRes.error
         ncRows = nRes.data || []
       }
