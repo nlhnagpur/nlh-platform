@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
-import { buildFeeStatement, paymentsUpTo } from '../utils/feeStatement'
+import { buildFeeStatement, paymentsUpTo, allocateReceipt } from '../utils/feeStatement'
 import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
@@ -4187,8 +4187,8 @@ function studentReceiptCtx(student, p, list) {
   }
 }
 
-// studentReceiptCtx plus the fee breakdown and payment history: rebuilt from the
-// fee-change log and invoices so the lines add up to the Total fee (see
+// studentReceiptCtx plus which courses this payment settled (one line each, with
+// the month it covered): rebuilt from the fee-change log and invoices (see
 // utils/feeStatement.js). Used by every place a student receipt is printed or
 // imaged, so they all show the same thing. Falls back to the plain totals if
 // the log can't be read — a receipt must never fail to print.
@@ -4196,7 +4196,7 @@ async function studentReceiptCtxFull(student, p, list) {
   const base = studentReceiptCtx(student, p, list)
   try {
     const [evRes, invRes] = await Promise.all([
-      sb.from('student_fee_events').select('at, field, old_value, new_value, delta').eq('student_id', student.id).eq('field', 'fee_total'),
+      sb.from('student_fee_events').select('at, field, old_value, new_value, delta, enrollment_id').eq('student_id', student.id).in('field', ['fee_total', 'fee_amount']),
       sb.from('student_invoices').select('created_at, items, total').eq('student_id', student.id),
     ])
     // The newest receipt shows the fee as it stands now (a payment is often
@@ -4215,8 +4215,10 @@ async function studentReceiptCtxFull(student, p, list) {
     if (stmt && !isLatest && stmt.total < base.summary.paid) stmt = build('9999-12-31')
     if (stmt && stmt.lines.length) {
       base.summary = { total: stmt.total, paid: base.summary.paid, balance: Math.max(0, stmt.total - base.summary.paid) }
-      base.feeLines = stmt.lines
-      base.paymentLines = paymentsUpTo(all, p)
+      // One line per course this payment settled, with the month it covered.
+      base.allocLines = allocateReceipt({
+        lines: stmt.lines, payments: paymentsUpTo(all, p), enrollments: student.enrollments || [],
+      })
     }
   } catch (e) { console.warn('Receipt fee details unavailable:', e.message) }
   return base

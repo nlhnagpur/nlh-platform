@@ -366,35 +366,39 @@ export function printStudentInvoice(student, ctx) {
 export function printStudentReceipt(student, payment, ctx) {
   const s = ctx.summary || {}
   const bal = (s.balance != null) ? s.balance : Math.max(0, (s.total || 0) - (s.paid || 0))
-  const money = function (n) { return (n < 0 ? '&minus;' : '') + '&#8377;' + fmtAmt(Math.abs(n)) }
-  const shortDate = function (iso) {
-    return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
+  const modeTxt = payment.mode ? ' · ' + esc(String(payment.mode).replace(/_/g, ' ')) : ''
+  const refHtml = payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''
+
+  // One line per course this payment went towards (ctx.allocLines, summing to
+  // the amount received), with the month it covered — instead of a single
+  // "Fee payment" line. No discounts, and nothing that earlier payments
+  // already cleared. Falls back to the single line when there's no breakdown.
+  let alloc = ctx.allocLines || []
+  // A5 landscape is one fixed page. One or two courses get a two-line row (name,
+  // then the month detail); from three up rows go single-line, and beyond 5 the
+  // tail folds into one "N other courses" line, so the receipt never spills
+  // onto a second page.
+  if (alloc.length > 5) {
+    const rest = alloc.slice(4)
+    alloc = alloc.slice(0, 4).concat([{
+      label: rest.length + ' other courses', sub: rest.map(function (r) { return r.label }).join(', '),
+      amount: rest.reduce(function (t, r) { return t + (r.amount || 0) }, 0),
+    }])
   }
-
-  // What the total fee is made up of — course fees, discounts, renewals —
-  // so "Total fee" isn't a bare number. Adds up to the total shown below.
-  const feeLines = ctx.feeLines || []
-  const feeHtml = feeLines.length ? `
-    <div class="items" style="margin-top:8px"><div class="ih"><div>#</div><div>Fee details — what the total fee covers</div><div class="r">Amount (₹)</div></div>
-      ${feeLines.map(function (l, i) {
-        return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(l.label)}</div>${l.sub ? `<div class="kit"><span class="k2">${esc(l.sub.replace(/\d{4}-\d{2}-\d{2}/, function (d) { return shortDate(d) }))}</span></div>` : ''}</div><div class="amt r" style="${l.amount < 0 ? 'color:#A32D2D' : ''}">${money(l.amount)}</div></div>`
-      }).join('')}
-      <div class="ir" style="background:#F1EEFB"><div></div><div class="nm">Total fee</div><div class="amt r">${money(s.total || 0)}</div></div>
-    </div>` : ''
-
-  // How it was paid — each receipt up to and including this one.
-  const payLines = ctx.paymentLines || []
-  const payHtml = payLines.length > 1 ? `
-    <div class="items" style="margin-top:8px"><div class="ih"><div>#</div><div>Payments received</div><div class="r">Amount (₹)</div></div>
-      ${payLines.map(function (p, i) {
-        return `<div class="ir"${p.current ? ' style="background:#F1EEFB"' : ''}><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${shortDate(p.date)}${p.mode ? ' · ' + esc(String(p.mode).replace(/_/g, ' ')) : ''}${p.current ? ' <span style="color:#534AB7">— this receipt</span>' : ''}</div>${p.receipt_no ? `<div class="kit"><span class="k1">Receipt:</span><span class="k2">${esc(p.receipt_no)}</span></div>` : ''}</div><div class="amt r">${money(p.amount)}</div></div>`
-      }).join('')}
-    </div>` : ''
-
+  const compact = alloc.length >= 3
+  const itemRows = alloc.length ? alloc.map(function (a, i) {
+    const num = String(i + 1).padStart(2, '0')
+    const amt = `<div class="amt r">₹${fmtAmt(a.amount || 0)}</div>`
+    if (compact) {
+      return `<div class="ir" style="padding:4px 14px"><div class="num">${num}</div><div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span class="nm" style="font-size:12px">${esc(a.label)}</span>${a.sub ? `<span style="font:500 9.5px 'DM Mono';color:#5C5A54;margin-left:8px">${esc(a.sub)}</span>` : ''}</div>${amt}</div>`
+    }
+    return `<div class="ir"><div class="num">${num}</div><div><div class="nm">${esc(a.label)}</div>${a.sub ? `<div class="kit"><span class="k2">${esc(a.sub)}</span></div>` : ''}</div>${amt}</div>`
+  }).join('')
+    : `<div class="ir"><div class="num">01</div><div><div class="nm">Fee payment${modeTxt}</div>${refHtml}</div><div class="amt r">₹${fmtAmt(payment.amount || 0)}</div></div>`
   const body = `
-    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — fee payment</div><div class="r">Amount (₹)</div></div>
-      <div class="ir"><div class="num">01</div><div><div class="nm">Fee payment${payment.mode ? ' · ' + esc(String(payment.mode).replace(/_/g, ' ')) : ''}</div>${payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''}</div><div class="amt r">₹${fmtAmt(payment.amount || 0)}</div></div>
-    </div>${feeHtml}${payHtml}
+    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — fee payment${alloc.length ? modeTxt + (payment.reference ? ' · ref ' + esc(payment.reference) : '') : ''}</div><div class="r">Amount (₹)</div></div>
+      ${itemRows}
+    </div>
 ${receiptTotals([
       { l: 'Total fee',    v: '&#8377;' + fmtAmt(s.total || 0) },
       { l: 'Paid to date', v: '&#8377;' + fmtAmt(s.paid  || 0), c: '#1D7A4F' },
