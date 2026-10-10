@@ -47,6 +47,7 @@ export async function loadStudentLedger(studentId) {
   })
 
   const txns = []
+  const shownInv = {}
   ;(stmt ? stmt.lines : []).forEach(function (l, i) {
     if (l.amount < 0) {
       txns.push({
@@ -57,10 +58,12 @@ export async function loadStudentLedger(studentId) {
       return
     }
     const inv = l.invoice && l.invoice.id ? invById[l.invoice.id] : null
+    const firstOfInvoice = !!inv && !shownInv[inv.id]
+    if (inv) shownInv[inv.id] = true
     txns.push({
       id: 'chg-' + i, date: (l.invoice && l.invoice.invoice_date) || l.date, category: 'invoice', kind: l.kind,
       desc: chargeDescription(l), ref: inv ? inv.invoice_no : null,
-      debit: l.amount, credit: 0, doc: inv ? { type: 'invoice', invoice: inv } : null,
+      debit: l.amount, credit: 0, doc: inv && firstOfInvoice ? { type: 'invoice', invoice: inv } : null,
     })
   })
   payments.forEach(function (p) {

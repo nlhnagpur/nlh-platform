@@ -302,10 +302,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [certifySaving,   setCertifySaving]   = useState(false)
   const [certifyRejectNote, setCertifyRejectNote] = useState('')
   const [showAttSheet,    setShowAttSheet]    = useState(false) // monthly attendance sheet open
-  const [renewDays,       setRenewDays]       = useState([])    // weekday names picked in the Renew Cycle dialog
-  const [renewingEn,      setRenewingEn]      = useState(null)  // monthly enrollment pending cycle renewal
-  const [renewDate,       setRenewDate]       = useState(new Date().toISOString().slice(0, 10))
-  const [renewFee,        setRenewFee]        = useState('')
+  const [renewOpen,       setRenewOpen]       = useState(false) // Renew Cycle dialog (all of the student's monthly courses)
+  const [renewRows,       setRenewRows]       = useState({})    // { [enrollment_id]: { on, date, fee, days[] } }
   const [renewSaving,     setRenewSaving]     = useState(false)
   const [reviewingEn,     setReviewingEn]     = useState(null)  // enrollment pending review-send
   const [reviewPhone,     setReviewPhone]     = useState('')
@@ -968,67 +966,102 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // so a session or two either side of the old cycle's boundary can be
   // folded into where the next cycle actually begins, same as the old
   // cycle's progress was counted strictly from its own start date.
-  function openRenewCycle(en) {
-    // Defaults to the cycle's own due date (same date next month), not today —
-    // a renewal collected a few days late still counts classes date-to-date
-    // from where the paid month actually began. Editable to nudge it.
-    const ri = renewalInfo(en)
-    setRenewDate(ri ? ri.due : new Date().toISOString().slice(0, 10))
-    setRenewFee(String(en.fee_amount || 0))
-    // Start from the days already in force: this student's own, else the
-    // batch's, else all seven days.
-    setRenewDays(parseCycleDays(en.cycle_days, batchAssignments[en.id] && batchAssignments[en.id].batches && batchAssignments[en.id].batches.schedule_days))
-    setRenewingEn(en)
+  function openRenewCycle(preselectId) {
+    // Each course defaults to its own cycle's due date (same date next month),
+    // not today — a renewal collected a few days late still counts classes
+    // date-to-date from where the paid month actually began. Editable to nudge.
+    // Courses that are due / overdue start ticked; if none are, all are.
+    const rows = {}
+    localEnrollments.filter(isMonthlyActive).forEach(function (en) {
+      const ri = renewalInfo(en)
+      rows[en.id] = {
+        on: preselectId ? en.id === preselectId : (!!ri && ri.state !== 'ok'),
+        date: ri ? ri.due : todayIso(),
+        fee: String(en.fee_amount || 0),
+        // This student's own days, else the batch's, else all seven.
+        days: parseCycleDays(en.cycle_days, batchAssignments[en.id] && batchAssignments[en.id].batches && batchAssignments[en.id].batches.schedule_days),
+      }
+    })
+    if (!Object.keys(rows).some(function (k) { return rows[k].on })) Object.keys(rows).forEach(function (k) { rows[k].on = true })
+    setRenewRows(rows)
+    setRenewOpen(true)
+  }
+  function setRenewRow(id, patch) {
+    setRenewRows(function (prev) { return { ...prev, [id]: { ...prev[id], ...patch } } })
   }
 
+  // One renewal for the student: every ticked course gets its new cycle, the
+  // fees go onto the account in one step, and ONE invoice lists them all.
   async function renewCycle() {
-    if (!renewingEn) return
-    const en = renewingEn
-    const fee = Number(renewFee) || 0
+    const chosen = localEnrollments.filter(function (e) { return renewRows[e.id] && renewRows[e.id].on })
+    if (chosen.length === 0) { showToast('Tick at least one course to renew', 'warn'); return }
+    for (const en of chosen) {
+      const r = renewRows[en.id]
+      const nm = (en.skus?.courses?.group_name || 'Course')
+      if (!r.date) { showToast('Set a start date for ' + nm, 'warn'); return }
+      if (r.days.length === 0) { showToast('Pick at least one day of the week for ' + nm, 'warn'); return }
+    }
     setRenewSaving(true)
 
-    // Only the start date moves. The next cycle's target is worked out from
+    // Only the start dates move. Each next cycle's target is worked out from
     // its own window and chosen days; a student who missed classes makes them
     // up at Saturday revision, so nothing is carried between cycles.
-    if (renewDays.length === 0) { setRenewSaving(false); showToast('Pick at least one day of the week', 'warn'); return }
-    const patch = { cycle_started_at: renewDate, cycle_days: formatCycleDays(renewDays) }
-    const { error: enrErr } = await sb.from('enrollments').update(patch).eq('id', en.id)
-    if (enrErr) { setRenewSaving(false); showToast('Failed: ' + enrErr.message, 'err'); return }
+    const patches = {}
+    for (const en of chosen) {
+      const r = renewRows[en.id]
+      const patch = { cycle_started_at: r.date, cycle_days: formatCycleDays(r.days) }
+      const { error: enrErr } = await sb.from('enrollments').update(patch).eq('id', en.id)
+      if (enrErr) { setRenewSaving(false); showToast('Failed: ' + enrErr.message, 'err'); return }
+      patches[en.id] = patch
+    }
+
+    const items = []
+    chosen.forEach(function (en) {
+      const r = renewRows[en.id]
+      const fee = Number(r.fee) || 0
+      if (fee <= 0) return
+      const rd = new Date(r.date + 'T00:00:00')
+      items.push({
+        kind: 'course', cycle: 'renewal', sku_id: en.sku_id, enrollment_id: en.id,
+        name: (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || ''),
+        period_start: r.date, period_label: rd.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
+        qty: 1, rate: fee, amount: fee,
+      })
+    })
+    const total = items.reduce(function (sum, i) { return sum + i.amount }, 0)
+    let newTotal = Number(form.fee_total) || 0
 
     // Same pattern as adding a new course's fee — bump the account's Fee
-    // Total; the DB trigger logs it to student_fee_events automatically.
-    if (fee > 0) {
-      const newTotal = (Number(form.fee_total) || 0) + fee
+    // Total once; the DB trigger logs it to student_fee_events automatically.
+    if (total > 0) {
+      newTotal += total
       const { error: stuErr } = await sb.from('students').update({ fee_total: newTotal }).eq('id', student.id)
-      if (stuErr) { setRenewSaving(false); showToast('Cycle date saved, but fee update failed: ' + stuErr.message, 'err'); return }
+      if (stuErr) { setRenewSaving(false); showToast('Cycle dates saved, but fee update failed: ' + stuErr.message, 'err'); return }
       setForm(function (f) { return { ...f, fee_total: newTotal } })
 
-      // The charge gets its own invoice (SINV-…), flagged as a renewal with the
-      // month it covers, so the Accounts tab and receipts can name it.
-      const rd = new Date(renewDate + 'T00:00:00')
-      const periodLabel = rd.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-      const courseName = (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || '')
+      // One invoice (SINV-…) for the whole renewal, each line flagged with the
+      // month it covers so the Accounts tab and receipts can name it.
+      const dates = chosen.filter(function (e) { return Number(renewRows[e.id].fee) > 0 }).map(function (e) { return renewRows[e.id].date }).sort()
       const { data: renInv, error: invErr } = await sb.from('student_invoices').insert({
-        student_id: student.id, franchisee_id: student.franchisee_id || null, enrollment_id: en.id,
-        invoice_date: renewDate,
-        items: [{ kind: 'course', cycle: 'renewal', sku_id: en.sku_id, enrollment_id: en.id, name: courseName,
-          period_start: renewDate, period_label: periodLabel, qty: 1, rate: fee, amount: fee }],
-        subtotal: fee, discount: 0, total: fee, amount_paid: 0, status: 'unpaid',
+        student_id: student.id, franchisee_id: student.franchisee_id || null,
+        enrollment_id: items.length === 1 ? items[0].enrollment_id : null,
+        invoice_date: dates[0], items: items,
+        subtotal: total, discount: 0, total: total, amount_paid: 0, status: 'unpaid',
         created_by: currentUser?.email || currentRole || null,
       }).select().single()
       if (invErr) showToast('Renewed, but the invoice could not be created: ' + invErr.message, 'warn')
       else if (renInv) setInvoices(function (prev) { return [renInv, ...prev] })
     }
 
-    const next = localEnrollments.map(function (e) { return e.id === en.id ? { ...e, ...patch } : e })
+    const next = localEnrollments.map(function (e) { return patches[e.id] ? { ...e, ...patches[e.id] } : e })
     setLocalEnrollments(next)
-    // Recompute from the new start date — a late renewal already has classes
+    // Recompute from the new start dates — a late renewal already has classes
     // held since the old cycle's due date, so this is not simply zero.
     await loadCycleProgress(next, batchAssignments)
     setRenewSaving(false)
-    setRenewingEn(null)
-    showToast('Cycle renewed from ' + fmtDate(renewDate) + (fee > 0 ? ' · ₹' + fmtAmt(fee) + ' added to Fee Total ✓' : ' ✓'))
-    if (onSaved) onSaved({ ...student, ...form, fee_total: fee > 0 ? (Number(form.fee_total) || 0) + fee : form.fee_total, enrollments: next })
+    setRenewOpen(false)
+    showToast(chosen.length + ' course' + (chosen.length > 1 ? 's' : '') + ' renewed' + (total > 0 ? ' · ₹' + fmtAmt(total) + ' added to Fee Total ✓' : ' ✓'))
+    if (onSaved) onSaved({ ...student, ...form, fee_total: newTotal, enrollments: next })
   }
 
   // ── Confirm / correct kit issuance, per item ──
@@ -2020,7 +2053,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
             {localEnrollments.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+                {localEnrollments.some(isMonthlyActive) && (function () {
+                  const dueN = localEnrollments.filter(function (e) { if (!isMonthlyActive(e)) return false; const ri = renewalInfo(e); return ri && ri.state !== 'ok' }).length
+                  return (
+                    <button className="btn-s" style={{ fontSize: 12, fontWeight: 600, color: '#1D4ED8', background: '#DBEAFE', borderColor: '#93C5FD' }}
+                      onClick={function () { openRenewCycle() }}
+                      title="Renew one or more of this student's monthly courses together — one invoice">
+                      📅 Renew cycle{dueN > 0 ? ' · ' + dueN + ' due' : ''}
+                    </button>
+                  )
+                })()}
                 <button className="btn-s" style={{ fontSize: 12 }} onClick={function () { setShowAttSheet(true) }}
                   title="Month-by-month present / absent / not marked for every course, and the classes attended">
                   📋 Attendance sheet
@@ -2266,14 +2309,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                   {renewal.state === 'overdue' ? 'Renewal overdue since ' : 'Renews '}{fmtDate(renewal.due)}
                                 </span>
                               </>
-                            )}
-                            {monthEnding && (
-                              <button
-                                onClick={function () { openRenewCycle(en) }}
-                                title={'Renewal ' + (renewal.state === 'overdue' ? 'was due ' : 'is due ') + fmtDate(renewal.due) + ' — ' + cycleHeld + ' of ' + cycleTarget + ' classes done. Collect the next fee and start a new cycle.'}
-                                style={{ font: '600 10px var(--font)', color: '#1D4ED8', background: '#DBEAFE', border: '1px solid #93C5FD', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                                📅 Renew cycle
-                              </button>
                             )}
                           </div>
                           {bs ? (
@@ -3104,78 +3139,87 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           <AttendanceSheet mode="student" student={{ ...student, enrollments: localEnrollments }} onClose={function () { setShowAttSheet(false) }} />
         )}
 
-        {/* Renew a monthly billing cycle (renewing on the same date next month). */}
-        {renewingEn && (function () {
-          const cyc = cycleProgress[renewingEn.id] || computeCycle(renewingEn, [], null, '')
+        {/* Renew monthly billing cycles — pick the courses; one invoice results. */}
+        {renewOpen && (function () {
+          const mon = localEnrollments.filter(isMonthlyActive)
+          const sel = mon.filter(function (e) { return renewRows[e.id] && renewRows[e.id].on })
+          const sum = sel.reduce(function (t, e) { return t + (Number(renewRows[e.id].fee) || 0) }, 0)
           return (
-          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setRenewingEn(null) }}>
-            <div className="modal" style={{ maxWidth: 380 }}>
+          <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setRenewOpen(false) }}>
+            <div className="modal" style={{ maxWidth: 560 }}>
               <ModalHeader flush title="Renew Cycle"
-                subtitle={(renewingEn.skus?.courses?.group_name || 'Course') + (renewingEn.skus?.level_name ? ' · ' + renewingEn.skus.level_name : '')}
-                onClose={function () { setRenewingEn(null) }} />
-              <div style={{ padding: '4px 20px 16px' }}>
-                <p className="hint" style={{ marginBottom: 12 }}>
-                  {cyc ? cyc.done : 0} of {cyc ? cyc.target : 0} classes done in the cycle that started {fmtDate(cycleAnchor(renewingEn))}
-                  {cyc && (cyc.absent > 0 || cyc.unmarked > 0)
-                    ? <> ({[
-                        cyc.absent > 0 ? cyc.absent + ' absent' + (cyc.makeUp > 0 ? ', ' + cyc.makeUp + ' made up at Saturday revision' : '') : null,
-                        cyc.unmarked > 0 ? cyc.unmarked + ' not marked — mark attendance first so it is counted' : null,
-                      ].filter(Boolean).join('; ')})</>
-                    : null}.{' '}
-                  {cyc && !cyc.satRevision ? 'Nothing carries into the next cycle.' : 'Saturday revision classes are included in the fee, so nothing carries into the next cycle.'}
-                  {' '}The next cycle starts on the due date (same date next month) — nudge it a day or two either way to fold in a session that ran early or late.
+                subtitle={student.full_name + ' · tick the courses to renew — one invoice is raised'}
+                onClose={function () { setRenewOpen(false) }} />
+              <div style={{ padding: '4px 20px 16px', maxHeight: '62vh', overflowY: 'auto' }}>
+                <p className="hint" style={{ marginBottom: 10 }}>
+                  Each new cycle starts on that course's due date (same date next month) — nudge it a day or two to fold in a session that ran early or late. Nothing carries into the next cycle; mark attendance first so it is counted.
                 </p>
-                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
-                  New cycle start date
-                  <input
-                    type="date"
-                    value={renewDate}
-                    onChange={function (e) { setRenewDate(e.target.value) }}
-                    style={{ marginTop: 6, fontSize: 13, width: '100%' }}
-                  />
-                </label>
-                {/* The days this student attends set the cycle's class target:
-                    the number of those days between the start date and the
-                    same date next month, less any declared holidays/weekly offs. Sat/Sun
-                    can be picked too (weekend-only students); a Saturday that
-                    isn't picked stays free revision, outside the target. */}
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ font: '600 12px var(--font)', color: 'var(--text2)', marginBottom: 6 }}>Days of the week</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {CYCLE_DAY_NAMES.map(function (d) {
-                      const on = renewDays.includes(d)
-                      return (
-                        <button key={d} type="button"
-                          onClick={function () { setRenewDays(function (prev) { return prev.includes(d) ? prev.filter(function (x) { return x !== d }) : prev.concat(d) }) }}
-                          style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer', font: '600 12px var(--font)', border: '1.5px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : '#fff', color: on ? 'var(--purple)' : 'var(--text3)' }}>
-                          {d}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <span className="hint" style={{ display: 'block', marginTop: 6 }}>
-                    {renewDays.length === 0
-                      ? 'Pick at least one day.'
-                      : countCycleDays(renewDate || todayIso(), renewDays) + ' class days from ' + fmtDate(renewDate || todayIso()) + ' to ' + fmtDate(addOneMonth(renewDate || todayIso())) + ' (declared holidays and weekly offs come off the target).' + (renewDays.includes('Sat') ? '' : ' Saturday revision is free and not counted.')}
-                  </span>
-                </div>
-                {(
-                  <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>
-                    Fee to add for the next cycle (₹)
-                    <input
-                      type="number" min={0}
-                      value={renewFee}
-                      onChange={function (e) { setRenewFee(e.target.value) }}
-                      style={{ marginTop: 6, fontSize: 13, width: '100%' }}
-                    />
-                    <span className="hint" style={{ display: 'block', marginTop: 4 }}>Added to Fee Total — leave 0 to only reset the cycle date without changing the fee.</span>
-                  </label>
-                )}
+                {mon.map(function (en) {
+                  const r = renewRows[en.id]
+                  if (!r) return null
+                  const cyc = cycleProgress[en.id]
+                  const ri = renewalInfo(en)
+                  return (
+                    <div key={en.id} style={{ border: '1.5px solid ' + (r.on ? 'var(--purple)' : 'var(--border)'), borderRadius: 10, padding: '10px 12px', marginBottom: 8, background: r.on ? 'var(--purple-bg)' : 'var(--bg)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={r.on} onChange={function (e) { setRenewRow(en.id, { on: e.target.checked }) }} />
+                        <span style={{ font: '700 13px var(--font)', color: 'var(--text)', flex: 1 }}>
+                          {en.skus?.courses?.group_name || 'Course'}{en.skus?.level_name ? ' · ' + en.skus.level_name : ''}
+                        </span>
+                        {ri && (
+                          <span style={{ font: '600 10px var(--font)', color: ri.state === 'overdue' ? '#991b1b' : ri.state === 'soon' ? '#B45309' : 'var(--text3)', whiteSpace: 'nowrap' }}>
+                            {ri.state === 'overdue' ? 'overdue since ' : 'due '}{fmtDate(ri.due)}
+                          </span>
+                        )}
+                      </label>
+                      {cyc && (
+                        <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', margin: '4px 0 0 24px' }}>
+                          {cyc.done} of {cyc.target} classes done in the cycle that started {fmtDate(cycleAnchor(en))}
+                          {cyc.unmarked > 0 ? ' · ' + cyc.unmarked + ' not marked' : ''}
+                        </div>
+                      )}
+                      {r.on && (
+                        <div style={{ margin: '10px 0 0 24px' }}>
+                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>New cycle start
+                              <input type="date" value={r.date} onChange={function (e) { setRenewRow(en.id, { date: e.target.value }) }}
+                                style={{ display: 'block', marginTop: 4, fontSize: 12 }} />
+                            </label>
+                            <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>Fee for the month (₹)
+                              <input type="number" min={0} value={r.fee} onChange={function (e) { setRenewRow(en.id, { fee: e.target.value }) }}
+                                style={{ display: 'block', marginTop: 4, fontSize: 12, width: 110 }} />
+                            </label>
+                          </div>
+                          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+                            {CYCLE_DAY_NAMES.map(function (d) {
+                              const on = r.days.includes(d)
+                              return (
+                                <button key={d} type="button"
+                                  onClick={function () { setRenewRow(en.id, { days: on ? r.days.filter(function (x) { return x !== d }) : r.days.concat(d) }) }}
+                                  style={{ padding: '4px 7px', borderRadius: 7, cursor: 'pointer', font: '600 11px var(--font)', border: '1.5px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? '#fff' : 'var(--bg)', color: on ? 'var(--purple)' : 'var(--text3)' }}>
+                                  {d}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <span className="hint" style={{ display: 'block', marginTop: 5 }}>
+                            {r.days.length === 0
+                              ? 'Pick at least one day.'
+                              : countCycleDays(r.date || todayIso(), r.days) + ' class days to ' + fmtDate(addOneMonth(r.date || todayIso())) + ' (declared holidays come off the target).'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
               <div className="modal-actions">
-                <button className="btn" onClick={function () { setRenewingEn(null) }} disabled={renewSaving}>Cancel</button>
-                <button className="btn-p" disabled={!renewDate || renewSaving} onClick={renewCycle}>
-                  {renewSaving ? 'Saving…' : 'Renew Cycle'}
+                <span style={{ marginRight: 'auto', font: '600 12px var(--font)', color: 'var(--text2)' }}>
+                  {sel.length} course{sel.length === 1 ? '' : 's'} · {sum > 0 ? '₹' + fmtAmt(sum) + ' on one invoice' : 'dates only, no fee'}
+                </span>
+                <button className="btn" onClick={function () { setRenewOpen(false) }} disabled={renewSaving}>Cancel</button>
+                <button className="btn-p" disabled={sel.length === 0 || renewSaving} onClick={renewCycle}>
+                  {renewSaving ? 'Saving…' : 'Renew ' + (sel.length || '') + ' course' + (sel.length === 1 ? '' : 's')}
                 </button>
               </div>
             </div>

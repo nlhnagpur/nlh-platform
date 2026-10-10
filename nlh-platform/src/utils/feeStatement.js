@@ -95,12 +95,15 @@ export function buildFeeStatement(o) {
       const names = items.map(function (x) { return x.name })
       const first = items[0] || {}
       if (first.cycle === 'renewal') {
-        // The invoice itself records which month this renewal covers.
-        const ps = dayOf(first.period_start)
-        lines.push({
-          kind: 'renewal', course: first.name || names.join(', ') || null, enrollmentId: first.enrollment_id || null,
-          label: 'Monthly fee — ' + (first.name || 'Course'), amount: d, date: dayOf(e.at), invoice: invRef(inv),
-          period: ps ? { y: Number(ps.slice(0, 4)), m: Number(ps.slice(5, 7)) - 1, label: first.period_label || '' } : null,
+        // One invoice may renew several courses — a line per course, each
+        // naming the month it covers.
+        items.filter(function (x) { return x.cycle === 'renewal' }).forEach(function (x) {
+          const ps = dayOf(x.period_start)
+          lines.push({
+            kind: 'renewal', course: x.name || null, enrollmentId: x.enrollment_id || null,
+            label: 'Monthly fee — ' + (x.name || 'Course'), amount: Number(x.amount) || 0, date: dayOf(e.at), invoice: invRef(inv),
+            period: ps ? { y: Number(ps.slice(0, 4)), m: Number(ps.slice(5, 7)) - 1, label: x.period_label || '' } : null,
+          })
         })
         return
       }
