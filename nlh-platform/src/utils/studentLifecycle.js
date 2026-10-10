@@ -1,9 +1,12 @@
 // A monthly-billing cycle runs from its start date to the same date next
-// month (not a rolling 28 days). Its class target is the number of scheduled
-// Mon–Fri days in that window, less any days the batch declared a holiday —
-// it varies with the calendar rather than being a fixed number. Saturday
-// classes are revision, included in the fee: they don't raise the target, and
-// count only to make up weekday classes the student missed.
+// month (not a rolling 28 days). Its class target is the number of the
+// student's class days in that window, less any days the batch declared a
+// holiday — it varies with the calendar rather than being a fixed number.
+// All seven days are class days by default (holidays and the weekly off are
+// declared by hand); a student can be enrolled for fewer, e.g. Sat + Sun only.
+// When Saturday is NOT one of the student's class days, Saturday classes are
+// revision, included in the fee: they don't raise the target, and count only
+// to make up classes the student missed.
 const RENEW_SOON_DAYS = 5
 
 function isoDay(d) {
@@ -40,17 +43,26 @@ function nextDay(iso) {
 
 const DOW_KEYS = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
 
-// Weekdays (1-5) a batch is scheduled for. A batch that meets Tue/Wed/Thu has
-// a smaller monthly target than Mon-Fri; a blank schedule means every Mon-Fri.
-export function scheduledWeekdays(scheduleDays) {
+function parseDows(str) {
   const set = new Set()
-  String(scheduleDays || '').split(/[,\s]+/).forEach(function (t) {
+  String(str || '').split(/[,\s]+/).forEach(function (t) {
     if (!t) return
     const k = t.slice(0, 1).toUpperCase() + t.slice(1, 3).toLowerCase()
-    if (DOW_KEYS[k] >= 1 && DOW_KEYS[k] <= 5) set.add(DOW_KEYS[k])
+    if (DOW_KEYS[k] !== undefined) set.add(DOW_KEYS[k])
   })
-  if (set.size === 0) [1, 2, 3, 4, 5].forEach(function (n) { set.add(n) })
   return set
+}
+
+// Days of the week (0 Sun .. 6 Sat) that count as a student's class days.
+// Days chosen for the student at renewal win; failing that the batch's own
+// days; a blank schedule means all seven days — holidays and the weekly off
+// are declared by hand on the batch and come off the target that way.
+export function cycleDows(cycleDays, scheduleDays) {
+  const own = parseDows(cycleDays)
+  if (own.size) return own
+  const batch = parseDows(scheduleDays)
+  if (batch.size) return batch
+  return new Set([0, 1, 2, 3, 4, 5, 6])
 }
 
 function prevDay(iso) {
@@ -60,20 +72,21 @@ function prevDay(iso) {
 }
 
 export const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+export const CYCLE_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-// "Mon, Wed, Fri" — the selected weekdays in calendar order, for storing.
+// "Mon, Wed, Fri" / "Sat, Sun" — the selected days in calendar order, for storing.
 export function formatCycleDays(names) {
-  return WEEKDAY_NAMES.filter(function (n) { return names.includes(n) }).join(', ')
+  return CYCLE_DAY_NAMES.filter(function (n) { return names.includes(n) }).join(', ')
 }
 
-// Weekday names (Mon-Fri) in a stored/batch days string; blank = all five.
-export function parseCycleDays(str) {
-  const set = scheduledWeekdays(str)
-  return WEEKDAY_NAMES.filter(function (n, i) { return set.has(i + 1) })
+// Day names in force for a student — see cycleDows.
+export function parseCycleDays(cycleDays, scheduleDays) {
+  const set = cycleDows(cycleDays, scheduleDays)
+  return CYCLE_DAY_NAMES.filter(function (n) { return set.has(DOW_KEYS[n]) })
 }
 
 // How many class days a cycle starting on startIso would have for the chosen
-// weekdays, before any declared holidays come off — for the renew dialog's
+// days, before any declared holidays come off — for the renew dialog's
 // preview. Same window as computeCycle: start up to the same date next month.
 export function countCycleDays(startIso, names) {
   const sched = new Set(names.map(function (n) { return DOW_KEYS[n] }))
@@ -88,19 +101,20 @@ export function countCycleDays(startIso, names) {
 //   attendance  Map(session_id -> attended boolean) for this student's enrolment.
 //               A session with no entry is "not marked" — attendance was never
 //               recorded — which is not the same thing as "absent".
-// target  = scheduled Mon-Fri days in [start, due) minus declared holidays
-// done    = weekday classes attended + Saturday revision classes attended, the
-//           Saturdays only up to the number of weekday classes the student was
-//           marked ABSENT for (capped at target). Not-marked classes aren't
+// target  = the student's class days in [start, due) minus declared holidays
+// done    = regular classes attended + Saturday revision classes attended, the
+//           revision ones only up to the number of regular classes the student
+//           was marked ABSENT for (capped at target). Not-marked classes aren't
 //           counted either way — they're surfaced so attendance gets filled in.
+//           Saturday is a regular class, not revision, for a student who has
+//           Saturday as a class day; likewise Sunday only counts for a student
+//           who has Sunday as a class day.
 export function computeCycle(en, sessions, attendance, scheduleDays, today) {
   const start = cycleAnchor(en)
   if (!start) return null
   const due = addOneMonth(start)
   const todayStr = today || todayIso()
-  // Days chosen for this student at renewal win; otherwise the batch's days;
-  // otherwise every Mon-Fri.
-  const sched = scheduledWeekdays(en.cycle_days || scheduleDays)
+  const sched = cycleDows(en.cycle_days, scheduleDays)
   const att = attendance || new Map()
   const inWindow = (sessions || []).filter(function (s) { return s.session_date >= start && s.session_date < due })
   const holidayDates = new Set(inWindow.filter(function (s) { return s.is_holiday }).map(function (s) { return s.session_date }))
@@ -111,18 +125,17 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today) {
   }
 
   const ran = inWindow.filter(function (s) { return !s.is_holiday && s.session_date <= todayStr })
-  const weekday = ran.filter(function (s) { const w = dowOf(s.session_date); return w >= 1 && w <= 5 })
-  const saturday = ran.filter(function (s) { return dowOf(s.session_date) === 6 })
+  const weekday = ran.filter(function (s) { const w = dowOf(s.session_date); return (w >= 1 && w <= 5) || sched.has(w) })
+  const saturday = ran.filter(function (s) { return dowOf(s.session_date) === 6 && !sched.has(6) })
   const attendedWeekday = weekday.filter(function (s) { return att.get(s.id) === true }).length
   const absent = weekday.filter(function (s) { return att.get(s.id) === false }).length
   const unmarked = weekday.filter(function (s) { return !att.has(s.id) }).length
   const attendedSat = saturday.filter(function (s) { return att.get(s.id) === true }).length
   const makeUp = Math.min(absent, attendedSat)
   // Plain tally of every class that ran in the cycle so far (Saturday revision
-  // included, Sunday classes not — they sit outside the Mon-Fri + Saturday
-  // revision fee rule): S sessions, P present, A absent, N not marked.
-  // S = P + A + N.
-  const counted = ran.filter(function (s) { return dowOf(s.session_date) !== 0 })
+  // included; Sunday classes only for a student who has Sunday as a class
+  // day): S sessions, P present, A absent, N not marked. S = P + A + N.
+  const counted = ran.filter(function (s) { return dowOf(s.session_date) !== 0 || sched.has(0) })
   const sP = counted.filter(function (s) { return att.get(s.id) === true }).length
   const sA = counted.filter(function (s) { return att.get(s.id) === false }).length
   return {
@@ -131,6 +144,8 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today) {
     held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat,
     absent: absent, unmarked: unmarked, makeUp: makeUp,
     spa: { S: counted.length, P: sP, A: sA, N: counted.length - sP - sA },
+    days: CYCLE_DAY_NAMES.filter(function (n) { return sched.has(DOW_KEYS[n]) }),
+    satRevision: !sched.has(6),
   }
 }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { fmtDate, showToast } from '../utils'
-import { fetchAllRows } from '../utils/studentLifecycle'
+import { fetchAllRows, cycleDows } from '../utils/studentLifecycle'
 import ModalHeader from './ModalHeader'
 
 // Monthly attendance sheet, in two flavours:
@@ -48,12 +48,18 @@ function memberOn(bs, dateIso) {
   return dateIso >= from && dateIso <= to
 }
 
+// A Sunday class for a student whose class days don't include Sunday.
+function offDay(dateIso, en, scheduleDays) {
+  return dowOf(dateIso) === 0 && !cycleDows(en && en.cycle_days, scheduleDays).has(0)
+}
+
 function tally(cells) {
   const t = { S: 0, P: 0, A: 0, N: 0 }
   cells.forEach(function (c) {
-    // Holidays aren't classes, and Sunday classes sit outside the Mon-Fri +
-    // Saturday revision fee rule — shown on the sheet, never counted.
-    if (!c || c.code === 'H' || (c.date && dowOf(c.date) === 0)) return
+    // Holidays aren't classes, and a Sunday class is only counted for a
+    // student who has Sunday as a class day (c.off otherwise) — it's still
+    // shown on the sheet.
+    if (!c || c.code === 'H' || c.off) return
     t.S++
     t[c.code]++
   })
@@ -81,7 +87,7 @@ async function loadStudentSheet(student, ym) {
   const enrIds = enrs.map(function (e) { return e.id })
   if (!enrIds.length) return { rows: [], attended: [] }
   const { data: bsRows, error } = await sb.from('batch_students')
-    .select('enrollment_id, batch_id, assigned_at, removed_at, batches(name)').in('enrollment_id', enrIds)
+    .select('enrollment_id, batch_id, assigned_at, removed_at, batches(name, schedule_days)').in('enrollment_id', enrIds)
   if (error) throw error
   const batchIds = Array.from(new Set((bsRows || []).map(function (r) { return r.batch_id }).filter(Boolean)))
   const sessions = batchIds.length ? await fetchAllRows(function (from, to) {
@@ -100,7 +106,7 @@ async function loadStudentSheet(student, ym) {
         else { const a = att.get(s.id + ':' + en.id); code = a === true ? 'P' : a === false ? 'A' : 'N' }
         const day = dayNum(s.session_date)
         if (!cells[day] || cells[day].code === 'H') {
-          cells[day] = { code: code, date: s.session_date, batch: m.batches && m.batches.name, ci: s.instructors && s.instructors.full_name, sub: s.is_substitute }
+          cells[day] = { code: code, date: s.session_date, off: offDay(s.session_date, en, m.batches && m.batches.schedule_days), batch: m.batches && m.batches.name, ci: s.instructors && s.instructors.full_name, sub: s.is_substitute }
         }
       })
     })
@@ -118,14 +124,14 @@ async function loadInstructorSheet(instructor, ym) {
   const b = monthBounds(ym)
   const sessions = await fetchAllRows(function (from, to) {
     return sb.from('batch_sessions')
-      .select('id, batch_id, session_date, is_holiday, is_substitute, batches(name, skus(level_name, courses(group_name)))')
+      .select('id, batch_id, session_date, is_holiday, is_substitute, batches(name, schedule_days, skus(level_name, courses(group_name)))')
       .eq('instructor_id', instructor.id).eq('is_holiday', false)
       .gte('session_date', b.start).lte('session_date', b.end).order('session_date').order('id').range(from, to)
   })
   if (!sessions.length) return { batches: [], sessionsTaught: 0, substitutes: 0, studentsTaught: 0 }
   const batchIds = Array.from(new Set(sessions.map(function (s) { return s.batch_id })))
   const { data: bsRows, error } = await sb.from('batch_students')
-    .select('enrollment_id, batch_id, assigned_at, removed_at, enrollments(id, student_id, students(full_name), skus(level_name, courses(group_name)))')
+    .select('enrollment_id, batch_id, assigned_at, removed_at, enrollments(id, student_id, cycle_days, students(full_name), skus(level_name, courses(group_name)))')
     .in('batch_id', batchIds)
   if (error) throw error
   const att = await fetchAttendance(sessions.map(function (s) { return s.id }), null)
@@ -143,7 +149,7 @@ async function loadInstructorSheet(instructor, ym) {
       bsess.forEach(function (s) {
         if (!m.ms.some(function (x) { return memberOn(x, s.session_date) })) return
         const a = att.get(s.id + ':' + m.en.id)
-        cells[s.id] = { code: a === true ? 'P' : a === false ? 'A' : 'N', date: s.session_date }
+        cells[s.id] = { code: a === true ? 'P' : a === false ? 'A' : 'N', date: s.session_date, off: offDay(s.session_date, m.en, s.batches && s.batches.schedule_days) }
       })
       const totals = tally(Object.values(cells))
       // "Taught" = present at least once, Sunday classes included — the CI did teach them.
@@ -169,9 +175,9 @@ function Cell({ c }) {
   if (!c) return <td style={{ width: 24, minWidth: 24, border: '1px solid #e5e7eb' }}></td>
   const t = TONE[c.code]
   const tip = c.code === 'H' ? 'Holiday' : { P: 'Present', A: 'Absent', N: 'Not marked' }[c.code]
-  const isSun = c.date && dowOf(c.date) === 0
+  const isSun = !!c.off
   return (
-    <td title={tip + (c.date ? ' · ' + fmtDate(c.date) : '') + (c.ci ? ' · ' + c.ci + (c.sub ? ' (substitute)' : '') : '') + (isSun && c.code !== 'H' ? ' · Sunday — not counted in S/P/A/N' : '')}
+    <td title={tip + (c.date ? ' · ' + fmtDate(c.date) : '') + (c.ci ? ' · ' + c.ci + (c.sub ? ' (substitute)' : '') : '') + (isSun && c.code !== 'H' ? ' · Sunday is not a class day for this student — not counted in S/P/A/N' : '')}
       style={{ width: 24, minWidth: 24, textAlign: 'center', font: '700 11px var(--mono)', color: t.color, background: t.bg, border: '1px solid #e5e7eb', opacity: isSun && c.code !== 'H' ? 0.45 : 1 }}>
       {c.code}
     </td>
@@ -304,7 +310,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
           </span>
         </div>
         <div style={{ padding: '0 20px 6px', font: '500 11px var(--font)', color: 'var(--text3)' }}>
-          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.N.color }}>N</b> not marked (attendance never recorded) · <b>H</b> holiday · blank no class · <b>S</b> sessions held (S = P + A + N). Sunday classes are shown faded and not counted in S / P / A / N.
+          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.N.color }}>N</b> not marked (attendance never recorded) · <b>H</b> holiday · blank no class · <b>S</b> sessions held (S = P + A + N). Sunday classes are shown faded and not counted in S / P / A / N, unless Sunday is one of the student's class days.
         </div>
         <div style={{ padding: '8px 20px 18px', overflow: 'auto', flex: 1 }}>
           {loading && <div className="loading"><span className="spinner" />Loading attendance…</div>}

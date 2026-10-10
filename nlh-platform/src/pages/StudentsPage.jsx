@@ -5,7 +5,7 @@ import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
 import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
-import { addOneMonth, todayIso, WEEKDAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
+import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -707,9 +707,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   }
 
   // Monthly-billing cycle progress for each running monthly enrolment — see
-  // computeCycle (utils/studentLifecycle.js): target is the cycle's Mon–Fri
-  // days (per the batch's own schedule, less declared holidays); Saturday
-  // revision classes count only to make up weekday absences. Same maths as the
+  // computeCycle (utils/studentLifecycle.js): target is the student's class
+  // days in the cycle (their own chosen days, else the batch's, less declared
+  // holidays); Saturday revision classes count only to make up absences, unless
+  // Saturday is one of the student's class days. Same maths as the
   // Students list. Takes the enrolments/batch map explicitly so it can re-run
   // right after a renewal with the new cycle start.
   async function loadCycleProgress(enrList, assignMap) {
@@ -1059,8 +1060,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setRenewDate(ri ? ri.due : new Date().toISOString().slice(0, 10))
     setRenewFee(String(en.fee_amount || 0))
     // Start from the days already in force: this student's own, else the
-    // batch's, else every Mon-Fri.
-    setRenewDays(parseCycleDays(en.cycle_days || (batchAssignments[en.id] && batchAssignments[en.id].batches && batchAssignments[en.id].batches.schedule_days)))
+    // batch's, else all seven days.
+    setRenewDays(parseCycleDays(en.cycle_days, batchAssignments[en.id] && batchAssignments[en.id].batches && batchAssignments[en.id].batches.schedule_days))
     setRenewingEn(en)
   }
 
@@ -1071,7 +1072,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setRenewSaving(true)
 
     // Only the start date moves. The next cycle's target is worked out from
-    // its own Mon–Fri window; a student who missed weekday classes makes them
+    // its own window and chosen days; a student who missed classes makes them
     // up at Saturday revision, so nothing is carried between cycles.
     if (renewDays.length === 0) { setRenewSaving(false); showToast('Pick at least one day of the week', 'warn'); return }
     const patch = { cycle_started_at: renewDate, cycle_days: formatCycleDays(renewDays) }
@@ -2167,8 +2168,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   // up rather than waiting forever for a count that may never
                   // arrive — the shortfall carries into the next cycle instead.
                   // A cycle runs to the same date next month; its target is the
-                  // Mon–Fri classes in that window (Saturday revision only
-                  // makes up weekday absences); enrolments with no stored cycle
+                  // student's class days in that window (Saturday revision only
+                  // makes up absences); enrolments with no stored cycle
                   // start use their enrolment date. Same maths the Students
                   // list uses (utils/studentLifecycle.js) so the two agree.
                   const isMonthlyRunning = billingType === 'monthly' && !isCompleted && !isDiscontinued
@@ -2256,8 +2257,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                             {renewal && cycle && (
                               <>
                                 {/* Progress + the cycle's own dates, so the target isn't a
-                                    mystery number: it's the Mon–Fri classes inside this range. */}
-                                <span title={'Cycle ' + fmtDate(cycle.start) + ' to ' + fmtDate(cycle.end) + ': ' + cycleTarget + ' weekday (Mon–Fri) classes after declared holidays. Saturday revision classes are included in the fee and only count to make up weekday classes the student was marked absent for.'}
+                                    mystery number: it's the student's class days inside this range. */}
+                                <span title={'Cycle ' + fmtDate(cycle.start) + ' to ' + fmtDate(cycle.end) + ': ' + cycleTarget + ' classes (' + cycle.days.join(', ') + ') after declared holidays.' + (cycle.satRevision ? ' Saturday revision classes are included in the fee and only count to make up classes the student was marked absent for.' : '')}
                                   style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                                   {cycleHeld} / {cycleTarget} this cycle · {shortDay(cycle.start)}–{shortDay(cycle.end)}
                                 </span>
@@ -3128,7 +3129,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                         cyc.unmarked > 0 ? cyc.unmarked + ' not marked — mark attendance first so it is counted' : null,
                       ].filter(Boolean).join('; ')})</>
                     : null}.{' '}
-                  Saturday revision classes are included in the fee, so nothing carries into the next cycle.
+                  {cyc && !cyc.satRevision ? 'Nothing carries into the next cycle.' : 'Saturday revision classes are included in the fee, so nothing carries into the next cycle.'}
                   {' '}The next cycle starts on the due date (same date next month) — nudge it a day or two either way to fold in a session that ran early or late.
                 </p>
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>
@@ -3141,32 +3142,28 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   />
                 </label>
                 {/* The days this student attends set the cycle's class target:
-                    the number of those weekdays between the start date and the
-                    same date next month, less any declared holidays. Saturday
-                    revision is free and isn't part of the target. */}
+                    the number of those days between the start date and the
+                    same date next month, less any declared holidays/weekly offs. Sat/Sun
+                    can be picked too (weekend-only students); a Saturday that
+                    isn't picked stays free revision, outside the target. */}
                 <div style={{ marginTop: 12 }}>
                   <div style={{ font: '600 12px var(--font)', color: 'var(--text2)', marginBottom: 6 }}>Days of the week</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {WEEKDAY_NAMES.map(function (d) {
+                    {CYCLE_DAY_NAMES.map(function (d) {
                       const on = renewDays.includes(d)
                       return (
                         <button key={d} type="button"
                           onClick={function () { setRenewDays(function (prev) { return prev.includes(d) ? prev.filter(function (x) { return x !== d }) : prev.concat(d) }) }}
-                          style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', font: '600 12px var(--font)', border: '1.5px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : '#fff', color: on ? 'var(--purple)' : 'var(--text3)' }}>
+                          style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer', font: '600 12px var(--font)', border: '1.5px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : '#fff', color: on ? 'var(--purple)' : 'var(--text3)' }}>
                           {d}
                         </button>
                       )
                     })}
                   </div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                    {[['Mon–Fri', WEEKDAY_NAMES], ['Mon, Wed, Fri', ['Mon', 'Wed', 'Fri']], ['Tue, Thu', ['Tue', 'Thu']]].map(function (p) {
-                      return <button key={p[0]} type="button" className="btn-s" style={{ fontSize: 10, padding: '2px 8px' }} onClick={function () { setRenewDays(p[1]) }}>{p[0]}</button>
-                    })}
-                  </div>
                   <span className="hint" style={{ display: 'block', marginTop: 6 }}>
                     {renewDays.length === 0
                       ? 'Pick at least one day.'
-                      : countCycleDays(renewDate || todayIso(), renewDays) + ' class days from ' + fmtDate(renewDate || todayIso()) + ' to ' + fmtDate(addOneMonth(renewDate || todayIso())) + ' (declared holidays come off the target). Saturday revision is free and not counted.'}
+                      : countCycleDays(renewDate || todayIso(), renewDays) + ' class days from ' + fmtDate(renewDate || todayIso()) + ' to ' + fmtDate(addOneMonth(renewDate || todayIso())) + ' (declared holidays and weekly offs come off the target).' + (renewDays.includes('Sat') ? '' : ' Saturday revision is free and not counted.')}
                   </span>
                 </div>
                 {(
@@ -4871,7 +4868,7 @@ export default function StudentsPage() {
                                 }
                                 else if (bucket === 'dropped') { txt = '⊘ dropped'; color = '#991b1b'; bg = '#fef2f2' }
                                 else if (bt === 'monthly') {
-                                  // Monthly: classes done / this cycle's Mon–Fri target
+                                  // Monthly: classes done / this cycle's class-day target
                                   // (Saturday revision only makes up absences), renewing
                                   // on the same date next month — and the date is shown,
                                   // not just implied by a chip that appears.
