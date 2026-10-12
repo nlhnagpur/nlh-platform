@@ -3192,7 +3192,14 @@ export default function OrdersPage() {
       .concat((cnRes.data || []).map(function (c) {
         return { type: 'credit_note', id: c.id, no: c.credit_note_no, date: (c.approved_at || c.requested_at || '').slice(0, 10), amount: c.amount, fr: c.franchisees || {}, forLabel: c.orders?.invoice_no || c.orders?.order_ref || c.reason || '—', status: c.status, raw: c }
       }))
-    merged.sort(function (a, b) { return (b.date || '').localeCompare(a.date || '') })
+    // Receipt-number order, highest first (numbers compared numerically, so
+    // 0019 follows 0018 and 0100 sits above 0099); entries without a number last.
+    merged.sort(function (a, b) {
+      if (!a.no && !b.no) return (b.date || '').localeCompare(a.date || '')
+      if (!a.no) return 1
+      if (!b.no) return -1
+      return b.no.localeCompare(a.no, undefined, { numeric: true }) || (b.date || '').localeCompare(a.date || '')
+    })
     setRecords(merged)
     setRecordsLoading(false)
   }

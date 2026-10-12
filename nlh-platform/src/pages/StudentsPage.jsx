@@ -4888,6 +4888,13 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
     return (p.receipt_no || '').toLowerCase().includes(q) || (p.reference || '').toLowerCase().includes(q)
       || (s && (s.full_name?.toLowerCase().includes(q) || s.parent_name?.toLowerCase().includes(q) || s.phone?.includes(q)))
   })
+  // Receipt-number order, highest first (numeric-aware); un-numbered last.
+  rows.sort(function (a, b) {
+    if (!a.receipt_no && !b.receipt_no) return 0
+    if (!a.receipt_no) return 1
+    if (!b.receipt_no) return -1
+    return b.receipt_no.localeCompare(a.receipt_no, undefined, { numeric: true })
+  })
   const total = rows.reduce(function (sum, p) { return sum + (p.amount || 0) }, 0)
 
   function ledgerOf(studentId) { return receipts.filter(function (x) { return x.student_id === studentId }) }
