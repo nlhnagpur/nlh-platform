@@ -21,7 +21,7 @@ export async function loadFranchiseeLedger(franchiseeId) {
       .select('id, business_name, owner_name, tier, city, state, phone, email, centre_code, registered_courses, enrollment_fee, enrollment_invoice_no, contract_start, created_at')
       .eq('id', franchiseeId).single(),
     sb.from('franchisee_payments')
-      .select('id, amount, payment_date, payment_mode, reference_no, notes, receipt_no')
+      .select('id, amount, payment_date, receipt_date, payment_mode, reference_no, notes, receipt_no')
       .eq('franchisee_id', franchiseeId),
     // An order belongs to whoever is actually BILLED, not whoever placed
     // it — a CF often places an order on behalf of a school it introduced
@@ -64,7 +64,7 @@ export async function loadFranchiseeLedger(franchiseeId) {
 
   const [opRes, courseRes] = await Promise.all([
     orderIds.length
-      ? sb.from('order_payments').select('id, order_id, amount, paid_on, mode, reference, receipt_no').in('order_id', orderIds)
+      ? sb.from('order_payments').select('id, order_id, amount, paid_on, receipt_date, mode, reference, receipt_no').in('order_id', orderIds)
       : Promise.resolve({ data: [] }),
     (franchisee && franchisee.registered_courses && franchisee.registered_courses.length)
       ? sb.from('courses').select('id, group_name, name').in('id', franchisee.registered_courses)

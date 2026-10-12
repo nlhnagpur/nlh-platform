@@ -11,6 +11,7 @@ import ModalHeader from '../components/ModalHeader'
 import { printFranchiseeCert, default as FranchiseeCertModal } from '../components/FranchiseeCertModal'
 import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice, printFranchiseeAgreement } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
+import { todayIso } from '../utils/studentLifecycle'
 import { StudentDetailModal, daysLeftInMonth } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
 import { loadLatestAgreement, generateAgreement, generateSchoolAgreement } from '../utils/franchiseeAgreement'
@@ -182,6 +183,7 @@ export function RecordFranchiseePaymentModal({ franchisee, balance, currentUser,
       franchisee_id: franchisee.id,
       amount:        amt,
       payment_date:  date,
+      receipt_date:  todayIso(),
       payment_mode:  mode,
       reference_no:  ref.trim() || null,
       notes:         notes.trim() || null,
@@ -227,7 +229,7 @@ export function RecordFranchiseePaymentModal({ franchisee, balance, currentUser,
         try {
           const html = printFranchiseeReceipt(
             franchisee,
-            { receipt_no: inserted && inserted.receipt_no, amount: amt, payment_date: date,
+            { receipt_no: inserted && inserted.receipt_no, amount: amt, payment_date: date, receipt_date: todayIso(),
               payment_mode: mode, reference_no: ref.trim() || null, notes: notes.trim() || null },
             { total: Number(franchisee.enrollment_fee) || 0, paidToDate: newFeePaid, asHtml: true }
           )
@@ -268,7 +270,7 @@ export function RecordFranchiseePaymentModal({ franchisee, balance, currentUser,
             <label>Amount Received (₹)
               <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" autoFocus />
             </label>
-            <label>Payment Date
+            <label>Paid on
               <input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </label>
             <label>Payment Mode
@@ -451,7 +453,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
 
   useEffect(function () {
     sb.from('franchisee_payments')
-      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
+      .select('id,amount,payment_date,receipt_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
       .eq('franchisee_id', franchisee.id)
       .order('payment_date', { ascending: false })
       .then(function ({ data }) { setPayments(data || []) })
@@ -466,7 +468,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
   // Reload the ledger and recompute fee_paid from the sum of payments
   async function reloadPaymentsAndFee() {
     const { data } = await sb.from('franchisee_payments')
-      .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
+      .select('id,amount,payment_date,receipt_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
       .eq('franchisee_id', franchisee.id)
       .order('payment_date', { ascending: false })
     const list = data || []
@@ -1791,7 +1793,7 @@ function FranchiseeDetailModal({ franchisee, allCourses, onClose, onSaved, inlin
           setForm(f => ({ ...f, fee_paid: String(newFeePaid) }))
           setShowPayModal(false)
           sb.from('franchisee_payments')
-            .select('id,amount,payment_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
+            .select('id,amount,payment_date,receipt_date,payment_mode,reference_no,notes,recorded_by,created_at,receipt_no')
             .eq('franchisee_id', franchisee.id)
             .order('payment_date', { ascending: false })
             .then(function ({ data }) { setPayments(data || []) })

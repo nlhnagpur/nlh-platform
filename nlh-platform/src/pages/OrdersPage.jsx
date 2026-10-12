@@ -10,6 +10,7 @@ import { createPendingStockReturns, liveReturnsForLine, cancelStockReturn, creat
 import { generateServiceInvoices, snapshotOrderCommission, computeOrderCommission, monthFirst, monthLabel } from '../utils/serviceBilling'
 import { sendInvoiceEmail, sendPaymentReminder, sendPaymentVerified } from '../services/email'
 import { sendWAOrderDispatched, sendWAPaymentReceived } from '../services/whatsapp'
+import { todayIso } from '../utils/studentLifecycle'
 import { printOrderReceipt, printFranchiseeReceipt, printCombinedOrderReceipt } from '../components/studentDocs'
 import { RecordFranchiseePaymentModal } from './FranchiseesPage'
 import SearchSelect from '../components/SearchSelect'
@@ -343,7 +344,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
 
   async function loadHistory() {
     const { data } = await sb.from('order_payments')
-      .select('id, amount, paid_on, mode, reference, note, receipt_no')
+      .select('id, amount, paid_on, receipt_date, mode, reference, note, receipt_no')
       .eq('order_id', order.id)
       .order('paid_on', { ascending: false })
     setHistory(data || [])
@@ -443,6 +444,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
       amount:    amt,
       // Date the money was actually received (back-datable), not when it was keyed in
       paid_on:   paidOn || new Date().toISOString().slice(0, 10),
+      receipt_date: todayIso(),
       mode:      mode,
       reference: ref.trim() || null,
     }).select('receipt_no').single()
@@ -486,7 +488,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
         try {
           const html = printOrderReceipt(
             order,
-            { receipt_no: inserted && inserted.receipt_no, amount: amt, paid_on: paidOn, mode: mode, reference: ref.trim() || null },
+            { receipt_no: inserted && inserted.receipt_no, amount: amt, paid_on: paidOn, receipt_date: todayIso(), mode: mode, reference: ref.trim() || null },
             { paidToDate: (order.amount_paid || 0) + amt, asHtml: true }
           )
           imageUrl = await captureDocPng(html, (inserted && inserted.receipt_no) || 'receipt')
@@ -589,7 +591,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
                   style={{ fontWeight:700, fontSize:16 }}
                 />
               </label>
-              <label>Payment Date
+              <label>Paid on
                 <input
                   type="date"
                   value={paidOn}
@@ -1381,7 +1383,7 @@ function EditReceiptModal({ rec, onClose, onSaved }) {
                     </select>
                   )}
                 </label>
-                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Date
+                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Paid on
                   <input className="inp" type="date" value={date} onChange={function (e) { setDate(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
                 </label>
                 <label style={{ flex: '1 1 150px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Reference
@@ -1502,7 +1504,7 @@ function RecordMultiPaymentModal({ onClose, onSaved }) {
     const paidRows = []   // { order, payment, balanceAfter } for the combined receipt + WA send
     for (const r of rows) {
       const { data: inserted, error } = await sb.from('order_payments').insert({
-        order_id: r.order.id, amount: r.amt, paid_on: paidOn || new Date().toISOString().slice(0, 10),
+        order_id: r.order.id, amount: r.amt, paid_on: paidOn || new Date().toISOString().slice(0, 10), receipt_date: todayIso(),
         mode: mode, reference: ref.trim() || null, receipt_no: sharedReceiptNo,
       }).select('*').single()
       if (error) { failed = error; break }
@@ -1582,7 +1584,7 @@ function RecordMultiPaymentModal({ onClose, onSaved }) {
                     <option value="cheque">Cheque</option><option value="razorpay">Razorpay</option><option value="other">Other</option>
                   </select>
                 </label>
-                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Date
+                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Paid on
                   <input className="inp" type="date" value={paidOn} onChange={function (e) { setPaidOn(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
                 </label>
                 <label style={{ flex: '1 1 160px', font: '600 12px var(--font)', color: 'var(--text2)' }}>UTR / Reference
@@ -3154,10 +3156,10 @@ export default function OrdersPage() {
     const FR = 'business_name, tier, phone'
     const [payRes, feeRes, cnRes] = await Promise.all([
       sb.from('order_payments')
-        .select('id, receipt_no, amount, paid_on, mode, reference, order:orders(id, order_ref, invoice_no, grand_total, amount_paid, placer:franchisees!orders_placer_id_fkey(' + FR + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + FR + '))')
+        .select('id, receipt_no, amount, paid_on, receipt_date, mode, reference, order:orders(id, order_ref, invoice_no, grand_total, amount_paid, placer:franchisees!orders_placer_id_fkey(' + FR + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + FR + '))')
         .order('paid_on', { ascending: false }).limit(300),
       sb.from('franchisee_payments')
-        .select('id, receipt_no, amount, payment_date, payment_mode, reference_no, notes, franchisee_id, franchisees(' + FR + ')')
+        .select('id, receipt_no, amount, payment_date, receipt_date, payment_mode, reference_no, notes, franchisee_id, franchisees(' + FR + ')')
         .order('payment_date', { ascending: false }).limit(300),
       sb.from('franchisee_credit_notes')
         .select('id, credit_note_no, amount, reason, status, requested_at, approved_at, franchisee_id, franchisees(' + FR + '), orders(order_ref, invoice_no)')
@@ -3182,10 +3184,10 @@ export default function OrdersPage() {
         const fr = p0.order?.bill_to_fr || p0.order?.placer || {}
         const total = group.reduce(function (s, x) { return s + (x.amount || 0) }, 0)
         const forLabel = group.map(function (x) { return x.order?.invoice_no || x.order?.order_ref }).filter(Boolean).join(', ') || '—'
-        return { type: 'payment', id: p0.id, no: p0.receipt_no, date: p0.paid_on, amount: total, fr: fr, forLabel: forLabel, status: null, raw: group }
+        return { type: 'payment', id: p0.id, no: p0.receipt_no, date: p0.receipt_date || p0.paid_on, paidOn: p0.paid_on, amount: total, fr: fr, forLabel: forLabel, status: null, raw: group }
       }))
       .concat((feeRes.data || []).map(function (f) {
-        return { type: 'fee', id: f.id, no: f.receipt_no, date: f.payment_date, amount: f.amount, fr: f.franchisees || {}, forLabel: 'Franchise fee', status: null, raw: f }
+        return { type: 'fee', id: f.id, no: f.receipt_no, date: f.receipt_date || f.payment_date, paidOn: f.payment_date, amount: f.amount, fr: f.franchisees || {}, forLabel: 'Franchise fee', status: null, raw: f }
       }))
       .concat((cnRes.data || []).map(function (c) {
         return { type: 'credit_note', id: c.id, no: c.credit_note_no, date: (c.approved_at || c.requested_at || '').slice(0, 10), amount: c.amount, fr: c.franchisees || {}, forLabel: c.orders?.invoice_no || c.orders?.order_ref || c.reason || '—', status: c.status, raw: c }
@@ -3996,7 +3998,12 @@ export default function OrdersPage() {
                     return (
                       <tr key={rec.type + rec.id}>
                         <td className="mono" style={{ fontWeight: 600 }}>{rec.no || '—'}</td>
-                        <td className="mono hide-mobile">{fmtDate(rec.date)}</td>
+                        <td className="mono hide-mobile">
+                          {fmtDate(rec.date)}
+                          {rec.paidOn && String(rec.paidOn).slice(0, 10) !== String(rec.date).slice(0, 10) && (
+                            <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>paid {fmtDate(rec.paidOn)}</div>
+                          )}
+                        </td>
                         <td><span style={{ font: '700 10px var(--mono)', color: typeColor.c, background: typeColor.bg, border: '1px solid ' + typeColor.bd, borderRadius: 20, padding: '2px 8px' }}>{typeLabel}</span></td>
                         <td>
                           <div style={{ fontWeight: 600 }}>{rec.fr?.business_name || '—'}</div>

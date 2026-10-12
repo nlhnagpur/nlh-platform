@@ -454,13 +454,13 @@ ${receiptTotals([
       { l: 'Invoice total', v: '&#8377;' + fmtAmt(total) },
       { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid),  c: '#1D7A4F' },
       { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
-    ], payment.amount)}`
+    ], payment.amount, fmtLong(payment.paid_on || payment.paid_at || payment.receipt_date || new Date()))}`
 
   return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '-' },
-      { l: 'Date', v: fmtLong(payment.paid_on || payment.paid_at || new Date()) },
+      { l: 'Date', v: fmtLong(payment.receipt_date || payment.paid_on || payment.paid_at || new Date()) },
       { l: 'Mode', v: payment.mode ? String(payment.mode).replace(/_/g, ' ') : '-', sans: true },
       { l: 'Against', v: againstT || '-' },
     ],
@@ -498,13 +498,13 @@ export function printCombinedOrderReceipt(rows, ctx) {
 
   const body = `
     <div class="items"><div class="ih"><div>#</div><div>Received with thanks — payment against invoice</div><div class="r">Amount (Rs)</div></div>${lines}</div>
-${receiptTotals([], totalAmount)}`
+${receiptTotals([], totalAmount, fmtLong(first.payment.paid_on || first.payment.paid_at || first.payment.receipt_date || new Date()))}`
 
   return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt · ' + rows.length + ' invoices', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: first.payment.receipt_no || '-' },
-      { l: 'Date', v: fmtLong(first.payment.paid_on || first.payment.paid_at || new Date()) },
+      { l: 'Date', v: fmtLong(first.payment.receipt_date || first.payment.paid_on || first.payment.paid_at || new Date()) },
       { l: 'Mode', v: first.payment.mode ? String(first.payment.mode).replace(/_/g, ' ') : '-', sans: true },
       { l: 'Invoices', v: String(rows.length) },
     ],
@@ -543,13 +543,13 @@ ${receiptTotals(total > 0 ? [
       { l: 'Franchise fee', v: '&#8377;' + fmtAmt(total) },
       { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid),  c: '#1D7A4F' },
       { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
-    ] : [], payment.amount)}`
+    ] : [], payment.amount, fmtLong(payment.payment_date || payment.paid_on || payment.receipt_date || new Date()))}`
 
   return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
     meta: [
       { l: 'Receipt no.', v: payment.receipt_no || '-' },
-      { l: 'Date', v: fmtLong(payment.payment_date || payment.paid_on || new Date()) },
+      { l: 'Date', v: fmtLong(payment.receipt_date || payment.payment_date || payment.paid_on || new Date()) },
       { l: 'Mode', v: mode ? String(mode).replace(/_/g, ' ') : '-', sans: true },
       { l: 'Centre', v: franchisee.centre_code || '-' },
     ],
