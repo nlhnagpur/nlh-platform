@@ -2067,9 +2067,18 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
             <InvoiceEditModal
               invoice={iv}
               onClose={function () { setEditInvId(null) }}
-              onSaved={function (row, newFeeTotal) {
+              onSaved={function (row, newFeeTotal, skuChanges, addedEnr) {
                 setInvoices(function (prev) { return prev.map(function (x) { return x.id === row.id ? row : x }) })
                 setEditInvId(null)
+                if (addedEnr && addedEnr.length) setLocalEnrollments(function (prev) { return prev.concat(addedEnr) })
+                if (skuChanges && skuChanges.length) {
+                  setLocalEnrollments(function (prev) {
+                    return prev.map(function (e) {
+                      const ch = skuChanges.find(function (c) { return c.enrollment_id === e.id })
+                      return ch ? { ...e, sku_id: ch.sku_id, skus: { ...(e.skus || {}), level_name: ch.level_name, courses: { ...((e.skus && e.skus.courses) || {}), group_name: ch.group_name || (e.skus && e.skus.courses && e.skus.courses.group_name) } } } : e
+                    })
+                  })
+                }
                 if (newFeeTotal != null) {
                   setForm(function (f) { return { ...f, fee_total: newFeeTotal } })
                   if (onSaved) onSaved({ ...student, ...form, fee_total: newFeeTotal, enrollments: localEnrollments })
@@ -4930,42 +4939,205 @@ function StudentReceiptsRegister({ receipts, students, search, centreFilter, sho
   )
 }
 
-// Edit an invoice (admins): date, notes and each course's amount. A changed
-// amount moves the student's Fee Total by the difference — the change is
-// logged like any fee edit and the statement shows it as an adjustment against
-// that course — so the account, invoice and receipts stay in step.
+// Edit an invoice (admins): date, notes, each line's course / level and
+// amount, and the kit items given.
+//  • A changed amount moves the student's Fee Total by the difference — logged
+//    like any fee edit and shown on the statement as an adjustment.
+//  • A changed course / level also changes the student's enrolment to match.
+//  • Kit ticked / quantities are synced to the stock ledger for that enrolment
+//    (items un-ticked are returned to stock, newly ticked ones issued).
+//  • A course can be ADDED to the invoice: it enrols the student in that level
+//    (starting on the invoice date) and adds its fee to the Fee Total.
 function InvoiceEditModal({ invoice, onClose, onSaved }) {
-  const items = invoice.items || []
-  const courseIdx = []
-  items.forEach(function (it, i) { if (it && it.kind === 'course') courseIdx.push(i) })
-  const [amts, setAmts] = useState(function () {
-    const o = {}
-    courseIdx.forEach(function (i) { o[i] = String(items[i].amount ?? 0) })
-    return o
+  const allItems = invoice.items || []
+  const [courses, setCourses] = useState(function () {
+    return allItems.filter(function (it) { return it && it.kind === 'course' }).map(function (it) {
+      return { ...it, amount_s: String(it.amount ?? 0), enrollment_id: it.enrollment_id || (allItems.filter(function (x) { return x && x.kind === 'course' }).length === 1 ? invoice.enrollment_id : null) || null, orig_sku: it.sku_id || null }
+    })
   })
+  const [kitRows, setKitRows] = useState(null)     // [{ ci, sku_id, item_id, name, qty, on }]  null = loading
+  const [ledger, setLedger] = useState([])         // stock_ledger issue rows for the enrolments on this invoice
+  const [defsBySku, setDefsBySku] = useState({})   // { sku_id: [{ item_id, name, quantity }] }
+  const [skus, setSkus] = useState([])
   const [date, setDate] = useState((invoice.invoice_date || '').slice(0, 10))
   const [notes, setNotes] = useState(invoice.notes || '')
   const [saving, setSaving] = useState(false)
+  const [mineSkus, setMineSkus] = useState([])      // levels the student is already enrolled in
+  const [addPick, setAddPick] = useState('')        // level chosen in the "add a course" picker
+
+  useEffect(function () {
+    sb.from('skus').select('id, level_name, student_fee, courses(group_name, billing_type)').order('sort_order')
+      .then(function (r) { setSkus((r.data || []).filter(function (x) { return x.courses })) })
+    sb.from('enrollments').select('sku_id').eq('student_id', invoice.student_id)
+      .then(function (r) { setMineSkus((r.data || []).map(function (e) { return e.sku_id })) })
+  }, [])
+
+  // Kit definitions + what's actually been issued, for the lines as they are now.
+  const skuKey = courses.map(function (c) { return c.sku_id || '' }).join('|')
+  useEffect(function () {
+    let cancelled = false
+    ;(async function () {
+      const skuIds = Array.from(new Set(courses.map(function (c) { return c.sku_id }).filter(Boolean)))
+      const enrIds = Array.from(new Set(courses.map(function (c) { return c.enrollment_id }).filter(Boolean)))
+      const defsRes = skuIds.length ? await sb.from('kit_items').select('sku_id, item_id, quantity, inventory_items(name)').in('sku_id', skuIds) : { data: [] }
+      const ledRes = enrIds.length
+        ? await sb.from('stock_ledger').select('id, item_id, ref_id, qty').eq('ref_type', 'enrollment').eq('movement_type', 'issue_to_student').in('ref_id', enrIds)
+        : { data: [] }
+      if (cancelled) return
+      const defs = {}
+      ;(defsRes.data || []).forEach(function (k) {
+        (defs[k.sku_id] = defs[k.sku_id] || []).push({ item_id: k.item_id, name: (k.inventory_items && k.inventory_items.name) || 'Kit item', quantity: Number(k.quantity) || 1 })
+      })
+      setDefsBySku(defs)
+      setLedger(ledRes.data || [])
+      setKitRows(function (prev) {
+        const rows = []
+        courses.forEach(function (c, ci) {
+          const onInv = allItems.filter(function (x) { return x && x.kind === 'kit' && x.sku_id === c.sku_id })
+          const had = !!c.orig_sku && c.orig_sku === c.sku_id
+          const known = {}
+          ;(defs[c.sku_id] || []).forEach(function (d) {
+            const line = onInv.find(function (x) { return x.item_id === d.item_id })
+            const kept = prev && prev.find(function (r) { return r.ci === ci && r.sku_id === c.sku_id && r.item_id === d.item_id })
+            known[d.item_id] = true
+            rows.push(kept || { ci: ci, sku_id: c.sku_id, item_id: d.item_id, name: d.name, qty: line ? Number(line.qty) || d.quantity : d.quantity, on: had ? !!line : true })
+          })
+          onInv.forEach(function (x) {
+            if (known[x.item_id]) return
+            rows.push({ ci: ci, sku_id: c.sku_id, item_id: x.item_id, name: x.name, qty: Number(x.qty) || 1, on: true })
+          })
+        })
+        return rows
+      })
+    })()
+    return function () { cancelled = true }
+  }, [skuKey])
 
   const discount = Number(invoice.discount) || 0
-  const subtotal = courseIdx.reduce(function (t, i) { return t + (Number(amts[i]) || 0) }, 0)
+  const subtotal = courses.reduce(function (t, c) { return t + (Number(c.amount_s) || 0) }, 0)
   const total = Math.max(0, subtotal - discount)
   const delta = total - (Number(invoice.total) || 0)
 
+  function setCourse(ci, patch) { setCourses(function (prev) { return prev.map(function (c, i) { return i === ci ? { ...c, ...patch } : c }) }) }
+  function changeSku(ci, skuId) {
+    const sk = skus.find(function (x) { return x.id === skuId })
+    if (!sk) return
+    setCourse(ci, { sku_id: sk.id, name: (sk.courses.group_name ? sk.courses.group_name + ' — ' : '') + sk.level_name })
+  }
+  function addCourse() {
+    const sk = skus.find(function (x) { return x.id === addPick })
+    if (!sk) return
+    setCourses(function (prev) {
+      return prev.concat([{
+        kind: 'course', isNew: true, sku_id: sk.id, enrollment_id: null, orig_sku: null,
+        name: (sk.courses.group_name ? sk.courses.group_name + ' — ' : '') + sk.level_name,
+        amount_s: String(sk.student_fee || 0), qty: 1,
+      }])
+    })
+    setAddPick('')
+  }
+  function removeNew(ci) {
+    setCourses(function (prev) { return prev.filter(function (_, i) { return i !== ci }) })
+    setKitRows(null)
+  }
+  function setKit(ci, itemId, patch) {
+    setKitRows(function (prev) { return (prev || []).map(function (r) { return r.ci === ci && r.item_id === itemId ? { ...r, ...patch } : r }) })
+  }
+
   async function save() {
-    for (const i of courseIdx) {
-      const v = Number(amts[i])
-      if (!(v >= 0) || amts[i] === '') { showToast('Enter an amount for ' + items[i].name, 'warn'); return }
+    for (const c of courses) {
+      if (c.amount_s === '' || !(Number(c.amount_s) >= 0)) { showToast('Enter an amount for ' + c.name, 'warn'); return }
     }
     setSaving(true)
     const at = new Date().toISOString()
-    const nextItems = items.map(function (it, i) {
-      if (!it || it.kind !== 'course') return it
-      const nv = Number(amts[i])
-      if (nv === Number(it.amount)) return it
-      // Keep the amount first billed so the statement can still tie this
-      // invoice to the fee change that originally raised it.
-      return { ...it, original_amount: it.original_amount != null ? it.original_amount : it.amount, edited_at: at, amount: nv, rate: nv }
+    const skuChanges = []
+    const addedEnrollments = []
+    const invDay = (date || invoice.invoice_date || at).slice(0, 10)
+
+    // 0) courses added to this invoice: enrol the student in them
+    for (let i = 0; i < courses.length; i++) {
+      const c = courses[i]
+      if (!c.isNew) continue
+      const sk = skus.find(function (x) { return x.id === c.sku_id })
+      const monthly = sk && sk.courses && sk.courses.billing_type === 'monthly'
+      const ins = await sb.from('enrollments').insert({
+        student_id: invoice.student_id, sku_id: c.sku_id, franchisee_id: invoice.franchisee_id || null,
+        enrolled_at: invDay + 'T00:00:00+00:00',
+        sessions_per_week: monthly ? 3 : null, sessions_per_cycle: monthly ? 12 : null,
+        cycle_started_at: monthly ? invDay : null,
+      }).select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at, skus(level_name, total_sessions, courses(group_name, billing_type))').single()
+      if (ins.error) { setSaving(false); showToast('Could not enrol the student in ' + c.name + ': ' + ins.error.message, 'err'); return }
+      c.enrollment_id = ins.data.id
+      // the enrolment's own fee follows what is billed on the invoice
+      if (Number(ins.data.fee_amount) !== Number(c.amount_s)) {
+        await sb.from('enrollments').update({ fee_amount: Number(c.amount_s) }).eq('id', ins.data.id)
+        ins.data.fee_amount = Number(c.amount_s)
+      }
+      addedEnrollments.push(ins.data)
+    }
+
+    // 1) the student's enrolment follows a changed course / level
+    for (const c of courses) {
+      if (c.sku_id && c.orig_sku && c.sku_id !== c.orig_sku && c.enrollment_id) {
+        const dup = await sb.from('enrollments').select('id').eq('student_id', invoice.student_id).eq('sku_id', c.sku_id).neq('id', c.enrollment_id).limit(1)
+        if (dup.data && dup.data.length) { setSaving(false); showToast('The student is already enrolled in ' + c.name, 'warn'); return }
+        const up = await sb.from('enrollments').update({ sku_id: c.sku_id }).eq('id', c.enrollment_id)
+        if (up.error) { setSaving(false); showToast('Could not change the enrolment: ' + up.error.message, 'err'); return }
+        const sk = skus.find(function (x) { return x.id === c.sku_id })
+        skuChanges.push({ enrollment_id: c.enrollment_id, sku_id: c.sku_id, level_name: sk ? sk.level_name : '', group_name: sk && sk.courses ? sk.courses.group_name : '' })
+      }
+    }
+
+    // 2) stock: sync the kit actually given for each enrolment on the invoice
+    const rows = kitRows || []
+    const touchable = {}
+    Object.keys(defsBySku).forEach(function (k) { defsBySku[k].forEach(function (d) { touchable[d.item_id] = true }) })
+    allItems.forEach(function (x) { if (x && x.kind === 'kit' && x.item_id) touchable[x.item_id] = true })
+    for (let ci = 0; ci < courses.length; ci++) {
+      const enr = courses[ci].enrollment_id
+      if (!enr) continue
+      const want = rows.filter(function (r) { return r.ci === ci && r.on && Number(r.qty) > 0 })
+      const have = ledger.filter(function (l) { return l.ref_id === enr })
+      for (const l of have) {
+        if (!touchable[l.item_id]) continue
+        const w = want.find(function (r) { return r.item_id === l.item_id })
+        if (!w) { await sb.from('stock_ledger').delete().eq('id', l.id) }
+        else if (-Number(l.qty) !== Number(w.qty)) { await sb.from('stock_ledger').update({ qty: -Number(w.qty) }).eq('id', l.id) }
+      }
+      const toAdd = want.filter(function (r) { return !have.some(function (l) { return l.item_id === r.item_id }) })
+        .map(function (r) {
+          return { item_id: r.item_id, location_type: 'ho', movement_type: 'issue_to_student', qty: -Number(r.qty), ref_type: 'enrollment', ref_id: enr, franchisee_id: invoice.franchisee_id || null, note: 'Kit · invoice ' + (invoice.invoice_no || '') }
+        })
+      if (toAdd.length) {
+        const ins = await sb.from('stock_ledger').insert(toAdd)
+        if (ins.error) showToast('Kit stock could not be updated: ' + ins.error.message, 'warn')
+      }
+    }
+
+    // 3) the invoice itself: course lines (with their kit lines), totals, date, notes
+    const nextItems = []
+    courses.forEach(function (c, ci) {
+      const nv = Number(c.amount_s)
+      const base = { ...c }
+      delete base.amount_s; delete base.orig_sku; delete base.isNew
+      const item = { ...base, amount: nv, rate: nv, qty: 1 }
+      const prevLines = allItems.filter(function (x) { return x && x.kind === 'course' })
+      if (c.isNew) {
+        // billed after the invoice was raised: keep the original (nil) amount so
+        // the statement shows it as an adjustment, not a second copy of the invoice
+        item.original_amount = 0
+        item.edited_at = at
+      } else {
+        const prevAmt = prevLines.find(function (x) { return (x.enrollment_id || null) === (c.enrollment_id || null) && x.sku_id === (c.orig_sku || c.sku_id) }) || prevLines[ci]
+        if (prevAmt && nv !== Number(prevAmt.amount)) {
+          item.original_amount = prevAmt.original_amount != null ? prevAmt.original_amount : prevAmt.amount
+          item.edited_at = at
+        }
+      }
+      nextItems.push(item)
+      rows.filter(function (r) { return r.ci === ci && r.on && Number(r.qty) > 0 }).forEach(function (r) {
+        nextItems.push({ kind: 'kit', sku_id: r.sku_id, item_id: r.item_id, name: r.name, qty: Number(r.qty), rate: 0, amount: 0 })
+      })
     })
     const { data, error } = await sb.from('student_invoices').update({
       items: nextItems, subtotal: subtotal, total: total, invoice_date: date || invoice.invoice_date, notes: notes || null,
@@ -4977,47 +5149,109 @@ function InvoiceEditModal({ invoice, onClose, onSaved }) {
       const { data: stu } = await sb.from('students').select('fee_total').eq('id', invoice.student_id).single()
       newFeeTotal = Math.max(0, (Number(stu && stu.fee_total) || 0) + delta)
       const { error: fErr } = await sb.from('students').update({ fee_total: newFeeTotal }).eq('id', invoice.student_id)
-      if (fErr) { setSaving(false); showToast('Invoice saved, but the Fee Total could not be updated: ' + fErr.message, 'err'); onSaved(data, null); return }
+      if (fErr) { setSaving(false); showToast('Invoice saved, but the Fee Total could not be updated: ' + fErr.message, 'err'); onSaved(data, null, skuChanges, addedEnrollments); return }
     }
     setSaving(false)
     showToast('Invoice updated ✓' + (delta !== 0 ? ' · Fee Total ' + (delta > 0 ? '+' : '−') + '₹' + fmtAmt(Math.abs(delta)) : ''))
-    onSaved(data, newFeeTotal)
+    onSaved(data, newFeeTotal, skuChanges, addedEnrollments)
   }
 
-  const kit = items.filter(function (i) { return i && i.kind === 'kit' })
+  // Levels grouped by course for the picker
+  const groups = {}
+  skus.forEach(function (x) { (groups[x.courses.group_name] = groups[x.courses.group_name] || []).push(x) })
+
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal" style={{ maxWidth: 560 }}>
         <ModalHeader flush title="Edit invoice" subtitle={invoice.invoice_no || ''} onClose={onClose} />
-        <div style={{ padding: '4px 20px 0' }}>
-          {courseIdx.map(function (i) {
-            const c = items[i]
+        <div style={{ padding: '4px 20px 0', maxHeight: '60vh', overflowY: 'auto' }}>
+          {courses.map(function (c, ci) {
             const tag = c.cycle === 'renewal' ? 'Monthly renewal' + (c.period_label ? ' · ' + c.period_label : '')
               : c.cycle === 'next_level' ? 'Next level' : 'Course fee'
+            const myKit = (kitRows || []).filter(function (r) { return r.ci === ci })
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <div>
-                  <div style={{ font: '600 13px var(--font)' }}>{c.name}</div>
-                  <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{tag}</div>
+              <div key={ci} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', flex: 1, minWidth: 220 }}>
+                    Course / level <span style={{ fontWeight: 500, color: 'var(--text3)' }}>· {c.isNew ? 'New course — enrols the student' : tag}</span>
+                    {c.isNew && <button type="button" onClick={function () { removeNew(ci) }} style={{ marginLeft: 8, border: 'none', background: 'none', color: 'var(--red, #dc2626)', cursor: 'pointer', font: '600 11px var(--font)' }}>✕ remove</button>}
+                    <select value={c.sku_id || ''} onChange={function (e) { changeSku(ci, e.target.value) }}
+                      style={{ display: 'block', marginTop: 4, width: '100%', fontSize: 13 }}>
+                      {!c.sku_id && <option value="">{c.name}</option>}
+                      {Object.keys(groups).sort().map(function (g) {
+                        return (
+                          <optgroup key={g} label={g}>
+                            {groups[g].map(function (x) { return <option key={x.id} value={x.id}>{g} — {x.level_name}</option> })}
+                          </optgroup>
+                        )
+                      })}
+                    </select>
+                  </label>
+                  <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', textAlign: 'right' }}>Amount (₹)
+                    <input type="number" min={0} value={c.amount_s} onChange={function (e) { setCourse(ci, { amount_s: e.target.value }) }}
+                      style={{ display: 'block', marginTop: 4, width: 110, fontSize: 13 }} />
+                  </label>
                 </div>
-                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', textAlign: 'right' }}>Amount (₹)
-                  <input type="number" min={0} value={amts[i]} onChange={function (e) { const v = e.target.value; setAmts(function (p0) { return { ...p0, [i]: v } }) }}
-                    style={{ display: 'block', marginTop: 4, width: 110, fontSize: 13 }} />
-                </label>
+                {c.sku_id && c.orig_sku && c.sku_id !== c.orig_sku && (
+                  <div className="hint" style={{ marginTop: 6 }}>
+                    {c.enrollment_id ? 'The student’s enrolment will be changed to this level too.' : 'This invoice line only — it has no enrolment attached.'}
+                    {' '}The amount isn't changed automatically; set it above if the level's fee differs.
+                  </div>
+                )}
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
+                    Kit items given <span style={{ textTransform: 'none', fontWeight: 400 }}>— {c.enrollment_id ? 'stock is updated to match' : 'invoice only (no enrolment attached)'}</span>
+                  </div>
+                  {kitRows == null ? (
+                    <div className="hint">Loading kit…</div>
+                  ) : myKit.length === 0 ? (
+                    <div className="hint">No kit defined for this level.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {myKit.map(function (r) {
+                        return (
+                          <div key={r.item_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 7, background: 'var(--bg2, #f5f4f0)' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer', font: '500 12px var(--font)', color: r.on ? 'var(--text)' : 'var(--text3)', textDecoration: r.on ? 'none' : 'line-through' }}>
+                              <input type="checkbox" checked={r.on} onChange={function (e) { setKit(ci, r.item_id, { on: e.target.checked }) }} style={{ accentColor: 'var(--purple)' }} />
+                              {r.name}
+                            </label>
+                            <span style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>qty</span>
+                            <input type="number" min={1} value={r.qty} disabled={!r.on}
+                              onChange={function (e) { setKit(ci, r.item_id, { qty: e.target.value }) }}
+                              style={{ width: 56, fontSize: 12, padding: '3px 6px' }} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
-          {kit.length > 0 && (
-            <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', padding: '6px 0' }}>
-              Kit: {kit.map(function (k) { return k.name + (k.qty > 1 ? ' ×' + k.qty : '') }).join(', ')}
-            </div>
-          )}
+          {/* Add another course to this invoice */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+            <select value={addPick} onChange={function (e) { setAddPick(e.target.value) }} style={{ flex: 1, minWidth: 220, fontSize: 13 }}>
+              <option value="">+ Add a course to this invoice…</option>
+              {Object.keys(groups).sort().map(function (g) {
+                const opts = groups[g].filter(function (x) {
+                  return mineSkus.indexOf(x.id) === -1 && !courses.some(function (c) { return c.sku_id === x.id })
+                })
+                if (!opts.length) return null
+                return (
+                  <optgroup key={g} label={g}>
+                    {opts.map(function (x) { return <option key={x.id} value={x.id}>{g} — {x.level_name}{x.student_fee ? ' · ₹' + fmtAmt(x.student_fee) : ''}</option> })}
+                  </optgroup>
+                )
+              })}
+            </select>
+            <button type="button" className="btn-s" style={{ fontSize: 12 }} disabled={!addPick} onClick={addCourse}>Add</button>
+          </div>
           {discount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', color: 'var(--green)', padding: '6px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', font: '500 12px var(--font)', color: 'var(--green)', padding: '8px 0' }}>
               <span>Discount{invoice.coupon_code ? ' (' + invoice.coupon_code + ')' : ''}</span><span>− ₹{fmtAmt(discount)}</span>
             </div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', font: '700 14px var(--font)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', font: '700 14px var(--font)' }}>
             <span>Invoice total</span>
             <span className="mono">₹{fmtAmt(total)}{delta !== 0 && <span style={{ font: '600 11px var(--font)', color: delta > 0 ? 'var(--red,#dc2626)' : 'var(--green)', marginLeft: 8 }}>{delta > 0 ? '+' : '−'}₹{fmtAmt(Math.abs(delta))}</span>}</span>
           </div>
@@ -5031,7 +5265,7 @@ function InvoiceEditModal({ invoice, onClose, onSaved }) {
         </p>
         <div className="modal-actions">
           <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="btn-p" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          <button className="btn-p" onClick={save} disabled={saving || kitRows == null}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
