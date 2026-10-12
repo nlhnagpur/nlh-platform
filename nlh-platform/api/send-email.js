@@ -474,7 +474,8 @@ function buildStudentCert(student, enrollment, centre) {
       ? 'R/o. ' + student.city + (student.country && student.country !== 'India' ? ', ' + student.country : '')
       : null,
   ].filter(Boolean).join(', ')
-  const dateStr = dmyDate(new Date())
+  // the day the course was completed, not the day the email goes out
+  const dateStr = dmyDate(enrollment.completed_at || new Date())
 
   const certCard =
     '<table width="100%" cellpadding="0" cellspacing="0" style="border:2px solid #89CFF0;border-radius:12px;background:linear-gradient(135deg,#E8F4FD,#C8E6F8);margin:20px 0">' +

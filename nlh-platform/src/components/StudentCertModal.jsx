@@ -23,20 +23,23 @@ function useFitScale(designW) {
   return [ref, scale]
 }
 
-function todayDMY() {
-  const d = new Date()
-  return [
-    String(d.getDate()).padStart(2, '0'),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    d.getFullYear(),
-  ].join('.')
-}
-
 function todayYMD() {
   const d = new Date()
   return d.getFullYear() + '-' +
     String(d.getMonth() + 1).padStart(2, '0') + '-' +
     String(d.getDate()).padStart(2, '0')
+}
+
+// The date a certificate carries is the day the course was COMPLETED (the
+// latest one, when several are on one certificate) — not the day it's printed
+// or sent. Falls back to today only for a course with no completion date.
+export function certDateYMD(enrollments) {
+  const done = (enrollments || []).map(function (e) { return e.completed_at ? String(e.completed_at).slice(0, 10) : '' }).filter(Boolean).sort()
+  return done.length ? done[done.length - 1] : todayYMD()
+}
+function ymdToDMY(ymd) {
+  const p = String(ymd).split('-')
+  return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : ymd
 }
 
 // ── print window ───────────────────────────────────────────────────────────────
@@ -68,7 +71,7 @@ export function printStudentCert(student, selectedEnrollments, centre) {
     program:  programs,
     level:    levels,
     center:   centerFull,
-    date:     todayYMD(),
+    date:     certDateYMD(selectedEnrollments),
   })
   window.open(`/certificate/Issue%20Certificate.html?${params}`, '_blank', 'width=1120,height=820')
 }
@@ -289,7 +292,7 @@ export default function StudentCertModal({ student, enrollments, centre, onClose
                 transform: 'translateY(-100%)', textAlign: 'center',
                 fontSize: 28, fontWeight: 600, color: '#1A1A2E', letterSpacing: '0.02em',
               }}>
-                {todayDMY()}
+                {ymdToDMY(certDateYMD(selected.length ? selected : allEnrollments))}
               </div>
             </div>
           </div>

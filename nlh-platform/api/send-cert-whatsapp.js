@@ -47,7 +47,7 @@ export default async function handler(req, res) {
   const { data: enrollments, error: dbErr } = await sb
     .from('enrollments')
     .select(`
-      id,
+      id, completed_at,
       skus ( level_name, courses ( group_name ) ),
       students ( full_name, parent_name, gender, city, camp_name ),
       franchisees ( business_name, city )
@@ -61,10 +61,14 @@ export default async function handler(req, res) {
   const student  = enrollments[0].students  || {}
   const centre   = enrollments[0].franchisees || {}
   const isMale   = (student.gender || '').toLowerCase() === 'male'
+  // The certificate carries the day the course was completed (the latest, if
+  // several are on one certificate); today only when none has a completion date.
   const today    = new Date()
-  const dateStr  = today.getFullYear() + '-' +
+  const todayStr = today.getFullYear() + '-' +
     String(today.getMonth() + 1).padStart(2, '0') + '-' +
     String(today.getDate()).padStart(2, '0')
+  const doneDates = enrollments.map(function (e) { return e.completed_at ? String(e.completed_at).slice(0, 10) : '' }).filter(Boolean).sort()
+  const dateStr  = doneDates.length ? doneDates[doneDates.length - 1] : todayStr
 
   // Template text vars (also used in URL params)
   // Note: use ASCII hyphen instead of em-dash — Meta rejects non-ASCII in template params
