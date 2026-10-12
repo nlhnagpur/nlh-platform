@@ -313,6 +313,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [changingEn,      setChangingEn]      = useState(null)  // enrollment whose level is being changed
   const [changeSkuId,     setChangeSkuId]     = useState('')
   const [changeDate,      setChangeDate]      = useState(todayIso())   // when the new level starts
+  const [changeKit,       setChangeKit]       = useState(null)         // kit items of the level being changed to (null = loading / none picked)
+  const [changeKitEx,     setChangeKitEx]     = useState({})           // { item_id: true } unchecked = not handed over
   const [changeSaving,    setChangeSaving]    = useState(false)
   // Fee payment ledger
   const [payments,        setPayments]        = useState([])
@@ -1132,6 +1134,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   }
 
   // ── Change an enrollment's course / level (swap sku_id in place) ──
+  // The new level's kit, for the "items given" checklist in the change dialog.
+  useEffect(function () {
+    if (!changingEn || !changeSkuId || changeSkuId === changingEn.sku_id) { setChangeKit(null); setChangeKitEx({}); return }
+    let cancelled = false
+    setChangeKit(null); setChangeKitEx({})
+    sb.from('kit_items').select('item_id, quantity, inventory_items(name)').eq('sku_id', changeSkuId)
+      .then(function (res) {
+        if (cancelled) return
+        setChangeKit((res.data || []).map(function (k) { return { item_id: k.item_id, name: k.inventory_items?.name || 'Kit item', quantity: Number(k.quantity || 1) } }))
+      })
+    return function () { cancelled = true }
+  }, [changeSkuId, changingEn])
+
   function openChangeLevel(en) {
     setChangeSkuId(en.sku_id || '')
     setChangeDate(todayIso())
@@ -1163,6 +1178,27 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           : e.skus,
       }
     })
+    // Issue the new level's kit — only the items ticked as handed over.
+    if (changeKit && changeKit.length) {
+      const already = kitGiven[changingEn.id] || {}
+      const rows = changeKit.filter(function (k) { return !changeKitEx[k.item_id] && k.quantity > 0 && !already[k.item_id] })
+        .map(function (k) {
+          return { item_id: k.item_id, location_type: 'ho', movement_type: 'issue_to_student', qty: -k.quantity, ref_type: 'enrollment', ref_id: changingEn.id, franchisee_id: student.franchisee_id || null, note: 'Kit · ' + (student.full_name || 'student') }
+        })
+      if (rows.length) {
+        const { data: ins, error: kErr } = await sb.from('stock_ledger').insert(rows).select('id, item_id, ref_id, qty')
+        if (kErr) showToast('Level changed, but the kit could not be issued: ' + kErr.message, 'warn')
+        else {
+          setKitIssued(function (prev) { return { ...prev, [changingEn.id]: true } })
+          setKitGiven(function (prev) {
+            const cur = { ...(prev[changingEn.id] || {}) }
+            ;(ins || []).forEach(function (r) { cur[r.item_id] = r })
+            return { ...prev, [changingEn.id]: cur }
+          })
+        }
+      }
+      setKitDefs(function (prev) { return { ...prev, [newSkuId]: changeKit } })
+    }
     setLocalEnrollments(next)
     setChangingEn(null)
     // recount the cycle from the new start date
@@ -1228,6 +1264,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     // first fee payment is received (see StudentReceiptModal).
     setForm(function (f) { return { ...f, fee_total: newTotal } })
     showToast('Discount applied — ₹' + fmtAmt(disc) + ' off')
+  }
+
+  // Is this level a next level of a course the student already has (or had)?
+  function enrolledGroupHas(sku) {
+    const g = sku.courses?.group_name
+    return !!g && localEnrollments.some(function (e) { return e.skus?.courses?.group_name === g })
   }
 
   // ── Load batches eligible for a SKU (for the Add-Course batch picker) ──
@@ -2801,163 +2843,187 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                           const discount = addCoupon ? Math.min(addCoupon.discount, addedFee) : 0
                           const netAdded = Math.max(0, addedFee - discount)
                           const newTotal = (Number(form.fee_total) || 0) + netAdded
+                          const th = { font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', padding: '8px 10px', borderBottom: '1px solid var(--border)', background: 'var(--bg2, #f5f4f0)', textAlign: 'left' }
+                          const td = { padding: '10px 10px', verticalAlign: 'top' }
                           return (
-                            <>
-                              {/* Invoice lines: each selected course — editable fee + kit-item selection */}
-                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
-                                <div style={{ font: '600 12px var(--font)', color: 'var(--text)', marginBottom: 8 }}>🧾 Invoice — courses, fees &amp; kit</div>
-                                {selectedNewSkus.map(function (sku) {
-                                  const kits = addKitData[sku.id]
-                                  const ex = addKitExcluded[sku.id] || {}
-                                  // Batch assignment lives right under its own course now
-                                  // (was a separate repeated section further down the form).
-                                  const bd  = addBatchData[sku.id] || { batches: [], eligibleCIs: [], loading: true }
-                                  const sel = addBatchSel[sku.id] || ''
-                                  const nbf = addNewBatch[sku.id] || { ci: '', name: '', days: [], time: '', is_individual: false }
-                                  function updateNbf(patch) { setAddNewBatch(function (prev) { return { ...prev, [sku.id]: { ...nbf, ...patch } } }) }
-                                  return (
-                                    <div key={sku.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                        <span style={{ font: '600 12px var(--font)', color: 'var(--text)', flex: 1, minWidth: 120 }}>
-                                          {sku.courses?.group_name || '—'} <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>{sku.level_name}</span>
-                                        </span>
-                                        <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>Fee ₹</span>
-                                        <input type="number" min={0} value={addFeeOverride[sku.id] != null ? addFeeOverride[sku.id] : (sku.student_fee || 0)}
-                                          onChange={function (e) { setAddCoupon(null); setAddFeeOverride(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
-                                          style={{ width: 90, fontSize: 13, fontWeight: 600, padding: '5px 8px' }} />
-                                      </div>
-                                      {kits == null ? (
-                                        <div className="hint" style={{ marginTop: 6 }}>Loading kit…</div>
-                                      ) : kits.length === 0 ? (
-                                        <div className="hint" style={{ marginTop: 6 }}>No kit defined for this course.</div>
-                                      ) : (
-                                        <div style={{ marginTop: 8 }}>
-                                          <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>Kit items given <span style={{ textTransform: 'none', fontWeight: 400 }}>— uncheck any not handed over</span></div>
-                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                            {kits.map(function (k) {
-                                              const on = !ex[k.item_id]
-                                              return (
-                                                <label key={k.item_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, cursor: 'pointer', font: '500 11px var(--font)', border: '1px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : 'var(--bg)', color: on ? 'var(--purple)' : 'var(--text3)', textDecoration: on ? 'none' : 'line-through' }}>
-                                                  <input type="checkbox" checked={on} onChange={function () { toggleAddKit(sku.id, k.item_id) }} style={{ accentColor: 'var(--purple)' }} />
-                                                  {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}
-                                                </label>
-                                              )
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* Monthly-billing cycle target — captured per student, since the
-                                          agreed weekly frequency (and so the sessions/month it works
-                                          out to) can differ student to student even for the same course. */}
-                                      {sku.courses?.billing_type === 'monthly' && (function () {
-                                        const perWeek = addSessionsPerWeek[sku.id] != null ? addSessionsPerWeek[sku.id] : 3
-                                        const perCycle = Math.round((Number(perWeek) || 0) * 4)
-                                        return (
-                                          <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                            <span style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Classes / week</span>
-                                            <input type="number" min={1} max={7} value={perWeek}
-                                              onChange={function (e) { setAddSessionsPerWeek(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
-                                              style={{ width: 60, fontSize: 12, padding: '4px 6px' }} />
-                                            <span className="hint">≈ {perCycle} classes make up one billing cycle</span>
-                                          </div>
-                                        )
-                                      })()}
-
-                                      {/* Assign to batch — right under this course.
-                                          HO-only: franchisees don't manage batches/
-                                          instructors at this stage, just the student
-                                          and their fee/kit/certificate. */}
-                                      {admin && <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
-                                        <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
-                                          Assign to batch <span style={{ textTransform: 'none', fontWeight: 400 }}>(optional — can be done later)</span>
-                                        </div>
-                                        {bd.loading ? <span className="hint">Loading batches…</span> : (
-                                          <>
-                                            <select value={sel}
-                                              onChange={function (e) { setAddBatchSel(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
-                                              style={{ fontSize: 12, width: '100%' }}>
-                                              <option value="">— No batch yet (assign later) —</option>
-                                              {bd.batches.map(function (b) {
-                                                return <option key={b.id} value={b.id}>{b.continuing ? '↩ Continue: ' : ''}{b.name}{b.instructors?.full_name ? ' · ' + b.instructors.full_name : ''}{b.schedule_days ? ' · ' + b.schedule_days : ''}{b.schedule_time ? ' ' + b.schedule_time : ''}</option>
-                                              })}
-                                              <option value="__new__">+ Create new batch</option>
-                                            </select>
-                                            {sel === '__new__' && (
-                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-                                                {bd.eligibleCIs.length === 0 ? (
-                                                  <p className="hint" style={{ color: 'var(--red)' }}>⚠ No active Course Instructors appointed for this level yet.</p>
-                                                ) : (
-                                                  <label style={{ font: '500 11px var(--font)' }}>Course Instructor *
-                                                    <select value={nbf.ci} onChange={function (e) { updateNbf({ ci: e.target.value }) }} style={{ marginTop: 4, fontSize: 12 }}>
-                                                      <option value="">— Select CI —</option>
-                                                      {bd.eligibleCIs.map(function (ci) { return <option key={ci.id} value={ci.id}>{ci.full_name}</option> })}
-                                                    </select>
-                                                  </label>
-                                                )}
-                                                <label style={{ font: '500 11px var(--font)' }}>Batch Name *
-                                                  <input value={nbf.name} onChange={function (e) { updateNbf({ name: e.target.value }) }} placeholder="e.g. Saturday Morning Group" style={{ marginTop: 4, fontSize: 12 }} />
-                                                </label>
-                                                <div>
-                                                  <div style={{ font: '500 11px var(--font)', marginBottom: 5 }}>Schedule Days</div>
-                                                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                                                    {DAYS.map(function (d) {
-                                                      const active = nbf.days.includes(d)
-                                                      return <button key={d} type="button"
-                                                        onClick={function () { updateNbf({ days: active ? nbf.days.filter(function (x) { return x !== d }) : [...nbf.days, d] }) }}
-                                                        style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', border: active ? '1.5px solid var(--purple)' : '1px solid var(--border)', background: active ? 'var(--purple-bg)' : 'var(--card)', color: active ? 'var(--purple)' : 'var(--text2)', fontWeight: active ? 700 : 500 }}>{d}</button>
-                                                    })}
-                                                  </div>
-                                                </div>
-                                                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                                                  <label style={{ font: '500 11px var(--font)', flex: 1 }}>Time
-                                                    <input type="time" value={nbf.time} onChange={function (e) { updateNbf({ time: e.target.value }) }} style={{ marginTop: 4, fontSize: 12 }} />
-                                                  </label>
-                                                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, font: '500 11px var(--font)', paddingBottom: 5 }}>
-                                                    <input type="checkbox" checked={nbf.is_individual} onChange={function (e) { updateNbf({ is_individual: e.target.checked }) }} />
-                                                    Individual
-                                                  </label>
-                                                </div>
-                                              </div>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-
-                              {/* Enrollment date for the new courses */}
-                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
-                                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>
-                                  📅 Start date
-                                  <span style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginLeft: 6 }}>
-                                    (course start &amp; batch joining date — one date for both)
-                                  </span>
-                                  <input type="date" value={addEnrollDate}
-                                    onChange={function (e) { setAddEnrollDate(e.target.value) }}
-                                    style={{ marginTop: 5, fontSize: 13, width: '100%', maxWidth: 220 }} />
+                            <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', background: 'var(--bg)' }}>
+                              {/* Invoice header */}
+                              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderBottom: '1px solid var(--border)', background: 'var(--purple-bg)' }}>
+                                <div>
+                                  <div style={{ font: '700 14px var(--font)', color: 'var(--purple)' }}>🧾 New Invoice</div>
+                                  <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                                    Bill to <b style={{ color: 'var(--text)' }}>{student.full_name}</b>{student.parent_name ? ' · c/o ' + student.parent_name : ''} · Invoice no. is assigned on save
+                                  </div>
+                                </div>
+                                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>Invoice / start date
+                                  <input type="date" value={addEnrollDate} onChange={function (e) { setAddEnrollDate(e.target.value) }}
+                                    style={{ display: 'block', marginTop: 4, fontSize: 13 }} />
                                 </label>
                               </div>
 
-                              {/* Fee + coupon for the new courses */}
-                              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {/* Line items */}
+                              <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ ...th, width: 34 }}>#</th>
+                                      <th style={th}>Description</th>
+                                      <th style={{ ...th, width: 50, textAlign: 'center' }}>Qty</th>
+                                      <th style={{ ...th, width: 110, textAlign: 'right' }}>Rate (₹)</th>
+                                      <th style={{ ...th, width: 110, textAlign: 'right' }}>Amount (₹)</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {selectedNewSkus.map(function (sku, idx) {
+                                      const kits = addKitData[sku.id]
+                                      const ex = addKitExcluded[sku.id] || {}
+                                      const bd  = addBatchData[sku.id] || { batches: [], eligibleCIs: [], loading: true }
+                                      const sel = addBatchSel[sku.id] || ''
+                                      const nbf = addNewBatch[sku.id] || { ci: '', name: '', days: [], time: '', is_individual: false }
+                                      function updateNbf(patch) { setAddNewBatch(function (prev) { return { ...prev, [sku.id]: { ...nbf, ...patch } } }) }
+                                      const rate = feeFor(sku)
+                                      const isNext = enrolledGroupHas(sku)
+                                      return (
+                                        <React.Fragment key={sku.id}>
+                                          <tr style={{ borderTop: idx > 0 ? '2px solid var(--border)' : 'none' }}>
+                                            <td style={{ ...td, font: '700 12px var(--mono)', color: 'var(--text3)' }}>{String(idx + 1).padStart(2, '0')}</td>
+                                            <td style={td}>
+                                              <div style={{ font: '700 13px var(--font)' }}>{sku.courses?.group_name || '—'} <span style={{ font: '500 11px var(--mono)', color: 'var(--text3)' }}>{sku.level_name}</span></div>
+                                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
+                                                {sku.courses?.billing_type === 'monthly' ? 'Monthly course — fee per cycle' : 'Course fee'}{isNext ? ' · next level' : ''}
+                                              </div>
+                                            </td>
+                                            <td style={{ ...td, textAlign: 'center', font: '600 12px var(--mono)' }}>1</td>
+                                            <td style={{ ...td, textAlign: 'right' }}>
+                                              <input type="number" min={0} value={addFeeOverride[sku.id] != null ? addFeeOverride[sku.id] : (sku.student_fee || 0)}
+                                                onChange={function (e) { setAddCoupon(null); setAddFeeOverride(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
+                                                style={{ width: 96, fontSize: 13, fontWeight: 600, padding: '5px 8px', textAlign: 'right' }} />
+                                            </td>
+                                            <td style={{ ...td, textAlign: 'right', font: '700 13px var(--mono)' }}>{fmtAmt(rate)}</td>
+                                          </tr>
+
+                                          {/* Kit lines — included in the course fee, tick what was handed over */}
+                                          {kits == null ? (
+                                            <tr><td></td><td colSpan={4} style={{ padding: '0 10px 8px', font: '500 11px var(--font)', color: 'var(--text3)' }}>Loading kit…</td></tr>
+                                          ) : kits.length === 0 ? (
+                                            <tr><td></td><td colSpan={4} style={{ padding: '0 10px 8px', font: '500 11px var(--font)', color: 'var(--text3)' }}>No kit defined for this level.</td></tr>
+                                          ) : kits.map(function (k) {
+                                            const on = !ex[k.item_id]
+                                            return (
+                                              <tr key={k.item_id} style={{ background: 'var(--bg2, #f5f4f0)' }}>
+                                                <td></td>
+                                                <td style={{ padding: '5px 10px 5px 22px' }}>
+                                                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', font: '500 12px var(--font)', color: on ? 'var(--text)' : 'var(--text3)', textDecoration: on ? 'none' : 'line-through' }}>
+                                                    <input type="checkbox" checked={on} onChange={function () { toggleAddKit(sku.id, k.item_id) }} style={{ accentColor: 'var(--purple)' }} />
+                                                    <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>KIT</span> {k.name}
+                                                  </label>
+                                                </td>
+                                                <td style={{ padding: '5px 10px', textAlign: 'center', font: '500 12px var(--mono)', color: 'var(--text2)' }}>{k.quantity}</td>
+                                                <td style={{ padding: '5px 10px', textAlign: 'right', font: '500 11px var(--font)', color: 'var(--text3)' }}>included</td>
+                                                <td style={{ padding: '5px 10px', textAlign: 'right', font: '500 12px var(--mono)', color: 'var(--text3)' }}>{on ? '0' : 'not given'}</td>
+                                              </tr>
+                                            )
+                                          })}
+
+                                          {/* Cycle target + batch for this line */}
+                                          <tr>
+                                            <td></td>
+                                            <td colSpan={4} style={{ padding: '4px 10px 12px' }}>
+                                              {sku.courses?.billing_type === 'monthly' && (function () {
+                                          const perWeek = addSessionsPerWeek[sku.id] != null ? addSessionsPerWeek[sku.id] : 3
+                                          const perCycle = Math.round((Number(perWeek) || 0) * 4)
+                                          return (
+                                            <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                              <span style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Classes / week</span>
+                                              <input type="number" min={1} max={7} value={perWeek}
+                                                onChange={function (e) { setAddSessionsPerWeek(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
+                                                style={{ width: 60, fontSize: 12, padding: '4px 6px' }} />
+                                              <span className="hint">≈ {perCycle} classes make up one billing cycle</span>
+                                            </div>
+                                          )
+                                        })()}
+                                              {admin && <div style={{ marginTop: 10, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                                          <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
+                                            Assign to batch <span style={{ textTransform: 'none', fontWeight: 400 }}>(optional — can be done later)</span>
+                                          </div>
+                                          {bd.loading ? <span className="hint">Loading batches…</span> : (
+                                            <>
+                                              <select value={sel}
+                                                onChange={function (e) { setAddBatchSel(function (p) { return { ...p, [sku.id]: e.target.value } }) }}
+                                                style={{ fontSize: 12, width: '100%' }}>
+                                                <option value="">— No batch yet (assign later) —</option>
+                                                {bd.batches.map(function (b) {
+                                                  return <option key={b.id} value={b.id}>{b.continuing ? '↩ Continue: ' : ''}{b.name}{b.instructors?.full_name ? ' · ' + b.instructors.full_name : ''}{b.schedule_days ? ' · ' + b.schedule_days : ''}{b.schedule_time ? ' ' + b.schedule_time : ''}</option>
+                                                })}
+                                                <option value="__new__">+ Create new batch</option>
+                                              </select>
+                                              {sel === '__new__' && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                                                  {bd.eligibleCIs.length === 0 ? (
+                                                    <p className="hint" style={{ color: 'var(--red)' }}>⚠ No active Course Instructors appointed for this level yet.</p>
+                                                  ) : (
+                                                    <label style={{ font: '500 11px var(--font)' }}>Course Instructor *
+                                                      <select value={nbf.ci} onChange={function (e) { updateNbf({ ci: e.target.value }) }} style={{ marginTop: 4, fontSize: 12 }}>
+                                                        <option value="">— Select CI —</option>
+                                                        {bd.eligibleCIs.map(function (ci) { return <option key={ci.id} value={ci.id}>{ci.full_name}</option> })}
+                                                      </select>
+                                                    </label>
+                                                  )}
+                                                  <label style={{ font: '500 11px var(--font)' }}>Batch Name *
+                                                    <input value={nbf.name} onChange={function (e) { updateNbf({ name: e.target.value }) }} placeholder="e.g. Saturday Morning Group" style={{ marginTop: 4, fontSize: 12 }} />
+                                                  </label>
+                                                  <div>
+                                                    <div style={{ font: '500 11px var(--font)', marginBottom: 5 }}>Schedule Days</div>
+                                                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                                      {DAYS.map(function (d) {
+                                                        const active = nbf.days.includes(d)
+                                                        return <button key={d} type="button"
+                                                          onClick={function () { updateNbf({ days: active ? nbf.days.filter(function (x) { return x !== d }) : [...nbf.days, d] }) }}
+                                                          style={{ padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', border: active ? '1.5px solid var(--purple)' : '1px solid var(--border)', background: active ? 'var(--purple-bg)' : 'var(--card)', color: active ? 'var(--purple)' : 'var(--text2)', fontWeight: active ? 700 : 500 }}>{d}</button>
+                                                      })}
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                                                    <label style={{ font: '500 11px var(--font)', flex: 1 }}>Time
+                                                      <input type="time" value={nbf.time} onChange={function (e) { updateNbf({ time: e.target.value }) }} style={{ marginTop: 4, fontSize: 12 }} />
+                                                    </label>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, font: '500 11px var(--font)', paddingBottom: 5 }}>
+                                                      <input type="checkbox" checked={nbf.is_individual} onChange={function (e) { updateNbf({ is_individual: e.target.checked }) }} />
+                                                      Individual
+                                                    </label>
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>}
+                                            </td>
+                                          </tr>
+                                        </React.Fragment>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Totals */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', padding: '12px 14px', borderTop: '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}>
                                   <span style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>🎟️ Coupon</span>
                                   <CouponField context="student" amount={addedFee} franchiseeId={student.franchisee_id}
                                     applied={addCoupon} onApply={setAddCoupon} onClear={function () { setAddCoupon(null) }} excludeRef={student.id} compact />
                                 </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>New course fees</div>
-                                  <div style={{ font: '700 16px var(--font)', color: 'var(--purple)' }}>
-                                    ₹{fmtAmt(netAdded)}
-                                    {discount > 0 && <span style={{ font: '500 11px var(--font)', color: 'var(--text3)', textDecoration: 'line-through', marginLeft: 6 }}>₹{fmtAmt(addedFee)}</span>}
-                                  </div>
-                                  <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>Fee Total becomes ₹{fmtAmt(newTotal)}</div>
-                                </div>
+                                <table style={{ borderCollapse: 'collapse', minWidth: 250 }}>
+                                  <tbody>
+                                    <tr><td style={{ padding: '3px 12px 3px 0', font: '500 12px var(--font)', color: 'var(--text2)' }}>Subtotal</td><td style={{ textAlign: 'right', font: '600 13px var(--mono)' }}>₹{fmtAmt(addedFee)}</td></tr>
+                                    {discount > 0 && <tr><td style={{ padding: '3px 12px 3px 0', font: '500 12px var(--font)', color: 'var(--green)' }}>Discount{addCoupon && addCoupon.code ? ' (' + addCoupon.code + ')' : ''}</td><td style={{ textAlign: 'right', font: '600 13px var(--mono)', color: 'var(--green)' }}>− ₹{fmtAmt(discount)}</td></tr>}
+                                    <tr><td style={{ padding: '6px 12px 3px 0', borderTop: '1px solid var(--border)', font: '700 13px var(--font)' }}>Invoice total</td><td style={{ textAlign: 'right', borderTop: '1px solid var(--border)', paddingTop: 6, font: '700 16px var(--mono)', color: 'var(--purple)' }}>₹{fmtAmt(netAdded)}</td></tr>
+                                    <tr><td style={{ padding: '6px 12px 0 0', font: '500 11px var(--font)', color: 'var(--text3)' }}>Fee total before</td><td style={{ textAlign: 'right', paddingTop: 6, font: '500 12px var(--mono)', color: 'var(--text3)' }}>₹{fmtAmt(Number(form.fee_total) || 0)}</td></tr>
+                                    <tr><td style={{ padding: '2px 12px 0 0', font: '500 11px var(--font)', color: 'var(--text3)' }}>Fee total after</td><td style={{ textAlign: 'right', font: '600 12px var(--mono)' }}>₹{fmtAmt(newTotal)}</td></tr>
+                                  </tbody>
+                                </table>
                               </div>
-                            </>
+                            </div>
                           )
                         })()}
 
@@ -3256,12 +3322,39 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     })}
                   </select>
                 </label>
+                {changeSkuId && changingEn && changeSkuId !== changingEn.sku_id && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ font: '600 9.5px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
+                      Kit items given <span style={{ textTransform: 'none', fontWeight: 400 }}>— uncheck any not handed over</span>
+                    </div>
+                    {changeKit == null ? (
+                      <div className="hint">Loading kit…</div>
+                    ) : changeKit.length === 0 ? (
+                      <div className="hint">No kit defined for this level.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {changeKit.map(function (k) {
+                          const on = !changeKitEx[k.item_id]
+                          const had = !!(kitGiven[changingEn.id] || {})[k.item_id]
+                          return (
+                            <label key={k.item_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, cursor: had ? 'default' : 'pointer', font: '500 11px var(--font)', border: '1px solid ' + (on ? 'var(--purple)' : 'var(--border)'), background: on ? 'var(--purple-bg)' : 'var(--bg)', color: on ? 'var(--purple)' : 'var(--text3)', textDecoration: on ? 'none' : 'line-through' }}>
+                              <input type="checkbox" checked={on || had} disabled={had}
+                                onChange={function () { setChangeKitEx(function (p) { const n = { ...p }; if (n[k.item_id]) delete n[k.item_id]; else n[k.item_id] = true; return n }) }}
+                                style={{ accentColor: 'var(--purple)' }} />
+                              {k.name}{k.quantity > 1 ? ' ×' + k.quantity : ''}{had ? ' · already given' : ''}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 14 }}>New level starts on
                   <input type="date" value={changeDate} onChange={function (e) { setChangeDate(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
                 </label>
                 <p className="hint" style={{ marginTop: 8 }}>
                   Keeps the batch assignment, attendance and certificate history — only the course/level is swapped.
-                  A monthly course's new cycle (class target and renewal date) starts from the date above.
+                  A monthly course's new cycle (class target and renewal date) starts from the date above. The ticked kit items are issued from stock.
                 </p>
               </div>
               <div className="modal-actions">
