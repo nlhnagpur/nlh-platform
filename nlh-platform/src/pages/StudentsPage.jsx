@@ -954,6 +954,27 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // ── Record that a certificate was handed over outside the app ──
   // (printed at the centre, or issued before sending existed) — clears it
   // from Needs attention without claiming it was emailed or WhatsApped.
+  // Open the certificate dialog (same as Actions → Certificate on a course).
+  async function openCertificate() {
+    let centre = centreCache
+    if (!centre && student.franchisee_id) {
+      const { data } = await sb.from('franchisees')
+        .select('id,business_name,city,area,country,tier')
+        .eq('id', student.franchisee_id).single()
+      centre = data || null
+      setCentreCache(centre)
+    }
+    setCertModal({ enrollments: localEnrollments, centre })
+  }
+  // Open "Mark course complete" for one enrolment (same as Actions → Complete).
+  function startComplete(en) {
+    setCompleteDate(lastAttendedDate[en.id] || new Date().toISOString().slice(0, 10))
+    setMarksObtained(en.marks_obtained != null ? String(en.marks_obtained) : '')
+    setMarksTotal(en.marks_total != null ? String(en.marks_total) : '')
+    setMarksRemarks(en.marks_remarks || '')
+    setCompletingEnr(en)
+  }
+
   async function markCertIssued(en) {
     if (!window.confirm('Mark the certificate for this course as already issued?\n\nIt will stop showing under Needs attention. This does not send anything to the parent.')) return
     const patch = { cert_issued_at: new Date().toISOString(), cert_issued_by: currentUser?.email || currentRole || null, cert_issued_note: 'Marked as issued manually' }
@@ -2071,6 +2092,90 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
         {tab === 'courses' && (
           <div style={{ padding: '16px 0' }}>
+            {/* What needs attention for this student, and the button that fixes it —
+                the same reasons the Needs-attention list is built from, plus the
+                per-course ones (kit, batch) that only matter once you're here. */}
+            {(function () {
+              const items = []
+              const lbl = function (en) { return (en.skus?.courses?.group_name || 'Course') + (en.skus?.level_name ? ' — ' + en.skus.level_name : '') }
+              localEnrollments.forEach(function (en) {
+                if (en.status === 'dropped') return
+                const done = !!en.completed_at
+                const bs = batchAssignments[en.id]
+                const kit = kitDefs[en.sku_id] || []
+                if (certPending(en)) {
+                  items.push({
+                    key: 'cert-' + en.id, tone: 'amber',
+                    text: <><b>{lbl(en)}</b> was completed{en.completed_at ? ' on ' + fmtDate(String(en.completed_at).slice(0, 10)) : ''} — the certificate hasn't been sent or marked issued.</>,
+                    actions: [
+                      { label: '🎓 Send certificate', onClick: openCertificate },
+                      canEdit && { label: '✓ Already issued', onClick: function () { markCertIssued(en) } },
+                    ],
+                  })
+                }
+                if (kit.length > 0 && !kitIssued[en.id]) {
+                  items.push({
+                    key: 'kit-' + en.id, tone: 'amber',
+                    text: <><b>{lbl(en)}</b> — kit not confirmed. Tick the items that were handed over.</>,
+                    actions: [{ label: '🧰 Confirm kit', onClick: function () { setKitPanelEnrId(en.id) } }],
+                  })
+                }
+                if (!done && isMonthlyActive(en)) {
+                  const r = renewalInfo(en)
+                  if (r && r.state !== 'ok') {
+                    items.push({
+                      key: 'renew-' + en.id, tone: r.state === 'overdue' ? 'red' : 'amber',
+                      text: <><b>{lbl(en)}</b> — renewal {r.state === 'overdue' ? 'overdue since ' : 'due '}{fmtDate(r.due)}.</>,
+                      actions: [{ label: '📅 Renew cycle', onClick: function () { openRenewCycle(en.id) } }],
+                    })
+                  }
+                }
+                const tot = en.skus?.total_sessions || 0
+                if (!done && en.skus?.courses?.billing_type !== 'monthly' && tot > 0 && (sessionCounts[en.id] || 0) >= tot) {
+                  items.push({
+                    key: 'sess-' + en.id, tone: 'amber',
+                    text: <><b>{lbl(en)}</b> — {sessionCounts[en.id]} of {tot} sessions attended; mark the course complete.</>,
+                    actions: [canEdit && can('students.complete') && { label: '✓ Mark complete', onClick: function () { startComplete(en) } }],
+                  })
+                }
+                if (!done && !bs && admin) {
+                  items.push({
+                    key: 'batch-' + en.id, tone: 'amber',
+                    text: <><b>{lbl(en)}</b> — not assigned to a batch yet.</>,
+                    actions: [{ label: '+ Assign batch', onClick: function () { openBatchPanel(en) } }],
+                  })
+                }
+              })
+              if (balance > 0) {
+                items.push({
+                  key: 'balance', tone: 'red',
+                  text: <>Fee balance of <b>₹{fmtAmt(balance)}</b> is due.</>,
+                  actions: [{ label: '💰 Accounts', onClick: function () { setTab('accounts') } }],
+                })
+              }
+              if (items.length === 0) return null
+              const tone = { red: { c: '#991b1b', bg: '#fef2f2', bd: '#fca5a5' }, amber: { c: '#92400e', bg: '#FFFBEB', bd: '#FCD34D' } }
+              return (
+                <div style={{ marginBottom: 12, border: '1px solid #FCD34D', borderRadius: 10, background: '#FFFBEB', overflow: 'hidden' }}>
+                  <div style={{ padding: '8px 14px', font: '700 12px var(--font)', color: '#92400e', borderBottom: '1px solid #FDE68A' }}>
+                    ⚠ Needs attention ({items.length})
+                  </div>
+                  {items.map(function (it, i) {
+                    const t = tone[it.tone] || tone.amber
+                    return (
+                      <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 14px', borderTop: i > 0 ? '1px solid #FDE68A' : 'none' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.c, flexShrink: 0 }} />
+                        <span style={{ flex: 1, minWidth: 220, font: '500 12px var(--font)', color: 'var(--text)' }}>{it.text}</span>
+                        {(it.actions || []).filter(Boolean).map(function (a) {
+                          return <button key={a.label} className="btn-s" style={{ fontSize: 11 }} onClick={a.onClick}>{a.label}</button>
+                        })}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
             {localEnrollments.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
                 {localEnrollments.some(isMonthlyActive) && (function () {
