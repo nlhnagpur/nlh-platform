@@ -74,6 +74,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
+  const [payrollExtras,      setPayrollExtras]      = useState({ incentive: 0, misc: 0, misc_note: '' })   // this month's incentive / misc
+  const [extrasForm,         setExtrasForm]         = useState({ incentive: '', misc: '', misc_note: '' })
+  const [savingExtras,       setSavingExtras]       = useState(false)
   const [overrideEdit,       setOverrideEdit]       = useState(false) // editing override inline
   const [overrideForm,       setOverrideForm]       = useState({ amount: '', notes: '' })
   const [savingOverride,     setSavingOverride]     = useState(false)
@@ -104,6 +107,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     left_at:    instructor.left_at    || '',
     status:     instructor.status     || 'active',
     notes:      instructor.notes      || '',
+    conveyance_monthly: instructor.conveyance_monthly ?? 0,
+    office_salary_monthly: instructor.office_salary_monthly ?? 0,
   })
 
   // ── Caution form ──
@@ -241,6 +246,16 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         .eq('month', payrollMonth)
         .maybeSingle()
 
+      // ── This month's incentive / misc ──
+      var { data: exRow } = await sb.from('payroll_extras')
+        .select('incentive, misc, misc_note')
+        .eq('instructor_id', instructor.id)
+        .eq('month', payrollMonth)
+        .maybeSingle()
+      var ex = exRow || { incentive: 0, misc: 0, misc_note: '' }
+      setPayrollExtras({ incentive: ex.incentive || 0, misc: ex.misc || 0, misc_note: ex.misc_note || '' })
+      setExtrasForm({ incentive: ex.incentive ? String(ex.incentive) : '', misc: ex.misc ? String(ex.misc) : '', misc_note: ex.misc_note || '' })
+
       setPayrollSessions(sessRes.data || [])
       setPayrollAppts(apptRes.data || [])
       setPayrollCompletions(completionMap)
@@ -252,6 +267,20 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     }
     loadPayroll()
   }, [tab, payrollMonth])
+
+  // ── Incentive / misc for the month ──
+  async function saveExtras() {
+    var inc  = Math.round(Number(extrasForm.incentive) || 0)
+    var misc = Math.round(Number(extrasForm.misc) || 0)
+    if (inc < 0) { showToast('Incentive cannot be negative', 'warn'); return }
+    setSavingExtras(true)
+    var row = { instructor_id: instructor.id, month: payrollMonth, incentive: inc, misc: misc, misc_note: extrasForm.misc_note.trim() || null, updated_at: new Date().toISOString() }
+    var { error } = await sb.from('payroll_extras').upsert(row, { onConflict: 'instructor_id,month' })
+    setSavingExtras(false)
+    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
+    setPayrollExtras({ incentive: inc, misc: misc, misc_note: row.misc_note || '' })
+    showToast('Incentive / misc saved ✓')
+  }
 
   // ── Payroll override save/clear ──
   async function saveOverride(grandTotal) {
@@ -304,6 +333,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       left_at:   form.left_at        || null,
       status:    form.status,
       notes:     form.notes.trim()   || null,
+      conveyance_monthly: Math.max(0, Math.round(Number(form.conveyance_monthly) || 0)),
+      office_salary_monthly: Math.max(0, Math.round(Number(form.office_salary_monthly) || 0)),
       updated_at: new Date().toISOString(),
     }
     const { error } = await sb.from('instructors').update(payload).eq('id', instructor.id)
@@ -311,6 +342,20 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     if (error) { showToast('Save failed: ' + error.message, 'err'); return }
     showToast('Profile saved')
     onSaved({ ...instructor, ...payload })
+  }
+
+  // ── Save the fixed monthly extras (conveyance, office salary) — paid on top
+  // of course remuneration ──
+  async function saveConveyance() {
+    const conv = Math.max(0, Math.round(Number(form.conveyance_monthly) || 0))
+    const office = Math.max(0, Math.round(Number(form.office_salary_monthly) || 0))
+    setSaving(true)
+    const { error } = await sb.from('instructors').update({ conveyance_monthly: conv, office_salary_monthly: office, updated_at: new Date().toISOString() }).eq('id', instructor.id)
+    setSaving(false)
+    if (error) { showToast('Save failed: ' + error.message, 'err'); return }
+    setForm(function (f) { return { ...f, conveyance_monthly: conv, office_salary_monthly: office } })
+    showToast('Monthly extras saved — conveyance ₹' + conv.toLocaleString('en-IN') + ', office salary ₹' + office.toLocaleString('en-IN'))
+    onSaved({ ...instructor, conveyance_monthly: conv, office_salary_monthly: office })
   }
 
   // ── Save caution ──
@@ -623,6 +668,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               <label>Left Date
                 <input type="date" value={form.left_at} onChange={fld('left_at')} />
               </label>
+              <label>Conveyance (₹ / month)
+                <input type="number" min={0} value={form.conveyance_monthly} onChange={fld('conveyance_monthly')} placeholder="0" />
+              </label>
+              <label>Office salary (₹ / month)
+                <input type="number" min={0} value={form.office_salary_monthly} onChange={fld('office_salary_monthly')} placeholder="0" />
+              </label>
               <label className="col-span-2">Notes / Remarks
                 <textarea value={form.notes} onChange={fld('notes')} rows={2}
                   placeholder="Any internal notes…" style={{ resize: 'vertical' }} />
@@ -708,6 +759,26 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         {tab === 'courses' && (
           <div>
             <div style={{ padding: '0 20px 12px' }}>
+
+              {/* ── Fixed monthly extras on top of course remuneration ── */}
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', padding: '10px 12px', margin: '0 0 12px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg2, #f5f4f0)' }}>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Conveyance (₹ / month, extra)
+                  <input type="number" min={0} value={form.conveyance_monthly} onChange={fld('conveyance_monthly')}
+                    placeholder="0" style={{ display: 'block', marginTop: 6, width: 160, fontSize: 13 }} />
+                </label>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)' }}>Office salary (₹ / month)
+                  <input type="number" min={0} value={form.office_salary_monthly} onChange={fld('office_salary_monthly')}
+                    placeholder="0" style={{ display: 'block', marginTop: 6, width: 160, fontSize: 13 }} />
+                </label>
+                <button className="btn-p" style={{ fontSize: 12 }}
+                  disabled={saving || ((Number(form.conveyance_monthly) || 0) === (Number(instructor.conveyance_monthly) || 0) && (Number(form.office_salary_monthly) || 0) === (Number(instructor.office_salary_monthly) || 0))}
+                  onClick={saveConveyance}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                <span className="hint" style={{ margin: 0, flex: 1, minWidth: 200 }}>
+                  Paid every month in addition to the remuneration below, once per CI (not per course). Each shows as its own line in Payroll. Office salary is for a CI who also works as office staff.
+                </span>
+              </div>
 
               {/* ── Progression view ─────────────────────────────────────────── */}
               {(function () {
@@ -1376,9 +1447,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var studentTotal      = perStudentRows.reduce(function (s, r) { return s + r.amount }, 0)
               var studentMonthTotal = perStudentMonthRows.reduce(function (s, r) { return s + r.amount }, 0)
               var monthlyTotal      = monthlyRows.reduce(function (s, a) { return s + (a.remuneration_rate || 0) }, 0)
-              var grandTotal        = sessionTotal + studentTotal + studentMonthTotal + monthlyTotal
+              var conveyance        = Math.max(0, Number(instructor.conveyance_monthly) || 0)
+              var officeSalary      = Math.max(0, Number(instructor.office_salary_monthly) || 0)
+              var incentive         = payrollExtras.incentive || 0
+              var misc              = payrollExtras.misc || 0
+              var grandTotal        = sessionTotal + studentTotal + studentMonthTotal + monthlyTotal + conveyance + officeSalary + incentive + misc
 
-              if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0 && perStudentMonthRows.length === 0) {
+              if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0 && perStudentMonthRows.length === 0 && conveyance === 0 && officeSalary === 0 && incentive === 0 && misc === 0) {
                 return (
                   <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text3)', fontSize: 13 }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>💰</div>
@@ -1599,6 +1674,62 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       )}
                     </div>
                   )}
+
+                  {/* Fixed monthly extras: office salary and conveyance */}
+                  {(officeSalary > 0 || conveyance > 0) && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Fixed Monthly
+                      </div>
+                      {[
+                        officeSalary > 0 ? { label: 'Office salary', note: 'Office staff — fixed monthly', amt: officeSalary } : null,
+                        conveyance > 0 ? { label: 'Conveyance', note: 'Fixed, in addition to the above', amt: conveyance } : null,
+                      ].filter(Boolean).map(function (r, i) {
+                        return (
+                          <div key={r.label} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{r.label}</div>
+                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>{r.note}</div>
+                            </div>
+                            <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>₹{r.amt.toLocaleString('en-IN')}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Incentive and misc — entered month by month */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Incentive &amp; Misc — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', padding: '10px 14px' }}>
+                      <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>Incentive (₹)
+                        <input type="number" min={0} value={extrasForm.incentive} placeholder="0"
+                          onChange={function (e) { setExtrasForm(function (f) { return { ...f, incentive: e.target.value } }) }}
+                          style={{ display: 'block', marginTop: 4, width: 120, fontSize: 13 }} />
+                      </label>
+                      <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>Misc (₹, − for a deduction)
+                        <input type="number" value={extrasForm.misc} placeholder="0"
+                          onChange={function (e) { setExtrasForm(function (f) { return { ...f, misc: e.target.value } }) }}
+                          style={{ display: 'block', marginTop: 4, width: 150, fontSize: 13 }} />
+                      </label>
+                      <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', flex: 1, minWidth: 160 }}>Misc note
+                        <input value={extrasForm.misc_note} placeholder="e.g. office work, advance recovered"
+                          onChange={function (e) { setExtrasForm(function (f) { return { ...f, misc_note: e.target.value } }) }}
+                          style={{ display: 'block', marginTop: 4, width: '100%', fontSize: 13 }} />
+                      </label>
+                      <button className="btn-p" style={{ fontSize: 12 }} disabled={savingExtras} onClick={saveExtras}>
+                        {savingExtras ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                    {(incentive !== 0 || misc !== 0) && (
+                      <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', background: 'var(--purple-bg)', display: 'flex', justifyContent: 'space-between', font: '600 12px var(--font)', color: 'var(--purple)' }}>
+                        <span>{[incentive ? 'Incentive ₹' + incentive.toLocaleString('en-IN') : '', misc ? 'Misc ' + (misc < 0 ? '−' : '') + '₹' + Math.abs(misc).toLocaleString('en-IN') + (payrollExtras.misc_note ? ' (' + payrollExtras.misc_note + ')' : '') : ''].filter(Boolean).join(' · ')}</span>
+                        <span>{(incentive + misc < 0 ? '−' : '') + '₹' + Math.abs(incentive + misc).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* ── Grand total + override ── */}
                   <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginTop: 4 }}>
