@@ -312,6 +312,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [reviewSending,   setReviewSending]   = useState(false)
   const [changingEn,      setChangingEn]      = useState(null)  // enrollment whose level is being changed
   const [changeSkuId,     setChangeSkuId]     = useState('')
+  const [changeDate,      setChangeDate]      = useState(todayIso())   // when the new level starts
   const [changeSaving,    setChangeSaving]    = useState(false)
   // Fee payment ledger
   const [payments,        setPayments]        = useState([])
@@ -1094,6 +1095,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   // ── Change an enrollment's course / level (swap sku_id in place) ──
   function openChangeLevel(en) {
     setChangeSkuId(en.sku_id || '')
+    setChangeDate(todayIso())
     setChangingEn(en)
   }
 
@@ -1106,14 +1108,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     if (dup) { showToast('Student is already enrolled in that level', 'warn'); return }
     const target = allCentreSkus.find(function (s) { return s.id === newSkuId })
     setChangeSaving(true)
-    const { error } = await sb.from('enrollments').update({ sku_id: newSkuId }).eq('id', changingEn.id)
+    // The new level starts on the chosen date: that is where its monthly cycle
+    // (and so its class target and renewal date) begins.
+    const patch = { sku_id: newSkuId, cycle_started_at: changeDate || todayIso() }
+    const { error } = await sb.from('enrollments').update(patch).eq('id', changingEn.id)
     setChangeSaving(false)
     if (error) { showToast('Change failed: ' + error.message, 'err'); return }
     const next = localEnrollments.map(function (e) {
       if (e.id !== changingEn.id) return e
       return {
         ...e,
-        sku_id: newSkuId,
+        ...patch,
         skus: target
           ? { level_name: target.level_name, courses: target.courses || e.skus?.courses }
           : e.skus,
@@ -1121,6 +1126,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     })
     setLocalEnrollments(next)
     setChangingEn(null)
+    // recount the cycle from the new start date
+    await loadCycleProgress(next, batchAssignments)
     showToast('Course / level updated ✓')
     if (onSaved) onSaved({ ...student, ...form, enrollments: next })
   }
@@ -3202,13 +3209,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     })}
                   </select>
                 </label>
+                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 14 }}>New level starts on
+                  <input type="date" value={changeDate} onChange={function (e) { setChangeDate(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
+                </label>
                 <p className="hint" style={{ marginTop: 8 }}>
                   Keeps the batch assignment, attendance and certificate history — only the course/level is swapped.
+                  A monthly course's new cycle (class target and renewal date) starts from the date above.
                 </p>
               </div>
               <div className="modal-actions">
                 <button className="btn" onClick={function () { setChangingEn(null) }} disabled={changeSaving}>Cancel</button>
-                <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId}>
+                <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId || !changeDate}>
                   {changeSaving ? 'Saving…' : 'Update'}
                 </button>
               </div>
