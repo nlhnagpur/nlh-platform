@@ -752,6 +752,34 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setInvoices(invRows || [])
   }
 
+  // Batches the student's OTHER levels of this same course were (or are) in —
+  // the "continue with the same batch and teacher" candidates for the next
+  // level. Not tied to the new level's instructor appointments or the batch's
+  // own sku, so a batch keeps being offered when the teacher isn't yet
+  // appointed for the new level. Returns [{ ...batch, continuing: true,
+  // fromLevel }] for this centre's active batches.
+  async function continuingBatches(groupName, exceptEnrId) {
+    if (!groupName) return []
+    const prev = localEnrollments.filter(function (e) {
+      return e.id !== exceptEnrId && e.skus?.courses?.group_name === groupName
+    })
+    if (prev.length === 0) return []
+    const { data: bsRows } = await sb.from('batch_students')
+      .select('batch_id, enrollment_id, assigned_at, removed_at')
+      .in('enrollment_id', prev.map(function (e) { return e.id }))
+      .order('assigned_at', { ascending: false })
+    const ids = Array.from(new Set((bsRows || []).map(function (r) { return r.batch_id }).filter(Boolean)))
+    if (ids.length === 0) return []
+    const { data: bRows } = await sb.from('batches')
+      .select('id, name, sku_id, schedule_days, schedule_time, is_individual, sessions_done, instructor_id, instructors(id, full_name)')
+      .in('id', ids).eq('is_active', true).eq('franchisee_id', student.franchisee_id)
+    return (bRows || []).map(function (b) {
+      const row = (bsRows || []).find(function (r) { return r.batch_id === b.id })
+      const en = prev.find(function (e) { return row && e.id === row.enrollment_id })
+      return { ...b, continuing: true, fromLevel: en?.skus?.level_name || '' }
+    })
+  }
+
   // ── Open batch assignment panel for one enrollment ──
   async function openBatchPanel(enrollment) {
     if (batchPanelEnrId === enrollment.id) { setBatchPanelEnrId(null); return }
@@ -791,7 +819,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           .order('schedule_time')
       : { data: [] }
 
-    setPanelData({ batches: batches || [], loading: false })
+    const cont = await continuingBatches(enrollment.skus?.courses?.group_name, enrollment.id)
+    const rest = (batches || []).filter(function (b) { return !cont.some(function (c) { return c.id === b.id }) })
+    setPanelData({ batches: cont.concat(rest), loading: false })
   }
 
   // ── Assign (or switch) a student to a batch ──
@@ -1212,7 +1242,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           .select('id, name, schedule_days, schedule_time, is_individual, instructor_id, instructors(id, full_name)')
           .in('instructor_id', eligibleCIIds).eq('is_active', true).eq('franchisee_id', student.franchisee_id).order('created_at')
       : { data: [] }
-    setAddBatchData(function (prev) { return { ...prev, [skuId]: { batches: batches || [], eligibleCIs: eligibleCIs, loading: false } } })
+    // A student moving up a level usually carries on in the same batch with
+    // the same teacher: offer that first (and preselect it), even when the
+    // teacher isn't appointed for the new level yet.
+    const skuRow = allCentreSkus.find(function (x) { return x.id === skuId })
+    const cont = await continuingBatches(skuRow?.courses?.group_name, null)
+    const merged = cont.concat((batches || []).filter(function (b) { return !cont.some(function (c) { return c.id === b.id }) }))
+    setAddBatchData(function (prev) { return { ...prev, [skuId]: { batches: merged, eligibleCIs: eligibleCIs, loading: false } } })
+    if (cont.length > 0) setAddBatchSel(function (prev) { return prev[skuId] ? prev : { ...prev, [skuId]: cont[0].id } })
   }
 
   // ── Load a course's kit items + seed its editable fee when it is selected ──
@@ -2501,6 +2538,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                             <div style={{ font: '600 12px var(--font)', color: 'var(--text)' }}>
                                               {b.name}
                                               {isCurrent && <span style={{ color: 'var(--purple)', marginLeft: 6, fontSize: 11 }}>● current</span>}
+                                              {b.continuing && !isCurrent && <span style={{ color: '#047857', background: '#d1fae5', borderRadius: 20, padding: '1px 8px', marginLeft: 6, fontSize: 10 }}>↩ continues{b.fromLevel ? ' from ' + b.fromLevel : ''}</span>}
                                             </div>
                                             <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
                                               {b.instructors?.full_name || 'No instructor'}
@@ -2517,7 +2555,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                               disabled={panelSaving}
                                               onClick={function () { assignToBatch(b.id, en.id) }}
                                             >
-                                              {bs ? 'Switch here' : 'Assign'}
+                                              {b.continuing ? 'Continue here' : bs ? 'Switch here' : 'Assign'}
                                             </button>
                                           )}
                                         </div>
@@ -2832,7 +2870,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                               style={{ fontSize: 12, width: '100%' }}>
                                               <option value="">— No batch yet (assign later) —</option>
                                               {bd.batches.map(function (b) {
-                                                return <option key={b.id} value={b.id}>{b.name}{b.instructors?.full_name ? ' · ' + b.instructors.full_name : ''}{b.schedule_days ? ' · ' + b.schedule_days : ''}{b.schedule_time ? ' ' + b.schedule_time : ''}</option>
+                                                return <option key={b.id} value={b.id}>{b.continuing ? '↩ Continue: ' : ''}{b.name}{b.instructors?.full_name ? ' · ' + b.instructors.full_name : ''}{b.schedule_days ? ' · ' + b.schedule_days : ''}{b.schedule_time ? ' ' + b.schedule_time : ''}</option>
                                               })}
                                               <option value="__new__">+ Create new batch</option>
                                             </select>

@@ -95,6 +95,14 @@ function everyoneNoClass(b, date, entry) {
   return roster.every(function (bs) { return nc[bs.enrollment_id] })
 }
 function nameOf(bs) { return String(bs.enrollments && bs.enrollments.students ? bs.enrollments.students.full_name : '') }
+// The same student can be on a batch under two levels (one finished, the next
+// started): label the rows with the level so they can be told apart.
+function labelOf(b, bs) {
+  const sid = bs.enrollments && bs.enrollments.student_id
+  const lvl = bs.enrollments && bs.enrollments.skus && bs.enrollments.skus.level_name
+  const twice = sid && (b.batch_students || []).filter(function (x) { return x.enrollments && x.enrollments.student_id === sid }).length > 1
+  return nameOf(bs) + (twice && lvl ? ' · ' + lvl : '')
+}
 
 const TONE = {
   P: { color: '#166534', bg: '#dcfce7' },
@@ -128,7 +136,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     setLoading(true)
     ;(async function () {
       let q = sb.from('batches')
-        .select('id, name, franchisee_id, instructor_id, schedule_days, schedule_time, start_date, is_active, instructors(full_name), skus(level_name, courses(group_name)), batch_students(id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, status, students(id, full_name)))')
+        .select('id, name, franchisee_id, instructor_id, schedule_days, schedule_time, start_date, is_active, instructors(full_name), skus(level_name, courses(group_name)), batch_students(id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, status, students(id, full_name), skus(level_name)))')
         .eq('is_active', true)
       if (centreFilter) q = q.eq('franchisee_id', centreFilter)
       const bRes = await q
@@ -612,7 +620,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                         return (
                           <tr key={bs.id}>
                             <td style={{ padding: '4px 10px', font: '500 13px var(--font)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-                              {nameOf(bs) || '—'}
+                              {labelOf(b, bs) || '—'}
                             </td>
                             {cells.map(function (c) {
                               const tone = c.v ? TONE[c.v] : null
