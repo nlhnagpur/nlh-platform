@@ -431,6 +431,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     setEditApptForm({
       remuneration_mode: appt.remuneration_mode,
       remuneration_rate: appt.remuneration_rate,
+      appointed_at:      appt.appointed_at || '',
       trained_by_nlh:    appt.trained_by_nlh,
       training_fee:      appt.training_fee  ?? '',
       training_date:     appt.training_date || '',
@@ -444,6 +445,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     const payload = {
       remuneration_mode: editApptForm.remuneration_mode,
       remuneration_rate: Number(editApptForm.remuneration_rate),
+      ...(editApptForm.appointed_at ? { appointed_at: editApptForm.appointed_at } : {}),
       trained_by_nlh:    editApptForm.trained_by_nlh,
       training_fee:      editApptForm.trained_by_nlh && editApptForm.training_fee ? Number(editApptForm.training_fee) : null,
       training_date:     editApptForm.trained_by_nlh && editApptForm.training_date ? editApptForm.training_date : null,
@@ -895,6 +897,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                     <label>Rate (₹)
                                       <input type="number" value={editApptForm.remuneration_rate}
                                         onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_rate: e.target.value } }) }} />
+                                    </label>
+                                    <label>Appointed From
+                                      <input type="date" value={editApptForm.appointed_at || ''}
+                                        onChange={function (e) { setEditApptForm(function (f) { return { ...f, appointed_at: e.target.value } }) }} />
                                     </label>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 18 }}>
                                       <input type="checkbox" checked={!!editApptForm.trained_by_nlh}

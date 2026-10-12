@@ -819,8 +819,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           .order('schedule_time')
       : { data: [] }
 
+    // Batches are no longer tied to one SKU (batches.sku_id is often empty), so
+    // also list every active batch of a teacher appointed for this exact level.
+    const ciIds = (cis || []).map(function (c) { return c.instructor_id }).filter(Boolean)
+    const { data: ciBatches } = ciIds.length
+      ? await sb.from('batches')
+          .select('id, name, sku_id, schedule_days, schedule_time, is_individual, sessions_done, instructor_id, instructors(id, full_name)')
+          .in('instructor_id', ciIds).eq('is_active', true).eq('franchisee_id', student.franchisee_id).order('schedule_time')
+      : { data: [] }
+    const bySku = (batches || []).concat((ciBatches || []).filter(function (b) { return !(batches || []).some(function (x) { return x.id === b.id }) }))
     const cont = await continuingBatches(enrollment.skus?.courses?.group_name, enrollment.id)
-    const rest = (batches || []).filter(function (b) { return !cont.some(function (c) { return c.id === b.id }) })
+    const rest = bySku.filter(function (b) { return !cont.some(function (c) { return c.id === b.id }) })
     setPanelData({ batches: cont.concat(rest), loading: false })
   }
 
