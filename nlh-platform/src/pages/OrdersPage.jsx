@@ -3156,11 +3156,11 @@ export default function OrdersPage() {
     const FR = 'business_name, tier, phone'
     const [payRes, feeRes, cnRes] = await Promise.all([
       sb.from('order_payments')
-        .select('id, receipt_no, amount, paid_on, receipt_date, mode, reference, order:orders(id, order_ref, invoice_no, grand_total, amount_paid, placer:franchisees!orders_placer_id_fkey(' + FR + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + FR + '))')
-        .order('paid_on', { ascending: false }).limit(300),
+        .select('id, receipt_no, amount, paid_on, receipt_date, created_at, mode, reference, order:orders(id, order_ref, invoice_no, grand_total, amount_paid, placer:franchisees!orders_placer_id_fkey(' + FR + '), bill_to_fr:franchisees!orders_bill_to_franchisee_id_fkey(' + FR + '))')
+        .order('created_at', { ascending: false }).limit(300),
       sb.from('franchisee_payments')
-        .select('id, receipt_no, amount, payment_date, receipt_date, payment_mode, reference_no, notes, franchisee_id, franchisees(' + FR + ')')
-        .order('payment_date', { ascending: false }).limit(300),
+        .select('id, receipt_no, amount, payment_date, receipt_date, created_at, payment_mode, reference_no, notes, franchisee_id, franchisees(' + FR + ')')
+        .order('created_at', { ascending: false }).limit(300),
       sb.from('franchisee_credit_notes')
         .select('id, credit_note_no, amount, reason, status, requested_at, approved_at, franchisee_id, franchisees(' + FR + '), orders(order_ref, invoice_no)')
         .order('requested_at', { ascending: false }).limit(300),
@@ -3184,21 +3184,23 @@ export default function OrdersPage() {
         const fr = p0.order?.bill_to_fr || p0.order?.placer || {}
         const total = group.reduce(function (s, x) { return s + (x.amount || 0) }, 0)
         const forLabel = group.map(function (x) { return x.order?.invoice_no || x.order?.order_ref }).filter(Boolean).join(', ') || '—'
-        return { type: 'payment', id: p0.id, no: p0.receipt_no, date: p0.receipt_date || p0.paid_on, paidOn: p0.paid_on, amount: total, fr: fr, forLabel: forLabel, status: null, raw: group }
+        return { type: 'payment', id: p0.id, no: p0.receipt_no, date: p0.receipt_date || p0.paid_on, at: p0.created_at || p0.receipt_date || p0.paid_on, paidOn: p0.paid_on, amount: total, fr: fr, forLabel: forLabel, status: null, raw: group }
       }))
       .concat((feeRes.data || []).map(function (f) {
-        return { type: 'fee', id: f.id, no: f.receipt_no, date: f.receipt_date || f.payment_date, paidOn: f.payment_date, amount: f.amount, fr: f.franchisees || {}, forLabel: 'Franchise fee', status: null, raw: f }
+        return { type: 'fee', id: f.id, no: f.receipt_no, date: f.receipt_date || f.payment_date, at: f.created_at || f.receipt_date || f.payment_date, paidOn: f.payment_date, amount: f.amount, fr: f.franchisees || {}, forLabel: 'Franchise fee', status: null, raw: f }
       }))
       .concat((cnRes.data || []).map(function (c) {
-        return { type: 'credit_note', id: c.id, no: c.credit_note_no, date: (c.approved_at || c.requested_at || '').slice(0, 10), amount: c.amount, fr: c.franchisees || {}, forLabel: c.orders?.invoice_no || c.orders?.order_ref || c.reason || '—', status: c.status, raw: c }
+        return { type: 'credit_note', id: c.id, no: c.credit_note_no, date: (c.approved_at || c.requested_at || '').slice(0, 10), at: c.requested_at || c.approved_at || '', amount: c.amount, fr: c.franchisees || {}, forLabel: c.orders?.invoice_no || c.orders?.order_ref || c.reason || '—', status: c.status, raw: c }
       }))
-    // Receipt-number order, highest first (numbers compared numerically, so
-    // 0019 follows 0018 and 0100 sits above 0099); entries without a number last.
+    // Newest first across every series (order receipts OR-, franchise fee FR-,
+    // credit notes CN-). Sorting by the number alone put whole series above
+    // each other (all OR- above all FR-), so the latest receipts of the other
+    // series were buried. Ties fall back to the receipt number, compared
+    // numerically (0019 above 0018, 0100 above 0099).
     merged.sort(function (a, b) {
-      if (!a.no && !b.no) return (b.date || '').localeCompare(a.date || '')
-      if (!a.no) return 1
-      if (!b.no) return -1
-      return b.no.localeCompare(a.no, undefined, { numeric: true }) || (b.date || '').localeCompare(a.date || '')
+      const d = String(b.at || '').localeCompare(String(a.at || ''))
+      if (d) return d
+      return String(b.no || '').localeCompare(String(a.no || ''), undefined, { numeric: true })
     })
     setRecords(merged)
     setRecordsLoading(false)
@@ -4004,8 +4006,8 @@ export default function OrdersPage() {
                     const busy = actionLoading === 'cn_' + rec.id
                     return (
                       <tr key={rec.type + rec.id}>
-                        <td className="mono" style={{ fontWeight: 600 }}>{rec.no || '—'}</td>
-                        <td className="mono hide-mobile">
+                        <td className="mono" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{rec.no || '—'}</td>
+                        <td className="mono hide-mobile" style={{ whiteSpace: 'nowrap' }}>
                           {fmtDate(rec.date)}
                           {rec.paidOn && String(rec.paidOn).slice(0, 10) !== String(rec.date).slice(0, 10) && (
                             <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>paid {fmtDate(rec.paidOn)}</div>
