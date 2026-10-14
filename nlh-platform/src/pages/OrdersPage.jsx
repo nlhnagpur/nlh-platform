@@ -20,6 +20,10 @@ import SaleReturnView from '../components/SaleReturnView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
+import { ConfirmDialog } from '../components/ui'
+import TierBadge from '../components/ui/TierBadge'
+import ReceiptsRegister from '../components/ReceiptsRegister'
+import { fmtMoney } from '../utils/format'
 
 // ── Phase 3 dual-write (see docs/transaction-model-migration-plan.md) ──────
 // Mirrors an order into transactions/transaction_items, keyed on the SAME id
@@ -241,12 +245,6 @@ function PaymentBadge({ order }) {
   return <span className="badge bp">Part Paid</span>
 }
 
-function TierBadge({ tier }) {
-  if (!tier) return null
-  const cls = { NLH: 't-nlh', SMF: 't-smf', CF: 't-cf', UF: 't-uf' }[tier] || ''
-  return <span className={'tier ' + cls}>{tier}</span>
-}
-
 const FILTER_LABELS = {
   all: 'All', pending: 'Pending', proforma: 'Proforma', invoiced: 'Invoiced',
   payment_submitted: 'Pmt Submitted', closed: 'Closed',
@@ -341,6 +339,7 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
   const [history, setHistory]       = useState([])
   const [waSendingId, setWaSendingId] = useState(null)
   const [waConfirm, setWaConfirm]   = useState(null)
+  const [confirmRemove, setConfirmRemove] = useState(null)   // payment awaiting remove-confirmation
 
   async function loadHistory() {
     const { data } = await sb.from('order_payments')
@@ -394,8 +393,11 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
 
   // Remove a wrongly-keyed instalment. The trigger recomputes the order total,
   // so deleting here is the supported way to undo a mistake.
-  async function handleDeletePayment(p) {
-    if (!window.confirm(`Remove the ₹${fmtAmt(p.amount)} payment dated ${fmtDate(p.paid_on)}?\n\nThe order total will be recalculated.`)) return
+  function handleDeletePayment(p) {
+    setConfirmRemove(p)   // the actual removal runs from the ConfirmDialog
+  }
+
+  async function doDeletePayment(p) {
     const { error } = await sb.from('order_payments').delete().eq('id', p.id)
     if (error) { showToast('Could not remove it: ' + error.message, 'err'); return }
     if (p.receipt_no) {
@@ -713,6 +715,22 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
       </div>
     </div>
     {waConfirm && <WhatsAppSendConfirm {...waConfirm} onClose={function () { setWaConfirm(null) }} />}
+    {confirmRemove && (
+      <ConfirmDialog
+        tone="danger"
+        title="Remove this payment?"
+        message={'The order total and status will be recalculated.\nThis cannot be undone from here.'}
+        details={[
+          ['Receipt', confirmRemove.receipt_no || '—'],
+          ['Amount', fmtMoney(confirmRemove.amount)],
+          ['Paid on', fmtDate(confirmRemove.paid_on)],
+          ['Invoice', order.invoice_no || order.order_ref || '—'],
+        ]}
+        confirmLabel="Remove payment"
+        onCancel={function () { setConfirmRemove(null) }}
+        onConfirm={async function () { const p = confirmRemove; await doDeletePayment(p); setConfirmRemove(null) }}
+      />
+    )}
     </>
   )
 }
@@ -3134,6 +3152,8 @@ export default function OrdersPage() {
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [recWaConfirm, setRecWaConfirm] = useState(null)
   const [editRecord, setEditRecord] = useState(null)
+  const [recordsError, setRecordsError] = useState('')
+  const [cnConfirm, setCnConfirm] = useState(null)  // { action: 'approve' | 'reject', cn }
   const [cancelOrder, setCancelOrder] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
@@ -3153,6 +3173,7 @@ export default function OrdersPage() {
   // needs three separate screens to reconcile what money moved and why.
   async function loadRecords() {
     setRecordsLoading(true)
+    setRecordsError('')
     const FR = 'business_name, tier, phone'
     const [payRes, feeRes, cnRes] = await Promise.all([
       sb.from('order_payments')
@@ -3165,6 +3186,13 @@ export default function OrdersPage() {
         .select('id, credit_note_no, amount, reason, status, requested_at, approved_at, franchisee_id, franchisees(' + FR + '), orders(order_ref, invoice_no)')
         .order('requested_at', { ascending: false }).limit(300),
     ])
+    const failed = [payRes, feeRes, cnRes].find(function (r) { return r && r.error })
+    if (failed) {
+      setRecords([])
+      setRecordsError(failed.error.message || 'The request failed.')
+      setRecordsLoading(false)
+      return
+    }
     // A payment split across several invoices shares one receipt_no across
     // several order_payments rows — group those back into one register line
     // (one receipt = one row here), the same way Sale Returns group by
@@ -3979,74 +4007,19 @@ export default function OrdersPage() {
         )}
 
         {pageTab === 'receipts' ? (
-          <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
-            {recordsLoading ? (
-              <div className="loading"><span className="spinner" />Loading…</div>
-            ) : records.length === 0 ? (
-              <div className="empty">No receipts or credit notes yet.</div>
-            ) : (
-              <table className="big-tbl">
-                <thead>
-                  <tr>
-                    <th>No.</th>
-                    <th className="hide-mobile">Date</th>
-                    <th>Type</th>
-                    <th>Franchisee</th>
-                    <th className="hide-mobile">For</th>
-                    <th style={{ textAlign: 'right' }}>Amount</th>
-                    <th>Status</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map(function (rec) {
-                    const typeLabel = rec.type === 'payment' ? 'Invoice Payment' : rec.type === 'fee' ? 'Franchise Fee' : 'Credit Note'
-                    const typeColor = rec.type === 'payment' ? { c: '#1A5FA8', bg: '#eff6ff', bd: '#bfdbfe' } : rec.type === 'fee' ? { c: '#8A5200', bg: '#fff7ed', bd: '#fed7aa' } : { c: '#6D28D9', bg: '#f5f3ff', bd: '#ddd6fe' }
-                    const cn = rec.type === 'credit_note'
-                    const busy = actionLoading === 'cn_' + rec.id
-                    return (
-                      <tr key={rec.type + rec.id}>
-                        <td className="mono" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{rec.no || '—'}</td>
-                        <td className="mono hide-mobile" style={{ whiteSpace: 'nowrap' }}>
-                          {fmtDate(rec.date)}
-                          {rec.paidOn && String(rec.paidOn).slice(0, 10) !== String(rec.date).slice(0, 10) && (
-                            <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>paid {fmtDate(rec.paidOn)}</div>
-                          )}
-                        </td>
-                        <td><span style={{ font: '700 10px var(--mono)', color: typeColor.c, background: typeColor.bg, border: '1px solid ' + typeColor.bd, borderRadius: 20, padding: '2px 8px' }}>{typeLabel}</span></td>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{rec.fr?.business_name || '—'}</div>
-                          <TierBadge tier={rec.fr?.tier} />
-                        </td>
-                        <td className="mono hide-mobile">{rec.forLabel}</td>
-                        <td style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(rec.amount)}</div></td>
-                        <td>{cn
-                          ? <span style={{ font: '700 10px var(--mono)', textTransform: 'uppercase', color: rec.status === 'approved' ? '#16A34A' : rec.status === 'rejected' ? '#991b1b' : '#92400E', background: rec.status === 'approved' ? '#f0fdf4' : rec.status === 'rejected' ? '#fef2f2' : '#FFF7DA', border: '1px solid ' + (rec.status === 'approved' ? '#bbf7d0' : rec.status === 'rejected' ? '#fecaca' : '#D97706'), borderRadius: 20, padding: '2px 8px' }}>{rec.status}</span>
-                          : <span style={{ font: '700 10px var(--mono)', color: '#16A34A', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20, padding: '2px 8px' }}>Recorded</span>}
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          {cn ? (
-                            rec.status === 'pending'
-                              ? <>
-                                  <button className="row-action green" disabled={busy} onClick={function () { approveCreditNote(rec.raw) }}>{busy ? '…' : 'Approve'}</button>{' '}
-                                  <button className="row-action danger" disabled={busy} onClick={function () { rejectCreditNote(rec.raw) }}>Reject</button>
-                                </>
-                              : <span style={{ color: 'var(--text3)' }}>{rec.raw.reason || '—'}</span>
-                          ) : (
-                            <ActionsMenu items={[
-                              { key: 'view', label: 'View / Print', onClick: function () { viewReceiptRecord(rec) } },
-                              { key: 'wa', label: '💬 WhatsApp', onClick: function () { setRecWaConfirm({ label: 'Send receipt ' + (rec.no || ''), phone: rec.fr?.phone || '', send: function (phone) { return sendReceiptRecordWA(rec, phone) } }) } },
-                              { key: 'edit', label: '✎ Edit', onClick: function () { setEditRecord(rec) } },
-                            ]} />
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
+          <ReceiptsRegister
+            records={records}
+            loading={recordsLoading}
+            error={recordsError}
+            onRetry={loadRecords}
+            actionLoading={actionLoading}
+            onCreditNote={function (action, cn) { setCnConfirm({ action: action, cn: cn }) }}
+            onView={viewReceiptRecord}
+            onWhatsApp={function (rec) {
+              setRecWaConfirm({ label: 'Send receipt ' + (rec.no || ''), phone: (rec.fr && rec.fr.phone) || '', send: function (phone) { return sendReceiptRecordWA(rec, phone) } })
+            }}
+            onEdit={setEditRecord}
+          />
         ) : pageTab === 'returns' ? (
           <div className="card tbl-scroll" style={{ marginBottom: 0 }}>
             {returns.length === 0 ? (
@@ -4273,6 +4246,29 @@ export default function OrdersPage() {
       )}
 
       {recWaConfirm && <WhatsAppSendConfirm {...recWaConfirm} onClose={function () { setRecWaConfirm(null) }} />}
+
+      {cnConfirm && (
+        <ConfirmDialog
+          tone={cnConfirm.action === 'reject' ? 'danger' : 'primary'}
+          title={cnConfirm.action === 'reject' ? 'Reject this credit note?' : 'Approve this credit note?'}
+          message={cnConfirm.action === 'reject'
+            ? 'The request will be closed as rejected and no credit note number is issued.'
+            : 'A credit note number is issued on approval.'}
+          details={[
+            ['Franchisee', (cnConfirm.cn.franchisees && cnConfirm.cn.franchisees.business_name) || '—'],
+            ['Amount', fmtMoney(cnConfirm.cn.amount)],
+            ['For', (cnConfirm.cn.orders && (cnConfirm.cn.orders.invoice_no || cnConfirm.cn.orders.order_ref)) || cnConfirm.cn.reason || '—'],
+          ]}
+          confirmLabel={cnConfirm.action === 'reject' ? 'Reject' : 'Approve'}
+          onCancel={function () { setCnConfirm(null) }}
+          onConfirm={async function () {
+            const c = cnConfirm
+            if (c.action === 'reject') await rejectCreditNote(c.cn)
+            else await approveCreditNote(c.cn)
+            setCnConfirm(null)
+          }}
+        />
+      )}
 
       {editRecord && (
         <EditReceiptModal

@@ -1505,3 +1505,41 @@ vercel-toolbar { display: none !important; }
 /* Students list: ten-ish columns plus wrapping chips — tighter cell padding so
    the table fits the page instead of scrolling sideways and cutting off View. */
 .stu-tbl th, .stu-tbl td { padding-left: 12px; padding-right: 12px; }
+
+/* ── Shared UI kit (src/components/ui) — additive; every class is prefixed ui- ── */
+.ui-chip{display:inline-block;font:700 10px var(--mono);border:1px solid;border-radius:20px;padding:2px 8px;white-space:nowrap}
+.ui-ph{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.ui-ph-main{min-width:0}
+.ui-ph-title{font:700 15px var(--font);color:var(--text)}
+.ui-ph-count{display:inline-block;margin-left:8px;font:600 11px var(--mono);color:var(--text3);background:var(--bg3);border-radius:20px;padding:1px 8px}
+.ui-ph-sub{font:500 11px var(--mono);color:var(--text3);margin-top:2px}
+.ui-ph-actions{display:flex;gap:6px;flex-wrap:wrap}
+.ui-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.ui-search{flex:1 1 220px;min-width:160px;max-width:360px}
+.ui-filters{display:flex;gap:6px;flex-wrap:wrap}
+.ui-filter{font:600 11px var(--font);padding:5px 11px;border-radius:20px;border:1px solid var(--border2);background:#fff;color:var(--text2);cursor:pointer}
+.ui-filter:hover{background:var(--bg3)}
+.ui-filter.on{background:var(--purple);border-color:var(--purple);color:#fff}
+.ui-filter .n{opacity:.7;margin-left:5px;font-family:var(--mono);font-size:10px}
+.ui-clear{font:600 11px var(--font);color:var(--purple);background:none;border:none;cursor:pointer;padding:4px 6px}
+.ui-error{text-align:center;padding:36px 20px;color:var(--red);font-size:12px;background:var(--red-bg);border-radius:var(--r2)}
+.ui-confirm{width:440px;max-width:92vw;padding:22px 24px}
+.ui-confirm-title{font:700 16px var(--font);color:var(--text);margin-bottom:6px}
+.ui-confirm-msg{font-size:12.5px;color:var(--text2);line-height:1.5;white-space:pre-line}
+.ui-confirm-details{margin:12px 0 0;padding:10px 12px;background:var(--bg3);border-radius:var(--r2);font-size:12px}
+.ui-confirm-row{display:flex;justify-content:space-between;gap:12px;padding:3px 0}
+.ui-confirm-row dt{color:var(--text3)}
+.ui-confirm-row dd{margin:0;font-weight:600;color:var(--text);text-align:right;word-break:break-word}
+.ui-btn-danger{background:#DC2626;color:#fff;border:none;padding:8px 16px;border-radius:var(--r2);font-size:12px;cursor:pointer;font-family:var(--font);font-weight:500}
+.ui-btn-danger:hover{background:#B91C1C}
+.ui-btn-danger:disabled,.ui-confirm .btn-p:disabled,.ui-confirm .btn-s:disabled{opacity:.55;cursor:not-allowed}
+.ui-cards{display:flex;flex-direction:column;gap:10px}
+.ui-card-row{border:1px solid var(--border);border-radius:var(--r2);padding:11px 12px;background:#fff}
+.ui-card-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.ui-card-no{font:700 12px var(--mono);color:var(--text);word-break:break-all}
+.ui-card-date{font:500 11px var(--mono);color:var(--text3);margin-top:2px}
+.ui-card-amt{font:700 14px var(--mono);color:var(--text);white-space:nowrap}
+.ui-card-mid{margin-top:6px;font-size:12px}
+.ui-card-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.ui-card-for{font:500 11px var(--mono);color:var(--text3);margin-top:6px;word-break:break-word}
+.ui-card-foot{display:flex;justify-content:flex-end;margin-top:8px}
