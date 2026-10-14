@@ -12,6 +12,7 @@ import { printFranchiseeCert, default as FranchiseeCertModal } from '../componen
 import { printFranchiseeReceipt, printFranchiseeEnrollmentInvoice, printFranchiseeAgreement } from '../components/studentDocs'
 import { captureDocPng } from '../utils/captureReceipt'
 import { todayIso } from '../utils/studentLifecycle'
+import { PaymentFields, WhatsAppOptIn } from '../components/ui'
 import { StudentDetailModal, daysLeftInMonth } from './StudentsPage'
 import FranchiseeLedgerView from '../components/FranchiseeLedgerView'
 import { loadLatestAgreement, generateAgreement, generateSchoolAgreement } from '../utils/franchiseeAgreement'
@@ -266,43 +267,30 @@ export function RecordFranchiseePaymentModal({ franchisee, balance, currentUser,
               ₹{fmtAmt(balance)}
             </strong>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <label>Amount Received (₹)
-              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" autoFocus />
-            </label>
-            <label>Paid on
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-            </label>
-            <label>Payment Mode
-              <select value={mode} onChange={e => setMode(e.target.value)}>
-                <option>UPI</option>
-                <option>NEFT</option>
-                <option>RTGS</option>
-                <option>Cash</option>
-                <option>Cheque</option>
-                <option>DD</option>
-              </select>
-            </label>
-            <label>Reference / UTR No.
-              <input value={ref} onChange={e => setRef(e.target.value)} placeholder="Optional" />
-            </label>
-            <label style={{ gridColumn: '1 / -1' }}>Notes (optional)
-              <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Part payment, balance next month" />
-            </label>
-          </div>
+          <PaymentFields
+            flow="franchisee"
+            autoFocus
+            showNotes
+            values={{ amount: amount, paidOn: date, mode: mode, reference: ref, notes: notes }}
+            onChange={function (patch) {
+              if (patch.amount !== undefined) setAmount(patch.amount)
+              if (patch.paidOn !== undefined) setDate(patch.paidOn)
+              if (patch.mode !== undefined) setMode(patch.mode)
+              if (patch.reference !== undefined) setRef(patch.reference)
+              if (patch.notes !== undefined) setNotes(patch.notes)
+            }}
+            balance={balance}
+            today={todayIso()}
+            referenceLabel="Reference / UTR no. (optional)"
+          />
 
           {/* WhatsApp receipt to franchisee */}
-          <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg, #f0fdf4)', border: '1px solid var(--green, #1D7A4F)' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={sendWA} onChange={e => setSendWA(e.target.checked)} />
-              💬 Send WhatsApp receipt to franchisee
-            </label>
-            {sendWA && (
-              <input value={waPhone} onChange={e => setWaPhone(e.target.value)}
-                placeholder="Franchisee WhatsApp number"
-                style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
-            )}
-          </div>
+          <WhatsAppOptIn
+            checked={sendWA} onChange={setSendWA}
+            phone={waPhone} onPhoneChange={setWaPhone}
+            label="💬 Send WhatsApp receipt to franchisee"
+            placeholder="Franchisee WhatsApp number"
+          />
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>

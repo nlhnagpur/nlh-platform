@@ -4,7 +4,7 @@
 // items table, bank+QR / summary boxes, thank-you footer. Only the heading and
 // the bill-to party differ. Single A4 page, opens a print window.
 
-import { fmtAmt } from '../utils'
+import { fmtAmt } from '../utils/index.js'
 
 function numToWords(num) {
   if (!num || num === 0) return 'Zero Rupees Only'
@@ -362,12 +362,85 @@ export function printStudentInvoice(student, ctx) {
   }))
 }
 
-// ── Payment Receipt (same design, heading 'PAYMENT RECEIPT') ──────────────────
+// ── Payment receipts — ONE layout, four callers ──────────────────────────────
+// Student, order (single and combined) and franchise-fee receipts are all the
+// same document: same masthead, same four meta cells (Receipt no. · Receipt
+// date · Mode · one reference cell), same "Received with thanks — …" item
+// table, same summary + amount-received boxes. Only the bill-to party, the
+// item lines and the summary figures differ, so each printXReceipt below just
+// maps its own data onto this model and calls renderReceipt. No amount or
+// balance is computed here — the callers pass the figures they always passed.
+//
+// model: {
+//   receiptNo, receiptDate, paidOn, mode,
+//   meta4: { l, v },                       // the fourth meta cell (Centre / Against / Invoices)
+//   party,                                 // { badge, name, sub, phone, email }
+//   heading,                               // purpose text after "Received with thanks — "
+//   subSuffix,                             // appended to the title strap, e.g. ' · 2 invoices'
+//   lines: [{ label, sub?, pills?: [[key, value]], amount }],
+//   compact?: boolean,                     // single-line rows (3+ course lines)
+//   summaryRows: [{ l, v, c }],            // v is pre-formatted HTML
+//   amount,                                // amount received on this receipt
+// }
+function modeText(mode) { return mode ? String(mode).replace(/_/g, ' ') : '' }
+
+function renderReceipt(model, ctx) {
+  const pillsHtml = function (pills) {
+    return (pills || []).map(function (k) {
+      return '<div class="kit"><span class="k1">' + esc(k[0]) + ':</span><span class="k2">' + esc(k[1]) + '</span></div>'
+    }).join('')
+  }
+  const rows = (model.lines || []).map(function (ln, i) {
+    const num = String(i + 1).padStart(2, '0')
+    const amt = '<div class="amt r">&#8377;' + fmtAmt(ln.amount || 0) + '</div>'
+    if (model.compact) {
+      return '<div class="ir" style="padding:4px 14px"><div class="num">' + num + '</div>' +
+        '<div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span class="nm" style="font-size:12px">' + esc(ln.label) + '</span>' +
+        (ln.sub ? '<span style="font:500 9.5px \'DM Mono\';color:#5C5A54;margin-left:8px">' + esc(ln.sub) + '</span>' : '') + '</div>' + amt + '</div>'
+    }
+    return '<div class="ir"><div class="num">' + num + '</div><div><div class="nm">' + esc(ln.label) + '</div>' +
+      (ln.sub ? '<div class="kit"><span class="k2">' + esc(ln.sub) + '</span></div>' : '') + pillsHtml(ln.pills) + '</div>' + amt + '</div>'
+  }).join('')
+
+  const body = `
+    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — ${esc(model.heading)}</div><div class="r">Amount (&#8377;)</div></div>
+      ${rows}
+    </div>
+${receiptTotals(model.summaryRows || [], model.amount, fmtLong(model.paidOn || model.receiptDate || new Date()))}`
+
+  const mode = modeText(model.mode)
+  return emit(ctx, shell({
+    title: 'PAYMENT RECEIPT', sub: 'Official Receipt' + (model.subSuffix || ''), size: 'A5',
+    meta: [
+      { l: 'Receipt no.', v: model.receiptNo || '—' },
+      { l: 'Receipt date', v: fmtLong(model.receiptDate || model.paidOn || new Date()) },
+      { l: 'Mode', v: mode || '—', sans: true },
+      { l: model.meta4.l, v: model.meta4.v || '—', sans: model.meta4.sans },
+    ],
+    party: partyCards(model.party), bodyHTML: body,
+  }))
+}
+
+const BAL_RED = '#A32D2D'
+const OK_GREEN = '#1D7A4F'
+function balanceCell(bal) {
+  return { v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? BAL_RED : OK_GREEN }
+}
+function franchiseeParty(fr) {
+  return {
+    badge: fr.tier || 'Franchisee',
+    name:  fr.business_name,
+    sub:   [fr.owner_name, fr.city].filter(Boolean).join(' · '),
+    phone: fr.phone,
+    email: fr.email,
+  }
+}
+
+// ── Student fee receipt ───────────────────────────────────────────────────────
 export function printStudentReceipt(student, payment, ctx) {
   const s = ctx.summary || {}
   const bal = (s.balance != null) ? s.balance : Math.max(0, (s.total || 0) - (s.paid || 0))
-  const modeTxt = payment.mode ? ' · ' + esc(String(payment.mode).replace(/_/g, ' ')) : ''
-  const refHtml = payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''
+  const mode = modeText(payment.mode)
 
   // One line per course this payment went towards (ctx.allocLines, summing to
   // the amount received), with the month it covered — instead of a single
@@ -385,16 +458,12 @@ export function printStudentReceipt(student, payment, ctx) {
       amount: rest.reduce(function (t, r) { return t + (r.amount || 0) }, 0),
     }])
   }
-  const compact = alloc.length >= 3
-  const itemRows = alloc.length ? alloc.map(function (a, i) {
-    const num = String(i + 1).padStart(2, '0')
-    const amt = `<div class="amt r">₹${fmtAmt(a.amount || 0)}</div>`
-    if (compact) {
-      return `<div class="ir" style="padding:4px 14px"><div class="num">${num}</div><div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span class="nm" style="font-size:12px">${esc(a.label)}</span>${a.sub ? `<span style="font:500 9.5px 'DM Mono';color:#5C5A54;margin-left:8px">${esc(a.sub)}</span>` : ''}</div>${amt}</div>`
-    }
-    return `<div class="ir"><div class="num">${num}</div><div><div class="nm">${esc(a.label)}</div>${a.sub ? `<div class="kit"><span class="k2">${esc(a.sub)}</span></div>` : ''}</div>${amt}</div>`
-  }).join('')
-    : `<div class="ir"><div class="num">01</div><div><div class="nm">Fee payment${modeTxt}</div>${refHtml}</div><div class="amt r">₹${fmtAmt(payment.amount || 0)}</div></div>`
+  const lines = alloc.length ? alloc : [{
+    label: 'Fee payment' + (mode ? ' · ' + mode : ''),
+    pills: payment.reference ? [['Ref', payment.reference]] : [],
+    amount: payment.amount || 0,
+  }]
+
   // Summary for the courses printed above, so it adds up with the lines:
   // fee for those courses − paid earlier − received now = balance. (The whole
   // account's total would drag in courses that were cleared earlier and are no
@@ -402,36 +471,32 @@ export function printStudentReceipt(student, payment, ctx) {
   const as = ctx.allocSummary
   const summaryRows = as ? [
     { l: 'Fee for courses above', v: '&#8377;' + fmtAmt(as.total || 0) },
-    ...(as.earlier > 0 ? [{ l: 'Paid earlier', v: '&#8377;' + fmtAmt(as.earlier), c: '#1D7A4F' }] : []),
-    { l: 'Balance', v: as.balance > 0 ? '&#8377;' + fmtAmt(as.balance) : 'Cleared &#10003;', c: as.balance > 0 ? '#A32D2D' : '#1D7A4F' },
-    ...(as.otherBalance > 0 ? [{ l: 'Other courses due', v: '&#8377;' + fmtAmt(as.otherBalance), c: '#A32D2D' }] : []),
+    ...(as.earlier > 0 ? [{ l: 'Paid earlier', v: '&#8377;' + fmtAmt(as.earlier), c: OK_GREEN }] : []),
+    Object.assign({ l: 'Balance' }, balanceCell(as.balance)),
+    ...(as.otherBalance > 0 ? [{ l: 'Other courses due', v: '&#8377;' + fmtAmt(as.otherBalance), c: BAL_RED }] : []),
   ] : [
     { l: 'Total fee',    v: '&#8377;' + fmtAmt(s.total || 0) },
-    { l: 'Paid to date', v: '&#8377;' + fmtAmt(s.paid  || 0), c: '#1D7A4F' },
-    { l: 'Balance',      v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
+    { l: 'Paid to date', v: '&#8377;' + fmtAmt(s.paid  || 0), c: OK_GREEN },
+    Object.assign({ l: 'Balance' }, balanceCell(bal)),
   ]
-  const body = `
-    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — fee payment${alloc.length ? modeTxt + (payment.reference ? ' · ref ' + esc(payment.reference) : '') : ''}</div><div class="r">Amount (₹)</div></div>
-      ${itemRows}
-    </div>
-${receiptTotals(summaryRows, payment.amount, fmtLong(payment.paid_at || payment.receipt_date || new Date()))}`
 
-  return emit(ctx, shell({
-    title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
-    meta: [
-      { l: 'Receipt no.', v: payment.receipt_no || '—' },
-      { l: 'Date', v: fmtLong(payment.receipt_date || payment.paid_at || new Date()) },
-      { l: 'Mode', v: payment.mode ? String(payment.mode).replace(/_/g, ' ') : '—', sans: true },
-      { l: 'Centre', v: ctx.centre || '—', sans: true },
-    ],
-    party: partyCards(studentParty(student)), bodyHTML: body,
-  }))
+  return renderReceipt({
+    receiptNo: payment.receipt_no,
+    receiptDate: payment.receipt_date || payment.paid_at,
+    paidOn: payment.paid_at || payment.receipt_date,
+    mode: payment.mode,
+    meta4: { l: 'Centre', v: ctx.centre, sans: true },
+    party: studentParty(student),
+    heading: 'fee payment' + (alloc.length ? (mode ? ' · ' + mode : '') + (payment.reference ? ' · ref ' + payment.reference : '') : ''),
+    lines: lines,
+    compact: alloc.length >= 3,
+    summaryRows: summaryRows,
+    amount: payment.amount,
+  }, ctx)
 }
 
-// ── Payment Receipt for a franchisee's payment against an order invoice ───────
-// Identical chrome to the student receipt — only the bill-to party and the
-// wording differ, so both receipts are recognisably the same document.
-// order: { invoice_no, order_ref, grand_total, amount_paid, placer }
+// ── Payment receipt for a franchisee's payment against an order invoice ───────
+// order: { invoice_no, order_ref, grand_total, amount_paid, placer, bill_to_fr }
 // payment: a single order_payments row
 export function printOrderReceipt(order, payment, ctx) {
   const c        = ctx || {}
@@ -443,87 +508,66 @@ export function printOrderReceipt(order, payment, ctx) {
   // there's no separate bill-to party. Same rule InvoiceView.jsx follows.
   const fr       = order.bill_to_fr || order.placer || {}
   const againstT = order.invoice_no || order.order_ref || ''
+  const mode     = modeText(payment.mode)
+  const pills = []
+  if (againstT) pills.push(['Against', againstT])
+  if (payment.reference) pills.push(['Ref', payment.reference])
 
-  const body = `
-    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — payment against invoice</div><div class="r">Amount (Rs)</div></div>
-      <div class="ir"><div class="num">01</div><div><div class="nm">Payment${payment.mode ? ' &middot; ' + esc(String(payment.mode).replace(/_/g, ' ')) : ''}</div>${
-        againstT ? `<div class="kit"><span class="k1">Against:</span><span class="k2">${esc(againstT)}</span></div>` : ''
-      }${payment.reference ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(payment.reference)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
-    </div>
-${receiptTotals([
+  return renderReceipt({
+    receiptNo: payment.receipt_no,
+    receiptDate: payment.receipt_date || payment.paid_on || payment.paid_at,
+    paidOn: payment.paid_on || payment.paid_at || payment.receipt_date,
+    mode: payment.mode,
+    meta4: { l: 'Against', v: againstT },
+    party: franchiseeParty(fr),
+    heading: 'payment against invoice',
+    lines: [{ label: 'Payment' + (mode ? ' · ' + mode : ''), pills: pills, amount: payment.amount || 0 }],
+    summaryRows: [
       { l: 'Invoice total', v: '&#8377;' + fmtAmt(total) },
-      { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid),  c: '#1D7A4F' },
-      { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
-    ], payment.amount, fmtLong(payment.paid_on || payment.paid_at || payment.receipt_date || new Date()))}`
-
-  return emit(ctx, shell({
-    title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
-    meta: [
-      { l: 'Receipt no.', v: payment.receipt_no || '-' },
-      { l: 'Date', v: fmtLong(payment.receipt_date || payment.paid_on || payment.paid_at || new Date()) },
-      { l: 'Mode', v: payment.mode ? String(payment.mode).replace(/_/g, ' ') : '-', sans: true },
-      { l: 'Against', v: againstT || '-' },
+      { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid), c: OK_GREEN },
+      Object.assign({ l: 'Balance' }, balanceCell(bal)),
     ],
-    party: partyCards({
-      badge: fr.tier || 'Franchisee',
-      name:  fr.business_name,
-      sub:   [fr.owner_name, fr.city].filter(Boolean).join(' · '),
-      phone: fr.phone,
-      email: fr.email,
-    }),
-    bodyHTML: body,
-  }))
+    amount: payment.amount,
+  }, ctx)
 }
 
-// ── Payment Receipt for ONE payment split across several invoices ─────────────
-// Same document, one line per invoice instead of one line per payment — the
-// receipt_no is shared across every order_payments row this payment created
-// (see next_order_receipt_no / RecordMultiPaymentModal), so it's one real
-// receipt, not several with the same money counted more than once.
-// rows: [{ order, payment }] — every {order, payment} pair the split touched,
-// all against the SAME franchisee (bill_to_fr/placer taken from the first row).
+// ── ONE payment split across several invoices ────────────────────────────────
+// One line per invoice instead of one line per payment — the receipt_no is
+// shared across every order_payments row this payment created, so it is one
+// real receipt, not several with the same money counted more than once.
+// rows: [{ order, payment, balanceAfter? }] — all against the SAME franchisee.
 export function printCombinedOrderReceipt(rows, ctx) {
-  const c = ctx || {}
   const first = rows[0]
   const fr = first.order.bill_to_fr || first.order.placer || {}
   const totalAmount = rows.reduce(function (s, r) { return s + (r.payment.amount || 0) }, 0)
 
-  const lines = rows.map(function (r, i) {
-    const against = r.order.invoice_no || r.order.order_ref || ''
-    const bal = Math.max(0, (r.order.grand_total || 0) - (r.balanceAfter != null ? (r.order.grand_total || 0) - r.balanceAfter : (r.order.amount_paid || 0)))
-    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(against || 'Invoice')}</div>${
-      r.balanceAfter != null ? `<div class="kit"><span class="k1">Balance after:</span><span class="k2">${r.balanceAfter > 0 ? '&#8377;' + fmtAmt(r.balanceAfter) : 'Cleared'}</span></div>` : ''
-    }</div><div class="amt r">&#8377;${fmtAmt(r.payment.amount || 0)}</div></div>`
-  }).join('')
+  const lines = rows.map(function (r) {
+    return {
+      label: r.order.invoice_no || r.order.order_ref || 'Invoice',
+      pills: r.balanceAfter != null ? [['Balance after', r.balanceAfter > 0 ? '₹' + fmtAmt(r.balanceAfter) : 'Cleared']] : [],
+      amount: r.payment.amount || 0,
+    }
+  })
 
-  const body = `
-    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — payment against invoice</div><div class="r">Amount (Rs)</div></div>${lines}</div>
-${receiptTotals([], totalAmount, fmtLong(first.payment.paid_on || first.payment.paid_at || first.payment.receipt_date || new Date()))}`
-
-  return emit(ctx, shell({
-    title: 'PAYMENT RECEIPT', sub: 'Official Receipt · ' + rows.length + ' invoices', size: 'A5',
-    meta: [
-      { l: 'Receipt no.', v: first.payment.receipt_no || '-' },
-      { l: 'Date', v: fmtLong(first.payment.receipt_date || first.payment.paid_on || first.payment.paid_at || new Date()) },
-      { l: 'Mode', v: first.payment.mode ? String(first.payment.mode).replace(/_/g, ' ') : '-', sans: true },
-      { l: 'Invoices', v: String(rows.length) },
-    ],
-    party: partyCards({
-      badge: fr.tier || 'Franchisee',
-      name:  fr.business_name,
-      sub:   [fr.owner_name, fr.city].filter(Boolean).join(' · '),
-      phone: fr.phone,
-      email: fr.email,
-    }),
-    bodyHTML: body,
-  }))
+  return renderReceipt({
+    receiptNo: first.payment.receipt_no,
+    receiptDate: first.payment.receipt_date || first.payment.paid_on || first.payment.paid_at,
+    paidOn: first.payment.paid_on || first.payment.paid_at || first.payment.receipt_date,
+    mode: first.payment.mode,
+    subSuffix: ' · ' + rows.length + ' invoices',
+    meta4: { l: 'Invoices', v: String(rows.length) },
+    party: franchiseeParty(fr),
+    heading: 'payment against invoice',
+    lines: lines,
+    summaryRows: [],
+    amount: totalAmount,
+  }, ctx)
 }
 
-// ── Payment Receipt for a franchisee's enrolment / franchise fee ──────────────
-// Same chrome again — only the bill-to party and the wording change.
+// ── Payment receipt for a franchisee's enrolment / franchise fee ──────────────
 // franchisee: { business_name, owner_name, tier, city, phone, email, centre_code }
 // payment: a franchisee_payments row
-// ctx: { total, paidToDate }  — the franchise fee and the running total as at
+// ctx: { total, paidToDate } — the franchise fee and the running total as at
 //      this payment, so a reprint shows the figures as they stood.
 export function printFranchiseeReceipt(franchisee, payment, ctx) {
   const c     = ctx || {}
@@ -532,36 +576,26 @@ export function printFranchiseeReceipt(franchisee, payment, ctx) {
   const bal   = Math.max(0, total - paid)
   const mode  = payment.payment_mode || payment.mode
   const ref   = payment.reference_no || payment.reference
+  const pills = []
+  if (ref) pills.push(['Ref', ref])
+  if (payment.notes) pills.push(['Note', payment.notes])
 
-  const body = `
-    <div class="items"><div class="ih"><div>#</div><div>Received with thanks — franchise fee</div><div class="r">Amount (Rs)</div></div>
-      <div class="ir"><div class="num">01</div><div><div class="nm">Franchise fee payment${mode ? ' &middot; ' + esc(String(mode).replace(/_/g, ' ')) : ''}</div>${
-        ref ? `<div class="kit"><span class="k1">Ref:</span><span class="k2">${esc(ref)}</span></div>` : ''
-      }${payment.notes ? `<div class="kit"><span class="k1">Note:</span><span class="k2">${esc(payment.notes)}</span></div>` : ''}</div><div class="amt r">&#8377;${fmtAmt(payment.amount || 0)}</div></div>
-    </div>
-${receiptTotals(total > 0 ? [
+  return renderReceipt({
+    receiptNo: payment.receipt_no,
+    receiptDate: payment.receipt_date || payment.payment_date || payment.paid_on,
+    paidOn: payment.payment_date || payment.paid_on || payment.receipt_date,
+    mode: mode,
+    meta4: { l: 'Centre', v: franchisee.centre_code },
+    party: franchiseeParty(franchisee),
+    heading: 'franchise fee',
+    lines: [{ label: 'Franchise fee payment' + (modeText(mode) ? ' · ' + modeText(mode) : ''), pills: pills, amount: payment.amount || 0 }],
+    summaryRows: total > 0 ? [
       { l: 'Franchise fee', v: '&#8377;' + fmtAmt(total) },
-      { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid),  c: '#1D7A4F' },
-      { l: 'Balance',       v: bal > 0 ? '&#8377;' + fmtAmt(bal) : 'Cleared &#10003;', c: bal > 0 ? '#A32D2D' : '#1D7A4F' },
-    ] : [], payment.amount, fmtLong(payment.payment_date || payment.paid_on || payment.receipt_date || new Date()))}`
-
-  return emit(ctx, shell({
-    title: 'PAYMENT RECEIPT', sub: 'Official Receipt', size: 'A5',
-    meta: [
-      { l: 'Receipt no.', v: payment.receipt_no || '-' },
-      { l: 'Date', v: fmtLong(payment.receipt_date || payment.payment_date || payment.paid_on || new Date()) },
-      { l: 'Mode', v: mode ? String(mode).replace(/_/g, ' ') : '-', sans: true },
-      { l: 'Centre', v: franchisee.centre_code || '-' },
-    ],
-    party: partyCards({
-      badge: franchisee.tier || 'Franchisee',
-      name:  franchisee.business_name,
-      sub:   [franchisee.owner_name, franchisee.city].filter(Boolean).join(' · '),
-      phone: franchisee.phone,
-      email: franchisee.email,
-    }),
-    bodyHTML: body,
-  }))
+      { l: 'Paid to date',  v: '&#8377;' + fmtAmt(paid), c: OK_GREEN },
+      Object.assign({ l: 'Balance' }, balanceCell(bal)),
+    ] : [],
+    amount: payment.amount,
+  }, ctx)
 }
 
 // ── Franchise Invoice — the very first entry on a franchisee's account ────────

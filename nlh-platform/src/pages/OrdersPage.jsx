@@ -20,7 +20,7 @@ import SaleReturnView from '../components/SaleReturnView'
 import CouponField from '../components/CouponField'
 import ModalHeader from '../components/ModalHeader'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
-import { ConfirmDialog } from '../components/ui'
+import { ConfirmDialog, PaymentFields, WhatsAppOptIn } from '../components/ui'
 import TierBadge from '../components/ui/TierBadge'
 import ReceiptsRegister from '../components/ReceiptsRegister'
 import { fmtMoney } from '../utils/format'
@@ -574,77 +574,40 @@ function RecordPaymentModal({ order, onClose, onSaved, viewOnly }) {
             </div>
           ) : (
             /* ── Normal payment form ── */
-            <div className="form-grid">
-              <label>Payment Mode
-                <select value={mode} onChange={function (e) { setMode(e.target.value) }}>
-                  <option value="upi">UPI</option>
-                  <option value="neft">NEFT / RTGS</option>
-                  <option value="cash">Cash</option>
-                  <option value="cheque">Cheque</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-              <label>Amount Received Now (₹)
-                <input
-                  type="number" placeholder={`Up to ₹${fmtAmt(remaining)}`}
-                  max={remaining}
-                  value={amountPaid}
-                  onChange={function (e) { setAmountPaid(e.target.value) }}
-                  style={{ fontWeight:700, fontSize:16 }}
-                />
-              </label>
-              <label>Paid on
-                <input
-                  type="date"
-                  value={paidOn}
-                  max={new Date().toISOString().slice(0, 10)}
-                  onChange={function (e) { setPaidOn(e.target.value) }}
-                  title="Date the payment was actually received — back-date it if you're entering it later"
-                />
-              </label>
-              <label>UTR / Reference Number
-                <input
-                  type="text" placeholder="Transaction ID / cheque no. / cash ref"
-                  value={ref}
-                  onChange={function (e) { setRef(e.target.value) }}
-                />
-              </label>
-
-              {/* One-tap amounts — full settlement or a common part payment */}
-              <div className="col-span-2" style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:-4 }}>
-                <span style={{ fontSize:11, color:'var(--text3)', alignSelf:'center', marginRight:2 }}>Quick fill:</span>
-                <button type="button" className="btn-s" style={{ fontSize:11, padding:'3px 10px' }}
-                  onClick={function () { setAmountPaid(String(remaining)) }}>
-                  Full ₹{fmtAmt(remaining)}
-                </button>
-                <button type="button" className="btn-s" style={{ fontSize:11, padding:'3px 10px' }}
-                  onClick={function () { setAmountPaid(String(Math.round(remaining / 2))) }}>
-                  Half ₹{fmtAmt(Math.round(remaining / 2))}
-                </button>
-                <button type="button" className="btn-s" style={{ fontSize:11, padding:'3px 10px' }}
-                  onClick={function () { setAmountPaid('') }}>
-                  Clear
-                </button>
-              </div>
+            <div>
+              <PaymentFields
+                flow="order"
+                values={{ amount: amountPaid, paidOn: paidOn, mode: mode, reference: ref }}
+                onChange={function (patch) {
+                  if (patch.amount !== undefined) setAmountPaid(patch.amount)
+                  if (patch.paidOn !== undefined) setPaidOn(patch.paidOn)
+                  if (patch.mode !== undefined) setMode(patch.mode)
+                  if (patch.reference !== undefined) setRef(patch.reference)
+                }}
+                balance={remaining}
+                capAmount
+                today={todayIso()}
+                existing={history}
+                amountLabel="Amount received now (₹)"
+                amountPlaceholder={'Up to ₹' + fmtAmt(remaining)}
+                referenceLabel="UTR / Reference number"
+              />
 
               {/* WhatsApp acknowledgement */}
-              <div className="col-span-2" style={{ padding:'10px 12px', borderRadius:10, background:'var(--green-bg, #f0fdf4)', border:'1px solid var(--green, #1D7A4F)' }}>
-                <label style={{ display:'flex', alignItems:'center', gap:8, font:'600 12px var(--font)', color:'var(--green, #1D7A4F)', cursor:'pointer' }}>
-                  <input type="checkbox" checked={sendWA} onChange={function (e) { setSendWA(e.target.checked) }} />
-                  💬 Send WhatsApp payment acknowledgement to franchisee
-                </label>
-                {sendWA && (
-                  <>
-                    <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
-                      placeholder="Franchisee WhatsApp number" style={{ marginTop:8, fontSize:13, width:'100%' }} />
-                    {amt > 0 && (
-                      <div style={{ marginTop:6, fontSize:11, color:'var(--green, #1D7A4F)' }}>
-                        Will confirm ₹{fmtAmt(amt)} received
-                        {balanceAfter > 0 ? ` · ₹${fmtAmt(balanceAfter)} still due` : ' · fully paid'}
-                      </div>
-                    )}
-                  </>
-                )}
+              <div style={{ marginTop: 12 }}>
+                <WhatsAppOptIn
+                  checked={sendWA} onChange={setSendWA}
+                  phone={waPhone} onPhoneChange={setWaPhone}
+                  label="💬 Send WhatsApp payment acknowledgement to franchisee"
+                  placeholder="Franchisee WhatsApp number"
+                >
+                  {amt > 0 && (
+                    <div style={{ marginTop:6, fontSize:11, color:'var(--green, #1D7A4F)' }}>
+                      Will confirm ₹{fmtAmt(amt)} received
+                      {balanceAfter > 0 ? ` · ₹${fmtAmt(balanceAfter)} still due` : ' · fully paid'}
+                    </div>
+                  )}
+                </WhatsAppOptIn>
               </div>
             </div>
           )}
@@ -1592,23 +1555,18 @@ function RecordMultiPaymentModal({ onClose, onSaved }) {
                 </div>
               </label>
 
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <label style={{ flex: '1 1 140px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Amount received (₹)
-                  <input className="inp" type="number" min={0} value={totalReceived} onChange={function (e) { setTotalReceived(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
-                </label>
-                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Mode
-                  <select className="inp" value={mode} onChange={function (e) { setMode(e.target.value) }} style={{ marginTop: 6, width: '100%' }}>
-                    <option value="upi">UPI</option><option value="neft">NEFT</option><option value="cash">Cash</option>
-                    <option value="cheque">Cheque</option><option value="razorpay">Razorpay</option><option value="other">Other</option>
-                  </select>
-                </label>
-                <label style={{ flex: '1 1 120px', font: '600 12px var(--font)', color: 'var(--text2)' }}>Paid on
-                  <input className="inp" type="date" value={paidOn} onChange={function (e) { setPaidOn(e.target.value) }} style={{ marginTop: 6, width: '100%' }} />
-                </label>
-                <label style={{ flex: '1 1 160px', font: '600 12px var(--font)', color: 'var(--text2)' }}>UTR / Reference
-                  <input className="inp" value={ref} onChange={function (e) { setRef(e.target.value) }} placeholder="Transaction ID" style={{ marginTop: 6, width: '100%' }} />
-                </label>
-              </div>
+              <PaymentFields
+                flow="orderMulti"
+                values={{ amount: totalReceived, paidOn: paidOn, mode: mode, reference: ref }}
+                onChange={function (patch) {
+                  if (patch.amount !== undefined) setTotalReceived(patch.amount)
+                  if (patch.paidOn !== undefined) setPaidOn(patch.paidOn)
+                  if (patch.mode !== undefined) setMode(patch.mode)
+                  if (patch.reference !== undefined) setRef(patch.reference)
+                }}
+                today={todayIso()}
+                referenceLabel="UTR / Reference"
+              />
 
               {franchiseeId && (
                 <div>

@@ -20,6 +20,7 @@ import AttendanceRegister from '../components/AttendanceRegister'
 import StudentLedgerView from '../components/StudentLedgerView'
 import { invoiceSettlement } from '../utils/studentLedger'
 import { deriveStatus, computeCoverage } from '../utils/feeCoverage'
+import { PaymentFields, WhatsAppOptIn } from '../components/ui'
 import StudentCertModal from '../components/StudentCertModal'
 import WhatsAppSendConfirm from '../components/WhatsAppSendConfirm'
 
@@ -4441,11 +4442,6 @@ function MarkCertsIssuedModal({ rows, userEmail, onClose, onDone }) {
 // shows the course-wise dues and how the amount being entered settles them
 // (oldest course first, the same computeCoverage pass the profile uses).
 
-const RECEIPT_MODES = [
-  ['cash', 'Cash'], ['upi', 'UPI'], ['bank_transfer', 'Bank Transfer / NEFT'],
-  ['cheque', 'Cheque'], ['card', 'Card'], ['online', 'Online Payment'],
-]
-
 function enrolmentLabel(en) {
   return (en.skus?.courses?.group_name || 'Course') + (en.skus?.level_name ? ' — ' + en.skus.level_name : '')
 }
@@ -4758,40 +4754,40 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                 </div>
               )}
 
-              <div className="form-grid">
-                <label>Amount received (₹) *
-                  <input type="number" autoFocus value={form.amount} max={balance > 0 ? balance : undefined}
-                    onChange={function (e) { setForm(function (f) { return { ...f, amount: e.target.value } }) }} placeholder="e.g. 1500" />
-                </label>
-                <label>Paid on
-                  <input type="date" value={form.paid_at} onChange={function (e) { setForm(function (f) { return { ...f, paid_at: e.target.value } }) }} />
-                </label>
-                <label>Mode
-                  <select value={form.mode} onChange={function (e) { setForm(function (f) { return { ...f, mode: e.target.value } }) }}>
-                    {RECEIPT_MODES.map(function (m) { return <option key={m[0]} value={m[0]}>{m[1]}</option> })}
-                  </select>
-                </label>
-                <label>Reference (optional)
-                  <input value={form.reference} onChange={function (e) { setForm(function (f) { return { ...f, reference: e.target.value } }) }} placeholder="UTR / cheque no. / note" />
-                </label>
-              </div>
-              {amt > 0 && (
-                <p className="hint" style={{ marginTop: 8, color: tooMuch ? 'var(--red)' : undefined }}>
-                  {tooMuch
-                    ? 'More than the balance — only ₹' + fmtAmt(balance) + ' is outstanding.'
-                    : 'Balance after this receipt: ' + (balance - amt > 0 ? '₹' + fmtAmt(balance - amt) : 'cleared') + '. Applied to the oldest unpaid course first.' + (editing ? ' (Figures above are without this receipt.)' : '')}
-                </p>
-              )}
-
-              <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: 'var(--green-bg)', border: '1px solid var(--green, #1D7A4F)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, font: '600 12px var(--font)', color: 'var(--green, #1D7A4F)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={sendWa} onChange={function (e) { setSendWa(e.target.checked) }} />
-                  {editing ? '💬 Re-send the corrected receipt on WhatsApp' : '💬 Send WhatsApp receipt to parent'}
-                </label>
-                {sendWa && (
-                  <input value={waPhone} onChange={function (e) { setWaPhone(e.target.value) }}
-                    placeholder="Parent WhatsApp number" style={{ marginTop: 8, fontSize: 13, width: '100%' }} />
+              <PaymentFields
+                flow="student"
+                autoFocus
+                values={{ amount: form.amount, paidOn: form.paid_at, mode: form.mode, reference: form.reference }}
+                onChange={function (patch) {
+                  setForm(function (f) {
+                    const n = { ...f }
+                    if (patch.amount !== undefined) n.amount = patch.amount
+                    if (patch.paidOn !== undefined) n.paid_at = patch.paidOn
+                    if (patch.mode !== undefined) n.mode = patch.mode
+                    if (patch.reference !== undefined) n.reference = patch.reference
+                    return n
+                  })
+                }}
+                balance={balance}
+                capAmount
+                today={todayIso()}
+                existing={payments}
+                hint={amt > 0 && (
+                  <p className="hint" style={{ marginTop: 8, color: tooMuch ? 'var(--red)' : undefined }}>
+                    {tooMuch
+                      ? 'More than the balance — only ₹' + fmtAmt(balance) + ' is outstanding.'
+                      : 'Balance after this receipt: ' + (balance - amt > 0 ? '₹' + fmtAmt(balance - amt) : 'cleared') + '. Applied to the oldest unpaid course first.' + (editing ? ' (Figures above are without this receipt.)' : '')}
+                  </p>
                 )}
+              />
+
+              <div style={{ marginTop: 12 }}>
+                <WhatsAppOptIn
+                  checked={sendWa} onChange={setSendWa}
+                  phone={waPhone} onPhoneChange={setWaPhone}
+                  label={editing ? '💬 Re-send the corrected receipt on WhatsApp' : '💬 Send WhatsApp receipt to parent'}
+                  placeholder="Parent WhatsApp number"
+                />
               </div>
             </div>
           )}
