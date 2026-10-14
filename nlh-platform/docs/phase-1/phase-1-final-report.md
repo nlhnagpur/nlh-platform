@@ -6,7 +6,7 @@ Detail documents: [technical-baseline](technical-baseline.md) · [financial-reco
 
 ## 1. Executive summary
 
-- **The money is currently correct.** In the live data (37 students, 42 payments, 18 invoices) `fee_paid` equals the sum of payments for every student, nobody is overpaid, no status contradicts the amounts, and no payment/invoice/enrolment sits under the wrong centre.
+- **Internal consistency checks passed; correctness is not independently verified.** In the live data (37 students, 42 payments, 18 invoices) `fee_paid` equals the sum of payments for every student, nobody is overpaid, no status contradicts the amounts, and no payment/invoice/enrolment sits under the wrong centre. These are consistency checks between stored figures only — they were not compared with receipt books, bank statements or parents' records, so complete financial correctness has not been established. (A Stage 0 check also found one active student with a NULL `fee_total`.)
 - **The risk is structural, not present corruption.** The balance is protected by one good DB trigger, but the *charge side* (`fee_total`) is written by many browser flows as absolute numbers, in several non-atomic steps, with three different allocation engines deciding "what is unpaid".
 - **Security:** RLS is on everywhere and API endpoints authenticate; the Razorpay webhook verifies signatures, while the WhatsApp webhook verifies only if an env secret is set. The notable gaps are broad `anon` access to callable SECURITY DEFINER functions, a public/overwritable storage bucket, and student payment/invoice policies that do not tie the student to the centre.
 - **Testing:** there were none. 36 safe local regression tests now exist and pass; DB-level behaviour remains untested because there is no non-production database.
@@ -16,6 +16,7 @@ Detail documents: [technical-baseline](technical-baseline.md) · [financial-reco
 
 | Sev | ID | Finding | Why this severity | Verified |
 |---|---|---|---|---|
+| **High** | S-10 | staff-permission policies on `instructor_attendance`, `payroll_extras`, `student_no_class` are PERMISSIVE and `nlh_staff_can` is true for non-staff users → possible cross-centre access (found in Phase 2 Stage 0) | payroll/attendance data across centres | policy definitions; not exercised |
 | **High** | S-01 | `anon` can execute SECURITY DEFINER utility functions (WhatsApp log writers, receipt/order number generators, order-status recompute) | unauthenticated write capability on numbering and message logs | privilege query; not exercised |
 | **Medium** | S-02 | student payment/invoice RLS doesn't bind `student_id` to the centre (the row's `franchisee_id` is checked, the student is not) | cross-centre financial write needs a student UUID, so exploitability is limited; impact is high | policy definitions; not exercised |
 | Medium | S-03 | `chat-attachments` bucket public; any authenticated user can overwrite any object; no size/MIME limits | content exposure and tampering | policy + bucket config |

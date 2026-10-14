@@ -62,7 +62,7 @@ Proven by test (`tests/financial.test.mjs`, "KNOWN DIVERGENCE"): a student owing
 | Σ invoice `amount_paid` vs Σ payments | **18 of 18 invoices are `unpaid` with `amount_paid = 0`**, although 34 students have payments | **`student_invoices.amount_paid`/`status` are never maintained**; settlement is derived in the browser (engine D). Anything that reads the DB columns (reports, exports, future APIs) will show every invoice unpaid |
 | Enrolments with `fee_amount = 0` | 1 | review (Q4) |
 
-Conclusion: **no monetary corruption was found in the live data today**; the risks are structural (duplicated logic, unmaintained invoice columns, non-atomic writes), not existing wrong balances.
+Conclusion: **the internal-consistency checks above found no mismatch between the stored totals and the stored payment rows.** This is *not* an independent verification that the financial records are correct: nothing here was compared with receipt books, bank statements or the parents' own records, and one active student has a NULL `fee_total` (found in Stage 0). The identified risks are structural (duplicated logic, unmaintained invoice columns, non-atomic writes). Whether the live records are fully correct has not yet been established.
 
 ## 5. Discrepancies and risks (verified vs inferred)
 

@@ -34,7 +34,7 @@ Severity is my assessment of impact × likelihood in this system's context. "Not
 ### S-01 — Anonymous callers can execute SECURITY DEFINER utility functions — **High** (not exercised)
 - **Module:** DB functions / PostgREST `/rpc`.
 - **Evidence:** `has_function_privilege('anon', …, 'EXECUTE')` is true for, among others: `wa_log_outbound(p_to, p_body, p_type, p_wa_message_id)`, `wa_update_status(p_wa_message_id, p_status)`, `wa_should_autoreply`, `next_receipt_no(p_series, p_centre, p_year)`, `next_order_receipt_no`, `next_sale_return_no`, `recompute_order_payment_status(p_order_id)`, `centre_of_student(p_student)`, `city_code`, `nlh_is_staff/senior`, `nlh_staff_can`, plus non-definer `next_order_ref`, `next_journal_no`, `generate_*_no`.
-- **Impact:** an unauthenticated caller with the public anon key could (a) burn receipt/order/journal numbers (gaps in the legal numbering sequence), (b) insert or alter WhatsApp message log rows, (c) trigger payment-status recomputation for an order, (d) map a student UUID to a centre. Trigger functions in the list cannot be invoked as RPC (Postgres refuses), so they are not exploitable directly.
+- **Impact (refined after reading every function body in Phase 2 Stage 0):** of the anon-executable functions, those with no internal authorisation check are `next_receipt_no` (consumes a receipt number — gaps in the numbering series), `next_journal_no` (consumes a journal sequence value), `recompute_order_payment_status`, `centre_of_student` (maps a student UUID to a centre code), the three `wa_*` functions (`wa_log_outbound` inserts an outbound message-log row; `wa_update_status` rewrites a message/certificate status by message id), and the harmless `nlh_is_*`/`nlh_staff_can` helpers. **`next_order_receipt_no` and `next_sale_return_no` are guarded by `nlh_is_admin()` and raise for anonymous callers** — an earlier version of this document wrongly listed them as burnable. Trigger functions in the list cannot be invoked as RPC (Postgres refuses), so they are not exploitable directly. None of this has been exercised.
 - **Recommendation:** `REVOKE EXECUTE … FROM anon, public` on everything that is not deliberately public; keep `GRANT` only for `authenticated` (and `service_role` for the webhook path). Re-grant individually if the apply form needs any.
 - **Safe test:** in a Supabase branch, call each RPC as `anon` and record result; confirm the app still works after the revoke.
 
@@ -77,6 +77,13 @@ Severity is my assessment of impact × likelihood in this system's context. "Not
 - **Recommendation:** fail closed when the secret is missing; verify against the raw body.
 - **Safe test:** local call with the env var unset and a stubbed token.
 
+### S-10 — Staff-permission policies on three newer tables are PERMISSIVE instead of RESTRICTIVE — **High** (definition verified in Stage 0; not exercised)
+- **Module:** `instructor_attendance`, `payroll_extras`, `student_no_class`.
+- **Evidence:** on every other table the `staff_perm_*` policies are `RESTRICTIVE` (they narrow access). On these three tables they were created `PERMISSIVE`, i.e. they *add* access. `nlh_staff_can(keys)` returns **true for every non-staff role and for an unknown e-mail** (`COALESCE(…, true)`), so each permissive policy is satisfied for any authenticated franchise, student or school login. Example: `staff_perm_select_payroll_extras … USING (nlh_staff_can('{accounting.view}'))` is true for a UF user.
+- **Impact:** any authenticated non-staff user may be able to read, insert, update and delete **all centres'** payroll extras (incentive/misc amounts), instructor attendance rows (`instructor_attendance`: select/insert/update/delete) and student no-class rows (`student_no_class`: select/insert/delete), bypassing the centre scoping of the base policies. Worst-case this exposes instructor pay data across centres and allows tampering with attendance that feeds payroll.
+- **Recommendation:** recreate the policies as `RESTRICTIVE` (as on the other tables); consider making `nlh_staff_can` default to **false** for unknown users. Fix only after rehearsal on the isolated copy.
+- **Safe test:** in the isolated database, create a synthetic UF `public.users` row, set the JWT claims to its e-mail, and `select` from `payroll_extras` / `instructor_attendance` of another centre.
+
 ## 4. Re-verification of earlier-audit items
 
 | Earlier claim | Status after Phase 1 |
@@ -102,6 +109,7 @@ These need a separate, explicitly authorised review.
 
 ## 7. Recommended order of fixes (Phase 2 candidates)
 
+0. Recreate the three PERMISSIVE `staff_perm_*` policy sets as RESTRICTIVE (S-10) — highest impact per line of change; rehearse first.
 1. Revoke `EXECUTE` from `anon`/`public` on non-public functions (S-01) — one reversible migration.
 2. Tighten WhatsApp sender authorisation (S-04) — code only.
 3. Private bucket + owner-scoped storage policies (S-03).
