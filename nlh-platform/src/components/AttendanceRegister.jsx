@@ -470,7 +470,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
       <p className="hint" style={{ margin: '0 0 10px' }}>
         Click a cell to step it: blank (not marked) → <b style={{ color: TONE.P.color }}>P</b> present → <b style={{ color: TONE.A.color }}>A</b> absent → <b style={{ color: TONE.N.color }}>N</b> no class for that student → <b>H</b> holiday (whole batch) → blank.
         The ✓ under a date marks everyone present. <span style={{ color: '#92400e' }}>?n</span> after a student's N total is how many held classes are still not marked.
-        The <b>Teacher</b> row steps blank → <b style={{ color: TONE.P.color }}>P</b> present → {TEACHER_ABSENT_ENABLED && <><b style={{ color: TONE.A.color }}>A</b> absent → </>}<b style={{ color: TONE.O.color }}>O</b> off → blank, and shows <b style={{ color: TONE.H.color }}>H</b> on a batch holiday; when a student is marked present on a day the teacher is off{TEACHER_ABSENT_ENABLED ? ' or absent' : ''}, you pick the substitute who took the class.
+        The <b>Teacher</b> row steps blank → <b style={{ color: TONE.P.color }}>P</b> present → {TEACHER_ABSENT_ENABLED && <><b style={{ color: TONE.A.color }}>A</b> absent → </>}<b style={{ color: TONE.O.color }}>O</b> the teacher's weekly off → blank, and shows <b style={{ color: TONE.H.color }}>H</b> on a general holiday{TEACHER_ABSENT_ENABLED && <>; <b style={{ color: TONE.A.color }}>A</b> means the teacher was due but did not come</>}. When a student is marked present on a day the teacher is off{TEACHER_ABSENT_ENABLED ? ' or absent' : ''}, you pick the substitute who took the class.
       </p>
 
       {pending.length > 0 && (

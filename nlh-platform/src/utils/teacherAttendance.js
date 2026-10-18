@@ -1,7 +1,9 @@
 // Teacher attendance codes in the attendance register.
-//   P present · O off (planned leave) · A absent (did not come)
-//   H holiday is NOT a teacher mark: it is the batch's holiday and is shown
-//   from the day itself, so it needs no storage.
+//   P present
+//   O off     — the teacher's weekly off (a planned, regular day off)
+//   A absent  — the teacher was due to come but did not (unplanned)
+//   H holiday — a general holiday. NOT a teacher mark: it is the batch's
+//               holiday and is shown from the day itself, so it needs no storage.
 //
 // 'A' needs the instructor_attendance status check to allow it (a migration
 // that is prepared but not applied) — until then ABSENT_ENABLED stays false and
@@ -24,9 +26,9 @@ export function teacherNextStatus(current, absentEnabled) {
 }
 
 export function teacherStatusTitle(status, holiday) {
-  if (holiday) return 'Holiday for this batch'
+  if (holiday) return 'General holiday'
   if (status === 'P') return 'Teacher present'
-  if (status === 'A') return 'Teacher absent'
-  if (status === 'O') return 'Teacher off'
+  if (status === 'A') return 'Teacher absent — was due but did not come'
+  if (status === 'O') return "Teacher's weekly off"
   return 'Teacher not marked'
 }

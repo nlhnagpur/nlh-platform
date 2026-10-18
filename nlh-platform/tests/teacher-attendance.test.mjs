@@ -42,8 +42,8 @@ test('off and absent both mean the teacher is not taking the class; present and 
 
 test('titles', () => {
   assert.equal(teacherStatusTitle('P'), 'Teacher present')
-  assert.equal(teacherStatusTitle('A'), 'Teacher absent')
-  assert.equal(teacherStatusTitle('O'), 'Teacher off')
+  assert.equal(teacherStatusTitle('A'), 'Teacher absent — was due but did not come')
+  assert.equal(teacherStatusTitle('O'), "Teacher's weekly off")
   assert.equal(teacherStatusTitle(null), 'Teacher not marked')
-  assert.equal(teacherStatusTitle('P', true), 'Holiday for this batch')
+  assert.equal(teacherStatusTitle('P', true), 'General holiday')
 })
