@@ -2118,7 +2118,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     ],
                   })
                 }
-                if (kit.length > 0 && !kitIssued[en.id]) {
+                // A finished-level record carries no kit of its own — its book was issued under the live enrolment.
+                if (kit.length > 0 && !kitIssued[en.id] && !isFinishedLevelRecord(en)) {
                   items.push({
                     key: 'kit-' + en.id, tone: 'amber',
                     text: <><b>{lbl(en)}</b> — kit not confirmed. Tick the items that were handed over.</>,
