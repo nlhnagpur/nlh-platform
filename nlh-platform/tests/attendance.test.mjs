@@ -216,3 +216,10 @@ test('levelSessionCounts: other courses are not touched', () => {
   assert.equal(c.rec, 1)
   assert.equal(c.live, 1)
 })
+
+test('levelFeePatch: the student’s own fee is kept — an unchanged fee writes nothing', () => {
+  assert.deepEqual(levelFeePatch('4000', 3500, 4000), {})
+  assert.deepEqual(levelFeePatch(4000, 3500, '4000'), {})
+  assert.deepEqual(levelFeePatch(3500, 3500, 4000), { fee_amount: 3500, list_price: 3500 })   // only when deliberately changed
+  assert.deepEqual(levelFeePatch(4000, 3500), { fee_amount: 4000, list_price: 3500 })         // no current fee supplied: behaves as before
+})

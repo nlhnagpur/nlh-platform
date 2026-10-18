@@ -178,10 +178,14 @@ export function levelChangePatch(newSkuId, opts) {
 // monthly fee that applies from the NEXT renewal (e.g. the new level's
 // catalogue fee). Only the enrolment's own fee_amount / list_price move — the
 // student's fee_total, invoices and payments are never touched here.
-export function levelFeePatch(monthlyFee, catalogueFee) {
+// Fees differ from student to student, so the fee already set for the student
+// is KEPT unless it is deliberately changed: when `currentFee` equals the fee
+// entered, the patch is empty (nothing about the fee is written).
+export function levelFeePatch(monthlyFee, catalogueFee, currentFee) {
   if (monthlyFee === '' || monthlyFee === null || monthlyFee === undefined) return null
   const fee = Math.round(Number(monthlyFee))
   if (!isFinite(fee) || fee < 0) return null
+  if (currentFee !== undefined && currentFee !== null && Math.round(Number(currentFee)) === fee) return {}
   const patch = { fee_amount: fee }
   if (catalogueFee != null && isFinite(Number(catalogueFee))) patch.list_price = Math.round(Number(catalogueFee))
   return patch

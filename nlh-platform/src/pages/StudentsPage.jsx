@@ -1114,13 +1114,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     return function () { cancelled = true }
   }, [changeSkuId, changingEn])
 
-  // Mid-cycle change: the monthly fee from the next renewal defaults to the new level's catalogue fee.
-  useEffect(function () {
-    if (!changingEn || !changeSkuId || changeSkuId === changingEn.sku_id) { setChangeFee(''); return }
-    const t = allCentreSkus.find(function (s) { return s.id === changeSkuId })
-    setChangeFee(t && t.student_fee != null ? String(t.student_fee) : '')
-  }, [changeSkuId, changingEn])
-
   function openChangeLevel(en) {
     setChangeSkuId(en.sku_id || '')
     setChangeDate(todayIso())
@@ -1148,10 +1141,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const patch = levelChangePatch(newSkuId, { keepCycle: keepCycle, startDate: changeDate })
     // Mid-cycle change: set the monthly fee that applies from the NEXT renewal.
     // Only this enrolment's own fee fields move — never fee_total, invoices or payments.
-    // The field shows the new level's catalogue fee until edited; use exactly what it shows.
-    const feeShown = changeFee !== '' ? changeFee : (target && target.student_fee != null ? String(target.student_fee) : '')
+    // Fees differ per student: the field shows THIS student's current fee, and
+    // it is only written when it is deliberately changed.
+    const feeShown = changeFee !== '' ? changeFee : (changingEn.fee_amount != null ? String(changingEn.fee_amount) : '')
     if (keepCycle && feeShown !== '') {
-      const feePatch = levelFeePatch(feeShown, target ? target.student_fee : null)
+      const feePatch = levelFeePatch(feeShown, target ? target.student_fee : null, changingEn.fee_amount)
       if (!feePatch) { setChangeSaving(false); showToast('Enter a valid monthly fee (0 or more)', 'warn'); return }
       Object.assign(patch, feePatch)
     }
@@ -3477,12 +3471,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 {changeKeepCycle && cycleInProgress(changingEn) && changeSkuId && changeSkuId !== changingEn.sku_id && (
                   <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>Monthly fee from the next renewal (₹)
                     <input type="number" min="0"
-                      value={changeFee !== '' ? changeFee : (function () { const t = allCentreSkus.find(function (s) { return s.id === changeSkuId }); return t && t.student_fee != null ? String(t.student_fee) : '' })()}
+                      value={changeFee !== '' ? changeFee : (changingEn.fee_amount != null ? String(changingEn.fee_amount) : '')}
                       onChange={function (e) { setChangeFee(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
                     <span className="hint" style={{ display: 'block', marginTop: 4, fontWeight: 400 }}>
-                      Currently ₹{fmtAmt(changingEn.fee_amount || 0)}
-                      {(function () { const t = allCentreSkus.find(function (s) { return s.id === changeSkuId }); return t ? ' · catalogue ₹' + fmtAmt(t.student_fee || 0) : '' })()}
-                      . Only future renewals use this; the fee already charged is not changed.
+                      This student's fee is ₹{fmtAmt(changingEn.fee_amount || 0)} and stays as it is unless you change it here
+                      {(function () { const t = allCentreSkus.find(function (s) { return s.id === changeSkuId }); return t ? ' (catalogue for the new level: ₹' + fmtAmt(t.student_fee || 0) + ')' : '' })()}
+                      . Only future renewals use it; the fee already charged is not changed.
                     </span>
                   </label>
                 )}
