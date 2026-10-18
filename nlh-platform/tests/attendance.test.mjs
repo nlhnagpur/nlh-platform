@@ -107,3 +107,66 @@ test('buckets: completed / dropped / active; current vs past', () => {
   assert.equal(certPending({ completed_at: 'x' }), true)
   assert.equal(certPending({ completed_at: 'x', cert_issued_at: 'y' }), false)
 })
+
+// ── level change mid-cycle ────────────────────────────────────────────────
+import { levelChangePatch, cycleInProgress } from '../src/utils/studentLifecycle.js'
+
+test('levelChangePatch: default restarts the cycle on the chosen date', () => {
+  assert.deepEqual(levelChangePatch('sku3', { startDate: '2026-10-13' }), { sku_id: 'sku3', cycle_started_at: '2026-10-13' })
+})
+
+test('levelChangePatch: keepCycle swaps only the level — cycle start and fee untouched', () => {
+  const p = levelChangePatch('sku3', { keepCycle: true, startDate: '2026-10-13' })
+  assert.deepEqual(p, { sku_id: 'sku3' })
+  assert.equal('cycle_started_at' in p, false)
+  assert.equal('fee_amount' in p, false)
+})
+
+test('cycleInProgress: monthly course renewed on the 9th is mid-cycle until the next 9th', () => {
+  const en = { cycle_started_at: '2026-10-09', skus: { courses: { billing_type: 'monthly' } } }
+  assert.equal(cycleInProgress(en, '2026-10-13'), true)
+  assert.equal(cycleInProgress(en, '2026-11-08'), true)
+  assert.equal(cycleInProgress(en, '2026-11-09'), false)   // due again
+  assert.equal(cycleInProgress(en, '2026-10-08'), false)   // before it started
+})
+
+test('cycleInProgress: not for session-billed, completed or dropped enrolments', () => {
+  const sess = { cycle_started_at: '2026-10-09', skus: { courses: { billing_type: 'session' } } }
+  const done = { cycle_started_at: '2026-10-09', completed_at: '2026-10-10', skus: { courses: { billing_type: 'monthly' } } }
+  const drop = { cycle_started_at: '2026-10-09', status: 'dropped', skus: { courses: { billing_type: 'monthly' } } }
+  for (const e of [sess, done, drop]) assert.equal(cycleInProgress(e, '2026-10-13'), false)
+})
+
+// ── mid-cycle level change: fee and completed-level record ─────────────────
+import { levelFeePatch, completedLevelRow } from '../src/utils/studentLifecycle.js'
+
+test('levelFeePatch: sets only the enrolment fee fields; rejects negatives and junk', () => {
+  assert.deepEqual(levelFeePatch('3500', 3500), { fee_amount: 3500, list_price: 3500 })
+  assert.deepEqual(levelFeePatch(0, null), { fee_amount: 0 })
+  assert.equal(levelFeePatch(-1, 3500), null)
+  assert.equal(levelFeePatch('abc', 3500), null)
+  assert.equal(levelFeePatch('', 3500), null)
+  const p = levelFeePatch(3500, 3500)
+  for (const k of ['fee_total', 'fee_paid', 'amount', 'total']) assert.equal(k in p, false)
+})
+
+test('completedLevelRow: a finished level carries a completion date and NO money', () => {
+  const en = { sku_id: 'L2', enrolled_at: '2026-09-05T00:00:00+00:00', fee_amount: 4000, list_price: 3500, waived: 0 }
+  const r = completedLevelRow(en, 'stu1', 'cen1', '2026-10-12')
+  assert.equal(r.student_id, 'stu1')
+  assert.equal(r.franchisee_id, 'cen1')
+  assert.equal(r.sku_id, 'L2')
+  assert.equal(r.status, 'completed')
+  assert.equal(r.completed_at, '2026-10-12T12:00:00+00:00')
+  assert.equal(r.enrolled_at, '2026-09-05T00:00:00+00:00')
+  assert.equal(r.fee_amount, 0)
+  assert.equal(r.list_price, 0)
+  assert.equal(r.waived, 0)
+  assert.equal('cycle_started_at' in r, false)
+})
+
+test('completedLevelRow: missing centre becomes null; missing enrolled_at falls back to the completion day', () => {
+  const r = completedLevelRow({ sku_id: 'L2' }, 'stu1', undefined, '2026-10-12')
+  assert.equal(r.franchisee_id, null)
+  assert.equal(r.enrolled_at, '2026-10-12T00:00:00+00:00')
+})

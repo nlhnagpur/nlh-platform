@@ -7,7 +7,7 @@ import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
 import { studentReceiptCtx, studentReceiptCtxFull, loadStatementLines } from '../utils/studentReceipts'
 import { receiptPreview } from '../utils/feeStatement'
-import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay } from '../utils/studentLifecycle'
+import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay, levelChangePatch, cycleInProgress, levelFeePatch, completedLevelRow } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -253,6 +253,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [changeKit,       setChangeKit]       = useState(null)         // kit items of the level being changed to (null = loading / none picked)
   const [changeKitEx,     setChangeKitEx]     = useState({})           // { item_id: true } unchecked = not handed over
   const [changeSaving,    setChangeSaving]    = useState(false)
+  const [changeKeepCycle, setChangeKeepCycle] = useState(false)  // mid-cycle level change: keep the current monthly cycle
+  const [changeComplete,  setChangeComplete]  = useState(false)  // also record the old level as completed (its certificate)
+  const [changeCompleteDate, setChangeCompleteDate] = useState('')
+  const [changeFee,       setChangeFee]       = useState('')     // monthly fee from the next renewal (mid-cycle change only)
   // Fee payment ledger
   const [payments,        setPayments]        = useState([])
   const receiptPhone = student.phone || ''
@@ -1105,9 +1109,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     return function () { cancelled = true }
   }, [changeSkuId, changingEn])
 
+  // Mid-cycle change: the monthly fee from the next renewal defaults to the new level's catalogue fee.
+  useEffect(function () {
+    if (!changingEn || !changeSkuId || changeSkuId === changingEn.sku_id) { setChangeFee(''); return }
+    const t = allCentreSkus.find(function (s) { return s.id === changeSkuId })
+    setChangeFee(t && t.student_fee != null ? String(t.student_fee) : '')
+  }, [changeSkuId, changingEn])
+
   function openChangeLevel(en) {
     setChangeSkuId(en.sku_id || '')
     setChangeDate(todayIso())
+    // A monthly course renewed and still mid-cycle has already paid for this
+    // month — default to changing only the level, not restarting the cycle.
+    setChangeKeepCycle(cycleInProgress(en))
+    setChangeComplete(cycleInProgress(en) && !en.completed_at)
+    setChangeCompleteDate(lastAttendedDate[en.id] || todayIso())
+    setChangeFee('')
     setChangingEn(en)
   }
 
@@ -1122,7 +1139,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setChangeSaving(true)
     // The new level starts on the chosen date: that is where its monthly cycle
     // (and so its class target and renewal date) begins.
-    const patch = { sku_id: newSkuId, cycle_started_at: changeDate || todayIso() }
+    const keepCycle = changeKeepCycle && cycleInProgress(changingEn)
+    const patch = levelChangePatch(newSkuId, { keepCycle: keepCycle, startDate: changeDate })
+    // Mid-cycle change: set the monthly fee that applies from the NEXT renewal.
+    // Only this enrolment's own fee fields move — never fee_total, invoices or payments.
+    if (keepCycle && changeFee !== '') {
+      const feePatch = levelFeePatch(changeFee, target ? target.student_fee : null)
+      if (!feePatch) { showToast('Enter a valid monthly fee (0 or more)', 'warn'); return }
+      Object.assign(patch, feePatch)
+    }
+    const sameCourse = !!(target && changingEn.skus && target.courses && changingEn.skus.courses && target.courses.group_name === changingEn.skus.courses.group_name)
+    const completeOld = changeComplete && sameCourse && !changingEn.completed_at
     const { error } = await sb.from('enrollments').update(patch).eq('id', changingEn.id)
     setChangeSaving(false)
     if (error) { showToast('Change failed: ' + error.message, 'err'); return }
@@ -1136,6 +1163,24 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
           : e.skus,
       }
     })
+    // Record the finished level as completed (fee ₹0) so it has a completion
+    // date and a certificate; the live enrolment carries on as the new level.
+    let oldLevelRecorded = false
+    if (completeOld) {
+      const already = localEnrollments.some(function (e) { return e.id !== changingEn.id && e.sku_id === changingEn.sku_id && e.completed_at })
+      if (already) {
+        showToast('That level already has a completed record — not added again', 'warn')
+      } else {
+        const row = completedLevelRow(changingEn, student.id, student.franchisee_id, changeCompleteDate)
+        const { data: done, error: dErr } = await sb.from('enrollments').insert(row)
+          .select('id, sku_id, fee_amount, list_price, waived, sessions_per_week, sessions_per_cycle, cycle_started_at, cycle_days, enrolled_at, completed_at, status, marks_obtained, marks_total, marks_remarks, marks_submitted_at, cert_status, cert_reject_note, cert_emailed_at, cert_wa_sent_at, cert_issued_at').single()
+        if (dErr) showToast('Level changed, but the completed-level record could not be created: ' + dErr.message, 'warn')
+        else {
+          oldLevelRecorded = true
+          next.push({ ...done, skus: changingEn.skus })
+        }
+      }
+    }
     // Issue the new level's kit — only the items ticked as handed over.
     if (changeKit && changeKit.length) {
       const already = kitGiven[changingEn.id] || {}
@@ -1161,7 +1206,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     setChangingEn(null)
     // recount the cycle from the new start date
     await loadCycleProgress(next, batchAssignments)
-    showToast('Course / level updated ✓')
+    showToast(oldLevelRecorded ? 'Level updated ✓ · previous level recorded as completed — issue its certificate from Actions' : 'Course / level updated ✓')
     if (onSaved) onSaved({ ...student, ...form, enrollments: next })
   }
 
@@ -3400,17 +3445,70 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                     )}
                   </div>
                 )}
-                <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 14 }}>New level starts on
-                  <input type="date" value={changeDate} onChange={function (e) { setChangeDate(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
-                </label>
+                {cycleInProgress(changingEn) && (function () {
+                  const start = cycleAnchor(changingEn)
+                  return (
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'var(--purple-bg)', border: '1px solid var(--purple)', font: '600 12px var(--font)', color: 'var(--purple)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={changeKeepCycle} onChange={function (e) { setChangeKeepCycle(e.target.checked) }} style={{ marginTop: 2, accentColor: 'var(--purple)' }} />
+                      <span>
+                        Keep the current monthly cycle ({shortDay(start)} – {shortDay(addOneMonth(start))}) — this month's fee is already paid.
+                        <span style={{ display: 'block', fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
+                          Only the level changes: no new fee; the class count and renewal date stay as they are.
+                        </span>
+                      </span>
+                    </label>
+                  )
+                })()}
+                {changeKeepCycle && cycleInProgress(changingEn) && changeSkuId && changeSkuId !== changingEn.sku_id && (
+                  <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>Monthly fee from the next renewal (₹)
+                    <input type="number" min="0" value={changeFee} onChange={function (e) { setChangeFee(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
+                    <span className="hint" style={{ display: 'block', marginTop: 4, fontWeight: 400 }}>
+                      Currently ₹{fmtAmt(changingEn.fee_amount || 0)}
+                      {(function () { const t = allCentreSkus.find(function (s) { return s.id === changeSkuId }); return t ? ' · catalogue ₹' + fmtAmt(t.student_fee || 0) : '' })()}
+                      . Only future renewals use this; the fee already charged is not changed.
+                    </span>
+                  </label>
+                )}
+                {(function () {
+                  const t = allCentreSkus.find(function (s) { return s.id === changeSkuId })
+                  const sameCourse = !!(t && changingEn.skus && t.courses && changingEn.skus.courses && t.courses.group_name === changingEn.skus.courses.group_name)
+                  if (!sameCourse || changeSkuId === changingEn.sku_id || changingEn.completed_at) return null
+                  const oldLevel = changingEn.skus && changingEn.skus.level_name ? changingEn.skus.level_name : 'the previous level'
+                  return (
+                    <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)' }}>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, font: '600 12px var(--font)', color: 'var(--text)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={changeComplete} onChange={function (e) { setChangeComplete(e.target.checked) }} style={{ marginTop: 2 }} />
+                        <span>
+                          Also record {oldLevel} as completed (for its certificate)
+                          <span style={{ display: 'block', fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
+                            Adds a completed {oldLevel} record at ₹0 — no fee change. Issue the certificate afterwards from Actions → Certificate.
+                          </span>
+                        </span>
+                      </label>
+                      {changeComplete && (
+                        <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 8 }}>{oldLevel} completed on
+                          <input type="date" value={changeCompleteDate} max={todayIso()} onChange={function (e) { setChangeCompleteDate(e.target.value) }} style={{ marginTop: 4, fontSize: 13, width: '100%' }} />
+                        </label>
+                      )}
+                    </div>
+                  )
+                })()}
+                {!(changeKeepCycle && cycleInProgress(changingEn)) && (
+                  <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 14 }}>New level starts on
+                    <input type="date" value={changeDate} onChange={function (e) { setChangeDate(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
+                  </label>
+                )}
                 <p className="hint" style={{ marginTop: 8 }}>
                   Keeps the batch assignment, attendance and certificate history — only the course/level is swapped.
-                  A monthly course's new cycle (class target and renewal date) starts from the date above. The ticked kit items are issued from stock.
+                  {changeKeepCycle && cycleInProgress(changingEn)
+                    ? ' The monthly cycle and its fee are left exactly as they are.'
+                    : " A monthly course's new cycle (class target and renewal date) starts from the date above."}
+                  {' '}The ticked kit items are issued from stock.
                 </p>
               </div>
               <div className="modal-actions">
                 <button className="btn" onClick={function () { setChangingEn(null) }} disabled={changeSaving}>Cancel</button>
-                <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId || !changeDate}>
+                <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId || (!changeDate && !(changeKeepCycle && cycleInProgress(changingEn)))}>
                   {changeSaving ? 'Saving…' : 'Update'}
                 </button>
               </div>

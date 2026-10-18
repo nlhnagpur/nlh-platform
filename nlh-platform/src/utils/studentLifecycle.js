@@ -162,6 +162,63 @@ export function cycleAnchor(en) {
   return null
 }
 
+// What changing an enrolment's level writes. By default the new level starts
+// its own monthly cycle on `startDate` (class target and renewal date restart).
+// When the fee for the CURRENT cycle is already paid — e.g. the course was
+// renewed on the 9th and the next level's book is handed over mid-cycle —
+// `keepCycle` swaps only the level and leaves the cycle start (so the class
+// count, target and renewal date) untouched. The fee is never touched here.
+export function levelChangePatch(newSkuId, opts) {
+  const o = opts || {}
+  if (o.keepCycle) return { sku_id: newSkuId }
+  return { sku_id: newSkuId, cycle_started_at: o.startDate || todayIso() }
+}
+
+// The enrolment fields written when a mid-cycle level change also sets the
+// monthly fee that applies from the NEXT renewal (e.g. the new level's
+// catalogue fee). Only the enrolment's own fee_amount / list_price move — the
+// student's fee_total, invoices and payments are never touched here.
+export function levelFeePatch(monthlyFee, catalogueFee) {
+  if (monthlyFee === '' || monthlyFee === null || monthlyFee === undefined) return null
+  const fee = Math.round(Number(monthlyFee))
+  if (!isFinite(fee) || fee < 0) return null
+  const patch = { fee_amount: fee }
+  if (catalogueFee != null && isFinite(Number(catalogueFee))) patch.list_price = Math.round(Number(catalogueFee))
+  return patch
+}
+
+// The record of a level that has been finished, inserted when an enrolment is
+// carried on to its next level in place (see levelChangePatch). It exists so the
+// finished level has a completion date and a certificate. It deliberately
+// carries NO money (fee_amount, list_price and waived are all 0): the fee for
+// the running cycle stays on the live enrolment, so fee_total, invoices and the
+// course-wise fee view are unchanged.
+export function completedLevelRow(en, studentId, franchiseeId, completedDate) {
+  const day = String((completedDate || todayIso())).slice(0, 10)
+  return {
+    student_id: studentId,
+    sku_id: en.sku_id,
+    franchisee_id: franchiseeId || null,
+    enrolled_at: en.enrolled_at || (day + 'T00:00:00+00:00'),
+    completed_at: day + 'T12:00:00+00:00',
+    status: 'completed',
+    fee_amount: 0,
+    list_price: 0,
+    waived: 0,
+  }
+}
+
+// Whether a monthly enrolment is mid-cycle (renewed and not yet due again) —
+// the case where a level change should normally keep the cycle.
+export function cycleInProgress(en, today) {
+  const t = String(today || todayIso()).slice(0, 10)
+  if (!isMonthlyActive(en)) return false
+  const anchor = cycleAnchor(en)
+  if (!anchor) return false
+  const due = addOneMonth(anchor)
+  return anchor <= t && t < due
+}
+
 export function isMonthlyActive(en) {
   return !en.completed_at && en.status !== 'dropped' && en.skus?.courses?.billing_type === 'monthly'
 }
