@@ -15,12 +15,15 @@ import { todayIso } from '../utils/studentLifecycle'
 //   H      holiday for the whole batch (a property of the class, not of one
 //          student)
 //
-// The teacher has a row too: P present, O off. A teacher's off day is theirs
+// The teacher has a row too: P present, O off (A absent once enabled), and H on
+// a batch holiday (shown from the day, not stored). A teacher's off day is theirs
 // across every batch they take. When a student is marked present on a day the
 // teacher is off, a list of teachers opens to pick the substitute who took the
 // class (stored on the day's session: instructor_id + is_substitute).
 // Saving writes the same batch_sessions / session_attendance rows the Batches
 // page does, so both stay in step.
+
+import { TEACHER_ABSENT_ENABLED, isTeacherAway, teacherNextStatus, teacherStatusTitle } from '../utils/teacherAttendance'
 
 const DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
 const DAY2 = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -290,7 +293,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   // Run `apply`, but first — if the class's teacher is off that day and no
   // substitute is set yet — ask who took it. Cancelling the list applies nothing.
   function withSubstitute(b, date, apply) {
-    if (b.instructor_id && tStatus(b.instructor_id, date) === 'O' && !dayState(b.id, date).sub) {
+    if (b.instructor_id && isTeacherAway(tStatus(b.instructor_id, date)) && !dayState(b.id, date).sub) {
       setPicker({ b: b, date: date, action: apply })
       return
     }
@@ -330,20 +333,22 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     })
   }
 
-  // Teacher cell: blank -> P present -> O off -> blank. Off is the teacher's,
-  // not the batch's, so it shows in every batch they take that day.
+  // Teacher cell: blank -> P present -> (A absent ->) O off -> blank. Off and
+  // absent are the teacher's, not the batch's, so they show in every batch they
+  // take that day. A batch holiday shows as H and cannot be stepped.
   function stepTeacher(b, date) {
     if (!canEdit || date > today || !b.instructor_id) return
+    if (dayState(b.id, date).hol) return
     const cur = tStatus(b.instructor_id, date)
-    const next = cur === null ? 'P' : cur === 'P' ? 'O' : null
+    const next = teacherNextStatus(cur, TEACHER_ABSENT_ENABLED)
     setTEdits(function (prev) { return { ...prev, [b.instructor_id + '|' + date]: next } })
-    if (cur === 'O' && next !== 'O') {
+    if (isTeacherAway(cur) && !isTeacherAway(next)) {
       // no longer off: whoever was covering is no longer needed
       batches.filter(function (x) { return x.instructor_id === b.instructor_id }).forEach(function (x) {
         if (dayState(x.id, date).sub) editDay(x, date, function (st) { st.sub = null })
       })
     }
-    if (next === 'O' && anyPresent(b, date) && !dayState(b.id, date).sub) setPicker({ b: b, date: date, action: null })
+    if (isTeacherAway(next) && anyPresent(b, date) && !dayState(b.id, date).sub) setPicker({ b: b, date: date, action: null })
   }
   function chooseSubstitute(instrId) {
     const pk = picker
@@ -381,7 +386,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
         if (!edits[b.id + '|' + date]) continue     // only the teacher's mark changed
         const st = edits[b.id + '|' + date]
         const old = saved[b.id + '|' + date]
-        const off = b.instructor_id && tStatus(b.instructor_id, date) === 'O'
+        const off = b.instructor_id && isTeacherAway(tStatus(b.instructor_id, date))
         const sub = off ? (st.sub || null) : null
         const roster = (b.batch_students || []).filter(function (bs) { return memberOn(bs, date) })
         const rows = st.hol ? [] : roster.filter(function (bs) { return !st.nc[bs.enrollment_id] && (st.marks[bs.enrollment_id] === true || st.marks[bs.enrollment_id] === false) })
@@ -465,7 +470,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
       <p className="hint" style={{ margin: '0 0 10px' }}>
         Click a cell to step it: blank (not marked) → <b style={{ color: TONE.P.color }}>P</b> present → <b style={{ color: TONE.A.color }}>A</b> absent → <b style={{ color: TONE.N.color }}>N</b> no class for that student → <b>H</b> holiday (whole batch) → blank.
         The ✓ under a date marks everyone present. <span style={{ color: '#92400e' }}>?n</span> after a student's N total is how many held classes are still not marked.
-        The <b>Teacher</b> row steps blank → <b style={{ color: TONE.P.color }}>P</b> present → <b style={{ color: TONE.O.color }}>O</b> off → blank; when a student is marked present on a day the teacher is off, you pick the substitute who took the class.
+        The <b>Teacher</b> row steps blank → <b style={{ color: TONE.P.color }}>P</b> present → {TEACHER_ABSENT_ENABLED && <><b style={{ color: TONE.A.color }}>A</b> absent → </>}<b style={{ color: TONE.O.color }}>O</b> off → blank, and shows <b style={{ color: TONE.H.color }}>H</b> on a batch holiday; when a student is marked present on a day the teacher is off{TEACHER_ABSENT_ENABLED ? ' or absent' : ''}, you pick the substitute who took the class.
       </p>
 
       {pending.length > 0 && (
@@ -561,13 +566,14 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                               Teacher · {b.instructors ? b.instructors.full_name : ''}
                             </td>
                             {days.map(function (d) {
-                              const v = tStatus(b.instructor_id, d)
+                              const hol = dayState(b.id, d).hol
+                              const v = hol ? 'H' : tStatus(b.instructor_id, d)
                               const tone = v ? TONE[v] : null
-                              const disabled = !canEdit || d > today
+                              const disabled = hol || !canEdit || d > today
                               return (
                                 <td key={d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center' }}>
                                   <button type="button" disabled={disabled} onClick={function () { stepTeacher(b, d) }}
-                                    title={v === 'O' ? 'Teacher off' : v === 'P' ? 'Teacher present' : 'Teacher not marked'}
+                                    title={teacherStatusTitle(v, hol)}
                                     style={{ width: 24, height: 24, borderRadius: 5, border: 'none', font: '700 11px var(--mono)', cursor: disabled ? 'default' : 'pointer', color: tone ? tone.color : 'var(--text3)', background: tone ? tone.bg : 'transparent', opacity: d > today ? .35 : 1 }}>
                                     {v || ''}
                                   </button>
@@ -576,11 +582,11 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                             })}
                             <td colSpan={4} style={{ borderBottom: '1px solid var(--border)' }}></td>
                           </tr>
-                          {days.some(function (d) { return tStatus(b.instructor_id, d) === 'O' }) && (
+                          {days.some(function (d) { return isTeacherAway(tStatus(b.instructor_id, d)) }) && (
                             <tr>
                               <td style={{ padding: '2px 10px', font: '500 10px var(--font)', color: 'var(--text3)', position: 'sticky', left: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>cover (substitute)</td>
                               {days.map(function (d) {
-                                const off = tStatus(b.instructor_id, d) === 'O'
+                                const off = isTeacherAway(tStatus(b.instructor_id, d))
                                 const sub = dayState(b.id, d).sub
                                 const need = off && !sub && anyPresent(b, d)
                                 const label = sub ? nameOfInstructor(sub) : ''
@@ -670,7 +676,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
             </div>
             <div style={{ padding: '8px 20px', maxHeight: '50vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {instructors.filter(function (i) { return i.id !== picker.b.instructor_id }).map(function (i) {
-                const offThen = tStatus(i.id, picker.date) === 'O'
+                const offThen = isTeacherAway(tStatus(i.id, picker.date))
                 return (
                   <button key={i.id} type="button" disabled={offThen} onClick={function () { chooseSubstitute(i.id) }}
                     style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: offThen ? 'not-allowed' : 'pointer', opacity: offThen ? .5 : 1, font: '600 13px var(--font)' }}>
