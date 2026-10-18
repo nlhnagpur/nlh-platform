@@ -208,6 +208,45 @@ export function completedLevelRow(en, studentId, franchiseeId, completedDate) {
   }
 }
 
+// A finished-level record made by "Also record the previous level as completed"
+// (see completedLevelRow): completed, and carrying no money and no cycle.
+export function isFinishedLevelRecord(en) {
+  return !!en.completed_at && !Number(en.fee_amount) && !Number(en.list_price) && !Number(en.waived) && !en.cycle_started_at
+}
+
+// Attended-session counts per enrolment for display. Attendance rows stay on the
+// live enrolment when a level is carried on in place, so by default the new
+// level would show every class since the first day. Where finished-level
+// records exist for the same course, the live enrolment's attended days are
+// split at each record's completion date: classes on or before it belong to
+// that finished level, the rest to the live one. Display only — cycle progress
+// is still computed from the live enrolment's own attendance.
+//   datesByEnr: { [enrollment_id]: ['YYYY-MM-DD', …] } attended days
+export function levelSessionCounts(enrolments, datesByEnr) {
+  const list = enrolments || []
+  const dates = datesByEnr || {}
+  const out = {}
+  list.forEach(function (e) { out[e.id] = (dates[e.id] || []).length })
+  const groupOf = function (e) { return (e.skus && e.skus.courses && e.skus.courses.group_name) || '' }
+  const live = list.filter(function (e) { return !e.completed_at && e.status !== 'dropped' })
+  live.forEach(function (l) {
+    const g = groupOf(l)
+    if (!g || live.filter(function (x) { return groupOf(x) === g }).length !== 1) return
+    const records = list.filter(function (r) {
+      return r.id !== l.id && groupOf(r) === g && isFinishedLevelRecord(r) && (dates[r.id] || []).length === 0
+    }).sort(function (a, b) { return String(a.completed_at).localeCompare(String(b.completed_at)) })
+    if (!records.length) return
+    let rest = (dates[l.id] || []).slice().sort()
+    records.forEach(function (r) {
+      const cut = String(r.completed_at).slice(0, 10)
+      out[r.id] = rest.filter(function (d) { return d <= cut }).length
+      rest = rest.filter(function (d) { return d > cut })
+    })
+    out[l.id] = rest.length
+  })
+  return out
+}
+
 // Whether a monthly enrolment is mid-cycle (renewed and not yet due again) —
 // the case where a level change should normally keep the cycle.
 export function cycleInProgress(en, today) {

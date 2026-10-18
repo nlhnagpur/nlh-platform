@@ -7,7 +7,7 @@ import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
 import { studentReceiptCtx, studentReceiptCtxFull, loadStatementLines } from '../utils/studentReceipts'
 import { receiptPreview } from '../utils/feeStatement'
-import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay, levelChangePatch, cycleInProgress, levelFeePatch, completedLevelRow } from '../utils/studentLifecycle'
+import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay, levelChangePatch, cycleInProgress, levelFeePatch, completedLevelRow, levelSessionCounts, isFinishedLevelRecord } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -175,6 +175,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [batchAssignments,setBatchAssignments] = useState({})   // { [enrollment_id]: batch_student row }
   const [cycleProgress,   setCycleProgress]   = useState({})   // { [enrollment_id]: sessions held since cycle_started_at }
   const [sessionCounts,   setSessionCounts]   = useState({})   // { [enrollment_id]: attended count }
+  const [attDates,        setAttDates]        = useState({})   // { [enrollment_id]: attended session dates } — for the per-level session split
   const [lastAttendedDate,setLastAttendedDate]= useState({})   // { [enrollment_id]: latest attended session_date (YYYY-MM-DD) }
   const [kitIssued,       setKitIssued]       = useState({})   // { [enrollment_id]: true } — kit issued + stock deducted
   const [kitDefs,         setKitDefs]         = useState({})   // { [sku_id]: [{item_id, name, quantity}] } — full kit definition
@@ -214,6 +215,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
   const [editInv,         setEditInv]         = useState({})   // { invoice_date, amount_paid, status, notes }
   const [skuTotals,       setSkuTotals]       = useState({})   // { [sku_id]: total_sessions }
   const [skuBilling,      setSkuBilling]      = useState({})   // { [sku_id]: billing_type }
+  const shownCounts = levelSessionCounts(localEnrollments, attDates)   // attended sessions per enrolment, split by finished level
   const [coursesLoaded,   setCoursesLoaded]   = useState(false)
   const [batchPanelEnrId, setBatchPanelEnrId] = useState(null)  // enrollment.id whose panel is open
   const [panelData,       setPanelData]       = useState({ batches: [], loading: false })
@@ -642,12 +644,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
         .eq('attended', true)
       const counts = {}
       const lastDate = {}
+      const datesBy = {}
       ;(attRows || []).forEach(function (a) {
         counts[a.enrollment_id] = (counts[a.enrollment_id] || 0) + 1
         const d = a.batch_sessions?.session_date
+        if (d) (datesBy[a.enrollment_id] = datesBy[a.enrollment_id] || []).push(d)
         if (d && (!lastDate[a.enrollment_id] || d > lastDate[a.enrollment_id])) lastDate[a.enrollment_id] = d
       })
       setSessionCounts(counts)
+      setAttDates(datesBy)
       setLastAttendedDate(lastDate)
 
       // Total sessions + billing type per enrolled SKU
@@ -1143,9 +1148,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
     const patch = levelChangePatch(newSkuId, { keepCycle: keepCycle, startDate: changeDate })
     // Mid-cycle change: set the monthly fee that applies from the NEXT renewal.
     // Only this enrolment's own fee fields move — never fee_total, invoices or payments.
-    if (keepCycle && changeFee !== '') {
-      const feePatch = levelFeePatch(changeFee, target ? target.student_fee : null)
-      if (!feePatch) { showToast('Enter a valid monthly fee (0 or more)', 'warn'); return }
+    // The field shows the new level's catalogue fee until edited; use exactly what it shows.
+    const feeShown = changeFee !== '' ? changeFee : (target && target.student_fee != null ? String(target.student_fee) : '')
+    if (keepCycle && feeShown !== '') {
+      const feePatch = levelFeePatch(feeShown, target ? target.student_fee : null)
+      if (!feePatch) { setChangeSaving(false); showToast('Enter a valid monthly fee (0 or more)', 'warn'); return }
       Object.assign(patch, feePatch)
     }
     const sameCourse = !!(target && changingEn.skus && target.courses && changingEn.skus.courses && target.courses.group_name === changingEn.skus.courses.group_name)
@@ -1202,6 +1209,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
       }
       setKitDefs(function (prev) { return { ...prev, [newSkuId]: changeKit } })
     }
+    // The card decides monthly-vs-session and the session total from these
+    // per-sku maps, which were loaded for the OLD level — add the new one so it
+    // shows its cycle progress immediately instead of "N sessions".
+    setSkuBilling(function (prev) { return { ...prev, [newSkuId]: (target && target.courses && target.courses.billing_type) || prev[newSkuId] || null } })
+    sb.from('skus').select('id, total_sessions').eq('id', newSkuId).single().then(function (res) {
+      if (res && res.data) setSkuTotals(function (prev) { return { ...prev, [res.data.id]: res.data.total_sessions } })
+    })
     setLocalEnrollments(next)
     setChangingEn(null)
     // recount the cycle from the new start date
@@ -2122,10 +2136,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                   }
                 }
                 const tot = en.skus?.total_sessions || 0
-                if (!done && en.skus?.courses?.billing_type !== 'monthly' && tot > 0 && (sessionCounts[en.id] || 0) >= tot) {
+                if (!done && en.skus?.courses?.billing_type !== 'monthly' && tot > 0 && (shownCounts[en.id] || 0) >= tot) {
                   items.push({
                     key: 'sess-' + en.id, tone: 'amber',
-                    text: <><b>{lbl(en)}</b> — {sessionCounts[en.id]} of {tot} sessions attended; mark the course complete.</>,
+                    text: <><b>{lbl(en)}</b> — {shownCounts[en.id] || 0} of {tot} sessions attended; mark the course complete.</>,
                     actions: [canEdit && can('students.complete') && { label: '✓ Mark complete', onClick: function () { startComplete(en) } }],
                   })
                 }
@@ -2297,7 +2311,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 
                   const isCompleted     = !!en.completed_at
                   const isDiscontinued  = en.status === 'dropped'
-                  const attended     = sessionCounts[en.id] || 0
+                  const attended     = shownCounts[en.id] || 0
                   const totalSess    = skuTotals[en.sku_id] || 0
                   const billingType  = skuBilling[en.sku_id] || null
                   // Session-based course finished its sessions but not marked complete → follow up
@@ -2366,7 +2380,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                 {attended}{totalSess > 0 ? ' / ' + totalSess : ''} sessions
                               </span>
                             )}
-                            {kitItems.length > 0 && (
+                            {kitItems.length > 0 && !isFinishedLevelRecord(en) && (
                               <button
                                 onClick={function () { setKitPanelEnrId(kitPanelOpen ? null : en.id) }}
                                 title={kitIssued[en.id] ? 'Confirm exactly which kit items were handed over' : 'No kit items confirmed as given yet — click to check them off'}
@@ -2376,7 +2390,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                                   background: kitIssued[en.id] ? '#CFFAFE' : 'var(--bg2)',
                                   border: '1px solid ' + (kitIssued[en.id] ? '#67E8F9' : 'var(--border)'),
                                 }}>
-                                🧰 {kitIssued[en.id] ? Object.keys(kitGivenForEnr).length + '/' + kitItems.length + ' kit given' : 'Confirm kit'}
+                                🧰 {kitIssued[en.id] ? kitItems.filter(function (k) { return kitGivenForEnr[k.item_id] }).length + '/' + kitItems.length + ' kit given' : 'Confirm kit'}
                               </button>
                             )}
                             {en.cert_issued_at && (
@@ -3461,7 +3475,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 })()}
                 {changeKeepCycle && cycleInProgress(changingEn) && changeSkuId && changeSkuId !== changingEn.sku_id && (
                   <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>Monthly fee from the next renewal (₹)
-                    <input type="number" min="0" value={changeFee} onChange={function (e) { setChangeFee(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
+                    <input type="number" min="0"
+                      value={changeFee !== '' ? changeFee : (function () { const t = allCentreSkus.find(function (s) { return s.id === changeSkuId }); return t && t.student_fee != null ? String(t.student_fee) : '' })()}
+                      onChange={function (e) { setChangeFee(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
                     <span className="hint" style={{ display: 'block', marginTop: 4, fontWeight: 400 }}>
                       Currently ₹{fmtAmt(changingEn.fee_amount || 0)}
                       {(function () { const t = allCentreSkus.find(function (s) { return s.id === changeSkuId }); return t ? ' · catalogue ₹' + fmtAmt(t.student_fee || 0) : '' })()}

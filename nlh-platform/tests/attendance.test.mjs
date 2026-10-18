@@ -170,3 +170,49 @@ test('completedLevelRow: missing centre becomes null; missing enrolled_at falls 
   assert.equal(r.franchisee_id, null)
   assert.equal(r.enrolled_at, '2026-10-12T00:00:00+00:00')
 })
+
+// ── per-level session counts after a level is carried on in place ──────────
+import { levelSessionCounts, isFinishedLevelRecord } from '../src/utils/studentLifecycle.js'
+
+const mk = (id, level, extra) => Object.assign({ id, skus: { level_name: level, courses: { group_name: 'Phonics' } }, fee_amount: 4000, list_price: 3500, waived: 0 }, extra || {})
+
+test('isFinishedLevelRecord: completed, no money, no cycle', () => {
+  assert.equal(isFinishedLevelRecord({ completed_at: '2026-10-14', fee_amount: 0, list_price: 0, waived: 0 }), true)
+  assert.equal(isFinishedLevelRecord({ completed_at: '2026-10-14', fee_amount: 4000, list_price: 3500 }), false)   // a normal completed enrolment
+  assert.equal(isFinishedLevelRecord({ fee_amount: 0, list_price: 0 }), false)                                    // not completed
+  assert.equal(isFinishedLevelRecord({ completed_at: '2026-10-14', fee_amount: 0, list_price: 0, cycle_started_at: '2026-10-09' }), false)
+})
+
+test('levelSessionCounts: attended days are split at the finished level’s completion date', () => {
+  const live = mk('live', 'Level 3', { cycle_started_at: '2026-10-09' })
+  const rec = mk('rec', 'Level 2', { completed_at: '2026-10-14T12:00:00+00:00', fee_amount: 0, list_price: 0 })
+  const dates = { live: ['2026-09-08', '2026-09-09', '2026-10-12', '2026-10-14', '2026-10-15', '2026-10-16'], rec: [] }
+  const c = levelSessionCounts([live, rec], dates)
+  assert.equal(c.rec, 4)     // on or before 14 Oct
+  assert.equal(c.live, 2)    // 15 and 16 Oct
+  assert.equal(c.rec + c.live, 6)   // nothing lost or double counted
+})
+
+test('levelSessionCounts: no finished-level record means counts are unchanged', () => {
+  const live = mk('live', 'Level 3')
+  const c = levelSessionCounts([live], { live: ['2026-10-01', '2026-10-02'] })
+  assert.equal(c.live, 2)
+})
+
+test('levelSessionCounts: an enrolment with its own attendance is never re-split', () => {
+  const live = mk('live', 'Level 3')
+  const rec = mk('rec', 'Level 2', { completed_at: '2026-10-14T12:00:00+00:00', fee_amount: 0, list_price: 0 })
+  const c = levelSessionCounts([live, rec], { live: ['2026-10-15'], rec: ['2026-09-10', '2026-09-11'] })
+  assert.equal(c.rec, 2)
+  assert.equal(c.live, 1)
+})
+
+test('levelSessionCounts: other courses are not touched', () => {
+  const live = mk('live', 'Level 3')
+  const other = { id: 'o', skus: { level_name: 'Junior', courses: { group_name: 'Write Well' } }, fee_amount: 3500, list_price: 3500 }
+  const rec = mk('rec', 'Level 2', { completed_at: '2026-10-14T12:00:00+00:00', fee_amount: 0, list_price: 0 })
+  const c = levelSessionCounts([live, other, rec], { live: ['2026-10-10', '2026-10-20'], o: ['2026-10-10'] })
+  assert.equal(c.o, 1)
+  assert.equal(c.rec, 1)
+  assert.equal(c.live, 1)
+})
