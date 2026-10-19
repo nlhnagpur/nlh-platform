@@ -131,7 +131,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
-export function StudentDetailModal({ student, onClose, onSaved, inline }) {
+export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSibling }) {
   const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
   const admin = isAdminRole(currentRole) && can('students.edit')
   const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
@@ -3550,6 +3550,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
                 {closing ? '…' : '⊘ Close / Withdraw'}
               </button>
           )}
+          {onAddSibling && canEdit && (
+            <button className="btn" title="Register a brother or sister as a separate admission — family details are carried over"
+              onClick={function () { onAddSibling(student) }}>👪 Add sibling</button>
+          )}
           <button className="btn" onClick={onClose}>Close</button>
           {canEdit && tab === 'profile' && (
             <button className="btn-p" onClick={save} disabled={saving}>
@@ -3570,17 +3574,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline }) {
 // standing rule that a franchisee only ever sees courses HO registered them
 // for, never the full catalogue.
 
-function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
+// `sibling`: an existing student whose family details (parent, phone, email,
+// address, centre) are carried over. The new child is a separate admission —
+// own record, courses, fees and receipts — so the shared-phone lookup is skipped.
+function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
   const { currentRole, currentFranchiseeId } = useAuth()
   const admin = isAdminRole(currentRole)
 
   const [form, setForm] = useState({
-    full_name: '', parent_name: '', gender: '', camp_name: '', dob: '', registered_at: '', phone: '', email: '',
-    pincode: '', city: '', area: '', state: '', country: 'India', address: '',
-    channel: 'franchise',
-    franchisee_id: admin ? '' : (currentFranchiseeId || ''),
+    full_name: '', parent_name: sibling ? (sibling.parent_name || '') : '', gender: '', camp_name: '', dob: '', registered_at: '',
+    phone: sibling ? (sibling.phone || '') : '', email: sibling ? (sibling.email || '') : '',
+    pincode: sibling ? (sibling.pincode || '') : '', city: sibling ? (sibling.city || '') : '', area: sibling ? (sibling.area || '') : '',
+    state: sibling ? (sibling.state || '') : '', country: sibling ? (sibling.country || 'India') : 'India', address: sibling ? (sibling.address || '') : '',
+    channel: sibling ? (sibling.channel || 'franchise') : 'franchise',
+    franchisee_id: sibling && sibling.franchisee_id ? sibling.franchisee_id : (admin ? '' : (currentFranchiseeId || '')),
   })
-  const [showAddress, setShowAddress] = useState(false)
+  const [showAddress, setShowAddress] = useState(!!(sibling && (sibling.address || sibling.area || sibling.pincode)))
   const [centreList, setCentreList] = useState([])
   const [allSkus, setAllSkus] = useState([])
   const [phoneMatches, setPhoneMatches] = useState([])   // existing students with same phone
@@ -3666,7 +3675,9 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting }) {
 
   // Phone lookup — debounced 500ms, searches ALL centres
   useEffect(function () {
-    setPhoneConfirmed(false)
+    // a sibling keeps the family's own number without being asked "already on file?"
+    const sameAsSibling = !!(sibling && sibling.phone && form.phone.replace(/\D/g, '').slice(-10) === String(sibling.phone).replace(/\D/g, '').slice(-10))
+    setPhoneConfirmed(sameAsSibling)
     if (!form.phone || form.phone.replace(/\D/g, '').length < 10) { setPhoneMatches([]); return }
     const timer = setTimeout(async function () {
       // Match on the digit string, not the exact text — a stored "+91 96232…"
@@ -5479,6 +5490,7 @@ export default function StudentsPage() {
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [siblingOf, setSiblingOf] = useState(null)   // student whose family details seed a new admission
   const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended count }
   const [cycleMap, setCycleMap] = useState({})   // { [enrollment_id]: sessions held since its own cycle_started_at }
 
@@ -5988,6 +6000,7 @@ export default function StudentsPage() {
               student={selected}
               onClose={function () { setSelected(null) }}
               onSaved={handleSaved}
+              onAddSibling={function (st) { setSelected(null); setSiblingOf(st); setShowAdd(true) }}
             />
           </div>
         ) : loading ? (
@@ -6192,8 +6205,9 @@ export default function StudentsPage() {
 
       {showAdd && (
         <AddStudentModal
-          onClose={() => setShowAdd(false)}
-          onSaved={handleAdded}
+          sibling={siblingOf}
+          onClose={() => { setShowAdd(false); setSiblingOf(null) }}
+          onSaved={function (st) { setSiblingOf(null); handleAdded(st) }}
           onOpenExisting={handleOpenExisting}
         />
       )}
