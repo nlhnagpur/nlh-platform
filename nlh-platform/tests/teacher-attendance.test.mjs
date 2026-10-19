@@ -5,11 +5,11 @@ import assert from 'node:assert/strict'
 
 import { TEACHER_ABSENT_ENABLED, isTeacherAway, teacherNextStatus, teacherStatusTitle } from '../src/utils/teacherAttendance.js'
 
-test('absent is not enabled until the migration is approved and applied', () => {
-  assert.equal(TEACHER_ABSENT_ENABLED, false)
+test('absent is enabled (the status check now allows A)', () => {
+  assert.equal(TEACHER_ABSENT_ENABLED, true)
 })
 
-test('cell cycle today: blank -> P -> O -> blank (unchanged behaviour)', () => {
+test('cell cycle with absent switched off: blank -> P -> O -> blank (the previous behaviour)', () => {
   assert.equal(teacherNextStatus(null, false), 'P')
   assert.equal(teacherNextStatus(undefined, false), 'P')
   assert.equal(teacherNextStatus('P', false), 'O')
@@ -46,4 +46,24 @@ test('titles', () => {
   assert.equal(teacherStatusTitle('O'), "Teacher's weekly off")
   assert.equal(teacherStatusTitle(null), 'Teacher not marked')
   assert.equal(teacherStatusTitle('P', true), 'General holiday')
+})
+
+import { resolveTeacherStatus, teacherWritePlan } from '../src/utils/teacherAttendance.js'
+
+test("a batch's own mark wins over the whole-day mark; the day mark is the fallback", () => {
+  assert.equal(resolveTeacherStatus('A', 'P'), 'A')
+  assert.equal(resolveTeacherStatus(null, 'O'), 'O')
+  assert.equal(resolveTeacherStatus(null, null), null)
+})
+
+test("absent in one batch does not touch the same teacher's other batch", () => {
+  assert.equal(resolveTeacherStatus('A', null), 'A')
+  assert.equal(resolveTeacherStatus('P', null), 'P')
+})
+
+test('write plan: P/A are per batch, O is the whole day, clearing removes what exists', () => {
+  assert.deepEqual(teacherWritePlan('A', false), { upsertDay: null, deleteBatch: false, deleteDay: false, upsertBatch: 'A' })
+  assert.deepEqual(teacherWritePlan('O', false), { upsertDay: 'O', deleteBatch: true, deleteDay: false, upsertBatch: null })
+  assert.deepEqual(teacherWritePlan(null, true), { upsertDay: null, deleteBatch: true, deleteDay: true, upsertBatch: null })
+  assert.equal(teacherWritePlan(null, false).deleteDay, false)
 })

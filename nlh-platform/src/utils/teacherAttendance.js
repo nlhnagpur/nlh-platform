@@ -5,10 +5,10 @@
 //   H holiday — a general holiday. NOT a teacher mark: it is the batch's
 //               holiday and is shown from the day itself, so it needs no storage.
 //
-// 'A' needs the instructor_attendance status check to allow it (a migration
-// that is prepared but not applied) — until then ABSENT_ENABLED stays false and
-// the cell only steps blank → P → O → blank, exactly as before.
-export const TEACHER_ABSENT_ENABLED = false
+// 'A' is allowed by migration 20261018111422_instructor_attendance_allow_absent
+// (applied). The flag stays so the cell can be put back to blank → P → O → blank
+// if ever needed.
+export const TEACHER_ABSENT_ENABLED = true
 
 // A teacher who is off OR absent is not taking the class that day, so a
 // substitute is needed if students were marked present.
@@ -31,4 +31,23 @@ export function teacherStatusTitle(status, holiday) {
   if (status === 'A') return 'Teacher absent — was due but did not come'
   if (status === 'O') return "Teacher's weekly off"
   return 'Teacher not marked'
+}
+
+// ── per-batch marks ──────────────────────────────────────────────────────────
+// A teacher can be absent for one batch and present for another, so P and A are
+// stored per batch (batch_id set). O is the teacher's weekly off — the whole day
+// — and is stored without a batch (batch_id null), as are older marks made
+// before this existed. For a batch's cell the batch's own mark wins; otherwise
+// the whole-day mark applies.
+export function resolveTeacherStatus(batchMark, dayMark) {
+  return batchMark || dayMark || null
+}
+
+// What saving a batch's teacher cell must do to instructor_attendance.
+//   next      the status now showing in the cell ('P' | 'A' | 'O' | null)
+//   hadDayRow whether a whole-day row exists for the teacher that date
+export function teacherWritePlan(next, hadDayRow) {
+  if (next === 'O') return { upsertDay: 'O', deleteBatch: true, deleteDay: false, upsertBatch: null }
+  if (next === 'P' || next === 'A') return { upsertDay: null, deleteBatch: false, deleteDay: false, upsertBatch: next }
+  return { upsertDay: null, deleteBatch: true, deleteDay: !!hadDayRow, upsertBatch: null }
 }

@@ -15,7 +15,7 @@ import { todayIso } from '../utils/studentLifecycle'
 //   H      holiday for the whole batch (a property of the class, not of one
 //          student)
 //
-// The teacher has a row too: P present, O off (A absent once enabled), and H on
+// The teacher has a row too: P present, A absent, O weekly off, and H on
 // a batch holiday (shown from the day, not stored). A teacher's off day is theirs
 // across every batch they take. When a student is marked present on a day the
 // teacher is off, a list of teachers opens to pick the substitute who took the
@@ -23,7 +23,7 @@ import { todayIso } from '../utils/studentLifecycle'
 // Saving writes the same batch_sessions / session_attendance rows the Batches
 // page does, so both stay in step.
 
-import { TEACHER_ABSENT_ENABLED, isTeacherAway, teacherNextStatus, teacherStatusTitle } from '../utils/teacherAttendance'
+import { TEACHER_ABSENT_ENABLED, isTeacherAway, teacherNextStatus, teacherStatusTitle, resolveTeacherStatus, teacherWritePlan } from '../utils/teacherAttendance'
 
 const DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
 const DAY2 = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -126,7 +126,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   const [reload, setReload] = useState(0)
   const [findQ, setFindQ] = useState('')
   const [tSaved, setTSaved] = useState({})   // 'instructor|date' -> 'P' | 'O'
-  const [tEdits, setTEdits] = useState({})   // 'instructor|date' -> 'P' | 'O' | null (cleared)
+  const [tEdits, setTEdits] = useState({})   // 'instructor|date|batch' -> 'P' | 'A' | 'O' | null (cleared)
   const [instructors, setInstructors] = useState([])   // active teachers, for the substitute list
   const [picker, setPicker] = useState(null) // { b, date, action } — choosing a substitute
   const [focus, setFocus] = useState(null)   // { batchId, date } — jumped to from the pending list
@@ -171,14 +171,14 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
         ncRows = nRes.data || []
       }
       // teachers: who is active (for the substitute list) and who is off / present
-      const tRes = await sb.from('instructor_attendance').select('instructor_id, att_date, status')
+      const tRes = await sb.from('instructor_attendance').select('instructor_id, att_date, status, batch_id')
         .gte('att_date', days[0]).lte('att_date', days[days.length - 1])
       if (tRes.error) throw tRes.error
       const iRes = await sb.from('instructors').select('id, full_name, status').eq('status', 'active').order('full_name')
       if (cancelled) return
 
       const tMap = {}
-      ;(tRes.data || []).forEach(function (r) { tMap[r.instructor_id + '|' + String(r.att_date).slice(0, 10)] = r.status })
+      ;(tRes.data || []).forEach(function (r) { tMap[r.instructor_id + '|' + String(r.att_date).slice(0, 10) + '|' + (r.batch_id || '')] = r.status })
 
       const sMap = {}
       sess.forEach(function (s) {
@@ -248,12 +248,20 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     const s = saved[k]
     return s ? { hol: s.hol, marks: s.marks, nc: s.nc || {}, sub: s.sub || null } : { hol: false, marks: {}, nc: {}, sub: null }
   }
-  // Teacher status for a day: P, O or null (blank).
-  function tStatus(instrId, date) {
-    if (!instrId) return null
-    const k = instrId + '|' + date
+  // The teacher's status for one batch on a day: P, A, O or null (blank). A
+  // teacher can be absent for one batch and present for another, so P and A
+  // belong to the batch; O (weekly off) and older marks cover the whole day.
+  function tKey(b, date) { return b.instructor_id + '|' + date + '|' + b.id }
+  function tStatus(b, date) {
+    if (!b || !b.instructor_id) return null
+    const k = tKey(b, date)
     if (k in tEdits) return tEdits[k]
-    return tSaved[k] || null
+    return resolveTeacherStatus(tSaved[k], tSaved[b.instructor_id + '|' + date + '|'])
+  }
+  // Is this teacher off for the whole day (so can't be a substitute)?
+  function tIsOff(instrId, date) {
+    if (tSaved[instrId + '|' + date + '|'] === 'O') return true
+    return Object.keys(tEdits).some(function (k) { return k.startsWith(instrId + '|' + date + '|') && tEdits[k] === 'O' })
   }
   function anyPresent(b, date) {
     const st = dayState(b.id, date)
@@ -293,7 +301,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   // Run `apply`, but first — if the class's teacher is off that day and no
   // substitute is set yet — ask who took it. Cancelling the list applies nothing.
   function withSubstitute(b, date, apply) {
-    if (b.instructor_id && isTeacherAway(tStatus(b.instructor_id, date)) && !dayState(b.id, date).sub) {
+    if (b.instructor_id && isTeacherAway(tStatus(b, date)) && !dayState(b.id, date).sub) {
       setPicker({ b: b, date: date, action: apply })
       return
     }
@@ -339,16 +347,16 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   function stepTeacher(b, date) {
     if (!canEdit || date > today || !b.instructor_id) return
     if (dayState(b.id, date).hol) return
-    const cur = tStatus(b.instructor_id, date)
+    const cur = tStatus(b, date)
     const next = teacherNextStatus(cur, TEACHER_ABSENT_ENABLED)
-    setTEdits(function (prev) { return { ...prev, [b.instructor_id + '|' + date]: next } })
-    if (isTeacherAway(cur) && !isTeacherAway(next)) {
-      // no longer off: whoever was covering is no longer needed
-      batches.filter(function (x) { return x.instructor_id === b.instructor_id }).forEach(function (x) {
-        if (dayState(x.id, date).sub) editDay(x, date, function (st) { st.sub = null })
-      })
+    setTEdits(function (prev) { return { ...prev, [tKey(b, date)]: next } })
+    if (isTeacherAway(cur) && !isTeacherAway(next) && dayState(b.id, date).sub) {
+      // no longer away for this batch: whoever was covering it is no longer needed
+      editDay(b, date, function (st) { st.sub = null })
     }
-    if (isTeacherAway(next) && anyPresent(b, date) && !dayState(b.id, date).sub) setPicker({ b: b, date: date, action: null })
+    // Absent means the class was due, so always offer the substitute. Off only
+    // asks when students were already marked present.
+    if (isTeacherAway(next) && !dayState(b.id, date).sub && (next === 'A' || anyPresent(b, date))) setPicker({ b: b, date: date, action: null })
   }
   function chooseSubstitute(instrId) {
     const pk = picker
@@ -361,7 +369,10 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   function dirtyDates(b) {
     const out = new Set()
     Object.keys(edits).forEach(function (k) { if (k.startsWith(b.id + '|')) out.add(k.slice(b.id.length + 1)) })
-    if (b.instructor_id) Object.keys(tEdits).forEach(function (k) { if (k.startsWith(b.instructor_id + '|')) out.add(k.slice(b.instructor_id.length + 1)) })
+    if (b.instructor_id) Object.keys(tEdits).forEach(function (k) {
+      const parts = k.split('|')
+      if (parts[0] === b.instructor_id && parts[2] === b.id) out.add(parts[1])
+    })
     return Array.from(out)
   }
 
@@ -371,22 +382,35 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     setSavingId(b.id)
     try {
       for (const date of dates) {
-        // the teacher's own mark for the day (shared across their batches)
-        const tk = (b.instructor_id || '') + '|' + date
+        // the teacher's mark for this batch and day: P / A belong to the batch,
+        // O (weekly off) is the whole day
+        const tk = b.instructor_id ? tKey(b, date) : ''
         if (b.instructor_id && (tk in tEdits)) {
-          const tv = tEdits[tk]
-          if (tv) {
-            const up = await sb.from('instructor_attendance').upsert({ instructor_id: b.instructor_id, att_date: date, status: tv }, { onConflict: 'instructor_id,att_date' })
-            if (up.error) throw up.error
-          } else {
-            const dl = await sb.from('instructor_attendance').delete().eq('instructor_id', b.instructor_id).eq('att_date', date)
-            if (dl.error) throw dl.error
+          const plan = teacherWritePlan(tEdits[tk], tSaved[b.instructor_id + '|' + date + '|'] !== undefined)
+          const ia = function () { return sb.from('instructor_attendance') }
+          if (plan.deleteBatch) {
+            const d1 = await ia().delete().eq('instructor_id', b.instructor_id).eq('att_date', date).eq('batch_id', b.id)
+            if (d1.error) throw d1.error
+          }
+          if (plan.deleteDay || plan.upsertDay) {
+            const d2 = await ia().delete().eq('instructor_id', b.instructor_id).eq('att_date', date).is('batch_id', null)
+            if (d2.error) throw d2.error
+          }
+          if (plan.upsertDay) {
+            const i3 = await ia().insert({ instructor_id: b.instructor_id, att_date: date, status: plan.upsertDay, batch_id: null })
+            if (i3.error) throw i3.error
+          }
+          if (plan.upsertBatch) {
+            const d4 = await ia().delete().eq('instructor_id', b.instructor_id).eq('att_date', date).eq('batch_id', b.id)
+            if (d4.error) throw d4.error
+            const i4 = await ia().insert({ instructor_id: b.instructor_id, att_date: date, status: plan.upsertBatch, batch_id: b.id })
+            if (i4.error) throw i4.error
           }
         }
         if (!edits[b.id + '|' + date]) continue     // only the teacher's mark changed
         const st = edits[b.id + '|' + date]
         const old = saved[b.id + '|' + date]
-        const off = b.instructor_id && isTeacherAway(tStatus(b.instructor_id, date))
+        const off = b.instructor_id && isTeacherAway(tStatus(b, date))
         const sub = off ? (st.sub || null) : null
         const roster = (b.batch_students || []).filter(function (bs) { return memberOn(bs, date) })
         const rows = st.hol ? [] : roster.filter(function (bs) { return !st.nc[bs.enrollment_id] && (st.marks[bs.enrollment_id] === true || st.marks[bs.enrollment_id] === false) })
@@ -567,7 +591,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                             </td>
                             {days.map(function (d) {
                               const hol = dayState(b.id, d).hol
-                              const v = hol ? 'H' : tStatus(b.instructor_id, d)
+                              const v = hol ? 'H' : tStatus(b, d)
                               const tone = v ? TONE[v] : null
                               const disabled = hol || !canEdit || d > today
                               return (
@@ -582,11 +606,11 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                             })}
                             <td colSpan={4} style={{ borderBottom: '1px solid var(--border)' }}></td>
                           </tr>
-                          {days.some(function (d) { return isTeacherAway(tStatus(b.instructor_id, d)) }) && (
+                          {days.some(function (d) { return isTeacherAway(tStatus(b, d)) }) && (
                             <tr>
                               <td style={{ padding: '2px 10px', font: '500 10px var(--font)', color: 'var(--text3)', position: 'sticky', left: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>cover (substitute)</td>
                               {days.map(function (d) {
-                                const off = isTeacherAway(tStatus(b.instructor_id, d))
+                                const off = isTeacherAway(tStatus(b, d))
                                 const sub = dayState(b.id, d).sub
                                 const need = off && !sub && anyPresent(b, d)
                                 const label = sub ? nameOfInstructor(sub) : ''
@@ -671,12 +695,12 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
             <div style={{ padding: '16px 20px 6px' }}>
               <div style={{ font: '700 16px var(--font)' }}>Who took the class?</div>
               <div style={{ font: '500 12px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
-                {picker.b.instructors ? picker.b.instructors.full_name : 'The teacher'} is off on {fmtDate(picker.date)} — {picker.b.name}. Pick the substitute.
+                {picker.b.instructors ? picker.b.instructors.full_name : 'The teacher'} is {tStatus(picker.b, picker.date) === 'A' ? 'absent' : 'off'} on {fmtDate(picker.date)} — {picker.b.name}. Pick the substitute.
               </div>
             </div>
             <div style={{ padding: '8px 20px', maxHeight: '50vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {instructors.filter(function (i) { return i.id !== picker.b.instructor_id }).map(function (i) {
-                const offThen = isTeacherAway(tStatus(i.id, picker.date))
+                const offThen = tIsOff(i.id, picker.date)
                 return (
                   <button key={i.id} type="button" disabled={offThen} onClick={function () { chooseSubstitute(i.id) }}
                     style={{ textAlign: 'left', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', cursor: offThen ? 'not-allowed' : 'pointer', opacity: offThen ? .5 : 1, font: '600 13px var(--font)' }}>
