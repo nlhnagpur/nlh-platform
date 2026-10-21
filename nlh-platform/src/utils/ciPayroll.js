@@ -33,9 +33,11 @@ export function ciCycleBlocks(dates, perCycle, appointedOn) {
 
 // What is payable in `month` (YYYY-MM) for the given students.
 //   students: [{ id, name, dates, perCycle, left, course }]
-// A completed cycle is paid in the month its last class falls in. A short last
-// cycle is paid pro-rata (rate × classes ÷ perCycle) once the student has left;
-// while the student is still going it only shows as in progress.
+// A cycle belongs to the month it STARTS in (its first class): the cycle that
+// began on 7 Sep is September's pay even though it closed on 8 Oct. It is only
+// payable once complete. A short last cycle is paid pro-rata (rate × classes ÷
+// perCycle) once the student has left; while the student is still going it only
+// shows as in progress.
 export function ciCyclePayroll(students, month, rate, appointedOn) {
   const r = Math.max(0, Number(rate) || 0)
   const rows = []
@@ -46,12 +48,12 @@ export function ciCyclePayroll(students, month, rate, appointedOn) {
     const paid = []
     blocks.forEach(function (b, i) {
       const last = i === blocks.length - 1
-      const endMonth = b.end.slice(0, 7)
+      const startMonth = b.start.slice(0, 7)
       if (b.complete) {
-        if (endMonth === month) paid.push({ ...b, amount: Math.round(r) })
+        if (startMonth === month) paid.push({ ...b, amount: Math.round(r) })
       } else if (last) {
         const accrued = Math.round(r * b.count / b.perCycle)
-        if (s.left) { if (endMonth === month) paid.push({ ...b, amount: accrued, partial: true }) }
+        if (s.left) { if (startMonth === month) paid.push({ ...b, amount: accrued, partial: true }) }
         else inProgress.push({ id: s.id, name: s.name, count: b.count, perCycle: b.perCycle, start: b.start, accrued: accrued })
       }
     })

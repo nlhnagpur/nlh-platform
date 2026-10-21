@@ -16,17 +16,24 @@ test('Parth: 25 classes complete one cycle ending 8 Oct; the next has begun', ()
   assert.equal(b[1].count, 2); assert.equal(b[1].complete, false)
 })
 
-test('October payroll: one full ₹1000 per student whose cycle ended in October', () => {
-  const aaisha = PARTH.filter(d => d !== '2026-09-07' && d !== '2026-10-01')   // joined 8 Sep, 24 by 8 Oct + a few more
+test('a cycle is the pay of the month it started in: Parth and Aaisha began in September, so September pays ₹2000', () => {
+  const aaisha = PARTH.filter(d => d !== '2026-09-07' && d !== '2026-10-01')
     .concat(['2026-09-27', '2026-09-28', '2026-10-02'])
-  const r = ciCyclePayroll([
+  const students = [
     { id: 'p', name: 'Parth', dates: PARTH, perCycle: 25 },
     { id: 'a', name: 'Aaisha', dates: aaisha, perCycle: 25 },
-  ], '2026-10', 1000, '2026-09-07')
-  assert.equal(r.rows.length, 2)
-  assert.equal(r.total, 2000)
-  assert.equal(r.inProgress.length, 2)            // both are partway through the next cycle
-  assert.equal(ciCyclePayroll([{ id: 'p', name: 'Parth', dates: PARTH, perCycle: 25 }], '2026-09', 1000, '2026-09-07').total, 0)   // nothing in September
+  ]
+  const sept = ciCyclePayroll(students, '2026-09', 1000, '2026-09-07')
+  assert.equal(sept.rows.length, 2)
+  assert.equal(sept.total, 2000)
+  const oct = ciCyclePayroll(students, '2026-10', 1000, '2026-09-07')
+  assert.equal(oct.total, 0)                       // the second cycle is only just under way
+  assert.equal(oct.inProgress.length, 2)
+})
+
+test('after the CI leaves, the unfinished cycle is paid pro-rata in the month it started (October)', () => {
+  const r = ciCyclePayroll([{ id: 'p', name: 'Parth', dates: PARTH, perCycle: 25, left: true }], '2026-10', 1000, '2026-09-07')
+  assert.equal(r.total, 80)    // only 2 classes (9, 10 Oct) in this fixture: 2/25 × 1000
 })
 
 test('classes before the CI joined are not counted', () => {
@@ -50,7 +57,7 @@ test('a short last cycle is paid pro-rata only once the student has left', () =>
   assert.equal(left.rows[0].blocks[0].partial, true)
 })
 
-test('a cycle that completed in an earlier month is not paid again', () => {
+test('a cycle is never paid in a month other than the one it started in', () => {
   const r = ciCyclePayroll([{ id: 'p', name: 'P', dates: PARTH, perCycle: 25 }], '2026-11', 1000, '2026-09-07')
   assert.equal(r.total, 0)
 })
