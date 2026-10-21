@@ -6,7 +6,7 @@
 
 import { fmtAmt } from '../utils/index.js'
 
-function numToWords(num) {
+export function numToWords(num) {
   if (!num || num === 0) return 'Zero Rupees Only'
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
@@ -284,6 +284,9 @@ function openWin(html) {
     }, 150)
   }
 }
+
+// Print any prepared HTML document through the same hidden-iframe route.
+export function printHtmlDoc(html) { openWin(html) }
 
 // Every document ends here. By default it opens a print window; pass
 // ctx.asHtml to get the markup back instead, so the same document can be
