@@ -3,6 +3,8 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 import { cleanLines, sumLines, linesFromCalc, lineEdited, monthLabel } from '../utils/ciPayrollRun'
+import { countInRange, amountForClasses } from '../utils/ciPayroll'
+import { printCiPaymentSheet } from './ciPaymentSheet'
 
 const PAY_MODES = [['bank_transfer', 'Bank transfer'], ['upi', 'UPI'], ['cash', 'Cash'], ['cheque', 'Cheque']]
 
@@ -48,7 +50,7 @@ async function postPayrollExpense(o) {
 // saved as the month's payroll, and then marked paid.
 //   calcLines: [{ key, label, amount }] — what the system calculated
 //   run:       the saved ci_payroll_runs row for this CI + month, or null
-export default function CiPayrollRun({ instructor, month, calcLines, run, canEdit, onChanged }) {
+export default function CiPayrollRun({ instructor, month, calcLines, run, canEdit, onChanged, datesBySid }) {
   const { currentUser } = useAuth()
   const calcSig = JSON.stringify(calcLines || [])
   const [lines, setLines] = useState([])
@@ -73,6 +75,33 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
   function addLine() { setLines(function (ls) { return ls.concat([{ key: 'add' + Date.now(), label: '', calc: null, amount: 0, added: true }]) }) }
   function removeLine(i) { setLines(function (ls) { return ls.filter(function (_, j) { return j !== i }) }) }
   function resetToCalc() { setLines(linesFromCalc(calcLines)) }
+
+  // Change the dates a student's line covers: the classes taught in that range are
+  // counted again and the amount follows (full rate for a whole cycle, pro-rata
+  // otherwise); the amount can still be typed over afterwards.
+  function setRange(i, from, to) {
+    setLines(function (ls) {
+      return ls.map(function (l, j) {
+        if (j !== i || !l.meta) return l
+        const count = countInRange((datesBySid || {})[l.meta.sid] || [], from, to)
+        return { ...l, meta: { ...l.meta, from: from, to: to, count: count }, amount: amountForClasses(l.meta.rate, count, l.meta.perCycle) }
+      })
+    })
+  }
+
+  function onPrint() {
+    const clean = cleanLines(lines)
+    const rows = []
+    const others = []
+    clean.forEach(function (l) {
+      if (l.meta && l.meta.sid) {
+        const all = (datesBySid || {})[l.meta.sid] || []
+        const dates = all.filter(function (d) { return d >= l.meta.from && d <= l.meta.to })
+        rows.push({ name: l.label, course: l.meta.course || '', blocks: [{ dates: dates, count: l.meta.count, perCycle: l.meta.perCycle, amount: l.amount, partial: l.meta.count < l.meta.perCycle }] })
+      } else others.push({ label: l.label, amount: l.amount })
+    })
+    printCiPaymentSheet({ ciName: instructor.full_name, date: (run && run.paid_on) || new Date(), rows: rows, otherLines: others })
+  }
 
   async function saveRun(extra) {
     const clean = cleanLines(lines)
@@ -124,7 +153,19 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
               {editable && l.added
                 ? <input value={l.label} placeholder="What is this for?" onChange={function (e) { setLabel(i, e.target.value) }} style={{ width: '100%', fontSize: 13 }} />
                 : <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{l.label}</div>}
-              {lineEdited(l) && <div style={{ font: '500 10px var(--font)', color: '#92400e', marginTop: 2 }}>edited — calculated {rupees(l.calc)}</div>}
+              {l.meta && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4, font: '500 11px var(--font)', color: 'var(--text3)' }}>
+                  {editable
+                    ? <>
+                        <input type="date" value={l.meta.from} onChange={function (e) { setRange(i, e.target.value, l.meta.to) }} style={{ fontSize: 11 }} />
+                        <span>to</span>
+                        <input type="date" value={l.meta.to} onChange={function (e) { setRange(i, l.meta.from, e.target.value) }} style={{ fontSize: 11 }} />
+                      </>
+                    : <span>{fmtDate(l.meta.from)} to {fmtDate(l.meta.to)}</span>}
+                  <span style={{ color: 'var(--text2)', fontWeight: 600 }}>· {l.meta.count} of {l.meta.perCycle} classes</span>
+                </div>
+              )}
+              {lineEdited(l) && <div style={{ font: '500 10px var(--font)', color: '#92400e', marginTop: 2 }}>edited — calculated {rupees(l.calc)}{l.meta && l.meta.origFrom && (l.meta.from !== l.meta.origFrom || l.meta.to !== l.meta.origTo) ? ' for ' + fmtDate(l.meta.origFrom) + ' to ' + fmtDate(l.meta.origTo) : ''}</div>}
             </div>
             {editable
               ? <input type="number" value={l.amount} onChange={function (e) { setAmount(i, e.target.value) }}
@@ -140,6 +181,7 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '8px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg2)' }}>
           <button className="btn" style={{ fontSize: 11 }} onClick={addLine}>+ Add line</button>
           <button className="btn" style={{ fontSize: 11 }} onClick={resetToCalc}>↺ Reset to calculated</button>
+          <button className="btn" style={{ fontSize: 11 }} onClick={onPrint}>🖨 Payment sheet</button>
           <input value={notes} onChange={function (e) { setNotes(e.target.value) }} placeholder="Note for this month (optional)" style={{ flex: 1, minWidth: 160, fontSize: 12 }} />
         </div>
       )}
@@ -162,7 +204,10 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
             {run.expense_id ? ' · posted to Accounting' : ' · not posted to Accounting'}
             {run.paid_amount !== run.total ? ' · payable was ' + rupees(run.total) : ''}
           </div>
-          {canEdit && !run.expense_id && <button className="btn" style={{ fontSize: 11 }} disabled={saving} onClick={reopen}>Reopen</button>}
+          <span style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" style={{ fontSize: 11 }} onClick={onPrint}>🖨 Payment sheet</button>
+            {canEdit && !run.expense_id && <button className="btn" style={{ fontSize: 11 }} disabled={saving} onClick={reopen}>Reopen</button>}
+          </span>
         </div>
       ) : canEdit && (
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '10px 16px', borderTop: '1px solid var(--border)' }}>

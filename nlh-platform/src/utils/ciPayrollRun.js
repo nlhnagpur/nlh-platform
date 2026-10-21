@@ -18,7 +18,7 @@ function toInt(v) {
 export function cleanLines(lines) {
   return (lines || [])
     .map(function (l, i) {
-      return { key: l.key || 'x' + i, label: String(l.label || '').trim(), calc: l.calc == null ? null : toInt(l.calc), amount: toInt(l.amount), added: !!l.added }
+      return { key: l.key || 'x' + i, label: String(l.label || '').trim(), calc: l.calc == null ? null : toInt(l.calc), amount: toInt(l.amount), added: !!l.added, meta: l.meta || null }
     })
     .filter(function (l) { return l.label || l.amount })
 }
@@ -30,7 +30,7 @@ export function sumLines(lines) {
 // Calculated lines as editable lines: the amount starts equal to the calculation.
 export function linesFromCalc(calcLines) {
   return (calcLines || []).map(function (l) {
-    return { key: l.key, label: l.label, calc: toInt(l.amount), amount: toInt(l.amount), added: false }
+    return { key: l.key, label: l.label, calc: toInt(l.amount), amount: toInt(l.amount), added: false, meta: l.meta ? { ...l.meta, origFrom: l.meta.from, origTo: l.meta.to } : null }
   })
 }
 
@@ -41,5 +41,8 @@ export function runStatus(run) {
 }
 
 export function lineEdited(l) {
-  return !l.added && l.calc != null && toInt(l.amount) !== toInt(l.calc)
+  if (l.added) return false
+  const m = l.meta
+  const datesMoved = !!(m && m.origFrom && (m.from !== m.origFrom || m.to !== m.origTo))
+  return datesMoved || (l.calc != null && toInt(l.amount) !== toInt(l.calc))
 }

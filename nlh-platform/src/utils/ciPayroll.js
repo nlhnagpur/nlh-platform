@@ -19,10 +19,13 @@ function uniqSorted(dates) {
 
 // Split the classes the CI taught this student into cycles of `perCycle`.
 // The last block may be short (still running, or the student left).
-export function ciCycleBlocks(dates, perCycle, appointedOn) {
+// `paidThrough`: classes up to and including this date are already paid (a saved
+// payroll line covered them), so the next cycle starts after it.
+export function ciCycleBlocks(dates, perCycle, appointedOn, paidThrough) {
   const n = perCycle > 0 ? perCycle : CI_CYCLE_SESSIONS
   const from = appointedOn ? String(appointedOn).slice(0, 10) : ''
-  const all = uniqSorted(dates).filter(function (d) { return !from || d >= from })
+  const done = paidThrough ? String(paidThrough).slice(0, 10) : ''
+  const all = uniqSorted(dates).filter(function (d) { return (!from || d >= from) && (!done || d > done) })
   const blocks = []
   for (let i = 0; i < all.length; i += n) {
     const part = all.slice(i, i + n)
@@ -44,16 +47,16 @@ export function ciCyclePayroll(students, month, rate, appointedOn) {
   const inProgress = []
   let total = 0
   ;(students || []).forEach(function (s) {
-    const blocks = ciCycleBlocks(s.dates, s.perCycle, appointedOn)
+    const blocks = ciCycleBlocks(s.dates, s.perCycle, appointedOn, s.paidThrough)
     const paid = []
     blocks.forEach(function (b, i) {
       const last = i === blocks.length - 1
       const startMonth = b.start.slice(0, 7)
       if (b.complete) {
-        if (startMonth === month) paid.push({ ...b, amount: Math.round(r) })
+        if (startMonth === month) paid.push({ ...b, amount: Math.round(r), rate: r })
       } else if (last) {
         const accrued = Math.round(r * b.count / b.perCycle)
-        if (s.left) { if (startMonth === month) paid.push({ ...b, amount: accrued, partial: true }) }
+        if (s.left) { if (startMonth === month) paid.push({ ...b, amount: accrued, partial: true, rate: r }) }
         else inProgress.push({ id: s.id, name: s.name, count: b.count, perCycle: b.perCycle, start: b.start, accrued: accrued })
       }
     })
@@ -78,4 +81,18 @@ export function datesByMonth(dates) {
   return groups.map(function (g) {
     return '( ' + MONTHS[Number(g.key.slice(5, 7)) - 1] + '-' + g.key.slice(0, 4) + ', ' + g.days.join(',') + ' )'
   }).join(' ')
+}
+
+// Classes among `dates` that fall from `from` to `to` (both inclusive).
+export function countInRange(dates, from, to) {
+  const a = from ? String(from).slice(0, 10) : ''
+  const b = to ? String(to).slice(0, 10) : ''
+  return uniqSorted(dates).filter(function (d) { return (!a || d >= a) && (!b || d <= b) }).length
+}
+
+// Pay for `count` classes of a `perCycle`-class cycle: the full rate for a whole
+// cycle, pro-rata otherwise.
+export function amountForClasses(rate, count, perCycle) {
+  const n = perCycle > 0 ? perCycle : CI_CYCLE_SESSIONS
+  return Math.round((Number(rate) || 0) * (Number(count) || 0) / n)
 }

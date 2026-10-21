@@ -28,3 +28,12 @@ test('run status', () => {
   assert.equal(runStatus({ status: 'draft' }), 'draft')
   assert.equal(runStatus({ status: 'paid' }), 'paid')
 })
+
+test('a student line keeps its date range through clean and calc; moving the dates counts as edited', () => {
+  const calc = [{ key: 'c', label: 'Parth', amount: 1000, meta: { sid: 'e1', from: '2026-09-07', to: '2026-10-08', count: 25, perCycle: 25, rate: 1000 } }]
+  const lines = linesFromCalc(calc)
+  assert.equal(lineEdited(lines[0]), false)
+  lines[0].meta = { ...lines[0].meta, to: '2026-10-05' }
+  assert.equal(lineEdited(lines[0]), true)
+  assert.equal(cleanLines(lines)[0].meta.sid, 'e1')
+})

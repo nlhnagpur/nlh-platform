@@ -8,7 +8,6 @@ import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
 import { ciCyclePayroll, CI_CYCLE_SESSIONS } from '../utils/ciPayroll'
 import { fetchAllRows } from '../utils/studentLifecycle'
-import { printCiPaymentSheet } from '../components/ciPaymentSheet'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
 
@@ -82,7 +81,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
-  const [payrollCycle,       setPayrollCycle]       = useState({ rows: [], inProgress: [], total: 0 })   // per-student-cycle pay for the month
+  const [payrollCycle,       setPayrollCycle]       = useState({ rows: [], inProgress: [], total: 0, datesBySid: {} })   // per-student-cycle pay for the month
   const [payrollRun,         setPayrollRun]         = useState(null)   // saved ci_payroll_runs row for this CI + month
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
   const [payrollExtras,      setPayrollExtras]      = useState({ incentive: 0, misc: 0, misc_note: '' })   // this month's incentive / misc
@@ -201,6 +200,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           .select('id, session_date, batch_id, batches(id, name, sku_id, skus(level_name, courses(group_name)))')
           .eq('instructor_id', instructor.id)
           .eq('is_substitute', false)
+          .eq('is_holiday', false)   // a holiday is not a class taken, so it is never paid
           .gte('session_date', startDate)
           .lte('session_date', endDate),
         sb.from('instructor_courses')
@@ -251,7 +251,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       }
 
       // ── Per student, per cycle: classes this CI taught each student, in cycles of 25 ──
-      var cycleOut = { rows: [], inProgress: [], total: 0 }
+      var cycleOut = { rows: [], inProgress: [], total: 0, datesBySid: {} }
+      // Months already saved before this one say how far each student has been paid:
+      // the next cycle starts the day after the last date a saved line covered.
+      var paidThrough = {}
       // Appointments are read regardless of status, and batches from the classes the CI
       // actually taught — so pay survives the CI being relieved and the batch reassigned.
       var { data: cycleAppts } = await sb.from('instructor_courses')
@@ -266,6 +269,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             .eq('batch_sessions.is_substitute', false)
             .eq('batch_sessions.is_holiday', false)
             .range(from, to)
+        })
+        var { data: priorRuns } = await sb.from('ci_payroll_runs').select('lines').eq('instructor_id', instructor.id).lt('month', payrollMonth)
+        ;(priorRuns || []).forEach(function (pr) {
+          ;(pr.lines || []).forEach(function (l) {
+            if (l.meta && l.meta.sid && l.meta.to && (!paidThrough[l.meta.sid] || l.meta.to > paidThrough[l.meta.sid])) paidThrough[l.meta.sid] = l.meta.to
+          })
         })
         var enrIds = Array.from(new Set((attRows || []).map(function (x) { return x.enrollment_id })))
         var enrById = {}
@@ -289,11 +298,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             // appointment applies; with a single per-cycle appointment it covers them all.
             var skuOf = bt.sku_id || en.sku_id
             if (cycleAppts.length > 1 && skuOf !== a.sku_id) return
-            var key = sess.batch_id + '|' + x.enrollment_id
-            var roster = rosterByKey[key] || {}
+            var key = x.enrollment_id          // one entry per student, whichever of the CI's batches they were in
+            var roster = rosterByKey[sess.batch_id + '|' + x.enrollment_id] || {}
+            var gone = !!(ciGone || bt.instructor_id !== instructor.id || bt.is_active === false || roster.removed_at || en.completed_at || en.status === 'dropped')
             if (!byKey[key]) {
               byKey[key] = {
                 id: key,
+                paidThrough: paidThrough[key] || '',
                 name: (en.students && en.students.full_name) || '—',
                 course: (en.skus && en.skus.courses && en.skus.courses.group_name) || (bt.skus && bt.skus.courses && bt.skus.courses.group_name) || '',
                 dates: [],
@@ -302,11 +313,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 perCycle: CI_CYCLE_SESSIONS,
                 // done with this CI: the CI is relieved, the batch now has another CI or is
                 // closed, or the student left / finished
-                left: !!(ciGone || bt.instructor_id !== instructor.id || bt.is_active === false || roster.removed_at || en.completed_at || en.status === 'dropped'),
+                left: gone,
               }
-            }
+            } else if (gone) byKey[key].left = true
             byKey[key].dates.push(sess.session_date)
           })
+          Object.keys(byKey).forEach(function (k) { cycleOut.datesBySid[k] = byKey[k].dates })
           var res = ciCyclePayroll(Object.keys(byKey).map(function (k) { return byKey[k] }), payrollMonth, a.remuneration_rate, a.appointed_at)
           cycleOut.rows = cycleOut.rows.concat(res.rows)
           cycleOut.inProgress = cycleOut.inProgress.concat(res.inProgress)
@@ -1553,7 +1565,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               perStudentMonthRows.forEach(function (rw) { calcLines.push({ key: 'psm:' + rw.batchId, label: rw.batchName + ' — ' + rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
               payrollCycle.rows.forEach(function (rw) {
                 rw.blocks.forEach(function (b, bi) {
-                  calcLines.push({ key: 'cyc:' + rw.id + ':' + bi, label: rw.name + ' — ' + fmtDate(b.start) + ' to ' + fmtDate(b.end) + ' (' + b.count + ' of ' + b.perCycle + ' classes' + (b.partial ? ', pro-rata' : '') + ')', amount: b.amount })
+                  calcLines.push({
+                    key: 'cyc:' + rw.id + ':' + bi, label: rw.name, amount: b.amount,
+                    meta: { sid: rw.id, from: b.start, to: b.end, count: b.count, perCycle: b.perCycle, rate: b.rate, course: rw.course },
+                  })
                 })
               })
               monthlyRows.forEach(function (a) { calcLines.push({ key: 'mo:' + a.id, label: ((a.skus && a.skus.courses && a.skus.courses.group_name) || 'Monthly') + ' — monthly fixed', amount: a.remuneration_rate || 0 }) })
@@ -1715,13 +1730,6 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
                       <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>Per Student / Cycle</span>
-                        <button className="btn" style={{ fontSize: 11, padding: '2px 10px', textTransform: 'none' }}
-                          onClick={function () {
-                            printCiPaymentSheet({
-                              ciName: instructor.full_name, date: new Date(), rows: payrollCycle.rows,
-                              extra: incentive + misc, extraNote: payrollExtras.misc_note || '',
-                            })
-                          }}>🖨 Payment sheet</button>
                       </div>
                       {payrollCycle.rows.map(function (row) {
                         return row.blocks.map(function (b, bi) {
@@ -1889,7 +1897,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   </div>
 
                   {/* ── Payment for the month: editable amounts, saved, marked paid ── */}
-                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun}
+                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun} datesBySid={payrollCycle.datesBySid}
                     canEdit={canEditPayroll} onChanged={function (saved) { setPayrollRun(saved) }} />
                 </>
               )

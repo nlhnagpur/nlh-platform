@@ -15,7 +15,8 @@ function dmy(d) {
   return String(t.getDate()).padStart(2, '0') + '.' + String(t.getMonth() + 1).padStart(2, '0') + '.' + t.getFullYear()
 }
 
-// sheet: { ciName, date, rows:[{ name, course, blocks:[{dates,count,perCycle,amount,partial}] }], extra, extraNote }
+// sheet: { ciName, date, rows:[{ name, course, blocks:[{dates,count,perCycle,amount,partial}] }],
+//          otherLines:[{label, amount}] (or a single `extra` + `extraNote`) }
 export function ciPaymentSheetHtml(sheet) {
   let n = 0
   let total = 0
@@ -29,12 +30,16 @@ export function ciPaymentSheetHtml(sheet) {
         '<td class="r">' + money(b.amount) + '</td></tr>')
     })
   })
+  const others = (sheet.otherLines || []).slice()
   const extra = Math.round(Number(sheet.extra) || 0)
-  if (extra) {
+  if (extra) others.push({ label: (extra < 0 ? 'Deduction' : 'Extra') + (sheet.extraNote ? ' — ' + sheet.extraNote : ''), amount: extra })
+  others.forEach(function (o) {
+    const amt = Math.round(Number(o.amount) || 0)
+    if (!amt) return
     n++
-    total += extra
-    lines.push('<tr><td class="c">' + n + '</td><td>' + (extra < 0 ? 'Deduction' : 'Extra') + (sheet.extraNote ? ' — ' + esc(sheet.extraNote) : '') + '</td><td></td><td class="r">' + money(extra) + '</td></tr>')
-  }
+    total += amt
+    lines.push('<tr><td class="c">' + n + '</td><td>' + esc(o.label) + '</td><td></td><td class="r">' + money(amt) + '</td></tr>')
+  })
   const html = '<!doctype html><html><head><meta charset="utf-8"><title>CI Payment Sheet</title><style>' +
     '@page{size:A4;margin:12mm}body{font:12px "Courier New",monospace;color:#111;margin:0}' +
     'table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:5px 7px;vertical-align:middle}' +

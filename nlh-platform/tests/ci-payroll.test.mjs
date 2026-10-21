@@ -70,3 +70,27 @@ test('own cycle length is respected', () => {
 test('dates listed by month, in the sheet’s style', () => {
   assert.equal(datesByMonth(['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-03']), '( Sept-2026, 29,30 ) ( Oct-2026, 1,3 )')
 })
+
+import { countInRange, amountForClasses } from '../src/utils/ciPayroll.js'
+
+test('classes counted between two dates, inclusive', () => {
+  assert.equal(countInRange(PARTH, '2026-09-07', '2026-10-08'), 25)
+  assert.equal(countInRange(PARTH, '2026-09-07', '2026-10-01'), 20)
+  assert.equal(countInRange(PARTH, '2026-10-02', '2026-10-01'), 0)
+})
+
+test('amount for a date range: whole cycle is the full rate, a shorter range is pro-rata', () => {
+  assert.equal(amountForClasses(1000, 25, 25), 1000)
+  assert.equal(amountForClasses(1000, 20, 25), 800)
+  assert.equal(amountForClasses(1000, 9, 25), 360)
+})
+
+test('paid-through date: the next cycle starts after the last date already paid', () => {
+  // September's line was saved as paid to 5 Oct, so the next cycle starts on 6 Oct
+  const b = ciCycleBlocks(PARTH, 25, '2026-09-07', '2026-10-05')
+  assert.equal(b.length, 1)
+  assert.equal(b[0].start, '2026-10-06')
+  assert.equal(b[0].count, PARTH.filter(d => d > '2026-10-05').length)
+  const none = ciCycleBlocks(PARTH, 25, '2026-09-07', '')
+  assert.equal(none[0].start, '2026-09-07')
+})
