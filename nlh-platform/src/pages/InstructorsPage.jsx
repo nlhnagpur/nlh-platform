@@ -272,7 +272,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         var rosterByKey = {}
         if (enrIds.length) {
           var { data: enrRows } = await sb.from('enrollments')
-            .select('id, sessions_per_cycle, completed_at, status, students(full_name)').in('id', enrIds)
+            .select('id, sku_id, sessions_per_cycle, completed_at, status, students(full_name), skus(courses(group_name))').in('id', enrIds)
           ;(enrRows || []).forEach(function (e) { enrById[e.id] = e })
           var { data: bsRows2 } = await sb.from('batch_students').select('batch_id, enrollment_id, removed_at').in('enrollment_id', enrIds)
           ;(bsRows2 || []).forEach(function (x) { rosterByKey[x.batch_id + '|' + x.enrollment_id] = x })
@@ -283,15 +283,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           ;(attRows || []).forEach(function (x) {
             var sess = x.batch_sessions
             var bt = sess && sess.batches
-            if (!bt || bt.sku_id !== a.sku_id) return
-            var key = sess.batch_id + '|' + x.enrollment_id
+            if (!bt) return
             var en = enrById[x.enrollment_id] || {}
+            // A batch often has no level of its own, so the student's level decides which
+            // appointment applies; with a single per-cycle appointment it covers them all.
+            var skuOf = bt.sku_id || en.sku_id
+            if (cycleAppts.length > 1 && skuOf !== a.sku_id) return
+            var key = sess.batch_id + '|' + x.enrollment_id
             var roster = rosterByKey[key] || {}
             if (!byKey[key]) {
               byKey[key] = {
                 id: key,
                 name: (en.students && en.students.full_name) || '—',
-                course: (bt.skus && bt.skus.courses && bt.skus.courses.group_name) || '',
+                course: (en.skus && en.skus.courses && en.skus.courses.group_name) || (bt.skus && bt.skus.courses && bt.skus.courses.group_name) || '',
                 dates: [],
                 perCycle: en.sessions_per_cycle || CI_CYCLE_SESSIONS,
                 // done with this CI: the CI is relieved, the batch now has another CI or is
