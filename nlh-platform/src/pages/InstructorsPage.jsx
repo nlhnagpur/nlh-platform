@@ -247,40 +247,56 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
       // ── Per student, per cycle: classes this CI taught each student, in cycles of 25 ──
       var cycleOut = { rows: [], inProgress: [], total: 0 }
-      var cycleAppts = (apptRes.data || []).filter(function (a) { return a.remuneration_mode === 'per_student_cycle' })
-      if (cycleAppts.length) {
-        var { data: ciBatches } = await sb.from('batches')
-          .select('id, sku_id, skus(courses(group_name))').eq('instructor_id', instructor.id)
-        var { data: ciRoster } = await sb.from('batch_students')
-          .select('batch_id, enrollment_id, removed_at, enrollments(id, sessions_per_cycle, completed_at, status, students(full_name))')
-          .in('batch_id', (ciBatches || []).map(function (b) { return b.id }))
+      // Appointments are read regardless of status, and batches from the classes the CI
+      // actually taught — so pay survives the CI being relieved and the batch reassigned.
+      var { data: cycleAppts } = await sb.from('instructor_courses')
+        .select('id, sku_id, remuneration_rate, appointed_at')
+        .eq('instructor_id', instructor.id).eq('remuneration_mode', 'per_student_cycle')
+      if (cycleAppts && cycleAppts.length) {
         var attRows = await fetchAllRows(function (from, to) {
           return sb.from('session_attendance')
-            .select('enrollment_id, batch_sessions!inner(session_date, batch_id, instructor_id, is_substitute, is_holiday)')
+            .select('enrollment_id, batch_sessions!inner(session_date, batch_id, instructor_id, is_substitute, is_holiday, batches(sku_id, instructor_id, is_active, skus(courses(group_name))))')
             .eq('attended', true)
             .eq('batch_sessions.instructor_id', instructor.id)
             .eq('batch_sessions.is_substitute', false)
             .eq('batch_sessions.is_holiday', false)
             .range(from, to)
         })
+        var enrIds = Array.from(new Set((attRows || []).map(function (x) { return x.enrollment_id })))
+        var enrById = {}
+        var rosterByKey = {}
+        if (enrIds.length) {
+          var { data: enrRows } = await sb.from('enrollments')
+            .select('id, sessions_per_cycle, completed_at, status, students(full_name)').in('id', enrIds)
+          ;(enrRows || []).forEach(function (e) { enrById[e.id] = e })
+          var { data: bsRows2 } = await sb.from('batch_students').select('batch_id, enrollment_id, removed_at').in('enrollment_id', enrIds)
+          ;(bsRows2 || []).forEach(function (x) { rosterByKey[x.batch_id + '|' + x.enrollment_id] = x })
+        }
+        var ciGone = !!instructor.left_at || (instructor.status && instructor.status !== 'active')
         cycleAppts.forEach(function (a) {
-          var apptBatchIds = (ciBatches || []).filter(function (b) { return b.sku_id === a.sku_id }).map(function (b) { return b.id })
-          var students = []
-          ;(ciRoster || []).filter(function (bs) { return apptBatchIds.indexOf(bs.batch_id) >= 0 && bs.enrollments }).forEach(function (bs) {
-            var en = bs.enrollments
-            var dates = (attRows || []).filter(function (x) { return x.enrollment_id === bs.enrollment_id && x.batch_sessions && x.batch_sessions.batch_id === bs.batch_id })
-              .map(function (x) { return x.batch_sessions.session_date })
-            var b = (ciBatches || []).find(function (x) { return x.id === bs.batch_id })
-            students.push({
-              id: bs.enrollment_id,
-              name: (en.students && en.students.full_name) || '—',
-              course: (b && b.skus && b.skus.courses && b.skus.courses.group_name) || '',
-              dates: dates,
-              perCycle: en.sessions_per_cycle || CI_CYCLE_SESSIONS,
-              left: !!(bs.removed_at || en.completed_at || en.status === 'dropped'),
-            })
+          var byKey = {}
+          ;(attRows || []).forEach(function (x) {
+            var sess = x.batch_sessions
+            var bt = sess && sess.batches
+            if (!bt || bt.sku_id !== a.sku_id) return
+            var key = sess.batch_id + '|' + x.enrollment_id
+            var en = enrById[x.enrollment_id] || {}
+            var roster = rosterByKey[key] || {}
+            if (!byKey[key]) {
+              byKey[key] = {
+                id: key,
+                name: (en.students && en.students.full_name) || '—',
+                course: (bt.skus && bt.skus.courses && bt.skus.courses.group_name) || '',
+                dates: [],
+                perCycle: en.sessions_per_cycle || CI_CYCLE_SESSIONS,
+                // done with this CI: the CI is relieved, the batch now has another CI or is
+                // closed, or the student left / finished
+                left: !!(ciGone || bt.instructor_id !== instructor.id || bt.is_active === false || roster.removed_at || en.completed_at || en.status === 'dropped'),
+              }
+            }
+            byKey[key].dates.push(sess.session_date)
           })
-          var res = ciCyclePayroll(students, payrollMonth, a.remuneration_rate, a.appointed_at)
+          var res = ciCyclePayroll(Object.keys(byKey).map(function (k) { return byKey[k] }), payrollMonth, a.remuneration_rate, a.appointed_at)
           cycleOut.rows = cycleOut.rows.concat(res.rows)
           cycleOut.inProgress = cycleOut.inProgress.concat(res.inProgress)
           cycleOut.total += res.total
