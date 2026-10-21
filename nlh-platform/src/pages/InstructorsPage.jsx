@@ -297,7 +297,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 name: (en.students && en.students.full_name) || '—',
                 course: (en.skus && en.skus.courses && en.skus.courses.group_name) || (bt.skus && bt.skus.courses && bt.skus.courses.group_name) || '',
                 dates: [],
-                perCycle: en.sessions_per_cycle || CI_CYCLE_SESSIONS,
+                // the CI's cycle is always 25 classes; the student's own cycle length (set at each
+                // renewal, e.g. 20 for one month) is a fee matter and applies only to their current cycle
+                perCycle: CI_CYCLE_SESSIONS,
                 // done with this CI: the CI is relieved, the batch now has another CI or is
                 // closed, or the student left / finished
                 left: !!(ciGone || bt.instructor_id !== instructor.id || bt.is_active === false || roster.removed_at || en.completed_at || en.status === 'dropped'),
