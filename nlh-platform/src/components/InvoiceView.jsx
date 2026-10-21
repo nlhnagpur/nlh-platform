@@ -888,17 +888,20 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
             </div>
 
             {/* payment + totals */}
-            <div id="inv-summary" style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8, alignItems:'start', breakInside:'avoid' }}>
+            <div id="inv-summary" style={{ display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:8, alignItems:'stretch', breakInside:'avoid' }}>
               {/* payment */}
-              <div style={{ background:'linear-gradient(135deg,#FFF7DA,#FFE89B)', borderRadius:10, padding:'10px 12px', position:'relative', overflow:'hidden', display:'flex', flexDirection:'column' }}>
+              <div style={{ background:'linear-gradient(135deg,#FFF7DA,#FFE89B)', borderRadius:10, padding:'8px 10px', position:'relative', overflow:'hidden', display:'flex', flexDirection:'column', justifyContent:'space-between' }}>
                 <div style={{ position:'absolute', top:0, bottom:0, left:0, width:3, background:'#F59E0B' }} />
-                <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:3 }}>Payment Details</div>
-                <div style={{ font:'500 9px "DM Mono",monospace', color:'#5C5A54', marginBottom:8, letterSpacing:'.02em' }}>NEFT / IMPS / UPI accepted</div>
-                <div style={{ background:'#fff', borderRadius:8, padding:'10px 12px', display:'grid', gridTemplateColumns:'1fr 100px', gap:12, boxShadow:'0 1px 3px rgba(0,0,0,.06)', alignItems:'center' }}>
+                <div style={{ background:'#fff', borderRadius:8, padding:'7px 12px 8px', boxShadow:'0 1px 3px rgba(0,0,0,.06)' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:8, paddingBottom:5, marginBottom:6, borderBottom:'1px dashed #E8D9A8' }}>
+                  <span style={{ font:'700 8px "DM Mono",monospace', color:'#D97706', textTransform:'uppercase', letterSpacing:'.1em' }}>Payment Details</span>
+                  <span style={{ font:'500 8.5px "DM Mono",monospace', color:'#5C5A54', letterSpacing:'.02em' }}>NEFT / IMPS / UPI accepted</span>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 84px', gap:12, alignItems:'center' }}>
                   <div>
                     <div style={{ font:'700 12px "DM Sans",sans-serif', color:'#1E40AF', marginBottom:2 }}>🏦 IDFC First Bank</div>
-                    <div style={{ font:'500 9.5px "DM Mono",monospace', color:'#5C5A54', marginBottom:7 }}>Byramji Town Branch, Nagpur</div>
-                    <div style={{ display:'grid', gridTemplateColumns:'38px 1fr', gap:'5px 10px', alignItems:'center' }}>
+                    <div style={{ font:'500 9.5px "DM Mono",monospace', color:'#5C5A54', marginBottom:5 }}>Byramji Town Branch, Nagpur</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'38px 1fr', gap:'3px 10px', alignItems:'center' }}>
                       <span style={{ color:'#9C9A92', textTransform:'uppercase', font:'600 9px "DM Mono",monospace' }}>A/C</span>
                       <span style={{ color:'#1A1916', font:'700 14px "DM Mono",monospace', letterSpacing:'.03em' }}>10278096847</span>
                       <span style={{ color:'#9C9A92', textTransform:'uppercase', font:'600 9px "DM Mono",monospace' }}>IFSC</span>
@@ -906,13 +909,14 @@ export default function InvoiceView({ order, onClose, onCancelled, currentRole, 
                     </div>
                   </div>
                   <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                    <div style={{ font:'700 8px "DM Mono",monospace', color:'#1E40AF', textTransform:'uppercase', letterSpacing:'.08em', textAlign:'center' }}>Scan &amp; Pay</div>
-                    <img src="/nlh-upi-qr.png" alt="QR" style={{ width:98, height:98, background:'#fff', borderRadius:6, padding:3, border:'2px solid #1E40AF', objectFit:'contain' }} />
+                    <div style={{ font:'700 7.5px "DM Mono",monospace', color:'#1E40AF', textTransform:'uppercase', letterSpacing:'.08em', textAlign:'center' }}>Scan &amp; Pay</div>
+                    <img src="/nlh-upi-qr.png" alt="QR" style={{ width:76, height:76, background:'#fff', borderRadius:6, padding:2, border:'2px solid #1E40AF', objectFit:'contain' }} />
                   </div>
                 </div>
+                </div>
                 {/* UPI — full-width strip directly under the bank card */}
-                <div style={{ paddingTop:7 }}>
-                  <div style={{ background:'#EEEDFE', borderRadius:7, padding:'7px 12px', font:'700 11px "DM Mono",monospace', color:'#534AB7', textAlign:'center', letterSpacing:'.01em' }}>📱 UPI: newlearninghorizons@idfcbank</div>
+                <div style={{ paddingTop:6 }}>
+                  <div style={{ background:'#EEEDFE', borderRadius:7, padding:'5px 12px', font:'700 11px "DM Mono",monospace', color:'#534AB7', textAlign:'center', letterSpacing:'.01em' }}>📱 UPI: newlearninghorizons@idfcbank</div>
                 </div>
               </div>
 

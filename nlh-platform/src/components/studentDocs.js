@@ -99,24 +99,26 @@ function shell(opts) {
   /* margin-top:auto pushes the totals/bank block down so it sits against the
      footer however few items there are — a receipt has only one line, and
      without this it floated directly under it leaving the page bottom-heavy. */
-  .pt{display:grid;grid-template-columns:1.1fr 1fr;gap:8px;align-items:start;margin-top:auto}
+  .pt{display:grid;grid-template-columns:1.1fr 1fr;gap:8px;align-items:stretch;margin-top:auto}
   /* mascot fills the gap the anchoring opens up */
   .mascot{flex:1;display:flex;align-items:center;justify-content:center;pointer-events:none;min-height:0}
   .mascot img{width:44%;max-width:290px;opacity:.16;object-fit:contain}
-  .pay{background:linear-gradient(135deg,#FFF7DA,#FFE89B);border-radius:10px;padding:10px 12px;position:relative;overflow:hidden;display:flex;flex-direction:column}
+  .pay{background:linear-gradient(135deg,#FFF7DA,#FFE89B);border-radius:10px;padding:8px 10px;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between}
   .pay .bl{position:absolute;top:0;bottom:0;left:0;width:3px;background:#F59E0B}
-  .pay .h{font:700 7.5px 'DM Mono';color:#D97706;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}
-  .pay .sub{font:500 9px 'DM Mono';color:#5C5A54;margin-bottom:8px}
-  .pay .card{background:#fff;border-radius:8px;padding:10px 12px;display:grid;grid-template-columns:1fr 100px;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);align-items:center}
+  .pay .card{background:#fff;border-radius:8px;padding:7px 12px 8px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .pay .ch{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding-bottom:5px;margin-bottom:6px;border-bottom:1px dashed #E8D9A8}
+  .pay .h{font:700 8px 'DM Mono';color:#D97706;text-transform:uppercase;letter-spacing:.1em}
+  .pay .sub{font:500 8.5px 'DM Mono';color:#5C5A54}
+  .pay .cb{display:grid;grid-template-columns:1fr 84px;gap:12px;align-items:center}
   .pay .bank{font:700 12px 'DM Sans';color:#1E40AF;margin-bottom:2px}
-  .pay .br{font:500 9.5px 'DM Mono';color:#5C5A54;margin-bottom:7px}
-  .pay .grid{display:grid;grid-template-columns:38px 1fr;gap:5px 10px;align-items:center}
+  .pay .br{font:500 9.5px 'DM Mono';color:#5C5A54;margin-bottom:5px}
+  .pay .grid{display:grid;grid-template-columns:38px 1fr;gap:3px 10px;align-items:center}
   .pay .grid .k{color:#9C9A92;text-transform:uppercase;font:600 9px 'DM Mono'}
   .pay .grid .v{color:#1A1916;font:700 14px 'DM Mono';letter-spacing:.03em}
   .pay .qr{display:flex;flex-direction:column;align-items:center;gap:4px}
-  .pay .qr .sp{font:700 8px 'DM Mono';color:#1E40AF;text-transform:uppercase;letter-spacing:.08em}
-  .pay .qr img{width:98px;height:98px;background:#fff;border-radius:6px;padding:3px;border:2px solid #1E40AF;object-fit:contain}
-  .pay .upi{margin-top:7px;background:#EEEDFE;border-radius:7px;padding:7px 12px;font:700 11px 'DM Mono';color:#534AB7;text-align:center}
+  .pay .qr .sp{font:700 7.5px 'DM Mono';color:#1E40AF;text-transform:uppercase;letter-spacing:.08em}
+  .pay .qr img{width:76px;height:76px;background:#fff;border-radius:6px;padding:2px;border:2px solid #1E40AF;object-fit:contain}
+  .pay .upi{margin-top:6px;background:#EEEDFE;border-radius:7px;padding:5px 12px;font:700 11px 'DM Mono';color:#534AB7;text-align:center}
   .tot{background:#EEEDFE;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;display:flex;flex-direction:column}
   .tot .bl{position:absolute;top:0;bottom:0;left:0;width:3px;background:#534AB7}
   .tot .h{font:700 9px 'DM Mono';color:#534AB7;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
@@ -233,15 +235,16 @@ function studentParty(student) {
 }
 
 const PAY_BOX = `<div class="pt"><div class="pay"><div class="bl"></div>
-  <div class="h">Payment Details</div>
-  <div class="sub">NEFT / IMPS / UPI accepted</div>
   <div class="card">
-    <div>
-      <div class="bank">🏦 IDFC First Bank</div>
-      <div class="br">Byramji Town Branch, Nagpur</div>
-      <div class="grid"><span class="k">A/C</span><span class="v">10278096847</span><span class="k">IFSC</span><span class="v">IDFB0042504</span></div>
+    <div class="ch"><span class="h">Payment Details</span><span class="sub">NEFT / IMPS / UPI accepted</span></div>
+    <div class="cb">
+      <div>
+        <div class="bank">🏦 IDFC First Bank</div>
+        <div class="br">Byramji Town Branch, Nagpur</div>
+        <div class="grid"><span class="k">A/C</span><span class="v">10278096847</span><span class="k">IFSC</span><span class="v">IDFB0042504</span></div>
+      </div>
+      <div class="qr"><span class="sp">Scan &amp; Pay</span><img src="/nlh-upi-qr.png" alt="QR"></div>
     </div>
-    <div class="qr"><span class="sp">Scan &amp; Pay</span><img src="/nlh-upi-qr.png" alt="QR"></div>
   </div>
   <div class="upi">📱 UPI: newlearninghorizons@idfcbank</div>
 </div>`
