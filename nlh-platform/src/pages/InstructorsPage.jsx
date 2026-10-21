@@ -9,6 +9,8 @@ import AttendanceSheet from '../components/AttendanceSheet'
 import { ciCyclePayroll, CI_CYCLE_SESSIONS } from '../utils/ciPayroll'
 import { fetchAllRows } from '../utils/studentLifecycle'
 import { printCiPaymentSheet } from '../components/ciPaymentSheet'
+import CiPayrollRun from '../components/CiPayrollRun'
+import CiAttendanceMonth from '../components/CiAttendanceMonth'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +69,8 @@ function groupSkus(allSkus) {
 const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
 
 function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSaved, inline }) {
+  const { currentRole: myRole } = useAuth()
+  const canEditPayroll = isAdminRole(myRole)
   const [tab, setTab]           = useState('profile')
   const [tabLoaded, setTabLoaded] = useState({ profile: true, caution: false, courses: false, batches: false, payroll: false })
   const [saving, setSaving]     = useState(false)
@@ -79,6 +83,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
   const [payrollCycle,       setPayrollCycle]       = useState({ rows: [], inProgress: [], total: 0 })   // per-student-cycle pay for the month
+  const [payrollRun,         setPayrollRun]         = useState(null)   // saved ci_payroll_runs row for this CI + month
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
   const [payrollExtras,      setPayrollExtras]      = useState({ incentive: 0, misc: 0, misc_note: '' })   // this month's incentive / misc
   const [extrasForm,         setExtrasForm]         = useState({ incentive: '', misc: '', misc_note: '' })
@@ -303,6 +308,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         })
       }
       setPayrollCycle(cycleOut)
+
+      // ── The saved payroll for this month (edited amounts, paid status) ──
+      var { data: runRow } = await sb.from('ci_payroll_runs').select('*')
+        .eq('instructor_id', instructor.id).eq('month', payrollMonth).maybeSingle()
+      setPayrollRun(runRow || null)
 
       // ── Fetch any saved override for this instructor + month ──
       var { data: ovRow } = await sb.from('payroll_overrides')
@@ -1459,6 +1469,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               </div>
             </div>
 
+            <CiAttendanceMonth instructor={instructor} month={payrollMonth} />
+
             {payrollLoading ? (
               <div className="hint" style={{ textAlign: 'center', padding: '24px 0' }}>Calculating…</div>
             ) : (function () {
@@ -1527,6 +1539,22 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var misc              = payrollExtras.misc || 0
               var cycleTotal        = payrollCycle.total || 0
               var grandTotal        = sessionTotal + studentTotal + studentMonthTotal + cycleTotal + monthlyTotal + conveyance + officeSalary + incentive + misc
+
+              // What was calculated, as lines the payment section can edit
+              var calcLines = []
+              perSessionRows.forEach(function (rw) { calcLines.push({ key: 'ps:' + rw.batchId, label: rw.batchName + ' — ' + rw.sessionCount + ' session' + (rw.sessionCount !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN'), amount: rw.amount }) })
+              perStudentRows.forEach(function (rw) { calcLines.push({ key: 'pst:' + rw.batchId, label: rw.batchName + ' — ' + rw.completions + ' completed × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
+              perStudentMonthRows.forEach(function (rw) { calcLines.push({ key: 'psm:' + rw.batchId, label: rw.batchName + ' — ' + rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
+              payrollCycle.rows.forEach(function (rw) {
+                rw.blocks.forEach(function (b, bi) {
+                  calcLines.push({ key: 'cyc:' + rw.id + ':' + bi, label: rw.name + ' — ' + fmtDate(b.start) + ' to ' + fmtDate(b.end) + ' (' + b.count + ' of ' + b.perCycle + ' classes' + (b.partial ? ', pro-rata' : '') + ')', amount: b.amount })
+                })
+              })
+              monthlyRows.forEach(function (a) { calcLines.push({ key: 'mo:' + a.id, label: ((a.skus && a.skus.courses && a.skus.courses.group_name) || 'Monthly') + ' — monthly fixed', amount: a.remuneration_rate || 0 }) })
+              if (officeSalary > 0) calcLines.push({ key: 'office', label: 'Office salary', amount: officeSalary })
+              if (conveyance > 0) calcLines.push({ key: 'conv', label: 'Conveyance', amount: conveyance })
+              if (incentive !== 0) calcLines.push({ key: 'inc', label: 'Incentive', amount: incentive })
+              if (misc !== 0) calcLines.push({ key: 'misc', label: 'Misc' + (payrollExtras.misc_note ? ' (' + payrollExtras.misc_note + ')' : ''), amount: misc })
 
               if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0 && perStudentMonthRows.length === 0 && payrollCycle.rows.length === 0 && payrollCycle.inProgress.length === 0 && conveyance === 0 && officeSalary === 0 && incentive === 0 && misc === 0) {
                 return (
@@ -1854,117 +1882,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     )}
                   </div>
 
-                  {/* ── Grand total + override ── */}
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginTop: 4 }}>
-
-                    {/* Calculated total row */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: 'var(--bg2)' }}>
-                      <span style={{ font: '500 12px var(--font)', color: 'var(--text3)' }}>
-                        Amount Calculated
-                      </span>
-                      <span style={{
-                        font: '600 14px var(--font)',
-                        color: payrollOverride ? 'var(--text3)' : 'var(--text)',
-                        textDecoration: payrollOverride ? 'line-through' : 'none',
-                      }}>₹{grandTotal.toLocaleString('en-IN')}</span>
-                    </div>
-
-                    {/* Override edit form */}
-                    {overrideEdit ? (
-                      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', background: '#fffbf0' }}>
-                        <div style={{ font: '600 11px var(--font)', color: '#92400e', marginBottom: 8 }}>
-                          ✏️ Set amount paid
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>₹</span>
-                            <input
-                              type="number" min="0"
-                              value={overrideForm.amount}
-                              onChange={function (e) { setOverrideForm(function (f) { return { ...f, amount: e.target.value } }) }}
-                              placeholder={grandTotal}
-                              style={{ width: 120, fontSize: 14, fontWeight: 700, padding: '5px 8px' }}
-                              autoFocus
-                            />
-                          </div>
-                          <input
-                            type="text"
-                            value={overrideForm.notes}
-                            onChange={function (e) { setOverrideForm(function (f) { return { ...f, notes: e.target.value } }) }}
-                            placeholder="Reason / note (optional)"
-                            style={{ flex: 1, minWidth: 160, fontSize: 12, padding: '5px 8px' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                          <button className="btn" style={{ fontSize: 11 }}
-                            onClick={function () { setOverrideEdit(false) }} disabled={savingOverride}>
-                            Cancel
-                          </button>
-                          <button className="btn-p" style={{ fontSize: 11 }}
-                            onClick={function () { saveOverride(grandTotal) }} disabled={savingOverride}>
-                            {savingOverride ? 'Saving…' : 'Save Amount Paid'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : payrollOverride ? (
-                      /* Override active — show agreed amount */
-                      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: '#f0fdf4' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <div style={{ font: '600 11px var(--font)', color: 'var(--green)', marginBottom: 2 }}>
-                              ✓ Amount Paid
-                            </div>
-                            {payrollOverride.notes && (
-                              <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>
-                                {payrollOverride.notes}
-                              </div>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{ font: '700 18px var(--font)', color: 'var(--green)' }}>
-                              ₹{payrollOverride.final_amount.toLocaleString('en-IN')}
-                            </span>
-                            <button className="btn" style={{ fontSize: 10, padding: '2px 7px' }}
-                              onClick={function () {
-                                setOverrideForm({ amount: payrollOverride.final_amount, notes: payrollOverride.notes || '' })
-                                setOverrideEdit(true)
-                              }}>✏️</button>
-                            <button className="btn" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--red)' }}
-                              onClick={clearOverride}>✕</button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* No override — show edit prompt */
-                      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
-                          Enter amount actually paid?
-                        </span>
-                        <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
-                          onClick={function () {
-                            setOverrideForm({ amount: grandTotal, notes: '' })
-                            setOverrideEdit(true)
-                          }}>
-                          ✏️ Override
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Final payable banner */}
-                    <div style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '12px 16px',
-                      background: payrollOverride ? 'var(--green)' : 'var(--purple)',
-                      color: '#fff',
-                    }}>
-                      <span style={{ font: '700 14px var(--font)' }}>
-                        {payrollOverride ? 'Amount Paid' : 'Amount Calculated'} — {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-                      </span>
-                      <span style={{ font: '700 20px var(--font)' }}>
-                        ₹{(payrollOverride ? payrollOverride.final_amount : grandTotal).toLocaleString('en-IN')}
-                      </span>
-                    </div>
-                  </div>
+                  {/* ── Payment for the month: editable amounts, saved, marked paid ── */}
+                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun}
+                    canEdit={canEditPayroll} onChanged={function (saved) { setPayrollRun(saved) }} />
                 </>
               )
             })()}
@@ -2671,7 +2591,9 @@ export default function InstructorsPage() {
   }, [])
 
   const filtered = instructors.filter(function (ins) {
-    if (statusFilter !== 'all' && ins.status !== statusFilter) return false
+    // "Inactive / Left" is everyone who isn't active: inactive, resigned or terminated
+    if (statusFilter === 'inactive') { if (ins.status === 'active') return false }
+    else if (statusFilter !== 'all' && ins.status !== statusFilter) return false
     const q = search.toLowerCase()
     return !q
       || ins.full_name?.toLowerCase().includes(q)
@@ -2815,7 +2737,7 @@ export default function InstructorsPage() {
         </div>
 
         {/* filter pills */}
-        <div className="filter-pills" style={{ marginBottom: 12 }}>
+        <div className="filter-pills" style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {[
             ['active',   'Active',        activeCount],
             ['all',      'All',           total],
@@ -2824,8 +2746,14 @@ export default function InstructorsPage() {
             return (
               <button key={val}
                 className={'pill ' + (statusFilter === val ? 'on' : '')}
+                style={{
+                  padding: '6px 14px', borderRadius: 20, cursor: 'pointer', font: '600 12px var(--font)',
+                  border: '1px solid ' + (statusFilter === val ? 'var(--purple)' : 'var(--border)'),
+                  background: statusFilter === val ? 'var(--purple-bg)' : 'var(--card, #fff)',
+                  color: statusFilter === val ? 'var(--purple)' : 'var(--text2)',
+                }}
                 onClick={function () { setStatusFilter(val) }}>
-                {label} <span className="pill-count">{count}</span>
+                {label} <span className="pill-count" style={{ fontFamily: 'var(--mono)', marginLeft: 4 }}>{count}</span>
               </button>
             )
           })}

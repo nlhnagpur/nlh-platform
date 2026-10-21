@@ -3,6 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import ModalHeader from '../components/ModalHeader'
+import CiPayrollLedger from '../components/CiPayrollLedger'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -1433,6 +1434,7 @@ const TABS = [
   { id: 'splits',    l: 'Revenue Splits',      icon: '🔀' },
   { id: 'journal',   l: 'Journal Ledger',      icon: '📒' },
   { id: 'accounts',  l: 'Chart of Accounts',   icon: '🗂' },
+  { id: 'ci',        l: 'CI Payroll',          icon: '👩‍🏫' },
   { id: 'vendors',   l: 'Vendors',             icon: '🏭' },
   { id: 'banks',     l: 'Bank Accounts',       icon: '🏦' },
 ]
@@ -1503,6 +1505,7 @@ export default function AccountingPage() {
         {tab === 'splits'   && <SplitsTab />}
         {tab === 'journal'  && <JournalTab />}
         {tab === 'accounts' && <AccountsTab />}
+        {tab === 'ci'       && <CiPayrollLedger />}
         {tab === 'vendors'  && <VendorsTab />}
         {tab === 'banks'    && <BankAccountsTab />}
       </div>

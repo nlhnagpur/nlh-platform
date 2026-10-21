@@ -4,6 +4,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { isAdminRole } from '../constants/roles'
 import { fmtAmt, fmtDate, showToast } from '../utils'
+import CiPayrollCard from '../components/CiPayrollCard'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -1462,6 +1463,9 @@ export default function DashboardPage({ onNavigate }) {
 
         {/* ── prominent chat surface (only shows once chat is in use) ── */}
         {vM && <DashboardMessagesCard onNavigate={onNavigate} isAdmin={isAdmin} franchiseeId={currentFranchiseeId} />}
+
+        {/* ── monthly payments to CIs (HO admin only) ── */}
+        {isAdmin && <CiPayrollCard onNavigate={onNavigate} />}
 
         {/* ── inline dashboard tabs ── */}
         <div className="status-pills" style={{ marginTop: 18, marginBottom: 4 }}>
