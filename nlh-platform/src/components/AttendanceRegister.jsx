@@ -358,6 +358,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   // take that day. A batch holiday shows as H and cannot be stepped.
   function stepTeacher(b, date) {
     if (!canEdit || date > today || !b.instructor_id) return
+    if (b.start_date && date < String(b.start_date).slice(0, 10)) return    // before the batch began
     if (dayState(b.id, date).hol) return
     const cur = tStatus(b, date)
     const next = teacherNextStatus(cur, TEACHER_ABSENT_ENABLED)
@@ -538,6 +539,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
             const roster = rosterOf(b)
             if (roster.length === 0) return null
             const dows = dowSet(b.schedule_days)
+            const startDay = b.start_date ? String(b.start_date).slice(0, 10) : ''   // the batch (and its CI) begin here
             const dirty = dirtyDates(b).length
             return (
               <div key={b.id} id={'att-batch-' + b.id} className="card" style={{ padding: 0, marginBottom: 0, boxShadow: focus && focus.batchId === b.id ? '0 0 0 2px #7c3aed' : undefined }}>
@@ -566,7 +568,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                           const wd = dowOf(d)
                           const sched = dows.size ? dows.has(wd) : wd !== 0
                           const dayEntry = edits[b.id + '|' + d] || saved[b.id + '|' + d]
-                          const missed = dows.size && sched && d < today && !(saved[b.id + '|' + d] && saved[b.id + '|' + d].id) && !edits[b.id + '|' + d] && !everyoneNoClass(b, d, dayEntry)
+                          const missed = dows.size && sched && d < today && (!startDay || d >= startDay) && !(saved[b.id + '|' + d] && saved[b.id + '|' + d].id) && !edits[b.id + '|' + d] && !everyoneNoClass(b, d, dayEntry)
                           return (
                             <th key={d} id={'att-th-' + b.id + '-' + d} style={{ ...th, color: wd === 0 ? 'var(--text3)' : 'var(--text)', background: focus && focus.batchId === b.id && focus.date === d ? '#ddd6fe' : missed ? '#FEF3C7' : wd === 0 ? 'var(--bg2)' : 'var(--bg)', opacity: sched || wd !== 0 ? 1 : .6, outline: focus && focus.batchId === b.id && focus.date === d ? '2px solid #7c3aed' : undefined }}
                               title={missed ? 'Class scheduled — attendance not recorded' : fmtDate(d)}>
@@ -586,7 +588,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                           {days.map(function (d) {
                             return (
                               <td key={d} style={{ textAlign: 'center', padding: 0 }}>
-                                {d <= today && (
+                                {d <= today && (!startDay || d >= startDay) && (
                                   <button type="button" onClick={function () { allPresent(b, d) }} title={'Mark everyone present on ' + fmtDate(d)}
                                     style={{ border: 'none', background: 'none', cursor: 'pointer', color: TONE.P.color, font: '700 11px var(--mono)', padding: '2px 0', width: 26 }}>✓</button>
                                 )}
@@ -605,6 +607,11 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                               Teacher · {b.instructors ? b.instructors.full_name : ''}
                             </td>
                             {days.map(function (d) {
+                              // before the batch was assigned to this CI there is nothing to mark
+                              const before = !!startDay && d < startDay
+                              if (before) {
+                                return <td key={d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', background: 'repeating-linear-gradient(45deg,var(--bg2),var(--bg2) 4px,var(--bg) 4px,var(--bg) 8px)' }}></td>
+                              }
                               const hol = dayState(b.id, d).hol
                               const v = hol ? 'H' : tStatus(b, d)
                               const tone = v ? TONE[v] : null
