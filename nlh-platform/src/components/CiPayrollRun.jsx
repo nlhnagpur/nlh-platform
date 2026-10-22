@@ -28,11 +28,15 @@ async function postPayrollExpense(o) {
       }).select('id').single()
       if (je.error) throw je.error
       journalId = je.data.id
+      // both columns on both lines: a bulk insert sends a missing column as null, not as its default 0
       const jl = await sb.from('journal_lines').insert([
-        { journal_entry_id: journalId, account_id: o.expenseAccountId, debit: o.amount, description: o.description },
-        { journal_entry_id: journalId, account_id: bank.data.account_id, credit: o.amount, description: o.description },
+        { journal_entry_id: journalId, account_id: o.expenseAccountId, debit: o.amount, credit: 0, description: o.description },
+        { journal_entry_id: journalId, account_id: bank.data.account_id, debit: 0, credit: o.amount, description: o.description },
       ])
-      if (jl.error) throw jl.error
+      if (jl.error) {
+        await sb.from('journal_entries').delete().eq('id', journalId)   // don't leave an empty entry behind
+        throw jl.error
+      }
     }
   }
   const ex = await sb.from('expenses').insert({
@@ -42,7 +46,13 @@ async function postPayrollExpense(o) {
     bank_account_id: o.bankAccountId || null, expense_account_id: o.expenseAccountId || null,
     is_recurring: false, journal_entry_id: journalId, created_by: o.userId,
   }).select('id').single()
-  if (ex.error) throw ex.error
+  if (ex.error) {
+    if (journalId) {
+      await sb.from('journal_lines').delete().eq('journal_entry_id', journalId)
+      await sb.from('journal_entries').delete().eq('id', journalId)
+    }
+    throw ex.error
+  }
   return ex.data.id
 }
 

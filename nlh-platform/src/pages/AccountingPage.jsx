@@ -556,9 +556,10 @@ function AddExpenseModal({ accounts, bankAccts, vendors, userId, onClose, onSave
 
         if (jeRes.data) {
           journalId = jeRes.data.id
+          // both columns on both lines — a bulk insert sends a missing column as null, which the table rejects
           await sb.from('journal_lines').insert([
-            { journal_entry_id: journalId, account_id: form.expense_account_id, debit: total, description: form.description },
-            { journal_entry_id: journalId, account_id: bankAcc.data.account_id, credit: total, description: form.description },
+            { journal_entry_id: journalId, account_id: form.expense_account_id, debit: total, credit: 0, description: form.description },
+            { journal_entry_id: journalId, account_id: bankAcc.data.account_id, debit: 0, credit: total, description: form.description },
           ])
           await sb.from('journal_entries').update({ source_ref_type: 'expense' }).eq('id', journalId)
         }
