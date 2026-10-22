@@ -54,9 +54,13 @@ export default function CiAttendanceMonth({ instructor, month }) {
       const names = {}
       ;(owned.data || []).forEach(function (b) { names[b.id] = b.name })
       sessions.forEach(function (s) { if (s.batches && s.batches.name) names[s.batch_id] = s.batches.name })
-      const batchIds = Array.from(new Set(ownIds.concat(sessions.map(function (s) { return s.batch_id }))))
-      setData({ days: days, att: att.data || [], sessions: sessions, names: names, batchIds: batchIds })
-    })().catch(function () { if (!cancelled) setData({ days: daysOf(month), att: [], sessions: [], names: {}, batchIds: [], failed: true }) })
+      // Rows are the CI's own batches only. A class taken as a substitute in somebody else's
+      // batch is listed separately below, so that batch's days aren't painted with the CI's marks.
+      const subTaken = (mine.data || []).filter(function (s) { return s.is_substitute })
+      const ownTaught = (mine.data || []).filter(function (s) { return !s.is_substitute }).map(function (s) { return s.batch_id })
+      const batchIds = Array.from(new Set(ownIds.concat(ownTaught)))
+      setData({ days: days, att: att.data || [], sessions: sessions, names: names, batchIds: batchIds, subTaken: subTaken })
+    })().catch(function () { if (!cancelled) setData({ days: daysOf(month), att: [], sessions: [], names: {}, batchIds: [], subTaken: [], failed: true }) })
     return function () { cancelled = true }
   }, [instructor.id, month])
 
@@ -92,7 +96,7 @@ export default function CiAttendanceMonth({ instructor, month }) {
   // totals in days (a day counts once even if the CI has two batches)
   const tally = { P: new Set(), A: new Set(), O: new Set(), H: new Set(), S: new Set() }
   rows.forEach(function (r) { r.cells.forEach(function (c, i) { if (c) tally[c.code].add(data.days[i]) }) })
-  const classesTaken = data.sessions.filter(function (s) { return s.instructor_id === instructor.id && !s.is_substitute && !s.is_holiday }).length
+  const classesTaken = data.sessions.filter(function (s) { return s.instructor_id === instructor.id && !s.is_substitute && !s.is_holiday && data.batchIds.indexOf(s.batch_id) >= 0 }).length
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
@@ -142,6 +146,11 @@ export default function CiAttendanceMonth({ instructor, month }) {
             </table>
           </div>
         ))}
+      {data.subTaken && data.subTaken.length > 0 && (
+        <div style={{ padding: '6px 14px', borderTop: '1px solid var(--border)', font: '500 11px var(--font)', color: 'var(--text2)' }}>
+          Took as a substitute (in another CI's batch): {data.subTaken.map(function (x) { return Number(String(x.session_date).slice(8, 10)) + ' ' + monthLabel(String(x.session_date).slice(0, 7)).split(' ')[0].slice(0, 3) + ' — ' + ((x.batches && x.batches.name) || 'batch') }).join(' · ')}. Substitute classes are not part of her cycle pay.
+        </div>
+      )}
       <div style={{ padding: '6px 14px', borderTop: '1px solid var(--border)', font: '500 10px var(--font)', color: 'var(--text3)' }}>
         P present · A absent · O weekly off · H holiday · S covered by substitute. Dim P = took the class, not marked on the register.
       </div>
