@@ -3,7 +3,7 @@ import { sb } from '../supabase'
 import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 import { cleanLines, sumLines, linesFromCalc, lineEdited, monthLabel } from '../utils/ciPayrollRun'
-import { countInRange, amountForClasses } from '../utils/ciPayroll'
+import { countInRange, amountForClasses, nextCycleStart } from '../utils/ciPayroll'
 import { printCiPaymentSheet } from './ciPaymentSheet'
 
 const PAY_MODES = [['bank_transfer', 'Bank transfer'], ['upi', 'UPI'], ['cash', 'Cash'], ['cheque', 'Cheque']]
@@ -191,6 +191,17 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
         <span style={{ font: '700 14px var(--font)' }}>{paid ? 'Paid' : 'Payable'} — {monthLabel(month)}</span>
         <span style={{ font: '700 20px var(--font)' }}>{rupees(paid ? run.paid_amount : total)}</span>
       </div>
+      {(function () {
+        const ends = lines.filter(function (l) { return l.meta && l.meta.to }).map(function (l) { return l.meta.to }).sort()
+        if (!ends.length) return null
+        const last = ends[ends.length - 1]
+        return (
+          <div style={{ padding: '6px 16px', font: '500 11px var(--font)', color: 'var(--text2)', background: 'var(--bg2)' }}>
+            {instructor.full_name} is paid up to <b>{fmtDate(last)}</b>. Next pay starts <b>{fmtDate(nextCycleStart(last))}</b>
+            {' '}(the 1st of the next month if paid to the 30th/31st, otherwise the next day).
+          </div>
+        )
+      })()}
       {total !== calcTotal && !paid && (
         <div style={{ padding: '6px 16px', font: '500 11px var(--font)', color: '#92400e', background: '#FFFBEB' }}>
           Differs from the calculated {rupees(calcTotal)} by {rupees(total - calcTotal)}.

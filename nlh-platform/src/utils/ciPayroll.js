@@ -19,13 +19,26 @@ function uniqSorted(dates) {
 
 // Split the classes the CI taught this student into cycles of `perCycle`.
 // The last block may be short (still running, or the student left).
-// `paidThrough`: classes up to and including this date are already paid (a saved
-// payroll line covered them), so the next cycle starts after it.
+// Where the next pay period starts after one that was paid up to `to`: the 1st of the
+// next month when the period ended at month end (the 30th or 31st, or the last day of
+// a shorter month), otherwise the very next day.
+export function nextCycleStart(to) {
+  const t = String(to || '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return ''
+  const y = Number(t.slice(0, 4)), m = Number(t.slice(5, 7)), day = Number(t.slice(8, 10))
+  const last = new Date(y, m, 0).getDate()
+  const pad = function (n) { return String(n).padStart(2, '0') }
+  if (day >= 30 || day === last) return m === 12 ? (y + 1) + '-01-01' : y + '-' + pad(m + 1) + '-01'
+  return y + '-' + pad(m) + '-' + pad(day + 1)
+}
+
+// `paidThrough`: the last date a saved payroll line already paid for; the next cycle
+// starts where nextCycleStart says.
 export function ciCycleBlocks(dates, perCycle, appointedOn, paidThrough) {
   const n = perCycle > 0 ? perCycle : CI_CYCLE_SESSIONS
   const from = appointedOn ? String(appointedOn).slice(0, 10) : ''
-  const done = paidThrough ? String(paidThrough).slice(0, 10) : ''
-  const all = uniqSorted(dates).filter(function (d) { return (!from || d >= from) && (!done || d > done) })
+  const resume = paidThrough ? nextCycleStart(paidThrough) : ''
+  const all = uniqSorted(dates).filter(function (d) { return (!from || d >= from) && (!resume || d >= resume) })
   const blocks = []
   for (let i = 0; i < all.length; i += n) {
     const part = all.slice(i, i + n)

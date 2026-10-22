@@ -94,3 +94,22 @@ test('paid-through date: the next cycle starts after the last date already paid'
   const none = ciCycleBlocks(PARTH, 25, '2026-09-07', '')
   assert.equal(none[0].start, '2026-09-07')
 })
+
+import { nextCycleStart } from '../src/utils/ciPayroll.js'
+
+test('next pay starts the day after the last date paid, or the 1st of next month if paid to month end', () => {
+  assert.equal(nextCycleStart('2026-10-08'), '2026-10-09')
+  assert.equal(nextCycleStart('2026-10-29'), '2026-10-30')
+  assert.equal(nextCycleStart('2026-10-30'), '2026-11-01')   // 30th: month end
+  assert.equal(nextCycleStart('2026-10-31'), '2026-11-01')
+  assert.equal(nextCycleStart('2026-09-30'), '2026-10-01')
+  assert.equal(nextCycleStart('2027-02-28'), '2027-03-01')   // last day of a short month
+  assert.equal(nextCycleStart('2026-12-31'), '2027-01-01')
+  assert.equal(nextCycleStart(''), '')
+})
+
+test('paid to the 30th: the 31st is not carried into the next cycle', () => {
+  const dates = ['2026-10-29', '2026-10-30', '2026-10-31', '2026-11-02']
+  const b = ciCycleBlocks(dates, 25, '2026-10-01', '2026-10-30')
+  assert.equal(b[0].start, '2026-11-02')
+})
