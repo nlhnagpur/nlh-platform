@@ -37,3 +37,19 @@ test('a student line keeps its date range through clean and calc; moving the dat
   assert.equal(lineEdited(lines[0]), true)
   assert.equal(cleanLines(lines)[0].meta.sid, 'e1')
 })
+
+import { allocatePayment, lastDayOf } from '../src/utils/ciPayrollRun.js'
+
+test('month end date for the accrual entry', () => {
+  assert.equal(lastDayOf('2026-09'), '2026-09-30')
+  assert.equal(lastDayOf('2026-10'), '2026-10-31')
+  assert.equal(lastDayOf('2027-02'), '2027-02-28')
+})
+
+test('a payment settles whole months oldest first; the rest stays as a part payment', () => {
+  const runs = [{ id: 'oct', month: '2026-10', total: 930 }, { id: 'sep', month: '2026-09', total: 2250 }]
+  assert.deepEqual(allocatePayment(runs, 2250), { settled: ['sep'], leftover: 0 })
+  assert.deepEqual(allocatePayment(runs, 3180), { settled: ['sep', 'oct'], leftover: 0 })
+  assert.deepEqual(allocatePayment(runs, 2000), { settled: [], leftover: 2000 })     // short of September: nothing settled
+  assert.deepEqual(allocatePayment(runs, 3500), { settled: ['sep', 'oct'], leftover: 320 })
+})

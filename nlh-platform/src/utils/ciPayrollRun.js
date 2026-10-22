@@ -46,3 +46,23 @@ export function lineEdited(l) {
   const datesMoved = !!(m && m.origFrom && (m.from !== m.origFrom || m.to !== m.origTo))
   return datesMoved || (l.calc != null && toInt(l.amount) !== toInt(l.calc))
 }
+
+export function lastDayOf(month) {
+  const y = Number(String(month).slice(0, 4)), m = Number(String(month).slice(5, 7))
+  return month + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0')
+}
+
+// Which of the selected (oldest first) runs a payment settles in full. Whatever is left
+// after the last full settlement stays on the CI's account as a part payment.
+//   runs: [{ id, month, total }]
+export function allocatePayment(runs, amount) {
+  let left = Math.max(0, Math.round(Number(amount) || 0))
+  const settled = []
+  const ordered = (runs || []).slice().sort(function (a, b) { return String(a.month).localeCompare(String(b.month)) })
+  for (let i = 0; i < ordered.length; i++) {
+    const r = ordered[i]
+    if (!(left >= r.total && r.total > 0)) break      // oldest first: never skip a month to settle a later one
+    settled.push(r.id); left -= r.total
+  }
+  return { settled: settled, leftover: left }
+}

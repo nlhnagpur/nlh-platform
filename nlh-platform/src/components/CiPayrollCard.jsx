@@ -32,8 +32,9 @@ export default function CiPayrollCard({ onNavigate }) {
   if (!data) return null
   const cur = data.runs.filter(function (r) { return r.month === month })
   const paid = cur.filter(function (r) { return r.status === 'paid' })
-  const unpaid = cur.filter(function (r) { return r.status !== 'paid' })
-  const notPrepared = Math.max(0, data.active - cur.length)
+  const unpaid = cur.filter(function (r) { return r.status === 'posted' })          // posted to the books, not yet paid
+  const notPosted = Math.max(0, data.active - cur.filter(function (r) { return r.status !== 'draft' }).length)   // not saved, or saved but not posted
+  const notPrepared = notPosted
   const prevUnpaid = data.runs.filter(function (r) { return r.month === prev && r.status !== 'paid' })
   if (cur.length === 0 && prevUnpaid.length === 0 && notPrepared === 0) return null
 
@@ -50,12 +51,12 @@ export default function CiPayrollCard({ onNavigate }) {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, padding: '4px 4px 8px' }}>
         <div><div style={{ font: '700 18px var(--font)', color: 'var(--green)' }}>{rupees(sum(paid, function (r) { return r.paid_amount }))}</div><div className="kc-lbl">Paid · {paid.length} CI{paid.length !== 1 ? 's' : ''}</div></div>
-        <div><div style={{ font: '700 18px var(--font)', color: '#92400E' }}>{rupees(sum(unpaid, function (r) { return r.total }))}</div><div className="kc-lbl">Saved, unpaid · {unpaid.length}</div></div>
-        <div><div style={{ font: '700 18px var(--font)', color: 'var(--text3)' }}>{notPrepared}</div><div className="kc-lbl">Not prepared yet</div></div>
+        <div><div style={{ font: '700 18px var(--font)', color: '#92400E' }}>{rupees(sum(unpaid, function (r) { return r.total }))}</div><div className="kc-lbl">Owed, unpaid · {unpaid.length}</div></div>
+        <div><div style={{ font: '700 18px var(--font)', color: 'var(--text3)' }}>{notPrepared}</div><div className="kc-lbl">Not posted yet</div></div>
       </div>
       {prevUnpaid.length > 0 && (
         <div style={{ margin: '0 4px 4px', padding: '8px 12px', borderRadius: 8, background: '#FEF3C7', color: '#92400E', font: '600 12px var(--font)' }}>
-          {monthLabel(prev)} still unpaid: {prevUnpaid.map(function (r) { return ((r.instructors && r.instructors.full_name) || 'CI') + ' ' + rupees(r.total) }).join(' · ')}
+          {monthLabel(prev)} still unpaid or not posted: {prevUnpaid.map(function (r) { return ((r.instructors && r.instructors.full_name) || 'CI') + ' ' + rupees(r.total) }).join(' · ')}
         </div>
       )}
     </div>
