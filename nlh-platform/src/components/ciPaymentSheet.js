@@ -40,7 +40,7 @@ export function ciPaymentSheetHtml(sheet) {
     total += amt
     lines.push('<tr><td class="c">' + n + '</td><td>' + esc(o.label) + '</td><td></td><td class="r">' + money(amt) + '</td></tr>')
   })
-  const html = '<!doctype html><html><head><meta charset="utf-8"><title>CI Payment Sheet</title><style>' +
+  const html = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc('CI Payment Sheet - ' + (sheet.ciName || '') + (sheet.monthLabel ? ' - ' + sheet.monthLabel : '')) + '</title><style>' +
     '@page{size:A4;margin:12mm}body{font:12px "Courier New",monospace;color:#111;margin:0}' +
     'table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:5px 7px;vertical-align:middle}' +
     '.t{text-align:center;font-weight:700;font-size:16px;letter-spacing:.06em}.s{text-align:center;font-weight:700;font-size:15px}' +

@@ -18,3 +18,15 @@ test('payment sheet: student lines, extra, total and words', () => {
   assert.ok(html.includes('2,250.00'))
   assert.ok(html.includes('Two Thousand Two Hundred Fifty Rupees Only'))
 })
+
+import { docFileTitle } from '../src/components/studentDocs.js'
+
+test('the printed document names itself for the file name: CI + month for a payment sheet', () => {
+  const { html } = ciPaymentSheetHtml({ ciName: 'Khushi Prem Maidasani', monthLabel: 'September 2026', rows: [], otherLines: [] })
+  assert.equal(docFileTitle(html), 'CI Payment Sheet - Khushi Prem Maidasani - September 2026')
+})
+
+test('file-name title: entities decoded, characters Windows forbids replaced', () => {
+  assert.equal(docFileTitle('<title>Invoice INV-2026/0042 - A &amp; B: Kids</title>'), 'Invoice INV-2026-0042 - A & B- Kids')
+  assert.equal(docFileTitle('no title here'), '')
+})

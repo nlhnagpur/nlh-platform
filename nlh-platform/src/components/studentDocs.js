@@ -43,7 +43,7 @@ function shell(opts) {
     }</div>`
   }).join('')
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(opts.title)}</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(opts.fileName || opts.title)}</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -258,7 +258,20 @@ const PAY_BOX = `<div class="pt"><div class="pay"><div class="bl"></div>
 // tab is ever created, so there's nothing for a blocker to block — and
 // calling print() on it goes straight to the OS print dialog, where
 // "Save as PDF" is one of the destinations.
+// The "Save as PDF" file name is the title of the page being printed. For an iframe that
+// is the top page's title, so borrow the document's own <title> for the duration.
+export function docFileTitle(html) {
+  const m = /<title>([\s\S]*?)<\/title>/i.exec(html || '')
+  if (!m) return ''
+  return m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim()
+}
+
 function openWin(html) {
+  const savedTitle = document.title
+  const docTitle = docFileTitle(html)
+  if (docTitle) document.title = docTitle
+  const restoreTitle = function () { if (docTitle) document.title = savedTitle }
   const iframe = document.createElement('iframe')
   // A real A4-sized box, not 0x0 — a 0-width iframe has no viewport for the
   // document to lay out against, which any template relying on max-width
@@ -269,7 +282,7 @@ function openWin(html) {
   document.body.appendChild(iframe)
   const doc = iframe.contentWindow.document
   doc.open(); doc.write(html); doc.close()
-  function cleanup() { if (iframe.parentNode) document.body.removeChild(iframe) }
+  function cleanup() { restoreTitle(); if (iframe.parentNode) document.body.removeChild(iframe) }
   iframe.onload = function () {
     setTimeout(function () {
       try {
@@ -358,6 +371,7 @@ export function printStudentInvoice(student, ctx) {
 
   return emit(ctx, shell({
     title: 'FEE INVOICE', sub: 'Tax Invoice · Original Copy',
+    fileName: 'Invoice ' + (ctx.refVal || '') + ' - ' + (student.full_name || ''),
     meta: [
       { l: 'Invoice no.', v: ctx.refVal || '—' },
       { l: 'Date', v: fmtLong(ctx.date || new Date()) },
@@ -417,6 +431,7 @@ ${receiptTotals(model.summaryRows || [], model.amount, fmtLong(model.paidOn || m
   const mode = modeText(model.mode)
   return emit(ctx, shell({
     title: 'PAYMENT RECEIPT', sub: 'Official Receipt' + (model.subSuffix || ''), size: 'A5',
+    fileName: 'Receipt ' + (model.receiptNo || '') + ' - ' + ((model.party && model.party.name) || ''),
     meta: [
       { l: 'Receipt no.', v: model.receiptNo || '—' },
       { l: 'Receipt date', v: fmtLong(model.receiptDate || model.paidOn || new Date()) },
@@ -636,6 +651,7 @@ export function printFranchiseeEnrollmentInvoice(franchisee, courseNames, ctx) {
 
   return emit(ctx, shell({
     title: 'FRANCHISE INVOICE', sub: 'Enrollment · Original Copy',
+    fileName: 'Invoice ' + (franchisee.enrollment_invoice_no || '') + ' - ' + (franchisee.business_name || franchisee.owner_name || ''),
     meta: [
       { l: 'Invoice no.', v: franchisee.enrollment_invoice_no || '—' },
       { l: 'Date', v: fmtLong(franchisee.contract_start || franchisee.created_at || new Date()) },
@@ -713,6 +729,7 @@ export function printFranchiseeStatement(franchisee, transactions, opts) {
 
   return emit(opts, shell({
     title: 'STATEMENT OF ACCOUNT', sub: 'New Learning Horizons · Franchise Account',
+    fileName: 'Statement - ' + (franchisee.business_name || franchisee.owner_name || '') + ' - ' + periodLabel,
     meta: [
       { l: 'Franchisee', v: franchisee.business_name || franchisee.owner_name || '—', sans: true },
       { l: 'Period', v: periodLabel, sans: true },
@@ -947,7 +964,7 @@ export function printFranchiseeAgreement(franchisee, agreement, ctx) {
 
     <div class="pagefoot">Page 1 of 1 &middot; New Learning Horizons &middot; Agreement No. ${esc(a.agreement_no || '—')}</div>`
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unit Franchise Agreement</title><style>${AGREEMENT_STYLE}</style></head><body>
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc((franchisee.kind === 'school' || a.kind === 'school' ? 'School Program Partnership Agreement' : 'Unit Franchise Agreement') + ' — ' + (franchisee.business_name || franchisee.owner_name || '') + (a.agreement_no ? ' (' + a.agreement_no + ')' : ''))}</title><style>${AGREEMENT_STYLE}</style></head><body>
     <div class="np"><button onclick="window.print()">Print / Save PDF</button></div>
     <div class="page">${body}</div>
   </body></html>`

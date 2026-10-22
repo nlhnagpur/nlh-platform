@@ -100,7 +100,7 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
         rows.push({ name: l.label, course: l.meta.course || '', blocks: [{ dates: dates, count: l.meta.count, perCycle: l.meta.perCycle, amount: l.amount, partial: l.meta.count < l.meta.perCycle }] })
       } else others.push({ label: l.label, amount: l.amount })
     })
-    printCiPaymentSheet({ ciName: instructor.full_name, date: (run && run.paid_on) || new Date(), rows: rows, otherLines: others })
+    printCiPaymentSheet({ ciName: instructor.full_name, monthLabel: monthLabel(month), date: (run && run.paid_on) || new Date(), rows: rows, otherLines: others })
   }
 
   async function saveRun(extra) {
