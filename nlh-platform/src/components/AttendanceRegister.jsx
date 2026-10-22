@@ -138,13 +138,24 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     let cancelled = false
     setLoading(true)
     ;(async function () {
-      let q = sb.from('batches')
-        .select('id, name, franchisee_id, instructor_id, schedule_days, schedule_time, start_date, is_active, instructors(full_name), skus(level_name, courses(group_name)), batch_students(id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, status, students(id, full_name), skus(level_name)))')
-        .eq('is_active', true)
+      const BATCH_COLS = 'id, name, franchisee_id, instructor_id, schedule_days, schedule_time, start_date, is_active, instructors(full_name), skus(level_name, courses(group_name)), batch_students(id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, status, students(id, full_name), skus(level_name)))'
+      let q = sb.from('batches').select(BATCH_COLS).eq('is_active', true)
       if (centreFilter) q = q.eq('franchisee_id', centreFilter)
       const bRes = await q
       if (bRes.error) throw bRes.error
-      const list = (bRes.data || []).map(function (b) { return Object.assign({}, b, { batch_students: collapseMembers(b.batch_students) }) }).slice().sort(function (a, b) {
+      // A batch that has been closed (its CI left) is still shown for every month it actually ran
+      // classes in, so the students' attendance in those months can be seen.
+      let closedQ = sb.from('batch_sessions').select('batch_id, batches!inner(is_active, franchisee_id)')
+        .eq('batches.is_active', false).gte('session_date', days[0]).lte('session_date', days[days.length - 1])
+      if (centreFilter) closedQ = closedQ.eq('batches.franchisee_id', centreFilter)
+      const closedRes = await closedQ
+      const closedIds = Array.from(new Set((closedRes.data || []).map(function (x) { return x.batch_id })))
+      let closedBatches = []
+      if (closedIds.length) {
+        const cb = await sb.from('batches').select(BATCH_COLS).in('id', closedIds)
+        closedBatches = cb.data || []
+      }
+      const list = (bRes.data || []).concat(closedBatches).map(function (b) { return Object.assign({}, b, { batch_students: collapseMembers(b.batch_students) }) }).slice().sort(function (a, b) {
         return String(a.schedule_time || '').localeCompare(String(b.schedule_time || '')) || String(a.name || '').localeCompare(String(b.name || ''))
       })
       const ids = list.map(function (b) { return b.id })
@@ -203,6 +214,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
 
       const miss = []
       list.forEach(function (b) {
+        if (b.is_active === false) return   // a closed batch has no classes still to record
         const dows = dowSet(b.schedule_days)
         if (dows.size === 0) return   // no class days set up — can't tell what was missed
         for (let i = 1; i <= LOOKBACK; i++) {
@@ -531,7 +543,10 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
               <div key={b.id} id={'att-batch-' + b.id} className="card" style={{ padding: 0, marginBottom: 0, boxShadow: focus && focus.batchId === b.id ? '0 0 0 2px #7c3aed' : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', background: 'var(--bg2, #f5f4f0)', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ flex: 1, minWidth: 180 }}>
-                    <div style={{ font: '700 14px var(--font)' }}>{b.name}</div>
+                    <div style={{ font: '700 14px var(--font)' }}>
+                      {b.name}
+                      {b.is_active === false && <span style={{ marginLeft: 8, font: '600 10px var(--font)', color: '#92400e', background: '#FEF3C7', borderRadius: 10, padding: '2px 8px' }}>Closed batch</span>}
+                    </div>
                     <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
                       {[courseOf(b), b.schedule_days, b.schedule_time ? String(b.schedule_time).slice(0, 5) : '', b.instructors && b.instructors.full_name].filter(Boolean).join(' · ')}
                     </div>
