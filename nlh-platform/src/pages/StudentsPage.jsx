@@ -840,7 +840,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
       name: nbf.name.trim(), is_individual: nbf.is_individual,
       schedule_days: nbf.days.length ? nbf.days.join(', ') : null,
       schedule_time: nbf.time || null, is_active: true, sessions_done: 0,
-      start_date: new Date().toISOString().slice(0, 10),
+      start_date: new Date().toISOString().slice(0, 10), instructor_assigned_at: new Date().toISOString().slice(0, 10),
     }).select('id').single()
     if (error) { setPanelSaving(false); showToast('Batch create failed: ' + error.message, 'err'); return }
     await assignToBatch(nb.id, enrollment.id)   // sets panelSaving(false) itself
@@ -1375,6 +1375,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
           is_individual: nbf.is_individual || false,
           schedule_days: (nbf.days || []).length ? nbf.days.join(', ') : null,
           schedule_time: nbf.time || null, is_active: true, sessions_done: 0,
+          instructor_assigned_at: new Date().toISOString().slice(0, 10),
         }).select('id').single()
         if (bErr) { showToast('Batch create failed for ' + sku.level_name + ': ' + bErr.message, 'warn'); continue }
         batchId = nb.id
@@ -3890,6 +3891,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
             schedule_time:  nbf.time || null,
             is_active:      true,
             sessions_done:  0,
+            instructor_assigned_at: new Date().toISOString().slice(0, 10),
           }).select('id').single()
           if (bErr) { showToast('Batch create failed for ' + sku.level_name + ': ' + bErr.message, 'warn'); continue }
           batchId = newBatch.id

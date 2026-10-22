@@ -67,3 +67,13 @@ test('write plan: P/A are per batch, O is the whole day, clearing removes what e
   assert.deepEqual(teacherWritePlan(null, true), { upsertDay: null, deleteBatch: true, deleteDay: true, upsertBatch: null })
   assert.equal(teacherWritePlan(null, false).deleteDay, false)
 })
+
+import { teacherStartDay } from '../src/utils/teacherAttendance.js'
+
+test('a CI’s register starts the later of the batch start and the day they were assigned', () => {
+  assert.equal(teacherStartDay({ start_date: '2026-09-08', instructor_assigned_at: '2026-10-20' }), '2026-10-20')   // batch handed over mid-way
+  assert.equal(teacherStartDay({ start_date: '2026-10-20', instructor_assigned_at: '2026-10-20' }), '2026-10-20')
+  assert.equal(teacherStartDay({ start_date: '2026-09-08', instructor_assigned_at: null }), '2026-09-08')
+  assert.equal(teacherStartDay({ start_date: null, instructor_assigned_at: '2026-10-05' }), '2026-10-05')
+  assert.equal(teacherStartDay({}), '')
+})

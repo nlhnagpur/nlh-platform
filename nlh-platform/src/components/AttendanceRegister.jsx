@@ -23,7 +23,7 @@ import { todayIso } from '../utils/studentLifecycle'
 // Saving writes the same batch_sessions / session_attendance rows the Batches
 // page does, so both stay in step.
 
-import { TEACHER_ABSENT_ENABLED, isTeacherAway, teacherNextStatus, teacherStatusTitle, resolveTeacherStatus, teacherWritePlan } from '../utils/teacherAttendance'
+import { TEACHER_ABSENT_ENABLED, isTeacherAway, teacherNextStatus, teacherStatusTitle, resolveTeacherStatus, teacherWritePlan, teacherStartDay } from '../utils/teacherAttendance'
 
 const DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
 const DAY2 = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -138,7 +138,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     let cancelled = false
     setLoading(true)
     ;(async function () {
-      const BATCH_COLS = 'id, name, franchisee_id, instructor_id, schedule_days, schedule_time, start_date, is_active, instructors(full_name), skus(level_name, courses(group_name)), batch_students(id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, status, students(id, full_name), skus(level_name)))'
+      const BATCH_COLS = 'id, name, franchisee_id, instructor_id, schedule_days, schedule_time, start_date, instructor_assigned_at, is_active, instructors(full_name), skus(level_name, courses(group_name)), batch_students(id, enrollment_id, assigned_at, removed_at, enrollments(id, student_id, completed_at, status, students(id, full_name), skus(level_name)))'
       let q = sb.from('batches').select(BATCH_COLS).eq('is_active', true)
       if (centreFilter) q = q.eq('franchisee_id', centreFilter)
       const bRes = await q
@@ -358,7 +358,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   // take that day. A batch holiday shows as H and cannot be stepped.
   function stepTeacher(b, date) {
     if (!canEdit || date > today || !b.instructor_id) return
-    if (b.start_date && date < String(b.start_date).slice(0, 10)) return    // before the batch began
+    if (teacherStartDay(b) && date < teacherStartDay(b)) return    // before this CI had the batch
     if (dayState(b.id, date).hol) return
     const cur = tStatus(b, date)
     const next = teacherNextStatus(cur, TEACHER_ABSENT_ENABLED)
@@ -539,7 +539,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
             const roster = rosterOf(b)
             if (roster.length === 0) return null
             const dows = dowSet(b.schedule_days)
-            const startDay = b.start_date ? String(b.start_date).slice(0, 10) : ''   // the batch (and its CI) begin here
+            const startDay = teacherStartDay(b)   // the batch began and this CI had it from here
             const dirty = dirtyDates(b).length
             return (
               <div key={b.id} id={'att-batch-' + b.id} className="card" style={{ padding: 0, marginBottom: 0, boxShadow: focus && focus.batchId === b.id ? '0 0 0 2px #7c3aed' : undefined }}>

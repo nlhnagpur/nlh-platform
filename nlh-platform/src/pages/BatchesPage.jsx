@@ -940,6 +940,7 @@ function SessionHistoryModal({ batch, onClose }) {
 function ChangeInstructorModal({ batch, onClose, onSaved }) {
   const [eligibleCIs,  setEligibleCIs]  = useState([])
   const [instructorId, setInstructorId] = useState('')
+  const [effective,    setEffective]    = useState(new Date().toISOString().slice(0, 10))   // the new CI takes the batch from this day
   const [loading,      setLoading]      = useState(true)
   const [saving,       setSaving]       = useState(false)
 
@@ -964,7 +965,8 @@ function ChangeInstructorModal({ batch, onClose, onSaved }) {
     if (!instructorId) { showToast('Select an instructor', 'warn'); return }
     if (instructorId === batch.instructor_id) { showToast('That is already the current instructor', 'warn'); return }
     setSaving(true)
-    var { error } = await sb.from('batches').update({ instructor_id: instructorId }).eq('id', batch.id)
+    if (!effective) { setSaving(false); showToast('Choose the date the new CI takes over', 'warn'); return }
+    var { error } = await sb.from('batches').update({ instructor_id: instructorId, instructor_assigned_at: effective }).eq('id', batch.id)
     setSaving(false)
     if (error) { showToast('Failed: ' + error.message, 'err'); return }
     showToast('Instructor updated ✓')
@@ -999,8 +1001,12 @@ function ChangeInstructorModal({ batch, onClose, onSaved }) {
               </select>
             </label>
           )}
+          <label style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
+            New CI takes over from *
+            <input type="date" value={effective} onChange={function (e) { setEffective(e.target.value) }} style={{ marginTop: 4, fontSize: 13 }} />
+          </label>
           <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', background: 'var(--sun-bg)', borderRadius: 6, padding: '8px 12px' }}>
-            ⚠️ This permanently reassigns the batch. Past session records keep their original instructor.
+            ⚠️ This permanently reassigns the batch. Past session records keep their original instructor; the new CI’s register starts on the date above.
           </div>
         </div>
         <div className="modal-actions">
@@ -1144,6 +1150,7 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
       schedule_days:  form.days.join(', '),
       schedule_time:  form.time || null,
       start_date:     form.start_date || null,
+      instructor_assigned_at: form.start_date || new Date().toISOString().slice(0, 10),
       notes:          form.notes.trim() || null,
       is_active:      true,
       sessions_done:  0,

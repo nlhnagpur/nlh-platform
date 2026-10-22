@@ -569,6 +569,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       schedule_days:  batchForm.days.length ? batchForm.days.join(', ') : null,
       schedule_time:  batchForm.time || null,
       start_date:     batchForm.start_date || null,
+      instructor_assigned_at: batchForm.start_date || new Date().toISOString().slice(0, 10),
       is_active:      true,
       sessions_done:  0,
       notes:          batchForm.notes.trim() || null,

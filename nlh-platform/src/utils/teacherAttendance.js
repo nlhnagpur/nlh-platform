@@ -51,3 +51,12 @@ export function teacherWritePlan(next, hadDayRow) {
   if (next === 'P' || next === 'A') return { upsertDay: null, deleteBatch: false, deleteDay: false, upsertBatch: next }
   return { upsertDay: null, deleteBatch: true, deleteDay: !!hadDayRow, upsertBatch: null }
 }
+
+// The first day the batch's CI is the one taking it: the later of the batch's own start
+// and the day the current CI was assigned. Teacher marks before it make no sense.
+export function teacherStartDay(batch) {
+  if (!batch) return ''
+  const a = batch.start_date ? String(batch.start_date).slice(0, 10) : ''
+  const b = batch.instructor_assigned_at ? String(batch.instructor_assigned_at).slice(0, 10) : ''
+  return a > b ? a : b
+}
