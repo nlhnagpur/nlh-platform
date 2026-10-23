@@ -111,27 +111,33 @@ export function amountForClasses(rate, count, perCycle) {
 }
 
 // ── which appointment pays for a batch's students ───────────────────────────────
-// Many batches carry no level of their own, so the appointment that applies comes from each
-// student's own level (the sku of their enrolment). An appointment only applies from its
-// appointed date.
-export function appointmentForLevel(appts, skuId, monthEnd) {
+// A CI is paid for the COURSE they teach (Phonics, Tuitions, …). A student's level changes as
+// they complete levels, so the level is irrelevant to the CI: every student on the batch counts
+// under the CI's appointment for that course. A CI can hold several appointments for one course
+// (one per level, entered over time) — the one in force is the latest appointed on or before the
+// end of the month.
+//   appts: [{ remuneration_mode, remuneration_rate, appointed_at, skus: { course_id } }]
+export function appointmentForCourse(appts, courseId, monthEnd) {
   const end = monthEnd ? String(monthEnd).slice(0, 10) : ''
-  return (appts || []).find(function (a) {
-    return a.sku_id === skuId && (!a.appointed_at || !end || String(a.appointed_at).slice(0, 10) <= end)
-  }) || null
+  const mine = (appts || []).filter(function (a) {
+    const c = a.skus && a.skus.course_id
+    return c === courseId && (!a.appointed_at || !end || String(a.appointed_at).slice(0, 10) <= end)
+  })
+  mine.sort(function (x, y) { return String(y.appointed_at || '').localeCompare(String(x.appointed_at || '')) })
+  return mine[0] || null
 }
 
-// Per level on a batch's roster, for one month:
-//   completions  students whose level was completed in the month
+// Per course on a batch's roster, for one month:
+//   completions  students who completed a level of the course in the month
 //   active       students on the roster at any point in the month (not finished or removed before it)
-//   roster: [{ sku_id, assigned_at, removed_at, completed_at }]
-export function batchLevelStats(roster, month) {
+//   roster: [{ course_id, assigned_at, removed_at, completed_at }]
+export function batchCourseStats(roster, month) {
   const start = month + '-01'
   const end = month + '-31'
   const out = {}
   ;(roster || []).forEach(function (r) {
-    if (!r.sku_id) return
-    const st = out[r.sku_id] || (out[r.sku_id] = { completions: 0, active: 0 })
+    if (!r.course_id) return
+    const st = out[r.course_id] || (out[r.course_id] = { completions: 0, active: 0 })
     const assigned = r.assigned_at ? String(r.assigned_at).slice(0, 10) : ''
     const removed = r.removed_at ? String(r.removed_at).slice(0, 10) : ''
     const done = r.completed_at ? String(r.completed_at).slice(0, 10) : ''

@@ -114,33 +114,38 @@ test('paid to the 30th: the 31st is not carried into the next cycle', () => {
   assert.equal(b[0].start, '2026-11-02')
 })
 
-import { appointmentForLevel, batchLevelStats } from '../src/utils/ciPayroll.js'
+import { appointmentForCourse, batchCourseStats } from '../src/utils/ciPayroll.js'
 
-test('the appointment comes from the student’s level, and only from its appointed date', () => {
-  const appts = [
-    { sku_id: 'grammar', remuneration_mode: 'per_student', remuneration_rate: 750, appointed_at: '2025-07-12' },
-    { sku_id: 'ph2', remuneration_mode: 'per_student_month', remuneration_rate: 1250, appointed_at: '2026-09-01' },
-    { sku_id: 'ph3', remuneration_mode: 'per_student', remuneration_rate: 1250, appointed_at: '2026-10-09' },
-  ]
-  assert.equal(appointmentForLevel(appts, 'ph2', '2026-09-31').remuneration_rate, 1250)
-  assert.equal(appointmentForLevel(appts, 'ph2', '2026-09-31').remuneration_mode, 'per_student_month')
-  assert.equal(appointmentForLevel(appts, 'ph3', '2026-09-31'), null)              // appointed after September
-  assert.equal(appointmentForLevel(appts, 'ph3', '2026-10-31').remuneration_mode, 'per_student')
-  assert.equal(appointmentForLevel(appts, 'other', '2026-09-31'), null)
+// Sabahat's Phonics appointments, entered level by level over time
+const SAB = [
+  { skus: { course_id: 'grammar' }, remuneration_mode: 'per_student', remuneration_rate: 750, appointed_at: '2025-07-12' },
+  { skus: { course_id: 'phonics' }, remuneration_mode: 'per_student', remuneration_rate: 1250, appointed_at: '2025-07-12' },   // Level 1
+  { skus: { course_id: 'phonics' }, remuneration_mode: 'per_student_month', remuneration_rate: 1250, appointed_at: '2026-09-01' },   // Level 2
+  { skus: { course_id: 'phonics' }, remuneration_mode: 'per_student', remuneration_rate: 1250, appointed_at: '2026-10-09' },   // Levels 3-5
+]
+
+test('the CI is paid for the course, whatever level the student is on: the latest appointment in force wins', () => {
+  assert.equal(appointmentForCourse(SAB, 'phonics', '2026-08-31').remuneration_mode, 'per_student')          // before September
+  assert.equal(appointmentForCourse(SAB, 'phonics', '2026-09-31').remuneration_mode, 'per_student_month')    // September
+  assert.equal(appointmentForCourse(SAB, 'phonics', '2026-10-31').remuneration_mode, 'per_student')          // from 9 Oct
+  assert.equal(appointmentForCourse(SAB, 'grammar', '2026-09-31').remuneration_rate, 750)
+  assert.equal(appointmentForCourse(SAB, 'chess', '2026-09-31'), null)
 })
 
-test('per level on a batch: completions in the month and students on the roster', () => {
+test('students on a batch count under the course, not their level', () => {
   const roster = [
-    { sku_id: 'ph2', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },
-    { sku_id: 'ph2', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },
-    { sku_id: 'ph3', assigned_at: '2026-09-08', removed_at: null, completed_at: null },
-    { sku_id: 'ph3', assigned_at: '2026-10-12', removed_at: null, completed_at: null },
+    { course_id: 'phonics', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },   // Level 2, finished 8 Oct
+    { course_id: 'phonics', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },
+    { course_id: 'phonics', assigned_at: '2026-09-08', removed_at: null, completed_at: null },           // Ayesha, whatever her level
+    { course_id: 'phonics', assigned_at: '2026-10-12', removed_at: null, completed_at: null },           // joined in October
   ]
-  const sep = batchLevelStats(roster, '2026-09')
-  assert.deepEqual(sep.ph2, { completions: 0, active: 2 })
-  assert.deepEqual(sep.ph3, { completions: 0, active: 1 })      // the second joined in October
-  const oct = batchLevelStats(roster, '2026-10')
-  assert.deepEqual(oct.ph2, { completions: 2, active: 2 })      // still on the roster up to 8 Oct
-  const nov = batchLevelStats(roster, '2026-11')
-  assert.deepEqual(nov.ph2, { completions: 0, active: 0 })      // finished before November
+  assert.deepEqual(batchCourseStats(roster, '2026-09').phonics, { completions: 0, active: 3 })
+  assert.deepEqual(batchCourseStats(roster, '2026-10').phonics, { completions: 2, active: 4 })
+  assert.deepEqual(batchCourseStats(roster, '2026-11').phonics, { completions: 0, active: 2 })
+})
+
+test('Sabahat September: 3 Phonics students on the monthly rate, scaled by the classes she took', () => {
+  const ap = appointmentForCourse(SAB, 'phonics', '2026-09-31')
+  const active = 3, took = 21, held = 22
+  assert.equal(Math.round(active * ap.remuneration_rate * took / held), 3580)
 })

@@ -6,7 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
-import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForLevel, batchLevelStats } from '../utils/ciPayroll'
+import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats } from '../utils/ciPayroll'
 import { fetchAllRows } from '../utils/studentLifecycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
@@ -81,7 +81,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
-  const [payrollRoster, setPayrollRoster] = useState({})   // batchId → [{ sku_id, level, assigned_at, removed_at, completed_at }]
+  const [payrollRoster, setPayrollRoster] = useState({})   // batchId → [{ course_id, course, assigned_at, removed_at, completed_at }]
   const [payrollCycle,       setPayrollCycle]       = useState({ rows: [], inProgress: [], total: 0, datesBySid: {} })   // per-student-cycle pay for the month
   const [payrollRun,         setPayrollRun]         = useState(null)   // saved ci_payroll_runs row for this CI + month
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
@@ -205,7 +205,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           .gte('session_date', startDate)
           .lte('session_date', endDate),
         sb.from('instructor_courses')
-          .select('id, sku_id, remuneration_mode, remuneration_rate, appointed_at, skus(level_name, courses(group_name))')
+          .select('id, sku_id, remuneration_mode, remuneration_rate, appointed_at, skus(course_id, level_name, courses(group_name))')
           .eq('instructor_id', instructor.id)
           .eq('status', 'active'),
       ])
@@ -222,12 +222,12 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         // the "active" side is anyone whose membership overlapped the month at
         // all (assigned before month-end, not removed before month-start).
         var { data: bsRows } = await sb.from('batch_students')
-          .select('batch_id, assigned_at, removed_at, enrollments(id, sku_id, completed_at, skus(level_name, courses(group_name)))')
+          .select('batch_id, assigned_at, removed_at, enrollments(id, sku_id, completed_at, skus(course_id, level_name, courses(group_name)))')
           .in('batch_id', batchIds)
         ;(bsRows || []).forEach(function (bs) {
           ;(rosterMap[bs.batch_id] = rosterMap[bs.batch_id] || []).push({
-            sku_id: bs.enrollments?.sku_id || null,
-            level: ((bs.enrollments?.skus?.courses?.group_name || '') + ' ' + (bs.enrollments?.skus?.level_name || '')).trim(),
+            course_id: bs.enrollments?.skus?.course_id || null,
+            course: bs.enrollments?.skus?.courses?.group_name || '',
             assigned_at: bs.assigned_at, removed_at: bs.removed_at, completed_at: bs.enrollments?.completed_at || null,
           })
           var ca = bs.enrollments?.completed_at
@@ -1544,44 +1544,34 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   else if (row.mode === 'per_student_month') perStudentMonthRows.push(row)
                 }
 
-                var skuId = data.batch?.sku_id
-                if (skuId) {
-                  // the batch has its own level: that level's appointment
-                  var appt = payrollAppts.find(function (a) { return a.sku_id === skuId })
-                  var course = data.batch?.skus?.courses?.group_name || data.batch?.name || '—'
-                  var level  = data.batch?.skus?.level_name || ''
-                  push(mkRow(appt || { remuneration_mode: 'per_session', remuneration_rate: 0 }, course, level,
-                    payrollCompletions[batchId] || 0, payrollActiveStudents[batchId] || 0))
-                  return
-                }
-
-                // No level on the batch: each student's own level decides which appointment pays
+                // The CI is paid for the course, whatever level each student is on: every student on the
+                // batch counts under the CI's appointment for that course.
                 var roster = payrollRoster[batchId] || []
-                var stats  = batchLevelStats(roster, payrollMonth)
-                var levelName = function (sid) { var r = roster.find(function (x) { return x.sku_id === sid }); return (r && r.level) || 'a level' }
+                var stats  = batchCourseStats(roster, payrollMonth)
+                var courseName = function (cid) { var x = roster.find(function (y) { return y.course_id === cid }); return (x && x.course) || 'this course' }
                 var didSession = false
-                Object.keys(stats).forEach(function (sid) {
-                  var ap = appointmentForLevel(payrollAppts, sid, payrollMonth + '-31')
+                Object.keys(stats).forEach(function (cid) {
+                  var ap = appointmentForCourse(payrollAppts, cid, payrollMonth + '-31')
                   if (!ap) {
-                    if (stats[sid].active > 0 || stats[sid].completions > 0) unmatched.push({ batch: data.batch?.name || '—', level: levelName(sid) })
+                    if (stats[cid].active > 0 || stats[cid].completions > 0) unmatched.push({ batch: data.batch?.name || '—', course: courseName(cid) })
                     return
                   }
                   if (ap.remuneration_mode === 'per_session') {
-                    if (!didSession) { push(mkRow(ap, data.batch?.name || '—', levelName(sid), 0, 0)); didSession = true }
+                    if (!didSession) { push(mkRow(ap, courseName(cid), '', 0, 0)); didSession = true }
                     return
                   }
                   if (ap.remuneration_mode === 'monthly') return   // paid once a month, not per batch
-                  var st = stats[sid]
+                  var st = stats[cid]
                   if (ap.remuneration_mode === 'per_student' && st.completions === 0) return
                   if (ap.remuneration_mode === 'per_student_month' && st.active === 0) return
-                  push(mkRow(ap, data.batch?.name || '—', levelName(sid), st.completions, st.active))
+                  push(mkRow(ap, courseName(cid), '', st.completions, st.active))
                 })
-                // Paid per session, and no student on the roster identifies the level (e.g. an empty batch):
-                // fall back to the CI's per-session appointment.
+                // Paid per session and the roster doesn't identify a course (e.g. an empty batch):
+                // use the CI's per-session appointment.
                 if (!didSession) {
                   var ps = payrollAppts.filter(function (a) { return a.remuneration_mode === 'per_session' })
-                  if (ps.length && !perSessionRows.concat(perStudentRows, perStudentMonthRows).some(function (r) { return r.batchId === batchId })) {
-                    push(mkRow(ps[0], data.batch?.name || '—', '', 0, 0))
+                  if (ps.length && !perSessionRows.concat(perStudentRows, perStudentMonthRows).some(function (x) { return x.batchId === batchId })) {
+                    push(mkRow(ps[0], data.batch?.skus?.courses?.group_name || data.batch?.name || '—', '', 0, 0))
                   }
                 }
               })
@@ -1604,9 +1594,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
               // What was calculated, as lines the payment section can edit
               var calcLines = []
-              perSessionRows.forEach(function (rw) { calcLines.push({ key: 'ps:' + rw.batchId, label: rw.batchName + ' — ' + rw.sessionCount + ' session' + (rw.sessionCount !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN'), amount: rw.amount }) })
-              perStudentRows.forEach(function (rw) { calcLines.push({ key: 'pst:' + rw.batchId, label: rw.batchName + ' — ' + rw.completions + ' completed × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
-              perStudentMonthRows.forEach(function (rw) { calcLines.push({ key: 'psm:' + rw.batchId, label: rw.batchName + ' — ' + rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
+              perSessionRows.forEach(function (rw) { calcLines.push({ key: 'ps:' + rw.batchId + rw.course, label: rw.batchName + (rw.course && rw.course !== rw.batchName ? ' (' + rw.course + ')' : '') + ' — ' + rw.sessionCount + ' session' + (rw.sessionCount !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN'), amount: rw.amount }) })
+              perStudentRows.forEach(function (rw) { calcLines.push({ key: 'pst:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.completions + ' completed × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
+              perStudentMonthRows.forEach(function (rw) { calcLines.push({ key: 'psm:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
               payrollCycle.rows.forEach(function (rw) {
                 rw.blocks.forEach(function (b, bi) {
                   calcLines.push({
@@ -1634,8 +1624,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 <>
                   {unmatched.length > 0 && (
                     <div style={{ padding: '8px 12px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FCD34D', marginBottom: 12, font: '500 12px var(--font)', color: '#92400E' }}>
-                      No appointment covers {unmatched.map(function (u) { return u.level + ' (' + u.batch + ')' }).join(', ')} for {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })},
-                      so nothing is calculated for those students. Appoint the CI for that level, or add a line below.
+                      No appointment covers {unmatched.map(function (u) { return u.course + ' (' + u.batch + ')' }).join(', ')} for {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })},
+                      so nothing is calculated for those students. Appoint the CI for that course, or add a line below.
                     </div>
                   )}
 
