@@ -6,7 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
-import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats } from '../utils/ciPayroll'
+import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats, splitAmount, countInRange } from '../utils/ciPayroll'
 import { fetchAllRows } from '../utils/studentLifecycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
@@ -83,6 +83,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
+  const [payrollBatchDates, setPayrollBatchDates] = useState({})   // batchId → { all: dates of every class held, ci: dates this CI took }
   const [payrollRoster, setPayrollRoster] = useState({})   // batchId → [{ course, student, level, assigned_at, removed_at, completed_at }]
   const [payrollCycle,       setPayrollCycle]       = useState({ rows: [], inProgress: [], total: 0, datesBySid: {} })   // per-student-cycle pay for the month
   const [payrollRun,         setPayrollRun]         = useState(null)   // saved ci_payroll_runs row for this CI + month
@@ -217,6 +218,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       var completionMap   = {}
       var totalSessMap    = {}
       var activeStudentMap = {}   // batchId → students on the batch at any point this month (for per_student_month)
+      var batchDatesMap = {}      // batchId → dates of classes held / taken by this CI, to re-count when a student's dates are edited
       var rosterMap = {}          // batchId → each student's level and dates, for batches that carry no level of their own
 
       if (batchIds.length > 0) {
@@ -250,13 +252,16 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         // Total non-holiday sessions per batch in the month (includes substitutes)
         // Used to prorate per-student pay: CI taught ciSessions/totalSessions of the batch
         var { data: allSessRows } = await sb.from('batch_sessions')
-          .select('batch_id')
+          .select('batch_id, session_date, instructor_id, is_substitute')
           .in('batch_id', batchIds)
           .eq('is_holiday', false)
           .gte('session_date', startDate)
           .lte('session_date', endDate)
         ;(allSessRows || []).forEach(function (s) {
           totalSessMap[s.batch_id] = (totalSessMap[s.batch_id] || 0) + 1
+          var bd = batchDatesMap[s.batch_id] || (batchDatesMap[s.batch_id] = { all: [], ci: [] })
+          bd.all.push(s.session_date)
+          if (s.instructor_id === instructor.id && !s.is_substitute) bd.ci.push(s.session_date)
         })
       }
 
@@ -365,6 +370,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       setPayrollTotalSess(totalSessMap)
       setPayrollActiveStudents(activeStudentMap)
       setPayrollRoster(rosterMap)
+      setPayrollBatchDates(batchDatesMap)
       setPayrollOverride(ovRow || null)
       setOverrideEdit(false)
       setPayrollLoading(false)
@@ -1528,11 +1534,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var subSessions  = Math.max(0, totalSessions - ciSessions)
                 // Prorate per-student pay by fraction of sessions the CI actually taught
                 var proration    = totalSessions > 0 ? ciSessions / totalSessions : 1
-                var mkRow = function (appt, course, level, completions, activeStudents, names) {
+                var mkRow = function (appt, course, level, completions, activeStudents, members) {
                   var mode = appt.remuneration_mode, rate = appt.remuneration_rate || 0
                   return {
                     batchId, batchName: data.batch?.name || '—', course, level,
-                    sessionCount: ciSessions, totalSessions, subSessions, proration, mode, rate, names: names || [],
+                    sessionCount: ciSessions, totalSessions, subSessions, proration, mode, rate, members: members || [], names: (members || []).map(function (m) { return m.label }),
                     completions: mode === 'per_student' ? completions : 0,
                     activeStudents: mode === 'per_student_month' ? activeStudents : 0,
                     amount: mode === 'per_session' ? ciSessions * rate
@@ -1567,7 +1573,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   var st = stats[cid]
                   if (ap.remuneration_mode === 'per_student' && st.completions === 0) return
                   if (ap.remuneration_mode === 'per_student_month' && st.active === 0) return
-                  push(mkRow(ap, courseName(cid), '', st.completions, st.active, ap.remuneration_mode === 'per_student' ? st.doneNames : st.activeNames))
+                  push(mkRow(ap, courseName(cid), '', st.completions, st.active, ap.remuneration_mode === 'per_student' ? st.doneMembers : st.activeMembers))
                 })
                 // Paid per session and the roster doesn't identify a course (e.g. an empty batch):
                 // use the CI's per-session appointment.
@@ -1600,14 +1606,44 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var usedCourses = Array.from(new Set(perSessionRows.concat(perStudentRows, perStudentMonthRows).map(function (x) { return x.course }).filter(Boolean)))
               var checkIssues = payrollCheckIssues({
                 month: payrollMonth, ciName: instructor.full_name, classesTaken: payrollSessions.length, classPay: classPay,
-                unmatched: unmatched, appts: payrollAppts, usedCourses: usedCourses, run: payrollRun, calcTotal: grandTotal,
+                unmatched: unmatched, appts: payrollAppts, usedCourses: usedCourses, inProgress: payrollCycle.inProgress, run: payrollRun, calcTotal: grandTotal,
               })
 
               // What was calculated, as lines the payment section can edit
               var calcLines = []
-              perSessionRows.forEach(function (rw) { calcLines.push({ key: 'ps:' + rw.batchId + rw.course, label: rw.batchName + (rw.course && rw.course !== rw.batchName ? ' (' + rw.course + ')' : '') + ' — ' + rw.sessionCount + ' session' + (rw.sessionCount !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN'), amount: rw.amount }) })
-              perStudentRows.forEach(function (rw) { calcLines.push({ key: 'pst:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.completions + ' completed × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount, detail: (rw.names && rw.names.length ? 'Students: ' + rw.names.join(' · ') : '') }) })
-              perStudentMonthRows.forEach(function (rw) { calcLines.push({ key: 'psm:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount, detail: (rw.names && rw.names.length ? 'Students: ' + rw.names.join(' · ') : '') }) })
+              var monthFirst = payrollMonth + '-01'
+              var monthLast = payrollMonth + '-' + String(new Date(Number(payrollMonth.slice(0, 4)), Number(payrollMonth.slice(5, 7)), 0).getDate()).padStart(2, '0')
+              perSessionRows.forEach(function (rw) {
+                var bd = payrollBatchDates[rw.batchId] || { all: [], ci: [] }
+                calcLines.push({
+                  key: 'ps:' + rw.batchId + rw.course, label: rw.batchName + (rw.course && rw.course !== rw.batchName ? ' (' + rw.course + ')' : ''), amount: rw.amount,
+                  detail: '₹' + rw.rate.toLocaleString('en-IN') + ' a class',
+                  meta: { kind: 'session', sid: rw.batchId, from: monthFirst, to: monthLast, count: countInRange(bd.ci, monthFirst, monthLast), rate: rw.rate },
+                })
+              })
+              // Per-student modes are paid student by student — one line each (name, the dates it covers, the
+              // classes the CI took in them, the amount), adding up to the row's amount
+              var studentLines = function (rows, prefix, basis) {
+                rows.forEach(function (rw) {
+                  var members = rw.members || []
+                  var where = rw.batchName + (rw.course ? ' (' + rw.course + ')' : '')
+                  var bd = payrollBatchDates[rw.batchId] || { all: [], ci: [] }
+                  if (members.length && members.length === (basis === 'done' ? rw.completions : rw.activeStudents)) {
+                    var parts = splitAmount(rw.amount, members.length)
+                    members.forEach(function (m, i) {
+                      calcLines.push({
+                        key: prefix + rw.batchId + rw.course + ':' + i, label: m.label, amount: parts[i],
+                        detail: where + ' · ₹' + rw.rate.toLocaleString('en-IN') + (basis === 'done' ? ' on completion' : ' a month'),
+                        meta: { kind: 'share', sid: rw.batchId, from: m.from, to: m.to, count: countInRange(bd.ci, m.from, m.to), total: countInRange(bd.all, m.from, m.to), rate: rw.rate },
+                      })
+                    })
+                  } else {
+                    calcLines.push({ key: prefix + rw.batchId + rw.course, label: where + ' — ' + (basis === 'done' ? rw.completions + ' completed' : rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '')) + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount })
+                  }
+                })
+              }
+              studentLines(perStudentRows, 'pst:', 'done')
+              studentLines(perStudentMonthRows, 'psm:', 'month')
               payrollCycle.rows.forEach(function (rw) {
                 rw.blocks.forEach(function (b, bi) {
                   calcLines.push({
@@ -1616,7 +1652,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   })
                 })
               })
-              monthlyRows.forEach(function (a) { calcLines.push({ key: 'mo:' + a.id, label: ((a.skus && a.skus.courses && a.skus.courses.group_name) || 'Monthly') + ' — monthly fixed', amount: a.remuneration_rate || 0 }) })
+              monthlyRows.forEach(function (a) {
+                calcLines.push({
+                  key: 'mo:' + a.id, label: ((a.skus && a.skus.courses && a.skus.courses.group_name) || 'Monthly') + ' — monthly fixed', amount: a.remuneration_rate || 0,
+                  detail: 'Fixed monthly rate',
+                  meta: { kind: 'fixed', sid: 'fixed:' + a.id, from: monthFirst, to: monthLast, rate: a.remuneration_rate || 0 },
+                })
+              })
               if (officeSalary > 0) calcLines.push({ key: 'office', label: 'Office salary', amount: officeSalary })
               if (conveyance > 0) calcLines.push({ key: 'conv', label: 'Conveyance', amount: conveyance })
               if (incentive !== 0) calcLines.push({ key: 'inc', label: 'Incentive', amount: incentive })
@@ -1634,287 +1676,6 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               return (
                 <>
                   <PayrollCheckPanel issues={checkIssues} />
-
-                  {/* Per-session batches */}
-                  {perSessionRows.length > 0 && (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
-                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Per Session
-                      </div>
-                      {perSessionRows.map(function (row, i) {
-                        return (
-                          <div key={i} style={{
-                            display: 'flex', alignItems: 'center', padding: '10px 14px',
-                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-                          }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
-                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                {row.course}{row.level ? ' · ' + row.level : ''} · {row.sessionCount} session{row.sessionCount !== 1 ? 's' : ''} × ₹{row.rate.toLocaleString('en-IN')}
-                              </div>
-                            </div>
-                            <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>
-                              ₹{row.amount.toLocaleString('en-IN')}
-                            </div>
-                          </div>
-                        )
-                      })}
-                      <div style={{
-                        display: 'flex', justifyContent: 'space-between', padding: '8px 14px',
-                        borderTop: '1px solid var(--border)', background: 'var(--purple-bg)',
-                      }}>
-                        <span style={{ font: '600 12px var(--font)', color: 'var(--purple)' }}>Session Sub-total</span>
-                        <span style={{ font: '700 14px var(--font)', color: 'var(--purple)' }}>₹{sessionTotal.toLocaleString('en-IN')}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Monthly fixed */}
-                  {monthlyRows.length > 0 && (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
-                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Monthly Fixed
-                      </div>
-                      {monthlyRows.map(function (a, i) {
-                        return (
-                          <div key={a.id} style={{
-                            display: 'flex', alignItems: 'center', padding: '10px 14px',
-                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-                          }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>
-                                {a.skus?.courses?.group_name || '—'}{a.skus?.level_name ? ' · ' + a.skus.level_name : ''}
-                              </div>
-                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>Monthly rate</div>
-                            </div>
-                            <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>
-                              ₹{(a.remuneration_rate || 0).toLocaleString('en-IN')}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Per-student (completion-based) */}
-                  {perStudentRows.length > 0 && (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
-                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Per Student (on completion)
-                      </div>
-                      {perStudentRows.map(function (row, i) {
-                        var hasSubs = row.subSessions > 0
-                        var pct     = Math.round(row.proration * 100)
-                        return (
-                          <div key={i} style={{
-                            padding: '10px 14px',
-                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
-                                <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                  {row.course}{row.level ? ' · ' + row.level : ''}
-                                </div>
-                                {/* Sessions breakdown */}
-                                <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
-                                  <span style={{
-                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
-                                    background: 'var(--purple-bg)', color: 'var(--purple)',
-                                  }}>
-                                    {row.sessionCount} sessions by CI
-                                  </span>
-                                  {hasSubs && (
-                                    <span style={{
-                                      font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
-                                      background: '#fff3cd', color: '#92400e',
-                                    }}>
-                                      {row.subSessions} by substitute
-                                    </span>
-                                  )}
-                                  <span style={{
-                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
-                                    background: row.completions > 0 ? 'var(--green-bg)' : 'var(--bg3)',
-                                    color: row.completions > 0 ? 'var(--green)' : 'var(--text3)',
-                                  }}>
-                                    {row.completions} student{row.completions !== 1 ? 's' : ''} completed
-                                  </span>
-                                </div>
-                                {/* Calculation breakdown */}
-                                {row.names && row.names.length > 0 && (
-                                  <div style={{ font: '500 11px var(--font)', color: 'var(--text2)', marginTop: 5 }}>Students: {row.names.join(' · ')}</div>
-                                )}
-                                <div style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
-                                  {row.completions} × ₹{row.rate.toLocaleString('en-IN')}
-                                  {hasSubs
-                                    ? <> × <span style={{ color: '#92400e', fontWeight: 700 }}>{pct}%</span> (CI taught {pct}% of sessions)</>
-                                    : null
-                                  }
-                                  {' = '}
-                                  <strong style={{ color: row.amount > 0 ? 'var(--text)' : 'var(--text3)' }}>
-                                    ₹{row.amount.toLocaleString('en-IN')}
-                                  </strong>
-                                </div>
-                              </div>
-                              <div style={{ font: '700 16px var(--font)', color: row.amount > 0 ? 'var(--text)' : 'var(--text3)', marginLeft: 12, marginTop: 2 }}>
-                                {row.amount > 0 ? '₹' + row.amount.toLocaleString('en-IN') : '—'}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                      {studentTotal > 0 && (
-                        <div style={{
-                          display: 'flex', justifyContent: 'space-between', padding: '8px 14px',
-                          borderTop: '1px solid var(--border)', background: 'var(--green-bg)',
-                        }}>
-                          <span style={{ font: '600 12px var(--font)', color: 'var(--green)' }}>Completion Sub-total</span>
-                          <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>₹{studentTotal.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Per student, per cycle of 25 classes */}
-                  {(payrollCycle.rows.length > 0 || payrollCycle.inProgress.length > 0) && (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
-                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Per Student / Cycle</span>
-                      </div>
-                      {payrollCycle.rows.map(function (row) {
-                        return row.blocks.map(function (b, bi) {
-                          return (
-                            <div key={row.id + '-' + bi} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.name}</div>
-                                <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                  {row.course ? row.course + ' · ' : ''}{fmtDate(b.start)} – {fmtDate(b.end)} · {b.count} of {b.perCycle} classes taught
-                                  {b.partial ? ' · pro-rata (student left)' : ' · cycle complete'}
-                                </div>
-                              </div>
-                              <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>₹{b.amount.toLocaleString('en-IN')}</div>
-                            </div>
-                          )
-                        })
-                      })}
-                      {payrollCycle.inProgress.map(function (ip) {
-                        return (
-                          <div key={'ip-' + ip.id} style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg2)' }}>
-                            <div style={{ flex: 1, font: '500 12px var(--font)', color: 'var(--text3)' }}>
-                              {ip.name} — cycle in progress since {fmtDate(ip.start)}: {ip.count} of {ip.perCycle} classes
-                            </div>
-                            <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>pay when complete (₹{ip.accrued.toLocaleString('en-IN')} so far)</div>
-                          </div>
-                        )
-                      })}
-                      {cycleTotal > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid var(--border)', background: 'var(--green-bg)' }}>
-                          <span style={{ font: '600 12px var(--font)', color: 'var(--green)' }}>Cycle Sub-total</span>
-                          <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>₹{cycleTotal.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Per-student / month (recurring roster-based) */}
-                  {perStudentMonthRows.length > 0 && (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
-                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Per Student / Month
-                      </div>
-                      {perStudentMonthRows.map(function (row, i) {
-                        var hasSubs = row.subSessions > 0
-                        var pct     = Math.round(row.proration * 100)
-                        return (
-                          <div key={i} style={{
-                            padding: '10px 14px',
-                            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{row.batchName}</div>
-                                <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>
-                                  {row.course}{row.level ? ' · ' + row.level : ''}
-                                </div>
-                                <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
-                                  <span style={{
-                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
-                                    background: 'var(--purple-bg)', color: 'var(--purple)',
-                                  }}>
-                                    {row.sessionCount} sessions by CI
-                                  </span>
-                                  {hasSubs && (
-                                    <span style={{
-                                      font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
-                                      background: '#fff3cd', color: '#92400e',
-                                    }}>
-                                      {row.subSessions} by substitute
-                                    </span>
-                                  )}
-                                  <span style={{
-                                    font: '600 10px var(--font)', padding: '1px 7px', borderRadius: 20,
-                                    background: row.activeStudents > 0 ? 'var(--green-bg)' : 'var(--bg3)',
-                                    color: row.activeStudents > 0 ? 'var(--green)' : 'var(--text3)',
-                                  }}>
-                                    {row.activeStudents} student{row.activeStudents !== 1 ? 's' : ''} on roster
-                                  </span>
-                                </div>
-                                {row.names && row.names.length > 0 && (
-                                  <div style={{ font: '500 11px var(--font)', color: 'var(--text2)', marginTop: 5 }}>Students: {row.names.join(' · ')}</div>
-                                )}
-                                <div style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
-                                  {row.activeStudents} × ₹{row.rate.toLocaleString('en-IN')}
-                                  {hasSubs
-                                    ? <> × <span style={{ color: '#92400e', fontWeight: 700 }}>{pct}%</span> (CI taught {pct}% of sessions)</>
-                                    : null
-                                  }
-                                  {' = '}
-                                  <strong style={{ color: row.amount > 0 ? 'var(--text)' : 'var(--text3)' }}>
-                                    ₹{row.amount.toLocaleString('en-IN')}
-                                  </strong>
-                                </div>
-                              </div>
-                              <div style={{ font: '700 16px var(--font)', color: row.amount > 0 ? 'var(--text)' : 'var(--text3)', marginLeft: 12, marginTop: 2 }}>
-                                {row.amount > 0 ? '₹' + row.amount.toLocaleString('en-IN') : '—'}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                      {studentMonthTotal > 0 && (
-                        <div style={{
-                          display: 'flex', justifyContent: 'space-between', padding: '8px 14px',
-                          borderTop: '1px solid var(--border)', background: 'var(--green-bg)',
-                        }}>
-                          <span style={{ font: '600 12px var(--font)', color: 'var(--green)' }}>Roster Sub-total</span>
-                          <span style={{ font: '700 14px var(--font)', color: 'var(--green)' }}>₹{studentMonthTotal.toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Fixed monthly extras: office salary and conveyance */}
-                  {(officeSalary > 0 || conveyance > 0) && (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
-                      <div style={{ padding: '8px 14px', background: 'var(--bg3)', font: '600 11px var(--font)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Fixed Monthly
-                      </div>
-                      {[
-                        officeSalary > 0 ? { label: 'Office salary', note: 'Office staff — fixed monthly', amt: officeSalary } : null,
-                        conveyance > 0 ? { label: 'Conveyance', note: 'Fixed, in addition to the above', amt: conveyance } : null,
-                      ].filter(Boolean).map(function (r, i) {
-                        return (
-                          <div key={r.label} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{r.label}</div>
-                              <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 2 }}>{r.note}</div>
-                            </div>
-                            <div style={{ font: '700 14px var(--font)', color: 'var(--text)' }}>₹{r.amt.toLocaleString('en-IN')}</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
 
                   {/* Incentive and misc — entered month by month */}
                   <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
@@ -1950,7 +1711,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   </div>
 
                   {/* ── Payment for the month: editable amounts, saved, marked paid ── */}
-                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun} datesBySid={payrollCycle.datesBySid}
+                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun} datesBySid={payrollCycle.datesBySid} shareDates={payrollBatchDates}
                     canEdit={canEditPayroll} onChanged={function (saved) { setPayrollRun(saved) }} />
                 </>
               )

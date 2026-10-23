@@ -41,3 +41,9 @@ test('every kind of issue, in payroll and in batches, carries an action', () => 
   const out = batchHealthIssues({ today: '2026-10-23', batches: [{ id: 'b', name: 'B', is_active: true, start_date: '2026-09-01', instructor_assigned_at: '2026-09-01', instructor_id: null, instructors: null }], openRoster: [], recentSessions: [], appointments: [] })
   assert.ok(out.length > 0 && out.every((i) => i.action))
 })
+
+test('a cycle still running is reported in the check, with what to do', () => {
+  const out = payrollCheckIssues({ ...base, inProgress: [{ name: 'Parth', count: 11, perCycle: 25, start: '2026-10-09', accrued: 440 }] })
+  const i = out.find((x) => x.code === 'cycle_in_progress')
+  assert.ok(i && i.severity === 'info' && i.action.length > 20)
+})

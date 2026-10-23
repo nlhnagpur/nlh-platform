@@ -2,6 +2,17 @@
 
 Last updated 2026-10-23. The app now checks for most of these itself: the **Batch health check** (Batches page, admins) and the **Payroll check** (a CI's Payroll tab). Each message carries a "What to do" line; this page explains the reasoning behind them.
 
+## One payroll system for every pay basis
+
+Whatever the CI's appointment says (per session, per student, per student a month, per cycle, monthly fixed), the Payroll tab produces the **same kind of line** and handles it the same way:
+
+> **name · the dates it covers (From / To, editable) · the classes counted in those dates · the amount (editable)**
+
+- Changing a line's dates re-counts the classes in them and re-prices the line by one rule (`recountLine` in `src/utils/ciPayroll.js`): per session = classes taken × rate; per student = rate × the CI's share of classes held; per cycle = pro-rata to 25 classes; fixed = the dates are only a record.
+- One flow after that: **Save payroll → Post to accounts → Record bank payment**, one "paid up to … next pay starts …" note, one **Payroll check**, one printed payment sheet.
+- Conveyance, office salary, incentive, misc and anything you add are plain lines with an amount.
+- There are no separate per-basis blocks any more; the lines are the calculation.
+
 ## The rules the system follows
 
 | Topic | Rule |

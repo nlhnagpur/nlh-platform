@@ -131,8 +131,9 @@ export function appointmentForCourse(appts, course, monthEnd) {
 }
 
 // Per programme on a batch's roster, for one month:
-//   completions / doneNames  students who completed a level of it in the month
-//   active / activeNames     students on the roster at any point in the month (not finished or removed before it)
+//   completions / doneNames / doneMembers   students who completed a level of it in the month
+//   active / activeNames / activeMembers    students on the roster at any point in the month (not finished or removed before it)
+//   a member is { label, from, to }: the days of the month the student was on the batch
 //   roster: [{ course, student, level, assigned_at, removed_at, completed_at }]
 export function batchCourseStats(roster, month) {
   const start = month + '-01'
@@ -140,14 +141,62 @@ export function batchCourseStats(roster, month) {
   const out = {}
   ;(roster || []).forEach(function (r) {
     if (!r.course) return
-    const st = out[r.course] || (out[r.course] = { completions: 0, active: 0, doneNames: [], activeNames: [] })
+    const st = out[r.course] || (out[r.course] = { completions: 0, active: 0, doneNames: [], activeNames: [], doneMembers: [], activeMembers: [] })
     const label = (r.student || '') + (r.student && r.level ? ' (' + r.level + ')' : '')
     const assigned = r.assigned_at ? String(r.assigned_at).slice(0, 10) : ''
     const removed = r.removed_at ? String(r.removed_at).slice(0, 10) : ''
     const done = r.completed_at ? String(r.completed_at).slice(0, 10) : ''
-    if (done && done >= start && done <= end) { st.completions++; if (label) st.doneNames.push(label) }
+    const from = assigned && assigned > start ? assigned : start
+    const realEnd = month + '-' + String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, '0')
+    const lastDay = [removed, done].filter(Boolean).sort()[0] || realEnd
+    const to = lastDay < realEnd ? lastDay : realEnd
+    const member = { label: label, from: from, to: to }
+    if (done && done >= start && done <= end) { st.completions++; if (label) { st.doneNames.push(label); st.doneMembers.push(member) } }
     const onRoster = (!assigned || assigned <= end) && (!removed || removed >= start) && (!done || done >= start)
-    if (onRoster) { st.active++; if (label) st.activeNames.push(label) }
+    if (onRoster) { st.active++; if (label) { st.activeNames.push(label); st.activeMembers.push(member) } }
   })
   return out
+}
+
+// A monthly / on-completion student's pay is the rate scaled by the share of the batch's classes the
+// CI took in the period: `ci` classes the CI took out of `all` held.
+export function amountForShare(rate, ci, all) {
+  if (!(all > 0)) return 0
+  return Math.round((Number(rate) || 0) * (Number(ci) || 0) / all)
+}
+
+// Split `total` rupees over `n` students: whole rupees, and the parts add up exactly to the total
+// (the first few students carry the odd rupee).
+export function splitAmount(total, n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0))
+  if (!count) return []
+  const t = Math.round(Number(total) || 0)
+  const base = Math.floor(t / count)
+  const extra = t - base * count
+  return Array.from({ length: count }, function (_, i) { return base + (i < extra ? 1 : 0) })
+}
+
+// ONE rule for what happens when the dates on any payroll line are changed: re-count what the dates
+// cover and re-price the line. Every pay basis produces the same kind of line and goes through here.
+//   line.meta.kind: 'session' (classes taken × rate) · 'share' (rate × classes the CI took ÷ classes held)
+//                   · 'fixed' (a fixed amount — the dates are a record only) · otherwise a 25-class cycle
+//   ctx: { datesBySid: cycle students' class dates, shareDates: per batch { ci, all } class dates }
+export function recountLine(line, from, to, ctx) {
+  const m = line && line.meta
+  if (!m) return line
+  const c = ctx || {}
+  if (m.kind === 'fixed') return { ...line, meta: { ...m, from: from, to: to } }
+  if (m.kind === 'session') {
+    const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
+    const ci = countInRange(bd.ci, from, to)
+    return { ...line, meta: { ...m, from: from, to: to, count: ci }, amount: ci * (m.rate || 0) }
+  }
+  if (m.kind === 'share') {
+    const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
+    const ci = countInRange(bd.ci, from, to)
+    const all = countInRange(bd.all, from, to)
+    return { ...line, meta: { ...m, from: from, to: to, count: ci, total: all }, amount: amountForShare(m.rate, ci, all) }
+  }
+  const count = countInRange((c.datesBySid || {})[m.sid] || [], from, to)
+  return { ...line, meta: { ...m, from: from, to: to, count: count }, amount: amountForClasses(m.rate, count, m.perCycle) }
 }

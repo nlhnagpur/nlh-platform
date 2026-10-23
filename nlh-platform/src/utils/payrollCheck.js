@@ -6,6 +6,7 @@ export const PAYROLL_ACTIONS = {
   zero_pay: 'Look at the appointment basis for the programme. "Per Student" pays only when a student completes a level; "Per Student / Month" pays for students on the batch. If the basis is wrong, correct the appointment; if the pay is right, nothing to do.',
   basis_change: 'The latest appointment in force applies to the whole month. If part of the month should be paid on the earlier basis, edit the amounts or add a line below, and note why.',
   recalculated: 'Attendance, batches or appointments changed since this payroll was saved. Check the lines against the new calculation (Reset to calculated shows it), then save again — or leave as is if your figure is right.',
+  cycle_in_progress: 'Nothing to do now. A cycle is paid when it completes (25 classes), or pro-rata if the student leaves. It will appear as a line in the month it started.',
   posted_differs: 'This month is already posted to the accounts, so nothing changes automatically. If the new calculation is right, reopen the month (until it is paid) or post the difference as an adjustment next month.',
 }
 
@@ -18,6 +19,7 @@ function monthRange(month) { return [month + '-01', month + '-31'] }
 //   unmatched:    [{ batch, course }] programmes on a roster the CI holds no appointment for
 //   appts:        [{ remuneration_mode, appointed_at, skus: { courses: { group_name } } }]  the CI's active appointments
 //   usedCourses:  programme names that produced pay rows (to look for a mid-month change of basis)
+//   inProgress:   [{ name, count, perCycle, start, accrued }] cycles still running (not payable yet)
 //   run:          saved ci_payroll_runs row or null
 //   calcTotal:    the calculated total now
 export function payrollCheckIssues(input) {
@@ -50,6 +52,10 @@ export function payrollCheckIssues(input) {
         }
       }
     })
+  })
+
+  ;(input.inProgress || []).forEach(function (c) {
+    add('info', 'cycle_in_progress', c.name + ' — cycle in progress since ' + c.start + ': ' + c.count + ' of ' + c.perCycle + ' classes (₹' + c.accrued + ' so far), not payable yet.')
   })
 
   if (input.run && input.run.calculated_total != null && input.run.calculated_total !== input.calcTotal) {

@@ -155,3 +155,57 @@ test('Sabahat September: 3 Phonics students on the monthly rate, scaled by the c
   const ap = appointmentForCourse(SAB, 'Phonics', '2026-09-31')
   assert.equal(Math.round(3 * ap.remuneration_rate * 21 / 22), 3580)
 })
+
+import { splitAmount } from '../src/utils/ciPayroll.js'
+
+test('a row amount splits over its students in whole rupees that add up exactly', () => {
+  assert.deepEqual(splitAmount(3580, 3), [1194, 1193, 1193])      // 3 × ₹1,250 × 21/22 = ₹3,580
+  assert.equal(splitAmount(3580, 3).reduce((a, b) => a + b, 0), 3580)
+  assert.deepEqual(splitAmount(2500, 2), [1250, 1250])
+  assert.deepEqual(splitAmount(1000, 1), [1000])
+  assert.deepEqual(splitAmount(100, 0), [])
+  assert.equal(splitAmount(7, 3).reduce((a, b) => a + b, 0), 7)
+})
+
+import { amountForShare } from '../src/utils/ciPayroll.js'
+
+test('each student carries the days they were on the batch, clamped to the month', () => {
+  const roster = [
+    { course: 'Phonics', student: 'Sai', level: 'Level 2', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },
+    { course: 'Phonics', student: 'Ayesha', level: 'Level 3', assigned_at: '2026-09-08', removed_at: null, completed_at: null },
+  ]
+  const sep = batchCourseStats(roster, '2026-09').Phonics
+  assert.deepEqual(sep.activeMembers, [
+    { label: 'Sai (Level 2)', from: '2026-09-02', to: '2026-09-30' },
+    { label: 'Ayesha (Level 3)', from: '2026-09-08', to: '2026-09-30' },
+  ])
+  const oct = batchCourseStats(roster, '2026-10').Phonics
+  assert.deepEqual(oct.doneMembers, [{ label: 'Sai (Level 2)', from: '2026-10-01', to: '2026-10-08' }])
+})
+
+test('share formula: the rate scaled by the classes the CI took out of those held', () => {
+  assert.equal(amountForShare(1250, 21, 22), 1193)
+  assert.equal(amountForShare(1250, 22, 22), 1250)
+  assert.equal(amountForShare(1250, 10, 0), 0)
+})
+
+import { recountLine } from '../src/utils/ciPayroll.js'
+
+test('one rule re-counts and re-prices a line for every pay basis when its dates change', () => {
+  const classes = ['2026-09-02', '2026-09-03', '2026-09-04', '2026-09-07', '2026-09-08']
+  const ctx = { shareDates: { b1: { ci: classes.slice(0, 4), all: classes } }, datesBySid: { e1: classes } }
+  // per session: classes taken × rate
+  const ps = recountLine({ amount: 4 * 739, meta: { kind: 'session', sid: 'b1', rate: 739, from: '2026-09-01', to: '2026-09-30', count: 4 } }, '2026-09-01', '2026-09-03', ctx)
+  assert.equal(ps.meta.count, 2); assert.equal(ps.amount, 1478)
+  // monthly / on-completion student: rate × the CI's share of the classes held
+  const sh = recountLine({ amount: 0, meta: { kind: 'share', sid: 'b1', rate: 1000, from: '2026-09-01', to: '2026-09-30' } }, '2026-09-01', '2026-09-30', ctx)
+  assert.equal(sh.meta.count, 4); assert.equal(sh.meta.total, 5); assert.equal(sh.amount, 800)
+  // 25-class cycle: pro-rata to the classes
+  const cy = recountLine({ amount: 0, meta: { sid: 'e1', rate: 1000, perCycle: 25, from: '2026-09-01', to: '2026-09-30' } }, '2026-09-01', '2026-09-30', ctx)
+  assert.equal(cy.meta.count, 5); assert.equal(cy.amount, 200)
+  // fixed: dates are a record, the amount stays
+  const fx = recountLine({ amount: 3250, meta: { kind: 'fixed', sid: 'fixed:a', rate: 3250, from: '2026-09-01', to: '2026-09-30' } }, '2026-09-10', '2026-09-30', ctx)
+  assert.equal(fx.amount, 3250); assert.equal(fx.meta.from, '2026-09-10')
+  // a line with no dates is untouched
+  assert.deepEqual(recountLine({ amount: 250 }, 'a', 'b', ctx), { amount: 250 })
+})

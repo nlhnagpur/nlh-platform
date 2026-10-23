@@ -5,7 +5,7 @@ import { fmtDate, showToast } from '../utils'
 import { cleanLines, sumLines, linesFromCalc, lineEdited, monthLabel, lastDayOf } from '../utils/ciPayrollRun'
 import { postPayrollAccrual, voidPayrollAccrual } from '../utils/ciAccounting'
 import CiBankPaymentDialog from './CiBankPaymentDialog'
-import { countInRange, amountForClasses, nextCycleStart } from '../utils/ciPayroll'
+import { recountLine, nextCycleStart } from '../utils/ciPayroll'
 import { printCiPaymentSheet } from './ciPaymentSheet'
 
 function rupees(n) {
@@ -18,7 +18,7 @@ function rupees(n) {
 // and paid by a bank payment (Dr the CI / Cr the bank).
 //   calcLines: [{ key, label, amount }] — what the system calculated
 //   run:       the saved ci_payroll_runs row for this CI + month, or null
-export default function CiPayrollRun({ instructor, month, calcLines, run, canEdit, onChanged, datesBySid }) {
+export default function CiPayrollRun({ instructor, month, calcLines, run, canEdit, onChanged, datesBySid, shareDates }) {
   const { currentUser } = useAuth()
   const calcSig = JSON.stringify(calcLines || [])
   const [lines, setLines] = useState([])
@@ -63,11 +63,7 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
   // otherwise); the amount can still be typed over afterwards.
   function setRange(i, from, to) {
     setLines(function (ls) {
-      return ls.map(function (l, j) {
-        if (j !== i || !l.meta) return l
-        const count = countInRange((datesBySid || {})[l.meta.sid] || [], from, to)
-        return { ...l, meta: { ...l.meta, from: from, to: to, count: count }, amount: amountForClasses(l.meta.rate, count, l.meta.perCycle) }
-      })
+      return ls.map(function (l, j) { return j === i ? recountLine(l, from, to, { datesBySid: datesBySid, shareDates: shareDates }) : l })
     })
   }
 
@@ -76,7 +72,7 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
     const rows = []
     const others = []
     clean.forEach(function (l) {
-      if (l.meta && l.meta.sid) {
+      if (l.meta && l.meta.sid && !l.meta.kind) {
         const all = (datesBySid || {})[l.meta.sid] || []
         const dates = all.filter(function (d) { return d >= l.meta.from && d <= l.meta.to })
         rows.push({ name: l.label, course: l.meta.course || '', blocks: [{ dates: dates, count: l.meta.count, perCycle: l.meta.perCycle, amount: l.amount, partial: l.meta.count < l.meta.perCycle }] })
@@ -170,7 +166,12 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
                         <input type="date" value={l.meta.to} onChange={function (e) { setRange(i, l.meta.from, e.target.value) }} style={{ fontSize: 11 }} />
                       </>
                     : <span>{fmtDate(l.meta.from)} to {fmtDate(l.meta.to)}</span>}
-                  <span style={{ color: 'var(--text2)', fontWeight: 600 }}>· {l.meta.count} of {l.meta.perCycle} classes</span>
+                  <span style={{ color: 'var(--text2)', fontWeight: 600 }}>
+                    {l.meta.kind === 'share' ? '· ' + l.meta.count + ' of ' + l.meta.total + ' classes taken by the CI'
+                      : l.meta.kind === 'session' ? '· ' + l.meta.count + ' class' + (l.meta.count !== 1 ? 'es' : '') + ' taken'
+                      : l.meta.kind === 'fixed' ? '· fixed monthly'
+                      : '· ' + l.meta.count + ' of ' + l.meta.perCycle + ' classes'}
+                  </span>
                 </div>
               )}
               {lineEdited(l) && <div style={{ font: '500 10px var(--font)', color: '#92400e', marginTop: 2 }}>edited — calculated {rupees(l.calc)}{l.meta && l.meta.origFrom && (l.meta.from !== l.meta.origFrom || l.meta.to !== l.meta.origTo) ? ' for ' + fmtDate(l.meta.origFrom) + ' to ' + fmtDate(l.meta.origTo) : ''}</div>}
