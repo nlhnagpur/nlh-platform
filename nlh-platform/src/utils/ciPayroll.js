@@ -109,3 +109,35 @@ export function amountForClasses(rate, count, perCycle) {
   const n = perCycle > 0 ? perCycle : CI_CYCLE_SESSIONS
   return Math.round((Number(rate) || 0) * (Number(count) || 0) / n)
 }
+
+// ── which appointment pays for a batch's students ───────────────────────────────
+// Many batches carry no level of their own, so the appointment that applies comes from each
+// student's own level (the sku of their enrolment). An appointment only applies from its
+// appointed date.
+export function appointmentForLevel(appts, skuId, monthEnd) {
+  const end = monthEnd ? String(monthEnd).slice(0, 10) : ''
+  return (appts || []).find(function (a) {
+    return a.sku_id === skuId && (!a.appointed_at || !end || String(a.appointed_at).slice(0, 10) <= end)
+  }) || null
+}
+
+// Per level on a batch's roster, for one month:
+//   completions  students whose level was completed in the month
+//   active       students on the roster at any point in the month (not finished or removed before it)
+//   roster: [{ sku_id, assigned_at, removed_at, completed_at }]
+export function batchLevelStats(roster, month) {
+  const start = month + '-01'
+  const end = month + '-31'
+  const out = {}
+  ;(roster || []).forEach(function (r) {
+    if (!r.sku_id) return
+    const st = out[r.sku_id] || (out[r.sku_id] = { completions: 0, active: 0 })
+    const assigned = r.assigned_at ? String(r.assigned_at).slice(0, 10) : ''
+    const removed = r.removed_at ? String(r.removed_at).slice(0, 10) : ''
+    const done = r.completed_at ? String(r.completed_at).slice(0, 10) : ''
+    if (done && done >= start && done <= end) st.completions++
+    const onRoster = (!assigned || assigned <= end) && (!removed || removed >= start) && (!done || done >= start)
+    if (onRoster) st.active++
+  })
+  return out
+}

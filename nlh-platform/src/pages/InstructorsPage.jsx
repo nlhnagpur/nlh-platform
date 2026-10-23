@@ -6,7 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
-import { ciCyclePayroll, CI_CYCLE_SESSIONS } from '../utils/ciPayroll'
+import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForLevel, batchLevelStats } from '../utils/ciPayroll'
 import { fetchAllRows } from '../utils/studentLifecycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
@@ -81,6 +81,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
+  const [payrollRoster, setPayrollRoster] = useState({})   // batchId → [{ sku_id, level, assigned_at, removed_at, completed_at }]
   const [payrollCycle,       setPayrollCycle]       = useState({ rows: [], inProgress: [], total: 0, datesBySid: {} })   // per-student-cycle pay for the month
   const [payrollRun,         setPayrollRun]         = useState(null)   // saved ci_payroll_runs row for this CI + month
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
@@ -214,15 +215,21 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       var completionMap   = {}
       var totalSessMap    = {}
       var activeStudentMap = {}   // batchId → students on the batch at any point this month (for per_student_month)
+      var rosterMap = {}          // batchId → each student's level and dates, for batches that carry no level of their own
 
       if (batchIds.length > 0) {
         // Completions in month, and this month's active roster in one query —
         // the "active" side is anyone whose membership overlapped the month at
         // all (assigned before month-end, not removed before month-start).
         var { data: bsRows } = await sb.from('batch_students')
-          .select('batch_id, assigned_at, removed_at, enrollments(id, completed_at)')
+          .select('batch_id, assigned_at, removed_at, enrollments(id, sku_id, completed_at, skus(level_name, courses(group_name)))')
           .in('batch_id', batchIds)
         ;(bsRows || []).forEach(function (bs) {
+          ;(rosterMap[bs.batch_id] = rosterMap[bs.batch_id] || []).push({
+            sku_id: bs.enrollments?.sku_id || null,
+            level: ((bs.enrollments?.skus?.courses?.group_name || '') + ' ' + (bs.enrollments?.skus?.level_name || '')).trim(),
+            assigned_at: bs.assigned_at, removed_at: bs.removed_at, completed_at: bs.enrollments?.completed_at || null,
+          })
           var ca = bs.enrollments?.completed_at
           if (ca) {
             var caDate = ca.slice(0, 10)
@@ -354,6 +361,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       setPayrollCompletions(completionMap)
       setPayrollTotalSess(totalSessMap)
       setPayrollActiveStudents(activeStudentMap)
+      setPayrollRoster(rosterMap)
       setPayrollOverride(ovRow || null)
       setOverrideEdit(false)
       setPayrollLoading(false)
@@ -1507,40 +1515,75 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var perStudentMonthRows = []
               var monthlyRows         = []
 
+              var unmatched = []   // levels on a batch with no appointment covering them this month
+
               Object.entries(batchMap).forEach(function (entry) {
                 var batchId = entry[0]
                 var data    = entry[1]
-                var skuId   = data.batch?.sku_id
-                var appt    = skuId ? payrollAppts.find(function (a) { return a.sku_id === skuId }) : payrollAppts[0]
-                var mode    = appt?.remuneration_mode || 'per_session'
-                var rate    = appt?.remuneration_rate || 0
-                var course  = data.batch?.skus?.courses?.group_name || data.batch?.name || '—'
-                var level   = data.batch?.skus?.level_name || ''
-                var completions   = mode === 'per_student' ? (payrollCompletions[batchId] || 0) : 0
-                var activeStudents = mode === 'per_student_month' ? (payrollActiveStudents[batchId] || 0) : 0
                 var ciSessions   = data.sessions.length
                 var totalSessions = payrollTotalSess[batchId] || ciSessions
                 var subSessions  = Math.max(0, totalSessions - ciSessions)
                 // Prorate per-student pay by fraction of sessions the CI actually taught
                 var proration    = totalSessions > 0 ? ciSessions / totalSessions : 1
-                var row = {
-                  batchId,
-                  batchName: data.batch?.name || '—',
-                  course, level,
-                  sessionCount: ciSessions,
-                  totalSessions, subSessions,
-                  proration,
-                  mode, rate,
-                  completions,
-                  activeStudents,
-                  amount: mode === 'per_session' ? ciSessions * rate
-                        : mode === 'per_student' ? Math.round(completions * rate * proration)
-                        : mode === 'per_student_month' ? Math.round(activeStudents * rate * proration)
-                        : 0,
+                var mkRow = function (appt, course, level, completions, activeStudents) {
+                  var mode = appt.remuneration_mode, rate = appt.remuneration_rate || 0
+                  return {
+                    batchId, batchName: data.batch?.name || '—', course, level,
+                    sessionCount: ciSessions, totalSessions, subSessions, proration, mode, rate,
+                    completions: mode === 'per_student' ? completions : 0,
+                    activeStudents: mode === 'per_student_month' ? activeStudents : 0,
+                    amount: mode === 'per_session' ? ciSessions * rate
+                          : mode === 'per_student' ? Math.round(completions * rate * proration)
+                          : mode === 'per_student_month' ? Math.round(activeStudents * rate * proration)
+                          : 0,
+                  }
                 }
-                if (mode === 'per_session') perSessionRows.push(row)
-                else if (mode === 'per_student') perStudentRows.push(row)
-                else if (mode === 'per_student_month') perStudentMonthRows.push(row)
+                var push = function (row) {
+                  if (row.mode === 'per_session') perSessionRows.push(row)
+                  else if (row.mode === 'per_student') perStudentRows.push(row)
+                  else if (row.mode === 'per_student_month') perStudentMonthRows.push(row)
+                }
+
+                var skuId = data.batch?.sku_id
+                if (skuId) {
+                  // the batch has its own level: that level's appointment
+                  var appt = payrollAppts.find(function (a) { return a.sku_id === skuId })
+                  var course = data.batch?.skus?.courses?.group_name || data.batch?.name || '—'
+                  var level  = data.batch?.skus?.level_name || ''
+                  push(mkRow(appt || { remuneration_mode: 'per_session', remuneration_rate: 0 }, course, level,
+                    payrollCompletions[batchId] || 0, payrollActiveStudents[batchId] || 0))
+                  return
+                }
+
+                // No level on the batch: each student's own level decides which appointment pays
+                var roster = payrollRoster[batchId] || []
+                var stats  = batchLevelStats(roster, payrollMonth)
+                var levelName = function (sid) { var r = roster.find(function (x) { return x.sku_id === sid }); return (r && r.level) || 'a level' }
+                var didSession = false
+                Object.keys(stats).forEach(function (sid) {
+                  var ap = appointmentForLevel(payrollAppts, sid, payrollMonth + '-31')
+                  if (!ap) {
+                    if (stats[sid].active > 0 || stats[sid].completions > 0) unmatched.push({ batch: data.batch?.name || '—', level: levelName(sid) })
+                    return
+                  }
+                  if (ap.remuneration_mode === 'per_session') {
+                    if (!didSession) { push(mkRow(ap, data.batch?.name || '—', levelName(sid), 0, 0)); didSession = true }
+                    return
+                  }
+                  if (ap.remuneration_mode === 'monthly') return   // paid once a month, not per batch
+                  var st = stats[sid]
+                  if (ap.remuneration_mode === 'per_student' && st.completions === 0) return
+                  if (ap.remuneration_mode === 'per_student_month' && st.active === 0) return
+                  push(mkRow(ap, data.batch?.name || '—', levelName(sid), st.completions, st.active))
+                })
+                // Paid per session, and no student on the roster identifies the level (e.g. an empty batch):
+                // fall back to the CI's per-session appointment.
+                if (!didSession) {
+                  var ps = payrollAppts.filter(function (a) { return a.remuneration_mode === 'per_session' })
+                  if (ps.length && !perSessionRows.concat(perStudentRows, perStudentMonthRows).some(function (r) { return r.batchId === batchId })) {
+                    push(mkRow(ps[0], data.batch?.name || '—', '', 0, 0))
+                  }
+                }
               })
 
               // Monthly appointments (not per-batch)
@@ -1589,6 +1632,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
               return (
                 <>
+                  {unmatched.length > 0 && (
+                    <div style={{ padding: '8px 12px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FCD34D', marginBottom: 12, font: '500 12px var(--font)', color: '#92400E' }}>
+                      No appointment covers {unmatched.map(function (u) { return u.level + ' (' + u.batch + ')' }).join(', ')} for {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })},
+                      so nothing is calculated for those students. Appoint the CI for that level, or add a line below.
+                    </div>
+                  )}
+
                   {/* Per-session batches */}
                   {perSessionRows.length > 0 && (
                     <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>

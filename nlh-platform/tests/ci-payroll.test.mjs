@@ -113,3 +113,34 @@ test('paid to the 30th: the 31st is not carried into the next cycle', () => {
   const b = ciCycleBlocks(dates, 25, '2026-10-01', '2026-10-30')
   assert.equal(b[0].start, '2026-11-02')
 })
+
+import { appointmentForLevel, batchLevelStats } from '../src/utils/ciPayroll.js'
+
+test('the appointment comes from the student’s level, and only from its appointed date', () => {
+  const appts = [
+    { sku_id: 'grammar', remuneration_mode: 'per_student', remuneration_rate: 750, appointed_at: '2025-07-12' },
+    { sku_id: 'ph2', remuneration_mode: 'per_student_month', remuneration_rate: 1250, appointed_at: '2026-09-01' },
+    { sku_id: 'ph3', remuneration_mode: 'per_student', remuneration_rate: 1250, appointed_at: '2026-10-09' },
+  ]
+  assert.equal(appointmentForLevel(appts, 'ph2', '2026-09-31').remuneration_rate, 1250)
+  assert.equal(appointmentForLevel(appts, 'ph2', '2026-09-31').remuneration_mode, 'per_student_month')
+  assert.equal(appointmentForLevel(appts, 'ph3', '2026-09-31'), null)              // appointed after September
+  assert.equal(appointmentForLevel(appts, 'ph3', '2026-10-31').remuneration_mode, 'per_student')
+  assert.equal(appointmentForLevel(appts, 'other', '2026-09-31'), null)
+})
+
+test('per level on a batch: completions in the month and students on the roster', () => {
+  const roster = [
+    { sku_id: 'ph2', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },
+    { sku_id: 'ph2', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },
+    { sku_id: 'ph3', assigned_at: '2026-09-08', removed_at: null, completed_at: null },
+    { sku_id: 'ph3', assigned_at: '2026-10-12', removed_at: null, completed_at: null },
+  ]
+  const sep = batchLevelStats(roster, '2026-09')
+  assert.deepEqual(sep.ph2, { completions: 0, active: 2 })
+  assert.deepEqual(sep.ph3, { completions: 0, active: 1 })      // the second joined in October
+  const oct = batchLevelStats(roster, '2026-10')
+  assert.deepEqual(oct.ph2, { completions: 2, active: 2 })      // still on the roster up to 8 Oct
+  const nov = batchLevelStats(roster, '2026-11')
+  assert.deepEqual(nov.ph2, { completions: 0, active: 0 })      // finished before November
+})
