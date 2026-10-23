@@ -7,6 +7,7 @@ export const PAYROLL_ACTIONS = {
   basis_change: 'The latest appointment in force applies to the whole month. If part of the month should be paid on the earlier basis, edit the amounts or add a line below, and note why.',
   recalculated: 'Attendance, batches or appointments changed since this payroll was saved. Check the lines against the new calculation (Reset to calculated shows it), then save again — or leave as is if your figure is right.',
   substitute_classes: 'The amounts for substitute classes are approximate, worked out from this CI’s own appointment for the programme (zero where it cannot be estimated). Agree the figure and type it over.',
+  leaving_pro_rata: 'These children are part-way through a level. The leaving CI is paid for the classes they took (the share of the course completed under them); the takeover CI is paid the rest at completion. Adjust the amounts if you agreed something different.',
   cycle_in_progress: 'Nothing to do now. A cycle is paid when it completes (25 classes), or pro-rata if the student leaves. It will appear as a line in the month it started.',
   posted_differs: 'This month is already posted to the accounts, so nothing changes automatically. If the new calculation is right, reopen the month (until it is paid) or post the difference as an adjustment next month.',
 }
@@ -20,6 +21,7 @@ function monthRange(month) { return [month + '-01', month + '-31'] }
 //   unmatched:    [{ batch, course }] programmes on a roster the CI holds no appointment for
 //   appts:        [{ remuneration_mode, appointed_at, skus: { courses: { group_name } } }]  the CI's active appointments
 //   usedCourses:  programme names that produced pay rows (to look for a mid-month change of basis)
+//   levelInProgress: number of level-in-progress lines paid pro-rata because the CI has left
 //   subs:         [{ batch, count, approx }] classes this CI took as a substitute this month
 //   inProgress:   [{ name, count, perCycle, start, accrued }] cycles still running (not payable yet)
 //   run:          saved ci_payroll_runs row or null
@@ -55,6 +57,10 @@ export function payrollCheckIssues(input) {
       }
     })
   })
+
+  if ((input.levelInProgress || 0) > 0) {
+    add('info', 'leaving_pro_rata', name + ' has left: ' + input.levelInProgress + ' child' + (input.levelInProgress !== 1 ? 'ren are' : ' is') + ' part-way through a level and ' + (input.levelInProgress !== 1 ? 'are' : 'is') + ' paid pro-rata for the classes taken.')
+  }
 
   ;(input.subs || []).forEach(function (x) {
     add('info', 'substitute_classes', name + ' took ' + x.count + ' class' + (x.count !== 1 ? 'es' : '') + ' as a substitute in ' + x.batch + ' — approx ₹' + Math.round(x.approx) + ' included.')

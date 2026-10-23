@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import MoveBatchDialog from '../components/MoveBatchDialog'
+import StudentTimeline from '../components/StudentTimeline'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
@@ -1717,7 +1718,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, padding: '0 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
-          {['profile', 'courses', 'accounts'].map(function (t) {
+          {(admin ? ['profile', 'courses', 'accounts', 'timeline'] : ['profile', 'courses', 'accounts']).map(function (t) {
             return (
               <button
                 key={t}
@@ -1733,7 +1734,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                   marginBottom: -1, transition: 'color 0.15s',
                 }}
               >
-                {t === 'profile' ? '👤 Profile' : t === 'courses' ? '📚 Courses & Batches' : '💰 Accounts'}
+                {t === 'profile' ? '👤 Profile' : t === 'courses' ? '📚 Courses & Batches' : t === 'timeline' ? '🕒 Timeline' : '💰 Accounts'}
               </button>
             )
           })}
@@ -2101,6 +2102,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
             onEditInvoice={admin ? startEditInvoice : null}
             onEditPayment={admin ? startEditPay : null}
           />
+        )}
+
+        {tab === 'timeline' && admin && (
+          <StudentTimeline student={{ ...student, ...form }} enrollments={localEnrollments} />
         )}
 
         {tab === 'courses' && (

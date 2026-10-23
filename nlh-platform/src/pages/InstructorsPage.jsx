@@ -6,7 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
-import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox } from '../utils/ciPayroll'
+import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox, levelSharePay, levelStartDate } from '../utils/ciPayroll'
 import { fetchAllRows, todayIso } from '../utils/studentLifecycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
@@ -233,7 +233,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         // the "active" side is anyone whose membership overlapped the month at
         // all (assigned before month-end, not removed before month-start).
         var { data: bsRows } = await sb.from('batch_students')
-          .select('batch_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, completed_at, students(full_name), skus(course_id, level_name, courses(group_name)))')
+          .select('batch_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, enrolled_at, completed_at, students(full_name), skus(course_id, level_name, total_sessions, courses(group_name)))')
           .in('batch_id', batchIds)
         ;(bsRows || []).forEach(function (bs) {
           ;(rosterMap[bs.batch_id] = rosterMap[bs.batch_id] || []).push({
@@ -241,6 +241,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             student: bs.enrollments?.students?.full_name || '',
             student_id: bs.enrollments?.student_id || null,
             level: bs.enrollments?.skus?.level_name || '',
+            total_sessions: bs.enrollments?.skus?.total_sessions || 0, enrolled_at: bs.enrollments?.enrolled_at || null,
             assigned_at: bs.assigned_at, removed_at: bs.removed_at, completed_at: bs.enrollments?.completed_at || null,
           })
           var ca = bs.enrollments?.completed_at
@@ -263,7 +264,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         if (studentIds.length) {
           var onBatchEnr = new Set((bsRows || []).map(function (bs) { return bs.enrollments && bs.enrollments.id }))
           var { data: doneRows } = await sb.from('enrollments')
-            .select('id, student_id, completed_at, students(full_name), skus(level_name, courses(group_name))')
+            .select('id, student_id, enrolled_at, completed_at, students(full_name), skus(level_name, total_sessions, courses(group_name))')
             .in('student_id', studentIds).gte('completed_at', startDate).lte('completed_at', endDate + 'T23:59:59.999Z')
           ;(doneRows || []).forEach(function (e) {
             if (onBatchEnr.has(e.id)) return
@@ -277,12 +278,34 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             if (!host) return
             ;(rosterMap[host.batch_id] = rosterMap[host.batch_id] || []).push({
               course: prog || '', student: (e.students && e.students.full_name) || '', student_id: e.student_id, level: (e.skus && e.skus.level_name) || '',
+              total_sessions: (e.skus && e.skus.total_sessions) || 0, enrolled_at: e.enrolled_at || null,
               assigned_at: null, removed_at: null, completed_at: e.completed_at, completionOnly: true,
             })
           })
         }
 
-        // The child's classes in the month across EVERY batch they were on (they may have moved between CIs).
+        // Where each child's level starts: the day after the previous level of the programme was finished, else the day the
+        // course began. Level pay is shared by the classes a CI took within that window.
+        var rangeStart = startDate
+        if (studentIds.length) {
+          var { data: allDone } = await sb.from('enrollments')
+            .select('student_id, completed_at, skus(courses(group_name))').in('student_id', studentIds).not('completed_at', 'is', null)
+          var doneByChild = {}
+          ;(allDone || []).forEach(function (e) {
+            var k = childKey(e.student_id, e.skus && e.skus.courses && e.skus.courses.group_name)
+            ;(doneByChild[k] = doneByChild[k] || []).push(String(e.completed_at).slice(0, 10))
+          })
+          Object.keys(rosterMap).forEach(function (bid) {
+            rosterMap[bid].forEach(function (en) {
+              if (!en.student_id || !en.course) return
+              var focus = en.completed_at ? String(en.completed_at).slice(0, 10) : todayIso()
+              en.level_from = levelStartDate(doneByChild[childKey(en.student_id, en.course)], focus, en.enrolled_at || en.assigned_at)
+              if (en.level_from && en.level_from < rangeStart) rangeStart = en.level_from
+            })
+          })
+        }
+
+        // The child's classes across EVERY batch they were on (they may have moved between CIs).
         // Each CI is paid at their own rate for the classes they took of the child, out of all the child had.
         if (studentIds.length) {
           var { data: memAll } = await sb.from('batch_students')
@@ -291,7 +314,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           var memBatchIds = Array.from(new Set((memAll || []).map(function (m) { return m.batch_id })))
           var childSess = memBatchIds.length ? await fetchAllRows(function (from, to) {
             return sb.from('batch_sessions').select('batch_id, session_date, instructor_id, is_substitute')
-              .in('batch_id', memBatchIds).eq('is_holiday', false).gte('session_date', startDate).lte('session_date', endDate).order('id').range(from, to)
+              .in('batch_id', memBatchIds).eq('is_holiday', false).gte('session_date', rangeStart).lte('session_date', endDate).order('id').range(from, to)
           }) : []
           var memByChild = {}
           ;(memAll || []).forEach(function (m) {
@@ -1627,6 +1650,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var monthlyRows         = []
 
               var unmatched = []   // levels on a batch with no appointment covering them this month
+              var ciGoneNow = !!instructor.left_at || (instructor.status && instructor.status !== 'active')
+              var inProgressLevels = []   // levels still running for a CI who has left
 
               Object.entries(batchMap).forEach(function (entry) {
                 var batchId = entry[0]
@@ -1673,6 +1698,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   }
                   if (ap.remuneration_mode === 'monthly') return   // paid once a month, not per batch
                   var st = stats[cid]
+                  // a CI who has left is paid pro-rata for levels still running, in the month of their last class with the child
+                  if (ap.remuneration_mode === 'per_student' && ciGoneNow && st.liveMembers.length) {
+                    inProgressLevels.push({ batchId: batchId, batchName: data.batch?.name || '—', course: courseName(cid), rate: ap.remuneration_rate || 0, members: st.liveMembers })
+                  }
                   if (ap.remuneration_mode === 'per_student' && st.completions === 0) return
                   if (ap.remuneration_mode === 'per_student_month' && st.active === 0) return
                   push(mkRow(ap, courseName(cid), '', st.completions, st.active, ap.remuneration_mode === 'per_student' ? st.doneMembers : st.activeMembers))
@@ -1729,6 +1758,16 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     members.forEach(function (m, i) {
                       var ck = m.studentId ? childKey(m.studentId, rw.course) : ''
                       var cd = ck ? payrollChildDates[ck] : null
+                      // on completion: the share of the level's classes taken under this CI (the rest goes to whoever took the others)
+                      if (basis === 'done' && cd && m.levelTotal > 0 && m.levelFrom && m.doneOn) {
+                        var lc = countInRange(cd.ci, m.levelFrom, m.doneOn)
+                        calcLines.push({
+                          key: prefix + rw.batchId + rw.course + ':' + i, label: m.label, amount: levelSharePay(rw.rate, lc, m.levelTotal),
+                          detail: where + ' · ₹' + rw.rate.toLocaleString('en-IN') + ' on completion, for the share of the level taken under this CI',
+                          meta: { kind: 'level', sid: 'child:' + ck, from: m.levelFrom, to: m.doneOn, count: lc, total: m.levelTotal, rate: rw.rate },
+                        })
+                        return
+                      }
                       var to = payTo >= m.from ? payTo : m.to
                       var src = cd || bd
                       var ci = countInRange(src.ci, m.from, to), all = countInRange(src.all, m.from, to)
@@ -1745,6 +1784,24 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               }
               studentLines(perStudentRows, 'pst:', 'done')
               studentLines(perStudentMonthRows, 'psm:', 'month')
+              // a CI who has left: levels still running are paid for the classes they took, in the month of their last class with the child
+              var levelPartCount = 0
+              inProgressLevels.forEach(function (lv) {
+                lv.members.forEach(function (m, i) {
+                  var ck = m.studentId ? childKey(m.studentId, lv.course) : ''
+                  var cd = ck ? payrollChildDates[ck] : null
+                  if (!cd || !(m.levelTotal > 0) || !m.levelFrom) return
+                  var mine = cd.ci.filter(function (d) { return d >= m.levelFrom })
+                  if (!mine.length || mine[mine.length - 1].slice(0, 7) !== payrollMonth) return
+                  var lc = mine.length
+                  levelPartCount++
+                  calcLines.push({
+                    key: 'lvl:' + lv.batchId + lv.course + ':' + i, label: m.label + ' — level in progress', amount: levelSharePay(lv.rate, lc, m.levelTotal),
+                    detail: lv.batchName + ' (' + lv.course + ') · ₹' + lv.rate.toLocaleString('en-IN') + ' on completion; ' + lc + ' of ' + m.levelTotal + ' classes taken under this CI — the takeover CI is paid the rest at completion',
+                    meta: { kind: 'level', sid: 'child:' + ck, from: m.levelFrom, to: mine[mine.length - 1], count: lc, total: m.levelTotal, rate: lv.rate },
+                  })
+                })
+              })
               payrollCycle.rows.forEach(function (rw) {
                 rw.blocks.forEach(function (b, bi) {
                   calcLines.push({
@@ -1784,7 +1841,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var usedCourses = Array.from(new Set(perSessionRows.concat(perStudentRows, perStudentMonthRows).map(function (x) { return x.course }).filter(Boolean)))
               var checkIssues = payrollCheckIssues({
                 month: payrollMonth, ciName: instructor.full_name, classesTaken: payrollSessions.length, classPay: classPay,
-                unmatched: unmatched, appts: payrollAppts, usedCourses: usedCourses, inProgress: payrollCycle.inProgress, subs: subSummary, run: payrollRun, calcTotal: calcTotal,
+                unmatched: unmatched, appts: payrollAppts, usedCourses: usedCourses, inProgress: payrollCycle.inProgress, subs: subSummary, levelInProgress: levelPartCount, run: payrollRun, calcTotal: calcTotal,
               })
 
               if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0 && perStudentMonthRows.length === 0 && payrollCycle.rows.length === 0 && payrollCycle.inProgress.length === 0 && payrollSubs.length === 0 && conveyance === 0 && officeSalary === 0 && incentive === 0 && misc === 0) {

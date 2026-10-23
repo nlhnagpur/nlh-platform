@@ -176,11 +176,11 @@ test('each student carries the days they were on the batch, clamped to the month
   ]
   const sep = batchCourseStats(roster, '2026-09').Phonics
   assert.deepEqual(sep.activeMembers, [
-    { label: 'Sai (Level 2)', from: '2026-09-02', to: '2026-09-30' },
+    { label: 'Sai (Level 2)', from: '2026-09-02', to: '2026-09-30', doneOn: '2026-10-08' },
     { label: 'Ayesha (Level 3)', from: '2026-09-08', to: '2026-09-30' },
   ])
   const oct = batchCourseStats(roster, '2026-10').Phonics
-  assert.deepEqual(oct.doneMembers, [{ label: 'Sai (Level 2)', from: '2026-10-01', to: '2026-10-08' }])
+  assert.deepEqual(oct.doneMembers, [{ label: 'Sai (Level 2)', from: '2026-10-01', to: '2026-10-08', doneOn: '2026-10-08' }])
 })
 
 test('share formula: the rate scaled by the classes the CI took out of those held', () => {
@@ -223,7 +223,7 @@ test('a finished-level record counts as a completion but not as an extra student
   assert.equal(oct.completions, 2)                  // Sai (8 Oct) and Ayesha's Level 2 (14 Oct)
   assert.deepEqual(oct.doneNames, ['Sai (Level 2)', 'Ayesha (Level 2)'])
   assert.equal(oct.active, 2)                       // still two students, not three
-  assert.deepEqual(oct.doneMembers[1], { label: 'Ayesha (Level 2)', from: '2026-10-01', to: '2026-10-14' })
+  assert.deepEqual(oct.doneMembers[1], { label: 'Ayesha (Level 2)', from: '2026-10-01', to: '2026-10-14', doneOn: '2026-10-14' })
 })
 
 import { payToDate } from '../src/utils/ciPayroll.js'
@@ -281,4 +281,13 @@ test('substitute classes are priced roughly from the covering CI’s own appoint
   assert.equal(substituteApprox(ap('per_student_cycle', 1000), { students: 2, held: 22 }), 80)                 // ₹1,000 × 2 ÷ 25
   assert.equal(substituteApprox(ap('per_student', 1250), { students: 3, held: 22 }), 0)                        // cannot be estimated
   assert.equal(substituteApprox(null, {}), 0)
+})
+
+test('levelSharePay: pro-rata by classes taken, capped at the level', async () => {
+  const { levelSharePay, levelStartDate } = await import('../src/utils/ciPayroll.js')
+  assert.equal(levelSharePay(2000, 5, 20), 500)
+  assert.equal(levelSharePay(2000, 25, 20), 2000)
+  assert.equal(levelSharePay(2000, 5, 0), 0)
+  assert.equal(levelStartDate(['2026-08-10', '2026-09-30'], '2026-10-20', '2026-06-01'), '2026-10-01')
+  assert.equal(levelStartDate([], '2026-10-20', '2026-06-01'), '2026-06-01')
 })

@@ -141,7 +141,7 @@ export function batchCourseStats(roster, month) {
   const out = {}
   ;(roster || []).forEach(function (r) {
     if (!r.course) return
-    const st = out[r.course] || (out[r.course] = { completions: 0, active: 0, doneNames: [], activeNames: [], doneMembers: [], activeMembers: [] })
+    const st = out[r.course] || (out[r.course] = { completions: 0, active: 0, doneNames: [], activeNames: [], doneMembers: [], activeMembers: [], liveMembers: [] })
     const label = (r.student || '') + (r.student && r.level ? ' (' + r.level + ')' : '')
     const assigned = r.assigned_at ? String(r.assigned_at).slice(0, 10) : ''
     const removed = r.removed_at ? String(r.removed_at).slice(0, 10) : ''
@@ -152,11 +152,15 @@ export function batchCourseStats(roster, month) {
     const to = lastDay < realEnd ? lastDay : realEnd
     const member = { label: label, from: from, to: to }
     if (r.student_id) member.studentId = r.student_id
+    if (r.level_from) member.levelFrom = r.level_from
+    if (r.total_sessions) member.levelTotal = r.total_sessions
+    if (done) member.doneOn = done
     if (done && done >= start && done <= end) { st.completions++; if (label) { st.doneNames.push(label); st.doneMembers.push(member) } }
     // a finished-level record (completionOnly) is the same student's earlier level: it counts as a
     // completion, never as an extra student on the roster
     const onRoster = !r.completionOnly && (!assigned || assigned <= end) && (!removed || removed >= start) && (!done || done >= start)
     if (onRoster) { st.active++; if (label) { st.activeNames.push(label); st.activeMembers.push(member) } }
+    if (onRoster && !done && label) st.liveMembers.push(member)   // a level still running
   })
   return out
 }
@@ -193,6 +197,11 @@ export function recountLine(line, from, to, ctx) {
     const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
     const ci = countInRange(bd.ci, from, to)
     return { ...line, meta: { ...m, from: from, to: to, count: ci }, amount: ci * (m.rate || 0) }
+  }
+  if (m.kind === 'level') {
+    const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
+    const ci = countInRange(bd.ci, from, to)
+    return { ...line, meta: { ...m, from: from, to: to, count: ci }, amount: levelSharePay(m.rate, ci, m.total) }
   }
   if (m.kind === 'share') {
     const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
@@ -254,4 +263,27 @@ export function substituteApprox(appt, ctx) {
   if (appt.remuneration_mode === 'per_student_month') return c.held > 0 ? rate * (c.students || 0) / c.held : 0
   if (appt.remuneration_mode === 'per_student_cycle') return rate * (c.students || 0) / CI_CYCLE_SESSIONS
   return 0
+}
+
+// ── paid for the part of the course completed under the CI ───────────────────────────
+// An on-completion rate is for a whole level. A CI is paid the share of it equal to the classes THEY took of the
+// child during that level, out of the level's total classes (capped at the whole level). When a CI leaves part-way
+// they are paid this pro-rata share for the level in progress, and the takeover CI gets the rest at completion by
+// the same formula.
+export function levelSharePay(rate, classesByCi, levelTotal) {
+  const t = Number(levelTotal) || 0
+  if (!(t > 0)) return 0
+  const n = Math.min(Math.max(Number(classesByCi) || 0, 0), t)
+  return Math.round((Number(rate) || 0) * n / t)
+}
+
+// The first day of a child's current level: the day after the previous level of the programme was finished
+// (a child moved up in place), otherwise the day the course started.
+//   completions: dates the child finished a level of this programme   focus: the date this level finished (or today if still running)
+export function levelStartDate(completions, focus, courseStarted) {
+  const f = String(focus || '').slice(0, 10)
+  const before = (completions || []).map(function (d) { return String(d).slice(0, 10) }).filter(function (d) { return d < f }).sort().slice(-1)[0]
+  if (!before) return courseStarted ? String(courseStarted).slice(0, 10) : ''
+  const x = new Date(Number(before.slice(0, 4)), Number(before.slice(5, 7)) - 1, Number(before.slice(8, 10)) + 1)
+  return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0')
 }

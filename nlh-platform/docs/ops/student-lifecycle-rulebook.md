@@ -1,7 +1,7 @@
 # Student, batch and CI lifecycle — the rulebook
 
 Scope: **Head Office (HO) only.** Franchisees and schools do not manage batches, CIs or levels; every action below is shown to HO admin roles only.
-Date: 2026-10-24. Status: **decisions D1–D6 recorded (section 7); build under way.** "Built" means it works today; "Gap" means the system does not yet do it (section 6).
+Date: 2026-10-24. Status: **decisions D1–D7 recorded (section 7); build under way.** "Built" means it works today; "Gap" means the system does not yet do it (section 6).
 Companion: `ci-payroll-and-batch-runbook.md` (day-to-day pay checks and what each message means).
 
 ## 1. Principles (apply to every case below)
@@ -174,7 +174,7 @@ Worked example (Ayesha in October): classes the child had — 3 under Khushi (to
 |---|---|---|---|
 | **G1** | Changing a student's batch used "now" as the date; no date could be chosen | Couldn't record a move that happened earlier | **Done:** **⇄ Move to another batch** — effective date, a warning (not a block) if the new CI has no appointment, a warning if the month's payroll is already saved/posted |
 | **G2** | Per student / month paid the full month to both CIs after a mid-month move | Overpaid; broke Rule P1 | **Done:** each CI's line uses the child's classes across all batches, at their own rate (P1) |
-| **G3** | On-completion pay goes to whichever batch the child is on at completion | Earlier CI gets nothing for most of the level | **Partly done:** shared by classes in the month; extending to the whole level is next |
+| **G3** | On-completion pay goes to whichever batch the child is on at completion | Earlier CI gets nothing for most of the level | **Done:** shared by classes taken over the whole level (D3, D7) |
 | **G4** | Cycle progress (renewal screens, "N of target") counts only the **current batch's** classes | After a batch change the child's cycle looks restarted | Count the child's classes across all batches since the cycle start |
 | **G5** | Placement in a batch can be dated only "now" at admission, too | Late data entry can't be dated correctly | Date field on every placement |
 | **G6** | Substitute classes paid nobody | The covering CI was unpaid | **Done:** the covering CI's payroll lists the classes with an approximate amount (D2), editable |
@@ -191,16 +191,17 @@ Worked example (Ayesha in October): classes the child had — 3 under Khushi (to
 | **D1** | Split of a child's monthly rate between CIs | Not split. **Each CI is paid at their own rate for the classes they took**; overlaps or differences are corrected by hand (Rule P1, P3). |
 | **D2** | Substitute classes | Once the substitute CI is marked, the covering CI's payroll shows the **number of classes taken as a substitute with an approximate amount**, editable. |
 | **D3** | On-completion pay when the CI changes mid-level | **Share by classes taken.** |
-| **D4** | May a move be dated earlier than today (HO only)? | **Open question — in plain words:** if a child actually moved batch on 20 Oct but it is entered on 23 Oct, should staff be able to enter 20 Oct as the move date (so the old CI is paid up to 19 Oct and the new CI from 20 Oct), or must the date always be today? Today the Move dialog allows an earlier date and warns that the pay changes. |
+| **D4** | May a move be dated earlier than today (HO only)? | **Yes.** The Move dialog accepts an earlier date and warns that pay changes (old CI to the day before, new CI from the date). |
 | **D5** | Reverse a completion | **No.** |
 | **D6** | A child placed with a CI who has no appointment for the programme | **A warning, not a block.** The CI may be given the extra responsibility and appointed afterwards; the Batch health check keeps flagging it until then. |
+| **D7** | A CI resigns or is terminated part-way through a level | **Paid for the part of the course completed under them:** own rate × (classes they took of the child in the level ÷ the level's total classes), in the month of their last class with the child. **The rest goes to the takeover CI**, who is paid the same way at completion (their classes ÷ the level total). Where a level has no class total (e.g. Reading) the month's classes are used. Lines stay editable. |
 
 ## 8. Build plan (HO only; no deployment without your go)
 
 | Step | What | Database change? |
 |---|---|---|
 | **L1** ✅ | **Move to another batch** guided action (G1, G5, B4, F1–F3, F5–F6): effective date, warning on a missing appointment, one confirmation; from the batch roster and the student record | No |
-| **L2** ✅/◐ | Payroll pays each CI at their own rate for the classes they took of the child (G2, P1–P3); on-completion over the whole level still to do (G3) | No |
+| **L2** ✅/◐ | Payroll pays each CI at their own rate for the classes they took of the child (G2, P1–P3); on-completion over the whole level and pro-rata for a leaving CI (G3, D7) | No |
 | **L3** | Cycle progress across batches (G4) | No |
 | **L4** ✅ | Substitute classes listed with an approximate amount (G6, D2) | No |
 | **L5** | Student timeline (G7) and "enrolled, no batch" check (G10) | No |
