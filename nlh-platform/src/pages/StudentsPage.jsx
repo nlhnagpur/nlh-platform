@@ -7,7 +7,7 @@ import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
 import { studentReceiptCtx, studentReceiptCtxFull, loadStatementLines } from '../utils/studentReceipts'
 import { receiptPreview } from '../utils/feeStatement'
-import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay, levelChangePatch, cycleInProgress, levelFeePatch, completedLevelRow, levelSessionCounts, isFinishedLevelRecord } from '../utils/studentLifecycle'
+import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay, levelChangePatch, cycleInProgress, levelFeePatch, completedLevelRow, levelSessionCounts, isFinishedLevelRecord, nextLevelSku } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -1124,6 +1124,17 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
     setChangeCompleteDate(lastAttendedDate[en.id] || todayIso())
     setChangeFee('')
     setChangingEn(en)
+  }
+
+  // Move to next level: the Change level dialog with the next level of the same course chosen and
+  // "record the previous level as completed" switched on — staff confirm, not configure.
+  function nextLevelOf(en) { return nextLevelSku(allCentreSkus, en.sku_id) }
+  function openNextLevel(en) {
+    const next = nextLevelOf(en)
+    if (!next) { showToast('There is no further level to move to for this course', 'warn'); return }
+    openChangeLevel(en)
+    setChangeSkuId(next.id)
+    setChangeComplete(true)
   }
 
   async function saveChangeLevel() {
@@ -2636,6 +2647,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                               admin && bs && !isOpen && {
                                 key: 'rmbatch', label: '✕ Remove from batch', cls: 'danger',
                                 onClick: function () { removeFromBatch(en.id) },
+                              },
+                              canEdit && !isCompleted && !isDiscontinued && nextLevelOf(en) && {
+                                key: 'next', label: '⬆ Move to next level (' + (nextLevelOf(en).level_name || 'next') + ')',
+                                title: 'Finish this level and carry on with the next one — records the completion',
+                                onClick: function () { openNextLevel(en) },
                               },
                               canEdit && {
                                 key: 'level', label: '⇄ Change course / level',

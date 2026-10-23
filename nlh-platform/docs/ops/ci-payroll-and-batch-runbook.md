@@ -13,6 +13,14 @@ Whatever the CI's appointment says (per session, per student, per student a mont
 - Conveyance, office salary, incentive, misc and anything you add are plain lines with an amount.
 - There are no separate per-basis blocks any more; the lines are the calculation.
 
+## Guided actions (use these, don't edit records by hand)
+
+| Situation | Do this | What the system does for you |
+|---|---|---|
+| A student finishes a level and carries on | Student → course → **⬆ Move to next level** | Opens the level change with the next level chosen and "record the previous level as completed" on; you confirm date and fee. |
+| A batch ends | Batches → **Close batch** | Asks what happens to **each** student (move to another batch / finished / take off), then closes the batch and makes it view-only. A student can't be moved to a CI who has no appointment for the programme. |
+| A closed batch needs a correction | Batches → **Reactivate**, correct, close again | Closed batches take no attendance or student changes. |
+
 ## The rules the system follows
 
 | Topic | Rule |

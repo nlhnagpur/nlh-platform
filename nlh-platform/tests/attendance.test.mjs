@@ -223,3 +223,16 @@ test('levelFeePatch: the student’s own fee is kept — an unchanged fee writes
   assert.deepEqual(levelFeePatch(3500, 3500, 4000), { fee_amount: 3500, list_price: 3500 })   // only when deliberately changed
   assert.deepEqual(levelFeePatch(4000, 3500), { fee_amount: 4000, list_price: 3500 })         // no current fee supplied: behaves as before
 })
+
+import { nextLevelSku } from '../src/utils/studentLifecycle.js'
+
+test('next level: the following level of the same course, in curriculum order; none on the last', () => {
+  const skus = [
+    { id: 'p1', course_id: 'phonics', level_name: 'Level 1' }, { id: 'p2', course_id: 'phonics', level_name: 'Level 2' },
+    { id: 'c1', course_id: 'chess', level_name: 'Level 1' }, { id: 'p3', course_id: 'phonics', level_name: 'Level 3' },
+  ]
+  assert.equal(nextLevelSku(skus, 'p1').id, 'p2')
+  assert.equal(nextLevelSku(skus, 'p2').id, 'p3')     // skips the other course in between
+  assert.equal(nextLevelSku(skus, 'p3'), null)
+  assert.equal(nextLevelSku(skus, 'nope'), null)
+})

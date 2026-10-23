@@ -5,6 +5,7 @@ import { fmtDate, showToast } from '../utils'
 import { sendWAReviewRequest } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import BatchHealthCheck from '../components/BatchHealthCheck'
+import CloseBatchDialog from '../components/CloseBatchDialog'
 import { isAdminRole } from '../constants/roles'
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -1479,6 +1480,7 @@ export default function BatchesPage() {
   const [attendanceModal,    setAttendanceModal]    = useState(null) // batch object
   const [historyModal,       setHistoryModal]       = useState(null) // batch object
   const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
+  const [closeModal,         setCloseModal]         = useState(null) // batch object — the guided Close batch dialog
   const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
   const [completing,         setCompleting]         = useState(null) // { enrollmentId, batchId, studentName, parentName, phone, courseName }
   const [completeDate,       setCompleteDate]       = useState(new Date().toISOString().slice(0, 10))
@@ -1537,6 +1539,7 @@ export default function BatchesPage() {
   }
 
   async function toggleActive(batch) {
+    if (batch.is_active) { setCloseModal(batch); return }   // closing is a guided action: every student is dealt with first
     const is_active = !batch.is_active
     const { error } = await sb.from('batches').update({ is_active }).eq('id', batch.id)
     if (error) { showToast('Update failed', 'err'); return }
@@ -1929,7 +1932,7 @@ export default function BatchesPage() {
                       {/* Toggle active */}
                       <button className="btn" style={{ fontSize: 11, padding: '3px 10px' }}
                         onClick={function () { toggleActive(batch) }}>
-                        {batch.is_active ? 'Deactivate' : 'Reactivate'}
+                        {batch.is_active ? 'Close batch' : 'Reactivate'}
                       </button>
                     </div>
                   </div>
@@ -2063,7 +2066,7 @@ export default function BatchesPage() {
                             className="btn"
                             style={{ fontSize: 11, borderColor: 'var(--green)', color: 'var(--green)', flexShrink: 0 }}
                             onClick={function () { toggleActive(batch) }}>
-                            Deactivate Batch
+                            Close batch
                           </button>
                         )}
                       </div>
@@ -2145,6 +2148,12 @@ export default function BatchesPage() {
           onClose={function () { setEditBatchModal(null) }}
           onSaved={function () { setEditBatchModal(null); load() }}
         />
+      )}
+
+      {closeModal && (
+        <CloseBatchDialog batch={closeModal}
+          onClose={function () { setCloseModal(null) }}
+          onDone={function () { setCloseModal(null); load() }} />
       )}
 
       {completing && (

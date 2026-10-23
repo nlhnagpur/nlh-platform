@@ -346,3 +346,16 @@ export async function fetchAllRows(build) {
   }
   return all
 }
+
+// The next level of the same course after `currentSkuId`, given the centre's levels in curriculum order.
+// Null when the student is on the last level the centre offers.
+export function nextLevelSku(skus, currentSkuId) {
+  const list = skus || []
+  const i = list.findIndex(function (x) { return x.id === currentSkuId })
+  if (i < 0) return null
+  const cur = list[i]
+  for (let j = i + 1; j < list.length; j++) {
+    if (list[j].course_id === cur.course_id) return list[j]
+  }
+  return null
+}
