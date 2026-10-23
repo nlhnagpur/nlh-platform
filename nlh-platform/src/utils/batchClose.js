@@ -2,6 +2,8 @@
 // gets a decision first, then the whole thing is carried out in order. Pure functions — the screen
 // supplies the data and runs the operations.
 
+import { dayAfter } from './batchMove.js'
+
 export const CLOSE_CHOICES = {
   move: 'Move to another batch',
   finished: 'Finished the course',
@@ -36,16 +38,16 @@ export function closeBatchPlan(batchId, students, decisions, opts) {
   ;(students || []).forEach(function (s) {
     const x = d[s.bsId] || {}
     ops.push({ type: 'take_off', bsId: s.bsId, enrollmentId: s.enrollmentId, name: s.name, removed_at: date })
-    if (x.choice === 'move') ops.push({ type: 'assign', enrollmentId: s.enrollmentId, name: s.name, batchId: x.targetBatchId, assigned_at: date })
+    if (x.choice === 'move') ops.push({ type: 'assign', enrollmentId: s.enrollmentId, name: s.name, batchId: x.targetBatchId, assigned_at: dayAfter(date) })   // the old membership ran to the closing date, so the new one starts the day after
     if (x.choice === 'finished') ops.push({ type: 'complete', enrollmentId: s.enrollmentId, name: s.name, completed_at: date + 'T12:00:00+00:00' })
   })
   ops.push({ type: 'close_batch', batchId: batchId })
   return ops
 }
 
-// Can a student of `programme` go to a batch whose CI holds these appointments? Appointment matching is by
-// programme (see ciPayroll.appointmentForCourse); this is the entry rule that stops a student being put with a CI
-// who cannot be paid for them.
+// Does the CI of a target batch hold an appointment for the student's programme? Appointment matching is by
+// programme (see ciPayroll.appointmentForCourse). A missing appointment is a WARNING, not a block: the CI may be
+// given the extra responsibility and appointed for the programme afterwards.
 export function targetBlockReason(ciAppointments, programme, appointmentFor, monthEnd, ciName) {
   if (!programme) return ''
   const ap = appointmentFor(ciAppointments, programme, monthEnd)

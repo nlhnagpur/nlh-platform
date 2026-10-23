@@ -151,6 +151,7 @@ export function batchCourseStats(roster, month) {
     const lastDay = [removed, done].filter(Boolean).sort()[0] || realEnd
     const to = lastDay < realEnd ? lastDay : realEnd
     const member = { label: label, from: from, to: to }
+    if (r.student_id) member.studentId = r.student_id
     if (done && done >= start && done <= end) { st.completions++; if (label) { st.doneNames.push(label); st.doneMembers.push(member) } }
     // a finished-level record (completionOnly) is the same student's earlier level: it counts as a
     // completion, never as an extra student on the roster
@@ -210,4 +211,47 @@ export function payToDate(month, today) {
   const first = month + '-01'
   const t = today ? String(today).slice(0, 10) : ''
   return t >= first && t <= last ? t : last
+}
+
+// ── a child's classes across every batch they were on ────────────────────────────────
+// A child can pass through several batches and CIs in a month. Each CI is paid at their own rate for the
+// classes THEY took of the child, out of all the classes the child had; any overlap or difference is corrected
+// by hand. These are the dates that make that count possible.
+export function childKey(studentId, programme) { return String(studentId || '') + '|' + String(programme || '').trim().toLowerCase() }
+
+//   memberships: [{ batch_id, assigned_at, removed_at, completed_at }]   every batch the child was on for the programme
+//   sessions:    [{ batch_id, session_date, instructor_id, is_substitute }]   classes in the period (holidays already left out)
+// Returns { all: dates the child had a class, ci: dates a class was taken by `ciId` (not as a substitute) }.
+export function childShareDates(memberships, sessions, ciId) {
+  const all = new Set(), ci = new Set()
+  const seen = new Set()
+  ;(sessions || []).forEach(function (x) {
+    const d = String(x.session_date).slice(0, 10)
+    const on = (memberships || []).some(function (m) {
+      if (m.batch_id !== x.batch_id) return false
+      const from = m.assigned_at ? String(m.assigned_at).slice(0, 10) : '0000-00-00'
+      const ends = [m.removed_at, m.completed_at].filter(Boolean).map(function (v) { return String(v).slice(0, 10) }).sort()[0] || '9999-12-31'
+      return d >= from && d <= ends
+    })
+    if (!on) return
+    const k = x.batch_id + '|' + d
+    if (seen.has(k)) return
+    seen.add(k)
+    all.add(d)
+    if (x.instructor_id === ciId && !x.is_substitute) ci.add(d)
+  })
+  return { all: Array.from(all).sort(), ci: Array.from(ci).sort() }
+}
+
+// What one class taken as a substitute is worth, roughly, on the covering CI's OWN appointment for the programme.
+// It is only a starting figure — the amount on the payment line is theirs to adjust. Zero means "set it by hand".
+//   ctx: { students, held }  students on the batch that month, classes held in the batch that month
+export function substituteApprox(appt, ctx) {
+  if (!appt) return 0
+  const c = ctx || {}
+  const rate = Number(appt.remuneration_rate) || 0
+  if (appt.remuneration_mode === 'per_session') return rate
+  if (appt.remuneration_mode === 'per_student_month') return c.held > 0 ? rate * (c.students || 0) / c.held : 0
+  if (appt.remuneration_mode === 'per_student_cycle') return rate * (c.students || 0) / CI_CYCLE_SESSIONS
+  return 0
 }

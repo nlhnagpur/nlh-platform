@@ -30,7 +30,7 @@ test('the plan deals with students first and closes the batch last', () => {
   assert.deepEqual(ops.map((o) => o.type), ['take_off', 'complete', 'take_off', 'assign', 'close_batch'])
   assert.equal(ops[0].removed_at, '2026-10-20')
   assert.equal(ops[1].completed_at, '2026-10-20T12:00:00+00:00')
-  assert.deepEqual(ops[3], { type: 'assign', enrollmentId: 'e2', name: 'Ayesha', batchId: 'b9', assigned_at: '2026-10-20' })
+  assert.deepEqual(ops[3], { type: 'assign', enrollmentId: 'e2', name: 'Ayesha', batchId: 'b9', assigned_at: '2026-10-21' })   // the day after the closing date
   assert.equal(ops[ops.length - 1].batchId, 'b1')
 })
 

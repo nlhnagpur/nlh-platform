@@ -112,12 +112,17 @@ export default function CiLeavesDialog({ instructor, onClose, onDone }) {
                         <option value="">— Which CI? —</option>
                         {cis.map(function (c) {
                           const why = handoverBlockReason(progs, c.appts, appointmentForCourse, (from || lastDay).slice(0, 7) + '-31', c.full_name)
-                          return <option key={c.id} value={c.id} disabled={!!why}>{c.full_name}{why ? ' — ' + why : ''}</option>
+                          return <option key={c.id} value={c.id}>{c.full_name}{why ? ' ⚠ no appointment yet' : ''}</option>
                         })}
                       </select>
                     )}
                     <button className="btn" style={{ fontSize: 12 }} onClick={function () { setClosing(b) }}>Close this batch instead…</button>
                   </div>
+                  {d.choice === 'handover' && d.newCiId && (function () {
+                    const c = cis.find(function (x) { return x.id === d.newCiId })
+                    const why = c && handoverBlockReason(progs, c.appts, appointmentForCourse, (from || lastDay).slice(0, 7) + '-31', c.full_name)
+                    return why ? <div style={{ margin: '6px 0 0', padding: '6px 10px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FCD34D', font: '500 12px var(--font)', color: '#92400E' }}>⚠ {why}. You can still hand the batch over; give them the extra responsibility by appointing them for the programme (Instructors → CI → Courses) so payroll can pay for it.</div> : null
+                  })()}
                 </div>
               )
             })}

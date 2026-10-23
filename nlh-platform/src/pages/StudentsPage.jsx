@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
+import MoveBatchDialog from '../components/MoveBatchDialog'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
 import { isAdminRole } from '../constants/roles'
@@ -267,6 +268,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
 
   // ── Add-enrollment state ──
   const [showAddEnrollment, setShowAddEnrollment] = useState(false)
+  const [moveBatchFor, setMoveBatchFor] = useState(null)   // { student, current } — the guided Move to another batch dialog
   const [allCentreSkus,     setAllCentreSkus]     = useState([])   // ALL SKUs the centre offers (enrolled + available)
   const [availableSkus,     setAvailableSkus]     = useState([])   // SKUs the centre offers, minus already enrolled
   const [selectedNewSkus,   setSelectedNewSkus]   = useState([])
@@ -2641,8 +2643,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                               // Assign batch — HO-only for now: batch/instructor scheduling
                               // isn't something franchisees manage yet.
                               admin && {
-                                key: 'batch', label: isOpen ? 'Close batch panel' : bs ? '✏️ Change batch' : '+ Assign batch',
-                                onClick: function () { openBatchPanel(en) },
+                                key: 'batch', label: isOpen ? 'Close batch panel' : bs ? '⇄ Move to another batch…' : '+ Assign batch',
+                                onClick: function () {
+                                  if (bs && !isOpen) {
+                                    setMoveBatchFor({
+                                      student: { enrollmentId: en.id, name: student.full_name, programme: (en.skus && en.skus.courses && en.skus.courses.group_name) || '' },
+                                      current: {
+                                        bsId: bs.id, batchId: bs.batch_id, batchName: bs.batches && bs.batches.name, assigned_at: bs.assigned_at,
+                                        ciName: bs.batches && bs.batches.instructors && bs.batches.instructors.full_name, ciId: bs.batches && bs.batches.instructor_id,
+                                        franchisee_id: student.franchisee_id,
+                                      },
+                                    })
+                                  } else openBatchPanel(en)
+                                },
                               },
                               admin && bs && !isOpen && {
                                 key: 'rmbatch', label: '✕ Remove from batch', cls: 'danger',
@@ -3426,6 +3439,23 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
         )}
 
         {/* Change course / level modal */}
+        {moveBatchFor && (
+          <MoveBatchDialog student={moveBatchFor.student} current={moveBatchFor.current}
+            onClose={function () { setMoveBatchFor(null) }}
+            onDone={async function () {
+              setMoveBatchFor(null)
+              // refresh this student's batch assignments from the database
+              const enrIds = localEnrollments.map(function (e) { return e.id })
+              const { data: bsRows } = await sb.from('batch_students')
+                .select('id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))')
+                .in('enrollment_id', enrIds).is('removed_at', null)
+              const map = {}
+              ;(bsRows || []).forEach(function (bs) { map[bs.enrollment_id] = bs })
+              setBatchAssignments(map)
+              await loadCycleProgress(localEnrollments, map)
+            }} />
+        )}
+
         {changingEn && (
           <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) setChangingEn(null) }}>
             <div className="modal" style={{ maxWidth: 420 }}>
@@ -3504,6 +3534,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                   const oldLevel = changingEn.skus && changingEn.skus.level_name ? changingEn.skus.level_name : 'the previous level'
                   return (
                     <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)' }}>
+                      <div style={{ font: '600 12px var(--font)', color: 'var(--green)', marginBottom: 8 }}>
+                        ✓ Same batch, same CI — only this child’s level changes, from the date below. Nothing else moves.
+                      </div>
                       <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, font: '600 12px var(--font)', color: 'var(--text)', cursor: 'pointer' }}>
                         <input type="checkbox" checked={changeComplete} onChange={function (e) { setChangeComplete(e.target.checked) }} style={{ marginTop: 2 }} />
                         <span>

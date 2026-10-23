@@ -6,6 +6,7 @@ import { sendWAReviewRequest } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import BatchHealthCheck from '../components/BatchHealthCheck'
 import CloseBatchDialog from '../components/CloseBatchDialog'
+import MoveBatchDialog from '../components/MoveBatchDialog'
 import { isAdminRole } from '../constants/roles'
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -1481,6 +1482,7 @@ export default function BatchesPage() {
   const [historyModal,       setHistoryModal]       = useState(null) // batch object
   const [changeInstrModal,   setChangeInstrModal]   = useState(null) // batch object
   const [closeModal,         setCloseModal]         = useState(null) // batch object — the guided Close batch dialog
+  const [moveModal,          setMoveModal]          = useState(null) // { student, current } — the guided Move to another batch dialog
   const [editBatchModal,     setEditBatchModal]     = useState(null) // batch object
   const [completing,         setCompleting]         = useState(null) // { enrollmentId, batchId, studentName, parentName, phone, courseName }
   const [completeDate,       setCompleteDate]       = useState(new Date().toISOString().slice(0, 10))
@@ -1499,7 +1501,7 @@ export default function BatchesPage() {
     const [{ data: batchRows }, { data: ins }, { data: skuRows }] = await Promise.all([
       sb.from('batches')
         .select(`
-          id, sku_id, instructor_id, name, is_individual, schedule_days, schedule_time,
+          id, sku_id, instructor_id, franchisee_id, name, is_individual, schedule_days, schedule_time,
           is_active, start_date, sessions_done, notes, created_at,
           instructors(id, full_name),
           batch_students(id, enrollment_id, assigned_at, removed_at,
@@ -2036,6 +2038,18 @@ export default function BatchesPage() {
                                   ✓ Complete
                                 </button>
                               )}
+                              {batch.is_active && !isCompleted && (
+                                <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
+                                  title="Move this child to another batch from a date"
+                                  onClick={function () {
+                                    setMoveModal({
+                                      student: { enrollmentId: bs.enrollment_id, name: name, programme: course },
+                                      current: { bsId: bs.id, batchId: batch.id, batchName: batch.name, assigned_at: bs.assigned_at, ciName: ciName, ciId: batch.instructor_id, franchisee_id: batch.franchisee_id },
+                                    })
+                                  }}>
+                                  ⇄ Move
+                                </button>
+                              )}
                               {batch.is_active && (
                                 <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
                                   onClick={function () { removeFromBatch(bs.id, batch.id) }}>
@@ -2148,6 +2162,12 @@ export default function BatchesPage() {
           onClose={function () { setEditBatchModal(null) }}
           onSaved={function () { setEditBatchModal(null); load() }}
         />
+      )}
+
+      {moveModal && (
+        <MoveBatchDialog student={moveModal.student} current={moveModal.current}
+          onClose={function () { setMoveModal(null) }}
+          onDone={function () { setMoveModal(null); load() }} />
       )}
 
       {closeModal && (

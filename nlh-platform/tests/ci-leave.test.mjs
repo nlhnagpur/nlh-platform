@@ -38,3 +38,13 @@ test('a batch cannot go to a CI without an appointment for every programme on it
   assert.ok(handoverBlockReason(['Tuitions'], sneha, appointmentForCourse, '2026-10-10', 'Sneha Das').includes('Tuitions'))   // not yet appointed on the handover date
   assert.equal(handoverBlockReason([], [], appointmentForCourse, '2026-10-31', 'x'), '')
 })
+
+import { statusChangeBlock } from '../src/utils/ciLeave.js'
+
+test('a CI can be set to resigned/inactive once their batches are closed; refused while any is open', () => {
+  assert.equal(statusChangeBlock('active', 'resigned', 0), '')                 // batches already closed — the usual case
+  assert.ok(statusChangeBlock('active', 'inactive', 2).includes('2 open batches'))
+  assert.ok(statusChangeBlock('active', 'resigned', 1).includes('1 open batch.'))
+  assert.equal(statusChangeBlock('active', 'active', 3), '')                    // not leaving
+  assert.equal(statusChangeBlock('resigned', 'inactive', 3), '')                // already not active: nothing new to protect
+})

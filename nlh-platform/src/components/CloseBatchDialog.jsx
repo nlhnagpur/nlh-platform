@@ -104,11 +104,16 @@ export default function CloseBatchDialog({ batch, onClose, onDone }) {
                         <option value="">— Which batch? —</option>
                         {targets.map(function (t) {
                           const why = targetBlockReason(t.appts, s.programme, appointmentForCourse, closeDate.slice(0, 7) + '-31', t.instructors && t.instructors.full_name)
-                          return <option key={t.id} value={t.id} disabled={!!why}>{t.name} · {(t.instructors && t.instructors.full_name) || 'no CI'}{t.schedule_time ? ' · ' + String(t.schedule_time).slice(0, 5) : ''}{why ? ' — ' + why : ''}</option>
+                          return <option key={t.id} value={t.id}>{t.name} · {(t.instructors && t.instructors.full_name) || 'no CI'}{t.schedule_time ? ' · ' + String(t.schedule_time).slice(0, 5) : ''}{why ? ' ⚠ no appointment yet' : ''}</option>
                         })}
                       </select>
                     )}
                   </div>
+                  {d.choice === 'move' && d.targetBatchId && (function () {
+                    const t = targets.find(function (x) { return x.id === d.targetBatchId })
+                    const why = t && targetBlockReason(t.appts, s.programme, appointmentForCourse, closeDate.slice(0, 7) + '-31', t.instructors && t.instructors.full_name)
+                    return why ? <div style={{ margin: '6px 0 0', padding: '6px 10px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FCD34D', font: '500 12px var(--font)', color: '#92400E' }}>⚠ {why}. You can still move the child; appoint the CI (Instructors → CI → Courses) so payroll can pay for them.</div> : null
+                  })()}
                   {d.choice === 'off' && <div className="hint" style={{ margin: '6px 0 0' }}>The student stays enrolled but is on no batch until you place them — do that from their record (Courses → Assign batch).</div>}
                   {d.choice === 'finished' && <div className="hint" style={{ margin: '6px 0 0' }}>The course is marked completed on the closing date. To discontinue a student instead, use Discontinue on their record.</div>}
                 </div>

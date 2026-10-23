@@ -234,3 +234,51 @@ test('a line is paid up to today for the current month, and to the month end for
   assert.equal(payToDate('2026-11', '2026-10-23'), '2026-11-30')   // a future month
   assert.equal(payToDate('2027-02', '2027-03-05'), '2027-02-28')
 })
+
+import { childKey, childShareDates, substituteApprox } from '../src/utils/ciPayroll.js'
+
+test('a child who moved between CIs: each CI is counted for the classes they took, out of the child’s own classes', () => {
+  // Ayesha: batch A (Khushi) until 19 Oct, batch B (Sneha) from 20 Oct
+  const memberships = [
+    { batch_id: 'A', assigned_at: '2026-10-01', removed_at: '2026-10-19', completed_at: null },
+    { batch_id: 'B', assigned_at: '2026-10-20', removed_at: null, completed_at: null },
+  ]
+  const sessions = [
+    { batch_id: 'A', session_date: '2026-10-15', instructor_id: 'khushi', is_substitute: false },
+    { batch_id: 'A', session_date: '2026-10-16', instructor_id: 'khushi', is_substitute: false },
+    { batch_id: 'A', session_date: '2026-10-19', instructor_id: 'khushi', is_substitute: false },
+    { batch_id: 'B', session_date: '2026-10-20', instructor_id: 'sneha', is_substitute: false },
+    { batch_id: 'B', session_date: '2026-10-21', instructor_id: 'sneha', is_substitute: false },
+    { batch_id: 'B', session_date: '2026-10-22', instructor_id: 'sneha', is_substitute: false },
+    { batch_id: 'B', session_date: '2026-10-23', instructor_id: 'other', is_substitute: true },   // covered by a substitute
+    { batch_id: 'A', session_date: '2026-10-21', instructor_id: 'khushi', is_substitute: false }, // old batch still running for others — not the child's class
+  ]
+  const kh = childShareDates(memberships, sessions, 'khushi')
+  assert.equal(kh.all.length, 7)       // 3 + 4 classes the child actually had
+  assert.equal(kh.ci.length, 3)
+  const sn = childShareDates(memberships, sessions, 'sneha')
+  assert.equal(sn.ci.length, 3)
+  assert.equal(Math.round(1250 * kh.ci.length / kh.all.length), 536)   // Khushi's own rate × her share
+  assert.equal(Math.round(1250 * sn.ci.length / sn.all.length), 536)
+})
+
+test('a session on a batch the child was not on, or after they left it, is not theirs; a class is counted once per child per day', () => {
+  const m = [{ batch_id: 'A', assigned_at: '2026-10-01', removed_at: null, completed_at: '2026-10-10' }]
+  const s = [
+    { batch_id: 'A', session_date: '2026-10-05', instructor_id: 'c', is_substitute: false },
+    { batch_id: 'A', session_date: '2026-10-05', instructor_id: 'c', is_substitute: false },   // duplicate row
+    { batch_id: 'A', session_date: '2026-10-12', instructor_id: 'c', is_substitute: false },   // after completion
+    { batch_id: 'Z', session_date: '2026-10-06', instructor_id: 'c', is_substitute: false },   // another batch
+  ]
+  assert.deepEqual(childShareDates(m, s, 'c'), { all: ['2026-10-05'], ci: ['2026-10-05'] })
+  assert.equal(childKey('s1', ' Phonics '), 's1|phonics')
+})
+
+test('substitute classes are priced roughly from the covering CI’s own appointment', () => {
+  const ap = (mode, rate) => ({ remuneration_mode: mode, remuneration_rate: rate })
+  assert.equal(substituteApprox(ap('per_session', 300), { students: 3, held: 22 }), 300)
+  assert.equal(Math.round(substituteApprox(ap('per_student_month', 1250), { students: 3, held: 22 })), 170)    // ₹1,250 × 3 ÷ 22
+  assert.equal(substituteApprox(ap('per_student_cycle', 1000), { students: 2, held: 22 }), 80)                 // ₹1,000 × 2 ÷ 25
+  assert.equal(substituteApprox(ap('per_student', 1250), { students: 3, held: 22 }), 0)                        // cannot be estimated
+  assert.equal(substituteApprox(null, {}), 0)
+})
