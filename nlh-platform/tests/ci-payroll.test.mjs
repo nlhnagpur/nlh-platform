@@ -209,3 +209,28 @@ test('one rule re-counts and re-prices a line for every pay basis when its dates
   // a line with no dates is untouched
   assert.deepEqual(recountLine({ amount: 250 }, 'a', 'b', ctx), { amount: 250 })
 })
+
+test('a finished-level record counts as a completion but not as an extra student on the roster', () => {
+  const roster = [
+    { course: 'Phonics', student: 'Sai', level: 'Level 2', assigned_at: '2026-09-02', removed_at: null, completed_at: '2026-10-08' },
+    { course: 'Phonics', student: 'Ayesha', level: 'Level 3', assigned_at: '2026-09-08', removed_at: null, completed_at: null },                       // her live record
+    { course: 'Phonics', student: 'Ayesha', level: 'Level 2', assigned_at: null, removed_at: null, completed_at: '2026-10-14', completionOnly: true },     // the level she finished in place
+  ]
+  const sep = batchCourseStats(roster, '2026-09').Phonics
+  assert.equal(sep.active, 2)                       // Sai and Ayesha — Ayesha counted once
+  assert.equal(sep.completions, 0)
+  const oct = batchCourseStats(roster, '2026-10').Phonics
+  assert.equal(oct.completions, 2)                  // Sai (8 Oct) and Ayesha's Level 2 (14 Oct)
+  assert.deepEqual(oct.doneNames, ['Sai (Level 2)', 'Ayesha (Level 2)'])
+  assert.equal(oct.active, 2)                       // still two students, not three
+  assert.deepEqual(oct.doneMembers[1], { label: 'Ayesha (Level 2)', from: '2026-10-01', to: '2026-10-14' })
+})
+
+import { payToDate } from '../src/utils/ciPayroll.js'
+
+test('a line is paid up to today for the current month, and to the month end for any other month', () => {
+  assert.equal(payToDate('2026-10', '2026-10-23'), '2026-10-23')   // October, viewed on 23 Oct
+  assert.equal(payToDate('2026-09', '2026-10-23'), '2026-09-30')   // a past month
+  assert.equal(payToDate('2026-11', '2026-10-23'), '2026-11-30')   // a future month
+  assert.equal(payToDate('2027-02', '2027-03-05'), '2027-02-28')
+})

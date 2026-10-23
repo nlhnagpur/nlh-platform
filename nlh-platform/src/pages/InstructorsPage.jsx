@@ -6,8 +6,8 @@ import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
-import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats, splitAmount, countInRange } from '../utils/ciPayroll'
-import { fetchAllRows } from '../utils/studentLifecycle'
+import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate } from '../utils/ciPayroll'
+import { fetchAllRows, todayIso } from '../utils/studentLifecycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
 import PayrollCheckPanel from '../components/PayrollCheckPanel'
@@ -226,7 +226,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         // the "active" side is anyone whose membership overlapped the month at
         // all (assigned before month-end, not removed before month-start).
         var { data: bsRows } = await sb.from('batch_students')
-          .select('batch_id, assigned_at, removed_at, enrollments(id, sku_id, completed_at, students(full_name), skus(course_id, level_name, courses(group_name)))')
+          .select('batch_id, assigned_at, removed_at, enrollments(id, student_id, sku_id, completed_at, students(full_name), skus(course_id, level_name, courses(group_name)))')
           .in('batch_id', batchIds)
         ;(bsRows || []).forEach(function (bs) {
           ;(rosterMap[bs.batch_id] = rosterMap[bs.batch_id] || []).push({
@@ -248,6 +248,31 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             activeStudentMap[bs.batch_id] = (activeStudentMap[bs.batch_id] || 0) + 1
           }
         })
+
+        // A level finished by changing the student's level in place leaves a completed "finished-level" record
+        // that is not on the batch. It still counts as a completion for the CI whose batch the student is on.
+        var studentIds = Array.from(new Set((bsRows || []).map(function (bs) { return bs.enrollments && bs.enrollments.student_id }).filter(Boolean)))
+        if (studentIds.length) {
+          var onBatchEnr = new Set((bsRows || []).map(function (bs) { return bs.enrollments && bs.enrollments.id }))
+          var { data: doneRows } = await sb.from('enrollments')
+            .select('id, student_id, completed_at, students(full_name), skus(level_name, courses(group_name))')
+            .in('student_id', studentIds).gte('completed_at', startDate).lte('completed_at', endDate + 'T23:59:59.999Z')
+          ;(doneRows || []).forEach(function (e) {
+            if (onBatchEnr.has(e.id)) return
+            var prog = e.skus && e.skus.courses && e.skus.courses.group_name
+            var doneOn = String(e.completed_at).slice(0, 10)
+            var host = (bsRows || []).find(function (bs) {
+              return bs.enrollments && bs.enrollments.student_id === e.student_id
+                && (bs.enrollments.skus && bs.enrollments.skus.courses && bs.enrollments.skus.courses.group_name) === prog
+                && bs.assigned_at && String(bs.assigned_at).slice(0, 10) <= doneOn
+            })
+            if (!host) return
+            ;(rosterMap[host.batch_id] = rosterMap[host.batch_id] || []).push({
+              course: prog || '', student: (e.students && e.students.full_name) || '', level: (e.skus && e.skus.level_name) || '',
+              assigned_at: null, removed_at: null, completed_at: e.completed_at, completionOnly: true,
+            })
+          })
+        }
 
         // Total non-holiday sessions per batch in the month (includes substitutes)
         // Used to prorate per-student pay: CI taught ciSessions/totalSessions of the batch
@@ -1613,12 +1638,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var calcLines = []
               var monthFirst = payrollMonth + '-01'
               var monthLast = payrollMonth + '-' + String(new Date(Number(payrollMonth.slice(0, 4)), Number(payrollMonth.slice(5, 7)), 0).getDate()).padStart(2, '0')
+              var payTo = payToDate(payrollMonth, todayIso())   // paid up to today for the current month, the month end otherwise — editable on each line
               perSessionRows.forEach(function (rw) {
                 var bd = payrollBatchDates[rw.batchId] || { all: [], ci: [] }
                 calcLines.push({
                   key: 'ps:' + rw.batchId + rw.course, label: rw.batchName + (rw.course && rw.course !== rw.batchName ? ' (' + rw.course + ')' : ''), amount: rw.amount,
                   detail: '₹' + rw.rate.toLocaleString('en-IN') + ' a class',
-                  meta: { kind: 'session', sid: rw.batchId, from: monthFirst, to: monthLast, count: countInRange(bd.ci, monthFirst, monthLast), rate: rw.rate },
+                  meta: { kind: 'session', sid: rw.batchId, from: monthFirst, to: payTo, count: countInRange(bd.ci, monthFirst, payTo), rate: rw.rate },
                 })
               })
               // Per-student modes are paid student by student — one line each (name, the dates it covers, the
@@ -1634,7 +1660,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       calcLines.push({
                         key: prefix + rw.batchId + rw.course + ':' + i, label: m.label, amount: parts[i],
                         detail: where + ' · ₹' + rw.rate.toLocaleString('en-IN') + (basis === 'done' ? ' on completion' : ' a month'),
-                        meta: { kind: 'share', sid: rw.batchId, from: m.from, to: m.to, count: countInRange(bd.ci, m.from, m.to), total: countInRange(bd.all, m.from, m.to), rate: rw.rate },
+                        meta: { kind: 'share', sid: rw.batchId, from: m.from, to: (payTo >= m.from ? payTo : m.to), count: countInRange(bd.ci, m.from, (payTo >= m.from ? payTo : m.to)), total: countInRange(bd.all, m.from, (payTo >= m.from ? payTo : m.to)), rate: rw.rate },
                       })
                     })
                   } else {
@@ -1656,7 +1682,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 calcLines.push({
                   key: 'mo:' + a.id, label: ((a.skus && a.skus.courses && a.skus.courses.group_name) || 'Monthly') + ' — monthly fixed', amount: a.remuneration_rate || 0,
                   detail: 'Fixed monthly rate',
-                  meta: { kind: 'fixed', sid: 'fixed:' + a.id, from: monthFirst, to: monthLast, rate: a.remuneration_rate || 0 },
+                  meta: { kind: 'fixed', sid: 'fixed:' + a.id, from: monthFirst, to: payTo, rate: a.remuneration_rate || 0 },
                 })
               })
               if (officeSalary > 0) calcLines.push({ key: 'office', label: 'Office salary', amount: officeSalary })

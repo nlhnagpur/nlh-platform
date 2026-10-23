@@ -152,7 +152,9 @@ export function batchCourseStats(roster, month) {
     const to = lastDay < realEnd ? lastDay : realEnd
     const member = { label: label, from: from, to: to }
     if (done && done >= start && done <= end) { st.completions++; if (label) { st.doneNames.push(label); st.doneMembers.push(member) } }
-    const onRoster = (!assigned || assigned <= end) && (!removed || removed >= start) && (!done || done >= start)
+    // a finished-level record (completionOnly) is the same student's earlier level: it counts as a
+    // completion, never as an extra student on the roster
+    const onRoster = !r.completionOnly && (!assigned || assigned <= end) && (!removed || removed >= start) && (!done || done >= start)
     if (onRoster) { st.active++; if (label) { st.activeNames.push(label); st.activeMembers.push(member) } }
   })
   return out
@@ -199,4 +201,13 @@ export function recountLine(line, from, to, ctx) {
   }
   const count = countInRange((c.datesBySid || {})[m.sid] || [], from, to)
   return { ...line, meta: { ...m, from: from, to: to, count: count }, amount: amountForClasses(m.rate, count, m.perCycle) }
+}
+
+// The date a payroll line is paid up to by default: today when the month is the current one, the month's
+// last day for any other month. It is only a starting point — the date can be changed on every line.
+export function payToDate(month, today) {
+  const last = month + '-' + String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, '0')
+  const first = month + '-01'
+  const t = today ? String(today).slice(0, 10) : ''
+  return t >= first && t <= last ? t : last
 }
