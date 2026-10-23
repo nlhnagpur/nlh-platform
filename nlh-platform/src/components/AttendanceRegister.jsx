@@ -320,7 +320,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     apply()
   }
   function stepCell(b, bs, date) {
-    if (!canEdit || date > today || !memberOn(bs, date)) return
+    if (!canEdit || b.is_active === false || date > today || !memberOn(bs, date)) return
     const st0 = dayState(b.id, date)
     const e0 = bs.enrollment_id
     const was = st0.hol ? 'H' : st0.nc[e0] ? 'N' : st0.marks[e0] === true ? 'P' : st0.marks[e0] === false ? 'A' : null
@@ -340,7 +340,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     })
   }
   function allPresent(b, date) {
-    if (!canEdit || date > today) return
+    if (!canEdit || b.is_active === false || date > today) return
     withSubstitute(b, date, function () {
       editDay(b, date, function (st) {
         st.hol = false
@@ -364,7 +364,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
   // absent are the teacher's, not the batch's, so they show in every batch they
   // take that day. A batch holiday shows as H and cannot be stepped.
   function stepTeacher(b, date) {
-    if (!canEdit || date > today || !b.instructor_id) return
+    if (!canEdit || b.is_active === false || date > today || !b.instructor_id) return
     if (startOf(b) && date < startOf(b)) return    // before this CI had the batch
     if (dayState(b.id, date).hol) return
     const cur = tStatus(b, date)
@@ -554,13 +554,13 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                   <div style={{ flex: 1, minWidth: 180 }}>
                     <div style={{ font: '700 14px var(--font)' }}>
                       {b.name}
-                      {b.is_active === false && <span style={{ marginLeft: 8, font: '600 10px var(--font)', color: '#92400e', background: '#FEF3C7', borderRadius: 10, padding: '2px 8px' }}>Closed batch</span>}
+                      {b.is_active === false && <span style={{ marginLeft: 8, font: '600 10px var(--font)', color: '#92400e', background: '#FEF3C7', borderRadius: 10, padding: '2px 8px' }}>Closed batch — view only</span>}
                     </div>
                     <div style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>
                       {[courseOf(b), b.schedule_days, b.schedule_time ? String(b.schedule_time).slice(0, 5) : '', b.instructors && b.instructors.full_name].filter(Boolean).join(' · ')}
                     </div>
                   </div>
-                  {canEdit && dirty > 0 && (
+                  {canEdit && b.is_active !== false && dirty > 0 && (
                     <button className="btn-p" style={{ fontSize: 12 }} disabled={savingId === b.id} onClick={function () { saveBatch(b) }}>
                       {savingId === b.id ? 'Saving…' : 'Save changes (' + dirty + ' day' + (dirty > 1 ? 's' : '') + ')'}
                     </button>
@@ -589,7 +589,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                         <th style={{ ...th, color: TONE.A.color }}>A</th>
                         <th style={{ ...th, color: TONE.N.color }} title="Days with no class for the student">N</th>
                       </tr>
-                      {canEdit && (
+                      {canEdit && b.is_active !== false && (
                         <tr>
                           <td style={{ padding: '2px 10px', font: '500 10px var(--font)', color: 'var(--text3)', position: 'sticky', left: 0, background: 'var(--bg)' }}>everyone present</td>
                           {days.map(function (d) {
@@ -622,7 +622,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                               const hol = dayState(b.id, d).hol
                               const v = hol ? 'H' : tStatus(b, d)
                               const tone = v ? TONE[v] : null
-                              const disabled = hol || !canEdit || d > today
+                              const disabled = hol || !canEdit || d > today || b.is_active === false
                               return (
                                 <td key={d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center' }}>
                                   <button type="button" disabled={disabled} onClick={function () { stepTeacher(b, d) }}
@@ -683,7 +683,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                             </td>
                             {cells.map(function (c) {
                               const tone = c.v ? TONE[c.v] : null
-                              const disabled = !c.member || c.d > today || !canEdit
+                              const disabled = !c.member || c.d > today || !canEdit || b.is_active === false
                               return (
                                 <td key={c.d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center', boxShadow: focus && focus.batchId === b.id && focus.date === c.d ? 'inset 0 0 0 2px #7c3aed' : undefined, background: !c.member ? 'repeating-linear-gradient(45deg,var(--bg2),var(--bg2) 4px,var(--bg) 4px,var(--bg) 8px)' : dowOf(c.d) === 0 ? 'var(--bg2)' : 'var(--bg)' }}>
                                   {c.member && (

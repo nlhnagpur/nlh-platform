@@ -1566,20 +1566,50 @@ export default function BatchesPage() {
 
   async function loadRosterStats(batchId) {
     var { data: sessions } = await sb.from('batch_sessions')
-      .select('id')
+      .select('id, session_date')
       .eq('batch_id', batchId)
       .eq('is_holiday', false)
     if (!sessions || sessions.length === 0) {
       setRosterStats(function (prev) { return { ...prev, [batchId]: {} } })
       return
     }
-    var sessionIds = sessions.map(function (s) { return s.id })
+    var dateOf = {}
+    sessions.forEach(function (x) { dateOf[x.id] = String(x.session_date).slice(0, 10) })
     var { data: att } = await sb.from('session_attendance')
-      .select('enrollment_id')
-      .in('session_id', sessionIds)
+      .select('enrollment_id, session_id')
+      .in('session_id', sessions.map(function (x) { return x.id }))
       .eq('attended', true)
+
+    // A level finished by changing the student's level in place leaves a completed record that is not on the
+    // batch. Classes up to its completion date belong to that finished level; the live level counts only after.
+    var batch = batches.find(function (x) { return x.id === batchId })
+    var roster = (batch && batch.batch_students) || []
+    var onBatch = {}
+    roster.forEach(function (x) { if (x.enrollment_id) onBatch[x.enrollment_id] = true })
+    var studentIds = Array.from(new Set(roster.map(function (x) { return x.enrollments && x.enrollments.student_id }).filter(Boolean)))
+    var cutByKey = {}
+    if (studentIds.length) {
+      var { data: doneRows } = await sb.from('enrollments')
+        .select('id, student_id, completed_at, skus(courses(group_name))')
+        .in('student_id', studentIds).not('completed_at', 'is', null)
+      ;(doneRows || []).forEach(function (e) {
+        if (onBatch[e.id]) return
+        var key = e.student_id + '|' + ((e.skus && e.skus.courses && e.skus.courses.group_name) || '')
+        var d = String(e.completed_at).slice(0, 10)
+        if (!cutByKey[key] || d > cutByKey[key]) cutByKey[key] = d
+      })
+    }
+    var cutOf = {}
+    roster.forEach(function (x) {
+      var en = x.enrollments
+      if (!en || en.completed_at) return
+      cutOf[x.enrollment_id] = cutByKey[en.student_id + '|' + ((en.skus && en.skus.courses && en.skus.courses.group_name) || '')] || ''
+    })
+
     var map = {}
     ;(att || []).forEach(function (a) {
+      var cut = cutOf[a.enrollment_id]
+      if (cut && dateOf[a.session_id] <= cut) return
       map[a.enrollment_id] = (map[a.enrollment_id] || 0) + 1
     })
     setRosterStats(function (prev) { return { ...prev, [batchId]: map } })
@@ -1983,7 +2013,7 @@ export default function BatchesPage() {
                                     💬 Review
                                   </button>
                                 </>
-                              ) : (
+                              ) : !batch.is_active ? null : (
                                 <button className="btn" style={{
                                   fontSize: 10, padding: '2px 8px', flexShrink: 0,
                                   color: 'var(--green)', borderColor: 'var(--green)',
@@ -2003,10 +2033,12 @@ export default function BatchesPage() {
                                   ✓ Complete
                                 </button>
                               )}
-                              <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
-                                onClick={function () { removeFromBatch(bs.id, batch.id) }}>
-                                Remove
-                              </button>
+                              {batch.is_active && (
+                                <button className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
+                                  onClick={function () { removeFromBatch(bs.id, batch.id) }}>
+                                  Remove
+                                </button>
+                              )}
                             </div>
                           )
                         })}
@@ -2037,11 +2069,11 @@ export default function BatchesPage() {
                       </div>
                     )}
 
-                    <button className="btn-s" style={{ fontSize: 11 }}
+                    {batch.is_active && (<button className="btn-s" style={{ fontSize: 11 }}
                       title="Add or remove students and edit their joining dates"
                       onClick={function () { const b = { ...batch, instructor_name: ciName }; startTransition(function () { setAddStudentModal(b) }) }}>
                       👥 Manage Roster
-                    </button>
+                    </button>)}
                   </div>
                 )}
               </div>
