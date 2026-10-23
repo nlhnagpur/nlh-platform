@@ -18,11 +18,23 @@ function dayCount(a, b) {
   return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000)
 }
 
+// What to do about each kind of issue — shown with it, so nobody has to guess.
+export const BATCH_ACTIONS = {
+  no_ci: 'Batches → Change Instructor: assign a CI (and the date they take over), or close the batch.',
+  ci_not_active: 'Batches → Change Instructor: hand the batch to an active CI from the day they take over, or close the batch if it has ended.',
+  no_students: 'Add students to the batch, or close it.',
+  class_before_start: 'Batches → Edit batch: set the start date to the date of the first class (and check the CI assignment date).',
+  other_ci_class: 'Batches → History: mark that class as a substitute class, or correct the instructor recorded on it.',
+  no_recent_class: 'Record the missing classes in the Attendance register, or close the batch if it has stopped.',
+  no_appointment: 'Instructors → the CI → Courses: add an appointment for that programme (rate and basis, from the date they started), or give the batch to a CI who holds one.',
+  double_batch: 'Batches: remove the student from one of the two batches.',
+}
+
 // Issues across the OPEN batches.
 //   batches:        [{ id, name, is_active, start_date, instructor_assigned_at, instructor_id, instructors: { full_name, status } }]
-//   openRoster:     [{ batch_id, student_id, student, course_id, course }]        students currently on each batch
+//   openRoster:     [{ batch_id, student_id, student, course }]                    students currently on each batch (course = programme name)
 //   recentSessions: [{ batch_id, session_date, instructor_id, is_substitute }]    classes in the recent window
-//   appointments:   [{ instructor_id, remuneration_mode, appointed_at, skus: { course_id } }]   active appointments
+//   appointments:   [{ instructor_id, remuneration_mode, appointed_at, skus: { courses: { group_name } } }]   active appointments
 //   today:          'YYYY-MM-DD'
 // Each issue: { severity: 'error' | 'warn' | 'info', code, batchId, batch, ci, message }
 export function batchHealthIssues(input) {
@@ -33,7 +45,7 @@ export function batchHealthIssues(input) {
   const today = input.today
   const issues = []
   const add = function (sev, code, b, message) {
-    issues.push({ severity: sev, code: code, batchId: b.id, batch: b.name, ci: (b.instructors && b.instructors.full_name) || '', message: message })
+    issues.push({ severity: sev, code: code, batchId: b.id, batch: b.name, ci: (b.instructors && b.instructors.full_name) || '', message: message, action: BATCH_ACTIONS[code] || '' })
   }
 
   batches.filter(function (b) { return b.is_active }).forEach(function (b) {
@@ -66,9 +78,9 @@ export function batchHealthIssues(input) {
     // the CI must hold an appointment for every course on the roster, or payroll calculates nothing for those students
     const seen = {}
     mine.forEach(function (r) {
-      if (!r.course_id || seen[r.course_id]) return
-      seen[r.course_id] = true
-      const ap = appointmentForCourse(appts.filter(function (a) { return a.instructor_id === b.instructor_id }), r.course_id, today)
+      if (!r.course || seen[r.course]) return
+      seen[r.course] = true
+      const ap = appointmentForCourse(appts.filter(function (a) { return a.instructor_id === b.instructor_id }), r.course, today)
       if (!ap) add('error', 'no_appointment', b, ciName + ' has no appointment for ' + (r.course || 'this course') + ', so payroll will calculate nothing for these students.')
     })
   })
@@ -76,8 +88,8 @@ export function batchHealthIssues(input) {
   // the same student on two open batches for the same course
   const byStudentCourse = {}
   roster.forEach(function (r) {
-    if (!r.student_id || !r.course_id) return
-    const k = r.student_id + '|' + r.course_id
+    if (!r.student_id || !r.course) return
+    const k = r.student_id + '|' + String(r.course).trim().toLowerCase()
     ;(byStudentCourse[k] = byStudentCourse[k] || []).push(r)
   })
   Object.keys(byStudentCourse).forEach(function (k) {

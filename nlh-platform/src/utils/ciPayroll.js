@@ -111,39 +111,43 @@ export function amountForClasses(rate, count, perCycle) {
 }
 
 // ── which appointment pays for a batch's students ───────────────────────────────
-// A CI is paid for the COURSE they teach (Phonics, Tuitions, …). A student's level changes as
-// they complete levels, so the level is irrelevant to the CI: every student on the batch counts
-// under the CI's appointment for that course. A CI can hold several appointments for one course
-// (one per level, entered over time) — the one in force is the latest appointed on or before the
-// end of the month.
-//   appts: [{ remuneration_mode, remuneration_rate, appointed_at, skus: { course_id } }]
-export function appointmentForCourse(appts, courseId, monthEnd) {
+// A CI is paid for the COURSE they teach — the programme name (Phonics, Tuitions, …). Its levels are
+// separate records in the system, and a student moves up a level as they complete one, so the level
+// is irrelevant to the CI: every student on the batch counts under the CI's appointment for the
+// programme. A CI can hold several appointments for one programme (one per level, entered over time);
+// the one in force is the latest appointed on or before the end of the month.
+//   appts: [{ remuneration_mode, remuneration_rate, appointed_at, skus: { courses: { group_name } } }]
+function courseKey(name) { return String(name || '').trim().toLowerCase() }
+
+export function appointmentForCourse(appts, course, monthEnd) {
   const end = monthEnd ? String(monthEnd).slice(0, 10) : ''
+  const key = courseKey(course)
   const mine = (appts || []).filter(function (a) {
-    const c = a.skus && a.skus.course_id
-    return c === courseId && (!a.appointed_at || !end || String(a.appointed_at).slice(0, 10) <= end)
+    const c = a.skus && a.skus.courses && a.skus.courses.group_name
+    return key && courseKey(c) === key && (!a.appointed_at || !end || String(a.appointed_at).slice(0, 10) <= end)
   })
   mine.sort(function (x, y) { return String(y.appointed_at || '').localeCompare(String(x.appointed_at || '')) })
   return mine[0] || null
 }
 
-// Per course on a batch's roster, for one month:
-//   completions  students who completed a level of the course in the month
-//   active       students on the roster at any point in the month (not finished or removed before it)
-//   roster: [{ course_id, assigned_at, removed_at, completed_at }]
+// Per programme on a batch's roster, for one month:
+//   completions / doneNames  students who completed a level of it in the month
+//   active / activeNames     students on the roster at any point in the month (not finished or removed before it)
+//   roster: [{ course, student, level, assigned_at, removed_at, completed_at }]
 export function batchCourseStats(roster, month) {
   const start = month + '-01'
   const end = month + '-31'
   const out = {}
   ;(roster || []).forEach(function (r) {
-    if (!r.course_id) return
-    const st = out[r.course_id] || (out[r.course_id] = { completions: 0, active: 0 })
+    if (!r.course) return
+    const st = out[r.course] || (out[r.course] = { completions: 0, active: 0, doneNames: [], activeNames: [] })
+    const label = (r.student || '') + (r.student && r.level ? ' (' + r.level + ')' : '')
     const assigned = r.assigned_at ? String(r.assigned_at).slice(0, 10) : ''
     const removed = r.removed_at ? String(r.removed_at).slice(0, 10) : ''
     const done = r.completed_at ? String(r.completed_at).slice(0, 10) : ''
-    if (done && done >= start && done <= end) st.completions++
+    if (done && done >= start && done <= end) { st.completions++; if (label) st.doneNames.push(label) }
     const onRoster = (!assigned || assigned <= end) && (!removed || removed >= start) && (!done || done >= start)
-    if (onRoster) st.active++
+    if (onRoster) { st.active++; if (label) st.activeNames.push(label) }
   })
   return out
 }

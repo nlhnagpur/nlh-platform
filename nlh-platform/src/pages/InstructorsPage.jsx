@@ -10,6 +10,8 @@ import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseSta
 import { fetchAllRows } from '../utils/studentLifecycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
+import PayrollCheckPanel from '../components/PayrollCheckPanel'
+import { payrollCheckIssues } from '../utils/payrollCheck'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -81,7 +83,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
-  const [payrollRoster, setPayrollRoster] = useState({})   // batchId → [{ course_id, course, assigned_at, removed_at, completed_at }]
+  const [payrollRoster, setPayrollRoster] = useState({})   // batchId → [{ course, student, level, assigned_at, removed_at, completed_at }]
   const [payrollCycle,       setPayrollCycle]       = useState({ rows: [], inProgress: [], total: 0, datesBySid: {} })   // per-student-cycle pay for the month
   const [payrollRun,         setPayrollRun]         = useState(null)   // saved ci_payroll_runs row for this CI + month
   const [payrollOverride,    setPayrollOverride]    = useState(null)  // { id, final_amount, notes } or null
@@ -222,12 +224,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
         // the "active" side is anyone whose membership overlapped the month at
         // all (assigned before month-end, not removed before month-start).
         var { data: bsRows } = await sb.from('batch_students')
-          .select('batch_id, assigned_at, removed_at, enrollments(id, sku_id, completed_at, skus(course_id, level_name, courses(group_name)))')
+          .select('batch_id, assigned_at, removed_at, enrollments(id, sku_id, completed_at, students(full_name), skus(course_id, level_name, courses(group_name)))')
           .in('batch_id', batchIds)
         ;(bsRows || []).forEach(function (bs) {
           ;(rosterMap[bs.batch_id] = rosterMap[bs.batch_id] || []).push({
-            course_id: bs.enrollments?.skus?.course_id || null,
             course: bs.enrollments?.skus?.courses?.group_name || '',
+            student: bs.enrollments?.students?.full_name || '',
+            level: bs.enrollments?.skus?.level_name || '',
             assigned_at: bs.assigned_at, removed_at: bs.removed_at, completed_at: bs.enrollments?.completed_at || null,
           })
           var ca = bs.enrollments?.completed_at
@@ -1525,11 +1528,11 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var subSessions  = Math.max(0, totalSessions - ciSessions)
                 // Prorate per-student pay by fraction of sessions the CI actually taught
                 var proration    = totalSessions > 0 ? ciSessions / totalSessions : 1
-                var mkRow = function (appt, course, level, completions, activeStudents) {
+                var mkRow = function (appt, course, level, completions, activeStudents, names) {
                   var mode = appt.remuneration_mode, rate = appt.remuneration_rate || 0
                   return {
                     batchId, batchName: data.batch?.name || '—', course, level,
-                    sessionCount: ciSessions, totalSessions, subSessions, proration, mode, rate,
+                    sessionCount: ciSessions, totalSessions, subSessions, proration, mode, rate, names: names || [],
                     completions: mode === 'per_student' ? completions : 0,
                     activeStudents: mode === 'per_student_month' ? activeStudents : 0,
                     amount: mode === 'per_session' ? ciSessions * rate
@@ -1548,7 +1551,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 // batch counts under the CI's appointment for that course.
                 var roster = payrollRoster[batchId] || []
                 var stats  = batchCourseStats(roster, payrollMonth)
-                var courseName = function (cid) { var x = roster.find(function (y) { return y.course_id === cid }); return (x && x.course) || 'this course' }
+                var courseName = function (cid) { return cid }   // the course key is the programme name itself
                 var didSession = false
                 Object.keys(stats).forEach(function (cid) {
                   var ap = appointmentForCourse(payrollAppts, cid, payrollMonth + '-31')
@@ -1564,7 +1567,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   var st = stats[cid]
                   if (ap.remuneration_mode === 'per_student' && st.completions === 0) return
                   if (ap.remuneration_mode === 'per_student_month' && st.active === 0) return
-                  push(mkRow(ap, courseName(cid), '', st.completions, st.active))
+                  push(mkRow(ap, courseName(cid), '', st.completions, st.active, ap.remuneration_mode === 'per_student' ? st.doneNames : st.activeNames))
                 })
                 // Paid per session and the roster doesn't identify a course (e.g. an empty batch):
                 // use the CI's per-session appointment.
@@ -1592,11 +1595,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var cycleTotal        = payrollCycle.total || 0
               var grandTotal        = sessionTotal + studentTotal + studentMonthTotal + cycleTotal + monthlyTotal + conveyance + officeSalary + incentive + misc
 
+              // The payroll check: what looks wrong with this month, and what to do about it
+              var classPay = sessionTotal + studentTotal + studentMonthTotal + cycleTotal + monthlyTotal
+              var usedCourses = Array.from(new Set(perSessionRows.concat(perStudentRows, perStudentMonthRows).map(function (x) { return x.course }).filter(Boolean)))
+              var checkIssues = payrollCheckIssues({
+                month: payrollMonth, ciName: instructor.full_name, classesTaken: payrollSessions.length, classPay: classPay,
+                unmatched: unmatched, appts: payrollAppts, usedCourses: usedCourses, run: payrollRun, calcTotal: grandTotal,
+              })
+
               // What was calculated, as lines the payment section can edit
               var calcLines = []
               perSessionRows.forEach(function (rw) { calcLines.push({ key: 'ps:' + rw.batchId + rw.course, label: rw.batchName + (rw.course && rw.course !== rw.batchName ? ' (' + rw.course + ')' : '') + ' — ' + rw.sessionCount + ' session' + (rw.sessionCount !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN'), amount: rw.amount }) })
-              perStudentRows.forEach(function (rw) { calcLines.push({ key: 'pst:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.completions + ' completed × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
-              perStudentMonthRows.forEach(function (rw) { calcLines.push({ key: 'psm:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount }) })
+              perStudentRows.forEach(function (rw) { calcLines.push({ key: 'pst:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.completions + ' completed × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount, detail: (rw.names && rw.names.length ? 'Students: ' + rw.names.join(' · ') : '') }) })
+              perStudentMonthRows.forEach(function (rw) { calcLines.push({ key: 'psm:' + rw.batchId + rw.course, label: rw.batchName + (rw.course ? ' (' + rw.course + ')' : '') + ' — ' + rw.activeStudents + ' student' + (rw.activeStudents !== 1 ? 's' : '') + ' × ₹' + rw.rate.toLocaleString('en-IN') + (rw.proration < 1 ? ' (pro-rata)' : ''), amount: rw.amount, detail: (rw.names && rw.names.length ? 'Students: ' + rw.names.join(' · ') : '') }) })
               payrollCycle.rows.forEach(function (rw) {
                 rw.blocks.forEach(function (b, bi) {
                   calcLines.push({
@@ -1622,12 +1633,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
 
               return (
                 <>
-                  {unmatched.length > 0 && (
-                    <div style={{ padding: '8px 12px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FCD34D', marginBottom: 12, font: '500 12px var(--font)', color: '#92400E' }}>
-                      No appointment covers {unmatched.map(function (u) { return u.course + ' (' + u.batch + ')' }).join(', ')} for {new Date(payrollMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })},
-                      so nothing is calculated for those students. Appoint the CI for that course, or add a line below.
-                    </div>
-                  )}
+                  <PayrollCheckPanel issues={checkIssues} />
 
                   {/* Per-session batches */}
                   {perSessionRows.length > 0 && (
@@ -1735,6 +1741,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                   </span>
                                 </div>
                                 {/* Calculation breakdown */}
+                                {row.names && row.names.length > 0 && (
+                                  <div style={{ font: '500 11px var(--font)', color: 'var(--text2)', marginTop: 5 }}>Students: {row.names.join(' · ')}</div>
+                                )}
                                 <div style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
                                   {row.completions} × ₹{row.rate.toLocaleString('en-IN')}
                                   {hasSubs
@@ -1850,6 +1859,9 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                     {row.activeStudents} student{row.activeStudents !== 1 ? 's' : ''} on roster
                                   </span>
                                 </div>
+                                {row.names && row.names.length > 0 && (
+                                  <div style={{ font: '500 11px var(--font)', color: 'var(--text2)', marginTop: 5 }}>Students: {row.names.join(' · ')}</div>
+                                )}
                                 <div style={{ font: '500 10px var(--font)', color: 'var(--text3)', marginTop: 4 }}>
                                   {row.activeStudents} × ₹{row.rate.toLocaleString('en-IN')}
                                   {hasSubs

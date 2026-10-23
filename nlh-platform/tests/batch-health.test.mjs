@@ -23,9 +23,9 @@ const CI = { full_name: 'Sabahat Heena', status: 'active' }
 const base = {
   today: '2026-10-23',
   batches: [{ id: 'b1', name: 'Mon-Fri 5 to 6 pm', is_active: true, start_date: '2026-09-02', instructor_assigned_at: '2026-09-02', instructor_id: 'ci1', instructors: CI }],
-  openRoster: [{ batch_id: 'b1', student_id: 's1', student: 'Sai', course_id: 'phonics', course: 'Phonics' }],
+  openRoster: [{ batch_id: 'b1', student_id: 's1', student: 'Sai', course: 'Phonics' }],
   recentSessions: [{ batch_id: 'b1', session_date: '2026-10-22', instructor_id: 'ci1', is_substitute: false }],
-  appointments: [{ instructor_id: 'ci1', remuneration_mode: 'per_student', appointed_at: '2026-10-09', skus: { course_id: 'phonics' } }],
+  appointments: [{ instructor_id: 'ci1', remuneration_mode: 'per_student', appointed_at: '2026-10-09', skus: { courses: { group_name: 'Phonics' } } }],
 }
 const codes = (x) => batchHealthIssues(x).map((i) => i.code)
 
@@ -43,15 +43,15 @@ test('each problem is caught', () => {
 
 test('no appointment for the course on the roster is an error — payroll would calculate nothing', () => {
   assert.ok(codes({ ...base, appointments: [] }).includes('no_appointment'))
-  assert.ok(codes({ ...base, appointments: [{ instructor_id: 'ci1', remuneration_mode: 'per_student', appointed_at: '2026-11-01', skus: { course_id: 'phonics' } }] }).includes('no_appointment'))   // not yet in force
-  assert.ok(codes({ ...base, appointments: [{ instructor_id: 'ci1', remuneration_mode: 'per_student', appointed_at: '2026-01-01', skus: { course_id: 'grammar' } }] }).includes('no_appointment'))      // wrong course
+  assert.ok(codes({ ...base, appointments: [{ instructor_id: 'ci1', remuneration_mode: 'per_student', appointed_at: '2026-11-01', skus: { courses: { group_name: 'Phonics' } } }] }).includes('no_appointment'))   // not yet in force
+  assert.ok(codes({ ...base, appointments: [{ instructor_id: 'ci1', remuneration_mode: 'per_student', appointed_at: '2026-01-01', skus: { courses: { group_name: 'English Grammar' } } }] }).includes('no_appointment'))      // wrong course
 })
 
 test('a student on two open batches for the same course is flagged; closed batches are ignored', () => {
   const two = {
     ...base,
     batches: [...base.batches, { id: 'b2', name: 'Other', is_active: true, start_date: '2026-09-02', instructor_assigned_at: '2026-09-02', instructor_id: 'ci1', instructors: CI }],
-    openRoster: [...base.openRoster, { batch_id: 'b2', student_id: 's1', student: 'Sai', course_id: 'phonics', course: 'Phonics' }],
+    openRoster: [...base.openRoster, { batch_id: 'b2', student_id: 's1', student: 'Sai', course: 'Phonics' }],
     recentSessions: [...base.recentSessions, { batch_id: 'b2', session_date: '2026-10-22', instructor_id: 'ci1', is_substitute: false }],
   }
   assert.ok(codes(two).includes('double_batch'))

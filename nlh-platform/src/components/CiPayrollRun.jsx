@@ -160,6 +160,7 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
               {editable && l.added
                 ? <input value={l.label} placeholder="What is this for?" onChange={function (e) { setLabel(i, e.target.value) }} style={{ width: '100%', fontSize: 13 }} />
                 : <div style={{ font: '600 13px var(--font)', color: 'var(--text)' }}>{l.label}</div>}
+              {l.detail && <div style={{ font: '500 11px var(--font)', color: 'var(--text3)', marginTop: 3 }}>{l.detail}</div>}
               {l.meta && (
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4, font: '500 11px var(--font)', color: 'var(--text3)' }}>
                   {editable

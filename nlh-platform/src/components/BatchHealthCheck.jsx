@@ -46,7 +46,7 @@ export default function BatchHealthCheck() {
       }).map(function (x) {
         const e = x.enrollments
         return { batch_id: x.batch_id, student_id: e.student_id, student: e.students && e.students.full_name,
-          course_id: e.skus && e.skus.course_id, course: e.skus && e.skus.courses && e.skus.courses.group_name }
+          course: e.skus && e.skus.courses && e.skus.courses.group_name }
       })
 
       const recentSessions = await fetchAllRows(function (from, to) {
@@ -55,7 +55,7 @@ export default function BatchHealthCheck() {
       })
       let appointments = []
       if (ciIds.length) {
-        const aRes = await sb.from('instructor_courses').select('instructor_id, remuneration_mode, appointed_at, skus(course_id)').in('instructor_id', ciIds).eq('status', 'active')
+        const aRes = await sb.from('instructor_courses').select('instructor_id, remuneration_mode, appointed_at, skus(courses(group_name))').in('instructor_id', ciIds).eq('status', 'active')
         if (aRes.error) throw aRes.error
         appointments = aRes.data || []
       }
@@ -88,6 +88,7 @@ export default function BatchHealthCheck() {
                 <span style={{ font: '700 10px var(--mono)', color: SEV[i.severity].color, background: SEV[i.severity].bg, borderRadius: 10, padding: '2px 8px', whiteSpace: 'nowrap', marginTop: 2 }}>{SEV[i.severity].label}</span>
                 <div style={{ font: '500 12px var(--font)', color: 'var(--text2)' }}>
                   <b style={{ color: 'var(--text)' }}>{i.batch}</b>{i.ci ? ' · ' + i.ci : ''} — {i.message}
+                  {i.action && <div style={{ marginTop: 2, color: 'var(--text3)' }}><b style={{ color: 'var(--text2)' }}>What to do:</b> {i.action}</div>}
                 </div>
               </div>
             )
