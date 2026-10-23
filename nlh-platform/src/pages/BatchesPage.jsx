@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { fmtDate, showToast } from '../utils'
 import { sendWAReviewRequest } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
+import BatchHealthCheck from '../components/BatchHealthCheck'
+import { isAdminRole } from '../constants/roles'
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -1455,6 +1457,7 @@ function RosterModal({ batch, nlhCentreId, onClose, onChange }) {
 // ── BatchesPage ───────────────────────────────────────────────────────────────
 
 export default function BatchesPage() {
+  const { currentRole } = useAuth()
   const [batches,       setBatches]       = useState([])
   const [instructors,   setInstructors]   = useState([])   // for filter dropdown
   const [allSkus,       setAllSkus]       = useState([])   // for new-batch dropdown
@@ -1712,6 +1715,8 @@ export default function BatchesPage() {
           </div>
         )
       })()}
+
+      {isAdminRole(currentRole) && <BatchHealthCheck />}
 
       {/* ── Filters ── */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>

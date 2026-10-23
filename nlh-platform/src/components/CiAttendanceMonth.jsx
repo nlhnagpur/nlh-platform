@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
-import { resolveTeacherStatus } from '../utils/teacherAttendance'
+import { resolveTeacherStatus, teacherStartDay } from '../utils/teacherAttendance'
+import { batchListedInMonth } from '../utils/batchHealth'
 import { monthLabel } from '../utils/ciPayrollRun'
 
 // P present · A absent (was due, didn't come) · O weekly off · H general holiday
@@ -38,7 +39,7 @@ export default function CiAttendanceMonth({ instructor, month }) {
         sb.from('instructor_attendance').select('att_date, status, batch_id').eq('instructor_id', instructor.id).gte('att_date', from).lte('att_date', to),
         sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday, is_substitute, instructor_id, batches(name)')
           .eq('instructor_id', instructor.id).gte('session_date', from).lte('session_date', to),
-        sb.from('batches').select('id, name').eq('instructor_id', instructor.id),
+        sb.from('batches').select('id, name, is_active, start_date, instructor_assigned_at').eq('instructor_id', instructor.id),
       ])
       const ownIds = (owned.data || []).map(function (b) { return b.id })
       let others = []
@@ -58,9 +59,20 @@ export default function CiAttendanceMonth({ instructor, month }) {
       // batch is listed separately below, so that batch's days aren't painted with the CI's marks.
       const subTaken = (mine.data || []).filter(function (s) { return s.is_substitute })
       const ownTaught = (mine.data || []).filter(function (s) { return !s.is_substitute }).map(function (s) { return s.batch_id })
-      const batchIds = Array.from(new Set(ownIds.concat(ownTaught)))
-      setData({ days: days, att: att.data || [], sessions: sessions, names: names, batchIds: batchIds, subTaken: subTaken })
-    })().catch(function () { if (!cancelled) setData({ days: daysOf(month), att: [], sessions: [], names: {}, batchIds: [], subTaken: [], failed: true }) })
+      // An own batch gets a row only if it is live this month (open, and the CI had it by month end)
+      // or actually had classes in it this month — not every old, closed batch the CI ever had.
+      const withClasses = {}
+      sessions.forEach(function (x) { withClasses[x.batch_id] = true })
+      const starts = {}
+      const firstClass = {}
+      ;(mine.data || []).forEach(function (x) { if (!firstClass[x.batch_id] || x.session_date < firstClass[x.batch_id]) firstClass[x.batch_id] = x.session_date })
+      const liveOwn = (owned.data || []).filter(function (b) {
+        starts[b.id] = teacherStartDay(b, firstClass[b.id])
+        return batchListedInMonth(b, !!withClasses[b.id], to)
+      }).map(function (b) { return b.id })
+      const batchIds = Array.from(new Set(liveOwn.concat(ownTaught)))
+      setData({ days: days, att: att.data || [], sessions: sessions, names: names, batchIds: batchIds, subTaken: subTaken, starts: starts })
+    })().catch(function () { if (!cancelled) setData({ days: daysOf(month), att: [], sessions: [], names: {}, batchIds: [], subTaken: [], starts: {}, failed: true }) })
     return function () { cancelled = true }
   }, [instructor.id, month])
 
@@ -76,6 +88,7 @@ export default function CiAttendanceMonth({ instructor, month }) {
   data.sessions.forEach(function (s) { sessAt[s.batch_id + '|' + String(s.session_date).slice(0, 10)] = s })
 
   function cell(batchId, d) {
+    if (data.starts && data.starts[batchId] && d < data.starts[batchId]) return null   // before the CI had this batch
     const s = sessAt[batchId + '|' + d]
     if (s && s.is_holiday) return { code: 'H', why: 'General holiday' }
     const mark = resolveTeacherStatus(batchMark[batchId + '|' + d], dayMark[d])

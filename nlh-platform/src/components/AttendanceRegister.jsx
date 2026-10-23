@@ -353,12 +353,19 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
     })
   }
 
+  // The first day this batch's CI counts from: the batch start / assignment date, unless a class was
+  // actually recorded earlier (then the data says the CI was already there).
+  function startOf(b) {
+    const firstSaved = Object.keys(saved).filter(function (k) { return k.startsWith(b.id + '|') && saved[k].id }).map(function (k) { return k.slice(b.id.length + 1) }).sort()[0]
+    return teacherStartDay(b, firstSaved)
+  }
+
   // Teacher cell: blank -> P present -> (A absent ->) O off -> blank. Off and
   // absent are the teacher's, not the batch's, so they show in every batch they
   // take that day. A batch holiday shows as H and cannot be stepped.
   function stepTeacher(b, date) {
     if (!canEdit || date > today || !b.instructor_id) return
-    if (teacherStartDay(b) && date < teacherStartDay(b)) return    // before this CI had the batch
+    if (startOf(b) && date < startOf(b)) return    // before this CI had the batch
     if (dayState(b.id, date).hol) return
     const cur = tStatus(b, date)
     const next = teacherNextStatus(cur, TEACHER_ABSENT_ENABLED)
@@ -539,7 +546,7 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
             const roster = rosterOf(b)
             if (roster.length === 0) return null
             const dows = dowSet(b.schedule_days)
-            const startDay = teacherStartDay(b)   // the batch began and this CI had it from here
+            const startDay = startOf(b)   // the batch began and this CI had it from here
             const dirty = dirtyDates(b).length
             return (
               <div key={b.id} id={'att-batch-' + b.id} className="card" style={{ padding: 0, marginBottom: 0, boxShadow: focus && focus.batchId === b.id ? '0 0 0 2px #7c3aed' : undefined }}>

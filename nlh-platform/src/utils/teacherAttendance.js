@@ -54,9 +54,12 @@ export function teacherWritePlan(next, hadDayRow) {
 
 // The first day the batch's CI is the one taking it: the later of the batch's own start
 // and the day the current CI was assigned. Teacher marks before it make no sense.
-export function teacherStartDay(batch) {
+export function teacherStartDay(batch, firstClass) {
   if (!batch) return ''
   const a = batch.start_date ? String(batch.start_date).slice(0, 10) : ''
   const b = batch.instructor_assigned_at ? String(batch.instructor_assigned_at).slice(0, 10) : ''
-  return a > b ? a : b
+  const rule = a > b ? a : b
+  // a class actually recorded earlier than the rule wins: the data says the CI was already there
+  const f = firstClass ? String(firstClass).slice(0, 10) : ''
+  return rule && f && f < rule ? f : rule
 }
