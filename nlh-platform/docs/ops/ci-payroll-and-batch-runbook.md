@@ -19,6 +19,7 @@ Whatever the CI's appointment says (per session, per student, per student a mont
 |---|---|---|
 | A student finishes a level and carries on | Student → course → **⬆ Move to next level** | Opens the level change with the next level chosen and "record the previous level as completed" on; you confirm date and fee. |
 | A batch ends | Batches → **Close batch** | Asks what happens to **each** student (move to another batch / finished / take off), then closes the batch and makes it view-only. A student can't be moved to a CI who has no appointment for the programme. |
+| A CI leaves | Instructors → the CI → Profile → **👋 CI is leaving…** | Asks the reason and the last day of work, then for **each** open batch: hand it to another CI (only CIs with an appointment for its programmes can be chosen; they take over the next day) or close it. Then marks the CI as left and opens their Payroll tab for the final month. Their appointments stay active so that payroll calculates. |
 | A closed batch needs a correction | Batches → **Reactivate**, correct, close again | Closed batches take no attendance or student changes. |
 
 ## The rules the system follows

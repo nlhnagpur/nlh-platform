@@ -10,6 +10,7 @@ import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseSta
 import { fetchAllRows, todayIso } from '../utils/studentLifecycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
+import CiLeavesDialog from '../components/CiLeavesDialog'
 import PayrollCheckPanel from '../components/PayrollCheckPanel'
 import { payrollCheckIssues } from '../utils/payrollCheck'
 
@@ -159,6 +160,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [editBatchModal,  setEditBatchModal]  = useState(null) // batch object
   const [attendanceBatch, setAttendanceBatch] = useState(null) // batch object
   const [showCiSheet, setShowCiSheet] = useState(false)          // monthly attendance sheet for this CI
+  const [showLeaves, setShowLeaves] = useState(false)             // the guided "CI leaves" action
 
   function fld(k)  { return function (e) { setForm(f    => ({ ...f, [k]: e.target.value })) } }
   function cfd(k)  { return function (e) { setCaution(c => ({ ...c, [k]: e.target.value })) } }
@@ -818,12 +820,28 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               </label>
             </div>
             <div className="modal-actions">
+              {canEditPayroll && instructor.status === 'active' && (
+                <button className="btn" style={{ marginRight: 'auto', color: '#92400e', borderColor: '#fbbf24' }}
+                  title="Hand each open batch to another CI (or close it), then mark this CI as left"
+                  onClick={function () { setShowLeaves(true) }}>👋 CI is leaving…</button>
+              )}
               <button className="btn" onClick={onClose}>Cancel</button>
               <button className="btn-p" onClick={saveProfile} disabled={saving}>
                 {saving ? 'Saving…' : 'Save Profile'}
               </button>
             </div>
           </div>
+        )}
+
+        {showLeaves && (
+          <CiLeavesDialog instructor={instructor}
+            onClose={function () { setShowLeaves(false) }}
+            onDone={function (res) {
+              setShowLeaves(false)
+              setForm(function (f) { return { ...f, status: res.status, left_at: res.left_at } })
+              onSaved({ ...instructor, status: res.status, left_at: res.left_at })
+              loadTab('payroll')   // straight to the final month's payroll
+            }} />
         )}
 
         {/* ══ Caution tab ══════════════════════════════════════════════════════ */}
