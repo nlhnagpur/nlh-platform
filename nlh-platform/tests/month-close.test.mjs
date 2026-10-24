@@ -34,3 +34,11 @@ test('month close: payroll states, orders, certificates and batch issues in one 
   const now = closeItems({ month: '2026-11', today: '2026-11-02', cis: [{ id: 'a', full_name: 'Khushi' }], runs: [] })
   assert.equal(now[0].severity, 'info'); assert.equal(monthIsPast('2026-11', '2026-11-02'), false)
 })
+
+import { staffGuideHtml, STAFF_GUIDE } from '../src/utils/staffGuide.js'
+test('staff guide prints every section on one sheet', () => {
+  const html = staffGuideHtml()
+  assert.ok(html.includes('NLH Platform — Staff Guide'))
+  STAFF_GUIDE.events.forEach(function (e) { assert.ok(html.includes(e[0].replace(/&/g, '&amp;'))) })
+  assert.ok(html.includes('Every month end') && html.includes('What a warning means') && html.includes('Rules to remember'))
+})

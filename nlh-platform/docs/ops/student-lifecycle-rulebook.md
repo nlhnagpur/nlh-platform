@@ -182,7 +182,7 @@ Worked example (Ayesha in October): classes the child had — 3 under Khushi (to
 | **G8** | Completion cannot be reversed | — | **Not wanted (D5).** Left as it is |
 | **G9** | No single month-end screen | Checks are spread across the Batches page and each CI's payroll | **Done:** **Today & Month close** page — batch health, CI payroll state for the chosen month, orders to invoice or verify, certificates not issued; each with what to do and an Open button |
 | **G10** | A student without a batch is not flagged | A paying child with nobody being paid | **Done:** "enrolled, no batch" is in the Batch health check (HO students only, after 2 days) |
-| **G11** | No refund record | A refunded fee is not visible on the student's account or in the books | A refund action (HO only) that records the payment out, reduces the paid amount, and posts to the accounts when the engine (E1+) is in |
+| **G11** | No refund record | A refunded fee is not visible on the student's account or in the books | **Decided:** any refund is made through a voucher / journal entry in HO Accounting (not by editing the paid amount). The staff guide says so; a dedicated refund button is not needed |
 
 ## 7. Decisions (recorded)
 
@@ -207,6 +207,6 @@ Worked example (Ayesha in October): classes the child had — 3 under Khushi (to
 | **L5** ✅ | Student timeline (G7) and "enrolled, no batch" check (G10) | No |
 | **L6** — | Reopen course — not wanted (D5) | — |
 | **L7** ✅ | Today / Month close page (G9) | No |
-| **L8** | Staff one-page guide generated from this rulebook | No |
+| **L8** ✅ | Staff one-page guide generated from this rulebook | No |
 
 Everything in L1–L8 is shown to HO admin roles only.

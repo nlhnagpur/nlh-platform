@@ -3,6 +3,8 @@ import { sb } from '../supabase'
 import { loadBatchHealthIssues } from '../utils/batchHealthLoad'
 import { closeItems, monthIsPast } from '../utils/monthClose'
 import { monthLabel } from '../utils/ciPayrollRun'
+import { staffGuideHtml } from '../utils/staffGuide'
+import { printHtmlDoc } from '../components/studentDocs'
 
 const SEV = {
   error: { label: 'Fix', color: '#991B1B', bg: '#FEE2E2' },
@@ -68,6 +70,7 @@ export default function TodayPage({ onNavigate }) {
           <b style={{ font: '700 13px var(--font)', minWidth: 120, textAlign: 'center' }}>{monthLabel(month)}{past ? '' : ' (running)'}</b>
           <button className="btn" disabled={month >= thisMonth()} onClick={function () { setMonth(shiftMonth(month, 1)) }}>›</button>
           <button className="btn" onClick={function () { setReload(function (n) { return n + 1 }) }}>↻ Re-check</button>
+          <button className="btn" onClick={function () { printHtmlDoc(staffGuideHtml()) }}>🖨 Staff guide</button>
         </div>
       </div>
       {error && <div className="hint" style={{ color: 'var(--red)' }}>{error}</div>}
