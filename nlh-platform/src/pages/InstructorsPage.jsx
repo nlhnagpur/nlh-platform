@@ -1891,7 +1891,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   </div>
 
                   {/* ── Payment for the month: editable amounts, saved, marked paid ── */}
-                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun} datesBySid={payrollCycle.datesBySid} shareDates={Object.assign({}, payrollBatchDates, payrollChildDates)}
+                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun} datesBySid={payrollCycle.datesBySid} shareDates={Object.assign({}, payrollBatchDates, Object.keys(payrollChildDates).reduce(function (m, k) { m['child:' + k] = payrollChildDates[k]; return m }, {}))}
                     canEdit={canEditPayroll} onChanged={function (saved) { setPayrollRun(saved) }} />
                 </>
               )
