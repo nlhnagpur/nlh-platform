@@ -5,7 +5,7 @@ import { fmtDate, showToast } from '../utils'
 import { cleanLines, sumLines, linesFromCalc, lineEdited, monthLabel, lastDayOf } from '../utils/ciPayrollRun'
 import { postPayrollAccrual, voidPayrollAccrual } from '../utils/ciAccounting'
 import CiBankPaymentDialog from './CiBankPaymentDialog'
-import { recountLine, nextCycleStart } from '../utils/ciPayroll'
+import { recountLine, nextCycleStart, sheetRowFor } from '../utils/ciPayroll'
 import { printCiPaymentSheet } from './ciPaymentSheet'
 
 function rupees(n) {
@@ -69,16 +69,8 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
 
   function onPrint() {
     const clean = cleanLines(lines)
-    const rows = []
-    const others = []
-    clean.forEach(function (l) {
-      if (l.meta && l.meta.sid && !l.meta.kind) {
-        const all = (datesBySid || {})[l.meta.sid] || []
-        const dates = all.filter(function (d) { return d >= l.meta.from && d <= l.meta.to })
-        rows.push({ name: l.label, course: l.meta.course || '', blocks: [{ dates: dates, count: l.meta.count, perCycle: l.meta.perCycle, amount: l.amount, partial: l.meta.count < l.meta.perCycle }] })
-      } else others.push({ label: l.label, amount: l.amount })
-    })
-    printCiPaymentSheet({ ciName: instructor.full_name, monthLabel: monthLabel(month), date: (run && run.paid_on) || new Date(), rows: rows, otherLines: others })
+    const rows = clean.map(function (l) { return sheetRowFor(l, { datesBySid: datesBySid, shareDates: shareDates }) }).filter(function (r) { return r.amount })
+    printCiPaymentSheet({ ciName: instructor.full_name, monthLabel: monthLabel(month), date: (run && run.paid_on) || new Date(), rows: rows })
   }
 
   async function saveRun(extra) {

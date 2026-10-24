@@ -1,7 +1,6 @@
 // The "CI Payment Sheet" — one line per student cycle paid, an Extra line for
 // incentive / misc, the total and the total in words. Plain monospace sheet.
 
-import { datesByMonth } from '../utils/ciPayroll.js'
 import { numToWords, printHtmlDoc } from './studentDocs.js'
 
 function esc(s) {
@@ -15,20 +14,16 @@ function dmy(d) {
   return String(t.getDate()).padStart(2, '0') + '.' + String(t.getMonth() + 1).padStart(2, '0') + '.' + t.getFullYear()
 }
 
-// sheet: { ciName, date, rows:[{ name, course, blocks:[{dates,count,perCycle,amount,partial}] }],
+// sheet: { ciName, date, rows:[{ particular, description, amount }]  (built by sheetRowFor — same layout for every pay basis),
 //          otherLines:[{label, amount}] (or a single `extra` + `extraNote`) }
 export function ciPaymentSheetHtml(sheet) {
   let n = 0
   let total = 0
   const lines = []
   ;(sheet.rows || []).forEach(function (r) {
-    r.blocks.forEach(function (b) {
-      n++
-      total += b.amount
-      lines.push('<tr><td class="c">' + n + '</td><td>' + esc(r.name) + ' ' + esc(datesByMonth(b.dates)) + '</td>' +
-        '<td class="c">' + esc((r.course || 'Sessions') + '- Sessions-' + b.perCycle + (b.partial ? ' (' + b.count + ' taught)' : '')) + '</td>' +
-        '<td class="r">' + money(b.amount) + '</td></tr>')
-    })
+    n++
+    total += r.amount
+    lines.push('<tr><td class="c">' + n + '</td><td>' + esc(r.particular) + '</td><td class="c">' + esc(r.description) + '</td><td class="r">' + money(r.amount) + '</td></tr>')
   })
   const others = (sheet.otherLines || []).slice()
   const extra = Math.round(Number(sheet.extra) || 0)

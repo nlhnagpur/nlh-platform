@@ -287,3 +287,36 @@ export function levelStartDate(completions, focus, courseStarted) {
   const x = new Date(Number(before.slice(0, 4)), Number(before.slice(5, 7)) - 1, Number(before.slice(8, 10)) + 1)
   return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0')
 }
+
+// ── one printed layout for every kind of line ────────────────────────────────────────
+// Whatever the pay basis, a line prints the same way: PARTICULAR = who/what and the dates of the classes,
+// DESCRIPTION = the programme and what the amount is for. Lines without class dates (extras, deductions)
+// print their label alone.
+//   ctx: { datesBySid, shareDates }
+export function sheetRowFor(line, ctx) {
+  const m = line && line.meta
+  const c = ctx || {}
+  const label = (line && line.label) || ''
+  const amount = Math.round(Number(line && line.amount) || 0)
+  if (!m || !m.kind && !m.sid) return { particular: label, description: '', amount: amount }
+  const prog = m.course ? m.course + ' — ' : ''
+  const inRange = function (arr) {
+    return uniqSorted(arr || []).filter(function (d) { return (!m.from || d >= String(m.from).slice(0, 10)) && (!m.to || d <= String(m.to).slice(0, 10)) })
+  }
+  const plural = function (n) { return n + ' class' + (n !== 1 ? 'es' : '') }
+  if (m.kind === 'fixed') return { particular: label, description: prog + 'fixed monthly', amount: amount }
+  if (m.kind === 'session') {
+    const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
+    return { particular: label + ' ' + datesByMonth(d), description: prog + plural(m.count) + ' taken', amount: amount }
+  }
+  if (m.kind === 'share') {
+    const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
+    return { particular: label + ' ' + datesByMonth(d), description: prog + m.count + ' of ' + m.total + ' classes taken by the CI', amount: amount }
+  }
+  if (m.kind === 'level') {
+    const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
+    return { particular: label + ' ' + datesByMonth(d), description: prog + m.count + ' of ' + m.total + ' classes of the level taken by the CI', amount: amount }
+  }
+  const d = inRange((c.datesBySid || {})[m.sid])
+  return { particular: label + ' ' + datesByMonth(d), description: (m.course || 'Sessions') + '- Sessions-' + m.perCycle + (m.count < m.perCycle ? ' (' + m.count + ' taught)' : ''), amount: amount }
+}

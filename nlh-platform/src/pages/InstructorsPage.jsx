@@ -1742,7 +1742,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 calcLines.push({
                   key: 'ps:' + rw.batchId + rw.course, label: rw.batchName + (rw.course && rw.course !== rw.batchName ? ' (' + rw.course + ')' : ''), amount: rw.amount,
                   detail: '₹' + rw.rate.toLocaleString('en-IN') + ' a class',
-                  meta: { kind: 'session', sid: rw.batchId, from: monthFirst, to: payTo, count: countInRange(bd.ci, monthFirst, payTo), rate: rw.rate },
+                  meta: { kind: 'session', course: rw.course, sid: rw.batchId, from: monthFirst, to: payTo, count: countInRange(bd.ci, monthFirst, payTo), rate: rw.rate },
                 })
               })
               // Per-student modes are paid student by student — one line each (name, the dates it covers, the
@@ -1764,7 +1764,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         calcLines.push({
                           key: prefix + rw.batchId + rw.course + ':' + i, label: m.label, amount: levelSharePay(rw.rate, lc, m.levelTotal),
                           detail: where + ' · ₹' + rw.rate.toLocaleString('en-IN') + ' on completion, for the share of the level taken under this CI',
-                          meta: { kind: 'level', sid: 'child:' + ck, from: m.levelFrom, to: m.doneOn, count: lc, total: m.levelTotal, rate: rw.rate },
+                          meta: { kind: 'level', course: rw.course, sid: 'child:' + ck, from: m.levelFrom, to: m.doneOn, count: lc, total: m.levelTotal, rate: rw.rate },
                         })
                         return
                       }
@@ -1774,7 +1774,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       calcLines.push({
                         key: prefix + rw.batchId + rw.course + ':' + i, label: m.label, amount: cd ? amountForShare(rw.rate, ci, all) : parts[i],
                         detail: where + ' · ₹' + rw.rate.toLocaleString('en-IN') + (basis === 'done' ? ' on completion' : ' a month'),
-                        meta: { kind: 'share', sid: cd ? 'child:' + ck : rw.batchId, from: m.from, to: to, count: ci, total: all, rate: rw.rate },
+                        meta: { kind: 'share', course: rw.course, sid: cd ? 'child:' + ck : rw.batchId, from: m.from, to: to, count: ci, total: all, rate: rw.rate },
                       })
                     })
                   } else {
@@ -1798,7 +1798,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   calcLines.push({
                     key: 'lvl:' + lv.batchId + lv.course + ':' + i, label: m.label + ' — level in progress', amount: levelSharePay(lv.rate, lc, m.levelTotal),
                     detail: lv.batchName + ' (' + lv.course + ') · ₹' + lv.rate.toLocaleString('en-IN') + ' on completion; ' + lc + ' of ' + m.levelTotal + ' classes taken under this CI — the takeover CI is paid the rest at completion',
-                    meta: { kind: 'level', sid: 'child:' + ck, from: m.levelFrom, to: mine[mine.length - 1], count: lc, total: m.levelTotal, rate: lv.rate },
+                    meta: { kind: 'level', course: lv.course, sid: 'child:' + ck, from: m.levelFrom, to: mine[mine.length - 1], count: lc, total: m.levelTotal, rate: lv.rate },
                   })
                 })
               })
@@ -1814,7 +1814,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 calcLines.push({
                   key: 'mo:' + a.id, label: ((a.skus && a.skus.courses && a.skus.courses.group_name) || 'Monthly') + ' — monthly fixed', amount: a.remuneration_rate || 0,
                   detail: 'Fixed monthly rate',
-                  meta: { kind: 'fixed', sid: 'fixed:' + a.id, from: monthFirst, to: payTo, rate: a.remuneration_rate || 0 },
+                  meta: { kind: 'fixed', course: (a.skus && a.skus.courses && a.skus.courses.group_name) || '', sid: 'fixed:' + a.id, from: monthFirst, to: payTo, rate: a.remuneration_rate || 0 },
                 })
               })
               // Classes taken as a substitute: counted and priced roughly from this CI's own appointment; the amount is theirs to adjust
