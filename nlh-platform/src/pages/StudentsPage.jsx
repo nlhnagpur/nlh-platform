@@ -9,7 +9,7 @@ import { getTreeIds } from '../utils/hierarchy'
 import { deriveFilter } from '../utils/courseAccess'
 import { studentReceiptCtx, studentReceiptCtxFull, loadStatementLines } from '../utils/studentReceipts'
 import { receiptPreview } from '../utils/feeStatement'
-import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay, levelChangePatch, cycleInProgress, levelFeePatch, completedLevelRow, levelSessionCounts, isFinishedLevelRecord, nextLevelSku } from '../utils/studentLifecycle'
+import { addOneMonth, todayIso, CYCLE_DAY_NAMES, formatCycleDays, parseCycleDays, countCycleDays, computeCycle, cycleSessionsAcrossBatches, cycleAnchor, isMonthlyActive, renewalInfo, enrolmentBucket, certPending, attentionReasons, studentBucket, fetchAllRows, shortDay, levelChangePatch, cycleInProgress, levelFeePatch, completedLevelRow, levelSessionCounts, isFinishedLevelRecord, nextLevelSku } from '../utils/studentLifecycle'
 import { sendWelcomeEmail } from '../services/email'
 import { sendWAStudentEnrolled, sendWAReviewRequest, sendWAStudentReceipt, sendWAFeeReminder } from '../services/whatsapp'
 import CouponField from '../components/CouponField'
@@ -555,9 +555,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
   // right after a renewal with the new cycle start.
   async function loadCycleProgress(enrList, assignMap) {
     const monthly = enrList.filter(function (en) { return !en.completed_at && en.status !== 'dropped' && assignMap[en.id] })
-    const batchIds = Array.from(new Set(monthly.map(function (en) { return assignMap[en.id].batch_id }).filter(Boolean)))
-    if (batchIds.length === 0) { setCycleProgress({}); return }
+    if (monthly.length === 0) { setCycleProgress({}); return }
     try {
+      // every batch each child has been on (a child moved between batches keeps their cycle)
+      const { data: memRows } = await sb.from('batch_students').select('enrollment_id, batch_id, assigned_at, removed_at').in('enrollment_id', monthly.map(function (en) { return en.id }))
+      const memsByEnr = {}
+      ;(memRows || []).forEach(function (m) { (memsByEnr[m.enrollment_id] = memsByEnr[m.enrollment_id] || []).push(m) })
+      const batchIds = Array.from(new Set((memRows || []).map(function (m) { return m.batch_id }).concat(monthly.map(function (en) { return assignMap[en.id].batch_id })).filter(Boolean)))
       const anchors = monthly.map(cycleAnchor).filter(Boolean).sort()
       const [sessRows, attRows] = await Promise.all([
         fetchAllRows(function (from, to) {
@@ -575,7 +579,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
       const progress = {}
       monthly.forEach(function (en) {
         const bsRow = assignMap[en.id]
-        progress[en.id] = computeCycle(en, sessRows.filter(function (s) { return s.batch_id === bsRow.batch_id }), attendanceByEnr[en.id], bsRow.batches?.schedule_days, undefined, noClassByEnr[en.id])
+        progress[en.id] = computeCycle(en, cycleSessionsAcrossBatches(memsByEnr[en.id] || [{ batch_id: bsRow.batch_id }], sessRows, attendanceByEnr[en.id]), attendanceByEnr[en.id], bsRow.batches?.schedule_days, undefined, noClassByEnr[en.id])
       })
       setCycleProgress(progress)
     } catch (e) { console.error('Cycle progress load error:', e); setCycleProgress({}) }
@@ -5614,10 +5618,13 @@ export default function StudentsPage() {
       })
       if (monthlyEnrIds.length > 0) {
         const { data: bsRows } = await sb.from('batch_students')
-          .select('enrollment_id, batch_id, batches(schedule_days)').in('enrollment_id', monthlyEnrIds).is('removed_at', null)
-        const batchByEnr = {}, daysByEnr = {}
-        ;(bsRows || []).forEach(function (bs) { batchByEnr[bs.enrollment_id] = bs.batch_id; daysByEnr[bs.enrollment_id] = bs.batches?.schedule_days || '' })
-        const batchIds = Array.from(new Set(Object.values(batchByEnr)))
+          .select('enrollment_id, batch_id, assigned_at, removed_at, batches(schedule_days)').in('enrollment_id', monthlyEnrIds)
+        const batchByEnr = {}, daysByEnr = {}, memsByEnr = {}
+        ;(bsRows || []).forEach(function (bs) {
+          ;(memsByEnr[bs.enrollment_id] = memsByEnr[bs.enrollment_id] || []).push(bs)
+          if (!bs.removed_at) { batchByEnr[bs.enrollment_id] = bs.batch_id; daysByEnr[bs.enrollment_id] = bs.batches?.schedule_days || '' }
+        })
+        const batchIds = Array.from(new Set((bsRows || []).map(function (bs) { return bs.batch_id })))
         try {
           let sessRows = [], attRows = []
           if (batchIds.length > 0) {
@@ -5644,7 +5651,7 @@ export default function StudentsPage() {
           ;(data || []).forEach(function (s) {
             (s.enrollments || []).filter(isMonthlyActive).forEach(function (e) {
               const bId = batchByEnr[e.id]
-              cm[e.id] = computeCycle(e, sessRows.filter(function (r) { return r.batch_id === bId }), attendanceByEnr[e.id], daysByEnr[e.id], undefined, noClassByEnr[e.id])
+              cm[e.id] = computeCycle(e, cycleSessionsAcrossBatches(memsByEnr[e.id] || [{ batch_id: bId }], sessRows, attendanceByEnr[e.id]), attendanceByEnr[e.id], daysByEnr[e.id], undefined, noClassByEnr[e.id])
             })
           })
           setCycleMap(cm)

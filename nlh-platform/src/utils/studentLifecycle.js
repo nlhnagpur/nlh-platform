@@ -156,6 +156,27 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today, noCl
 
 // Enrolments made before cycle tracking existed have no cycle_started_at —
 // they started their first cycle the day they enrolled.
+// The classes that count towards a child's cycle: those held by EVERY batch the child has been on, each only
+// within the dates the child was on that batch (both ends inclusive). A child moved to another batch keeps the
+// cycle they had — it does not restart. One class per date: if two batches ran the same day, the one the child
+// has attendance for is kept.
+//   memberships: [{ batch_id, assigned_at, removed_at }]   sessions: [{ id, batch_id, session_date, is_holiday }]
+export function cycleSessionsAcrossBatches(memberships, sessions, attendance) {
+  const mems = (memberships || []).map(function (m) {
+    return { batch_id: m.batch_id, from: m.assigned_at ? String(m.assigned_at).slice(0, 10) : '', to: m.removed_at ? String(m.removed_at).slice(0, 10) : '' }
+  })
+  const att = attendance || new Map()
+  const byDate = {}
+  ;(sessions || []).forEach(function (s) {
+    const d = String(s.session_date).slice(0, 10)
+    const on = mems.some(function (m) { return m.batch_id === s.batch_id && (!m.from || d >= m.from) && (!m.to || d <= m.to) })
+    if (!on) return
+    const cur = byDate[d]
+    if (!cur || (!att.has(cur.id) && att.has(s.id))) byDate[d] = s
+  })
+  return Object.keys(byDate).sort().map(function (d) { return byDate[d] })
+}
+
 export function cycleAnchor(en) {
   if (en.cycle_started_at) return String(en.cycle_started_at).slice(0, 10)
   if (en.enrolled_at) return String(en.enrolled_at).slice(0, 10)

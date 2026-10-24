@@ -236,3 +236,23 @@ test('next level: the following level of the same course, in curriculum order; n
   assert.equal(nextLevelSku(skus, 'p3'), null)
   assert.equal(nextLevelSku(skus, 'nope'), null)
 })
+
+import { cycleSessionsAcrossBatches as _csab, computeCycle as _cc } from '../src/utils/studentLifecycle.js'
+
+test('a child moved between batches keeps the cycle: classes from both batches count, once per date', () => {
+  const mems = [{ batch_id: 'A', assigned_at: '2026-10-01', removed_at: '2026-10-09' }, { batch_id: 'B', assigned_at: '2026-10-10', removed_at: null }]
+  const sessions = [
+    { id: 1, batch_id: 'A', session_date: '2026-10-05', is_holiday: false },
+    { id: 2, batch_id: 'A', session_date: '2026-10-09', is_holiday: false },
+    { id: 3, batch_id: 'A', session_date: '2026-10-12', is_holiday: false },   // after the move: not theirs
+    { id: 4, batch_id: 'B', session_date: '2026-10-12', is_holiday: false },
+    { id: 5, batch_id: 'B', session_date: '2026-10-05', is_holiday: false },   // before they joined B: not theirs
+    { id: 6, batch_id: 'C', session_date: '2026-10-13', is_holiday: false },   // never their batch
+  ]
+  const got = _csab(mems, sessions, new Map())
+  assert.deepEqual(got.map(function (s) { return s.id }), [1, 2, 4])
+  // the same date in two of the child's batches counts once, keeping the one with attendance
+  const dup = _csab([{ batch_id: 'A', assigned_at: '2026-10-01' }, { batch_id: 'B', assigned_at: '2026-10-01' }],
+    [{ id: 7, batch_id: 'A', session_date: '2026-10-06' }, { id: 8, batch_id: 'B', session_date: '2026-10-06' }], new Map([[8, true]]))
+  assert.deepEqual(dup.map(function (s) { return s.id }), [8])
+})

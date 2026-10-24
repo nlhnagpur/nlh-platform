@@ -12,6 +12,7 @@ export function isManagerOrAbove(r) {
 
 const ownerNav = [
   { id: 'dashboard',        l: 'Dashboard',        c: '#534AB7' },
+  { id: 'today',            l: 'Today & Month close', c: '#B45309' },
   { id: 'franchisees',      l: 'Franchisees',       c: '#1D7A4F' },
   { id: 'orders',           l: 'Orders',            c: '#8A5200' },
   { id: 'students',         l: 'Students',          c: '#1A5FA8' },
@@ -32,6 +33,7 @@ const ownerNav = [
 
 const adminNav = [
   { id: 'dashboard',        l: 'Dashboard',        c: '#534AB7' },
+  { id: 'today',            l: 'Today & Month close', c: '#B45309' },
   { id: 'franchisees',      l: 'Franchisees',       c: '#1D7A4F' },
   { id: 'orders',           l: 'Orders',            c: '#8A5200' },
   { id: 'students',         l: 'Students',          c: '#1A5FA8' },
@@ -52,6 +54,7 @@ const adminNav = [
 
 const managerNav = [
   { id: 'dashboard',      l: 'Dashboard',       c: '#534AB7' },
+  { id: 'today',          l: 'Today & Month close', c: '#B45309' },
   { id: 'franchisees',    l: 'Franchisees',      c: '#1D7A4F' },
   { id: 'orders',         l: 'Orders',           c: '#8A5200' },
   { id: 'students',       l: 'Students',         c: '#1A5FA8' },

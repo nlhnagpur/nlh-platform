@@ -28,6 +28,31 @@ export const BATCH_ACTIONS = {
   no_recent_class: 'Record the missing classes in the Attendance register, or close the batch if it has stopped.',
   no_appointment: 'Instructors → the CI → Courses: add an appointment for that programme (rate and basis, from the date they started), or give the batch to a CI who holds one.',
   double_batch: 'Batches: remove the student from one of the two batches.',
+  enrolled_no_batch: 'Batches → open the right batch → Add student (or create a batch for them). If they have stopped, mark the course as discontinued on the student record.',
+}
+
+// Head-office students who are enrolled in a running course but sit on no open batch — nobody is teaching, or being
+// paid for teaching, them. Only HO-run centres use batches (franchise centres teach their own students).
+//   enrollments: [{ id, student_id, student, course, enrolled_at, completed_at, status, closed, tier }]
+//   placedIds:   enrolment ids that are on an open batch right now
+//   today:       'YYYY-MM-DD'   graceDays: a child enrolled in the last few days is not flagged yet (default 2)
+export function unplacedEnrollments(input) {
+  const placed = new Set(input.placedIds || [])
+  const grace = input.graceDays == null ? 2 : input.graceDays
+  const out = []
+  ;(input.enrollments || []).forEach(function (e) {
+    if (e.tier !== 'NLH' || e.closed || e.completed_at || e.status === 'dropped' || placed.has(e.id)) return
+    const since = e.enrolled_at ? String(e.enrolled_at).slice(0, 10) : ''
+    const days = since && input.today ? dayCount(since, input.today) : null
+    if (days != null && days <= grace) return
+    out.push({
+      severity: 'warn', code: 'enrolled_no_batch', batchId: '', batch: '', ci: '', student: e.student || 'A student', course: e.course || '',
+      studentId: e.student_id, enrollmentId: e.id, days: days,
+      message: (e.student || 'A student') + ' is enrolled in ' + (e.course || 'a course') + (since ? ' since ' + since : '') + ' but is not on any open batch.',
+      action: BATCH_ACTIONS.enrolled_no_batch,
+    })
+  })
+  return out.sort(function (a, b) { return (b.days || 0) - (a.days || 0) })
 }
 
 // Issues across the OPEN batches.

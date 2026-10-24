@@ -149,7 +149,7 @@ The rules for pay here are the heart of the problem; see section 5.
 | J2 | Adjust | Edit amounts / dates / add a line | Edited lines saved as the month's payroll | Built |
 | J3 | Post | Post to accounts | Dr Staff Salaries / Cr the CI's account | Built |
 | J4 | Pay | Record bank payment | Dr CI / Cr bank | Built |
-| J5 | Whole-platform health | Batch health check; one "Month close" checklist | — | Partly (no single screen: Gap G9) |
+| J5 | Whole-platform health | Batch health check; one "Month close" checklist | — | Built — Today & Month close page |
 
 ## 5. How CI pay follows the child (decided)
 
@@ -175,13 +175,13 @@ Worked example (Ayesha in October): classes the child had — 3 under Khushi (to
 | **G1** | Changing a student's batch used "now" as the date; no date could be chosen | Couldn't record a move that happened earlier | **Done:** **⇄ Move to another batch** — effective date, a warning (not a block) if the new CI has no appointment, a warning if the month's payroll is already saved/posted |
 | **G2** | Per student / month paid the full month to both CIs after a mid-month move | Overpaid; broke Rule P1 | **Done:** each CI's line uses the child's classes across all batches, at their own rate (P1) |
 | **G3** | On-completion pay goes to whichever batch the child is on at completion | Earlier CI gets nothing for most of the level | **Done:** shared by classes taken over the whole level (D3, D7) |
-| **G4** | Cycle progress (renewal screens, "N of target") counts only the **current batch's** classes | After a batch change the child's cycle looks restarted | Count the child's classes across all batches since the cycle start |
+| **G4** | Cycle progress (renewal screens, "N of target") counted only the current batch's classes | After a batch change the child's cycle looked restarted | **Done:** counts the child's classes in every batch they were on, each within their dates on it, once per date |
 | **G5** | Placement in a batch can be dated only "now" at admission, too | Late data entry can't be dated correctly | Date field on every placement |
 | **G6** | Substitute classes paid nobody | The covering CI was unpaid | **Done:** the covering CI's payroll lists the classes with an approximate amount (D2), editable |
 | **G7** | No single **student timeline** | Nobody can see "what happened to this child" | Timeline on the student record: admission, placements, level changes, CI changes, completion, certificate — from existing dates, no new data entry |
 | **G8** | Completion cannot be reversed | — | **Not wanted (D5).** Left as it is |
-| **G9** | No single month-end screen | Checks are spread across the Batches page and each CI's payroll | **Today / Month close** page: all checks in one list, each with its fix button |
-| **G10** | A student without a batch is not flagged | A paying child with nobody being paid | Add to the Batch health check: "enrolled, no batch" |
+| **G9** | No single month-end screen | Checks are spread across the Batches page and each CI's payroll | **Done:** **Today & Month close** page — batch health, CI payroll state for the chosen month, orders to invoice or verify, certificates not issued; each with what to do and an Open button |
+| **G10** | A student without a batch is not flagged | A paying child with nobody being paid | **Done:** "enrolled, no batch" is in the Batch health check (HO students only, after 2 days) |
 | **G11** | No refund record | A refunded fee is not visible on the student's account or in the books | A refund action (HO only) that records the payment out, reduces the paid amount, and posts to the accounts when the engine (E1+) is in |
 
 ## 7. Decisions (recorded)
@@ -202,11 +202,11 @@ Worked example (Ayesha in October): classes the child had — 3 under Khushi (to
 |---|---|---|
 | **L1** ✅ | **Move to another batch** guided action (G1, G5, B4, F1–F3, F5–F6): effective date, warning on a missing appointment, one confirmation; from the batch roster and the student record | No |
 | **L2** ✅/◐ | Payroll pays each CI at their own rate for the classes they took of the child (G2, P1–P3); on-completion over the whole level and pro-rata for a leaving CI (G3, D7) | No |
-| **L3** | Cycle progress across batches (G4) | No |
+| **L3** ✅ | Cycle progress across batches (G4) | No |
 | **L4** ✅ | Substitute classes listed with an approximate amount (G6, D2) | No |
-| **L5** | Student timeline (G7) and "enrolled, no batch" check (G10) | No |
+| **L5** ✅ | Student timeline (G7) and "enrolled, no batch" check (G10) | No |
 | **L6** — | Reopen course — not wanted (D5) | — |
-| **L7** | Today / Month close page (G9) | No |
+| **L7** ✅ | Today / Month close page (G9) | No |
 | **L8** | Staff one-page guide generated from this rulebook | No |
 
 Everything in L1–L8 is shown to HO admin roles only.
