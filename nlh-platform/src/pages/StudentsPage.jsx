@@ -2929,6 +2929,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                             return <p className="hint" style={{ color: 'var(--red)' }}>No additional courses available for this centre.</p>
                           }
                           // Compact: one card per programme, every level a chip, all programmes visible together.
+                          const PALETTE = ['#534AB7', '#0F766E', '#B45309', '#BE185D', '#1D4ED8', '#6D28D9', '#15803D', '#C2410C', '#0E7490']
+                          const tone = function (name) { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return PALETTE[h % PALETTE.length] }
                           const chip = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 14, font: '500 11.5px var(--font)', whiteSpace: 'nowrap', lineHeight: 1.5 }
                           return (
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
@@ -2943,9 +2945,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                 const nextLevelId = afterReached.length > 0 ? afterReached[0].id : null
                                 if (enrolledInGroup.length === 0 && availableInGroup.length === 0) return null
                                 return (
-                                  <div key={groupName} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', background: 'var(--card)' }}>
-                                    <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>{groupName}</div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                  <div key={groupName} style={{ border: '1px solid ' + tone(groupName) + '55', borderRadius: 10, overflow: 'hidden', background: tone(groupName) + '0D' }}>
+                                    <div style={{ background: tone(groupName), color: '#fff', font: '700 11px var(--font)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '6px 12px' }}>{groupName}</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px' }}>
                                       {skus.map(function (sku) {
                                         if (enrolledSkuIds.includes(sku.id)) {
                                           const en = localEnrollments.find(function (e) { return e.sku_id === sku.id })
@@ -2962,9 +2964,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                         return (
                                           <label key={sku.id} title={isEarlier ? 'Earlier level — not needed' : (isNext ? 'Next level' : '')} style={{
                                             ...chip, cursor: 'pointer', position: 'relative',
-                                            background: checked ? 'var(--purple)' : 'var(--bg)',
+                                            background: checked ? tone(groupName) : 'var(--card)',
                                             color: checked ? '#fff' : (isEarlier ? 'var(--text3)' : 'var(--text)'),
-                                            border: checked ? '1px solid var(--purple)' : (isNext ? '1.5px solid var(--purple)' : (isEarlier ? '1px dashed var(--border)' : '1px solid var(--border)')),
+                                            border: checked ? '1px solid ' + tone(groupName) : (isNext ? '1.5px solid ' + tone(groupName) : (isEarlier ? '1px dashed var(--border)' : '1px solid ' + tone(groupName) + '40')),
                                           }}>
                                             <input
                                               type="checkbox"
@@ -2980,7 +2982,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                             />
                                             {checked ? '✓ ' : ''}{sku.level_name}
                                             {sku.student_fee ? <span style={{ font: '500 9.5px var(--mono)', opacity: 0.75 }}>₹{fmtAmt(sku.student_fee)}</span> : null}
-                                            {isNext && !checked && <span style={{ font: '700 9px var(--mono)', color: 'var(--purple)' }}>→ NEXT</span>}
+                                            {isNext && !checked && <span style={{ font: '700 9px var(--mono)', color: tone(groupName) }}>→ NEXT</span>}
                                           </label>
                                         )
                                       })}
