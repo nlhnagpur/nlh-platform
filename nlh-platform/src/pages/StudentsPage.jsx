@@ -4862,7 +4862,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                   </tr>
                 </thead>
                 <tbody>
-                  {preview ? preview.rows.map(function (r) {
+                  {preview ? preview.rows.filter(function (r) { return r.due > 0 || r.applied > 0 }).map(function (r) {
                     return (
                       <tr key={r.course}>
                         <td style={cell}>{r.course}</td>
@@ -4872,7 +4872,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                       </tr>
                     )
                   }) : (<>
-                  {enrs.filter(function (en) { return before.perId[en.id] && (before.perId[en.id].fee > 0 || !before.perId[en.id].dropped) }).map(function (en) {
+                  {enrs.filter(function (en) { const b0 = before.perId[en.id], a0 = after.perId[en.id]; return b0 && (b0.fee > 0 || !b0.dropped) && (b0.due > 0 || (a0 && a0.paid - b0.paid > 0)) }).map(function (en) {
                     const b = before.perId[en.id], a = after.perId[en.id]
                     const applied = a.paid - b.paid
                     return (
@@ -4884,7 +4884,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                       </tr>
                     )
                   })}
-                  {before.other.fee > 0 && (
+                  {before.other.fee > 0 && (before.other.due > 0 || after.other.paid - before.other.paid > 0) && (
                     <tr>
                       <td style={cell}>Other charges</td>
                       <td style={num}>₹{fmtAmt(before.other.fee)}</td>
@@ -4894,7 +4894,7 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
                   )}
                   </>)}
                   <tr>
-                    <td style={Object.assign({}, cell, { fontWeight: 700, borderBottom: 'none' })}>Agreed fee ₹{fmtAmt(feeTotal)} · paid ₹{fmtAmt(paidSoFar)}</td>
+                    <td style={Object.assign({}, cell, { fontWeight: 700, borderBottom: 'none' })}>{balance > 0 ? 'Balance due' : 'Fully paid'}</td>
                     <td style={Object.assign({}, num, { borderBottom: 'none' })}></td>
                     <td style={Object.assign({}, num, { fontWeight: 700, borderBottom: 'none', color: balance > 0 ? 'var(--red)' : 'var(--green)' })}>{balance > 0 ? '₹' + fmtAmt(balance) : '✓'}</td>
                     <td style={Object.assign({}, num, { fontWeight: 700, borderBottom: 'none' })}>{amt > 0 ? '₹' + fmtAmt(amt) : '—'}</td>
