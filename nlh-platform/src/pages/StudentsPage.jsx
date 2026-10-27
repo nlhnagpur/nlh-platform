@@ -2996,7 +2996,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                           const addedFee = selectedNewSkus.reduce(function (s, sk) { return s + feeFor(sk) }, 0)
                           const discount = addCoupon ? Math.min(addCoupon.discount, addedFee) : 0
                           const netAdded = Math.max(0, addedFee - discount)
-                          const newTotal = (Number(form.fee_total) || 0) + netAdded
                           const th = { font: '600 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', padding: '8px 10px', borderBottom: '1px solid var(--border)', background: 'var(--bg2, #f5f4f0)', textAlign: 'left' }
                           const td = { padding: '10px 10px', verticalAlign: 'top' }
                           return (
@@ -3172,8 +3171,6 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                     <tr><td style={{ padding: '3px 12px 3px 0', font: '500 12px var(--font)', color: 'var(--text2)' }}>Subtotal</td><td style={{ textAlign: 'right', font: '600 13px var(--mono)' }}>₹{fmtAmt(addedFee)}</td></tr>
                                     {discount > 0 && <tr><td style={{ padding: '3px 12px 3px 0', font: '500 12px var(--font)', color: 'var(--green)' }}>Discount{addCoupon && addCoupon.code ? ' (' + addCoupon.code + ')' : ''}</td><td style={{ textAlign: 'right', font: '600 13px var(--mono)', color: 'var(--green)' }}>− ₹{fmtAmt(discount)}</td></tr>}
                                     <tr><td style={{ padding: '6px 12px 3px 0', borderTop: '1px solid var(--border)', font: '700 13px var(--font)' }}>Invoice total</td><td style={{ textAlign: 'right', borderTop: '1px solid var(--border)', paddingTop: 6, font: '700 16px var(--mono)', color: 'var(--purple)' }}>₹{fmtAmt(netAdded)}</td></tr>
-                                    <tr><td style={{ padding: '6px 12px 0 0', font: '500 11px var(--font)', color: 'var(--text3)' }}>Fee total before</td><td style={{ textAlign: 'right', paddingTop: 6, font: '500 12px var(--mono)', color: 'var(--text3)' }}>₹{fmtAmt(Number(form.fee_total) || 0)}</td></tr>
-                                    <tr><td style={{ padding: '2px 12px 0 0', font: '500 11px var(--font)', color: 'var(--text3)' }}>Fee total after</td><td style={{ textAlign: 'right', font: '600 12px var(--mono)' }}>₹{fmtAmt(newTotal)}</td></tr>
                                   </tbody>
                                 </table>
                               </div>
