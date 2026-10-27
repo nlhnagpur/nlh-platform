@@ -15,6 +15,7 @@ export const STAFF_GUIDE = {
     ['Another CI covers a class', 'Mark it Substitute on the attendance register. The covering CI sees it in their payroll.'],
     ['A child stops one course', 'Students → the course → Discontinue course.'],
     ['A child leaves altogether', 'Students → Close / Withdraw.'],
+    ['A student comes back for another course', 'Students → + Enrol Student → type the mobile number → Add courses →. Tick the courses and pick a batch for each.'],
     ['A fee is refunded', 'Never edit the paid amount. HO makes a voucher / journal entry in HO Accounting, with the reason.'],
   ],
   month: [

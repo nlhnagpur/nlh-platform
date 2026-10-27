@@ -133,7 +133,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // ── StudentDetailModal ─────────────────────────────────────────────────────────
 
-export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSibling }) {
+export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSibling, startAddCourse }) {
   const { currentRole, currentFranchiseeId, currentUser, can } = useAuth()
   const admin = isAdminRole(currentRole) && can('students.edit')
   const canEdit = admin || (['uf', 'cf', 'smf'].includes(currentRole) && student.franchisee_id === currentFranchiseeId)
@@ -141,7 +141,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
   // student (visibility is already hierarchy-scoped), incl. parent CF / SMF.
   const canManageFees = admin || ['uf', 'cf', 'smf'].includes(currentRole)
 
-  const [tab, setTab] = useState('profile')
+  const [tab, setTab] = useState(startAddCourse ? 'courses' : 'profile')
 
   const [form, setForm] = useState({
     full_name: student.full_name || '',
@@ -268,7 +268,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
   const [editPay,         setEditPay]         = useState({ amount: '', paid_at: '', mode: '', reference: '' })
 
   // ── Add-enrollment state ──
-  const [showAddEnrollment, setShowAddEnrollment] = useState(false)
+  const [showAddEnrollment, setShowAddEnrollment] = useState(!!startAddCourse)
+  // opened from "already on file" in the enrol form: load the courses tab and show the Add Course panel straight away
+  useEffect(function () { if (startAddCourse) loadCoursesTab() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   const [moveBatchFor, setMoveBatchFor] = useState(null)   // { student, current } — the guided Move to another batch dialog
   const [allCentreSkus,     setAllCentreSkus]     = useState([])   // ALL SKUs the centre offers (enrolled + available)
   const [availableSkus,     setAvailableSkus]     = useState([])   // SKUs the centre offers, minus already enrolled
@@ -1355,6 +1357,15 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
   // ── Add new enrollments — records fees (with optional coupon) and assigns batches ──
   async function addEnrollments() {
     if (!selectedNewSkus.length) { showToast('Select at least one course', 'warn'); return }
+    if (admin) {
+      const unplaced = selectedNewSkus.filter(function (sk) {
+        const sel = addBatchSel[sk.id]
+        if (!sel) return true
+        if (sel === '__new__') { const nb = addNewBatch[sk.id] || {}; return !(nb.ci && nb.name && nb.name.trim()) }
+        return false
+      })
+      if (unplaced.length && !window.confirm('No batch chosen for ' + unplaced.map(function (sk) { return sk.level_name }).join(', ') + '.\n\nOK = enrol without a batch (it will show under "enrolled, no batch" until placed).\nCancel = go back and pick a batch.')) return
+    }
     setAddingEnrollment(true)
 
     // 1) Insert the enrollments (with chosen enrollment date)
@@ -2896,9 +2907,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                       </button>
                     ) : (
                       <div style={{ border: '1.5px dashed var(--purple)', borderRadius: 10, padding: 16, background: 'var(--bg)' }}>
-                        <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: 12 }}>
+                        <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: startAddCourse ? 4 : 12 }}>
                           Add Course Enrollment
                         </div>
+                        {startAddCourse && (
+                          <div style={{ font: '500 11px var(--font)', color: 'var(--text2)', marginBottom: 12 }}>
+                            Existing student — details are already on file. Tick the courses to add; courses already done are tagged <b>Completed</b>.{admin ? ' Pick a batch for each course below so nobody is left unplaced.' : ''}
+                          </div>
+                        )}
                         {(function () {
                           const enrolledSkuIds = localEnrollments.map(function (e) { return e.sku_id })
                           // Group ALL centre SKUs by course (so enrolled levels are visible too)
@@ -2939,7 +2955,12 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                           }}>
                                             <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 13 }}>✓</span>
                                             <span style={{ font: '500 12px var(--font)', color: 'var(--text2)', flex: 1 }}>{sku.level_name}</span>
-                                            <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px' }}>Enrolled</span>
+                                            <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px' }}>{(function () {
+                                              const en = localEnrollments.find(function (e) { return e.sku_id === sku.id })
+                                              if (en && en.completed_at) return 'Completed ' + fmtDate(String(en.completed_at).slice(0, 10))
+                                              if (en && en.status === 'dropped') return 'Discontinued'
+                                              return 'Enrolled'
+                                            })()}</span>
                                           </div>
                                         )
                                       })}
@@ -4129,7 +4150,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
                         )}
                       </div>
                       <div style={{ font: '700 11px var(--font)', color: 'var(--purple)', flexShrink: 0 }}>
-                        Open →
+                        {st.is_active === false ? 'Re-join →' : 'Add courses →'}
                       </div>
                     </button>
                   )
@@ -5549,6 +5570,8 @@ export default function StudentsPage() {
   const [showCertBulk, setShowCertBulk] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [startAdd, setStartAdd] = useState(false)   // the open student came from "already on file": start on Add Course
+  useEffect(function () { if (!selected) setStartAdd(false) }, [selected])
   const [showAdd, setShowAdd] = useState(false)
   const [siblingOf, setSiblingOf] = useState(null)   // student whose family details seed a new admission
   const [attMap, setAttMap] = useState({})   // { [enrollment_id]: attended count }
@@ -5842,6 +5865,7 @@ export default function StudentsPage() {
 
   async function handleOpenExisting(st) {
     setShowAdd(false)
+    setStartAdd(true)
     // The lookup card carries only a few fields; the profile needs the whole
     // row (fees, waiver, all enrolments). Prefer the already-loaded copy, else
     // fetch it — a closed student from another centre may not be in the list.
@@ -6061,6 +6085,8 @@ export default function StudentsPage() {
             <StudentDetailModal
               inline
               student={selected}
+              startAddCourse={startAdd}
+              key={selected.id + (startAdd ? ':add' : '')}
               onClose={function () { setSelected(null) }}
               onSaved={handleSaved}
               onAddSibling={function (st) { setSelected(null); setSiblingOf(st); setShowAdd(true) }}
