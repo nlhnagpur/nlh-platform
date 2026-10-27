@@ -2929,12 +2929,20 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                             return <p className="hint" style={{ color: 'var(--red)' }}>No additional courses available for this centre.</p>
                           }
                           // Compact: one card per programme, every level a chip, all programmes visible together.
-                          const PALETTE = ['#534AB7', '#0F766E', '#B45309', '#BE185D', '#1D4ED8', '#6D28D9', '#15803D', '#C2410C', '#0E7490']
-                          const tone = function (name) { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return PALETTE[h % PALETTE.length] }
+                          // Pastel, as on the dashboard: programmes take the colours in turn, so neighbours never match
+                          const PAL = [
+                            { bg: '#EDE9FE', fg: '#5B21B6', line: '#C4B5FD' }, { bg: '#DCFCE7', fg: '#166534', line: '#86EFAC' },
+                            { bg: '#FEF3C7', fg: '#92400E', line: '#FCD34D' }, { bg: '#FCE7F3', fg: '#9D174D', line: '#F9A8D4' },
+                            { bg: '#DBEAFE', fg: '#1E40AF', line: '#93C5FD' }, { bg: '#CCFBF1', fg: '#115E59', line: '#5EEAD4' },
+                            { bg: '#FFEDD5', fg: '#9A3412', line: '#FDBA74' }, { bg: '#ECFCCB', fg: '#3F6212', line: '#BEF264' },
+                            { bg: '#FAE8FF', fg: '#86198F', line: '#F0ABFC' }, { bg: '#E0F2FE', fg: '#075985', line: '#7DD3FC' },
+                            { bg: '#FFE4E6', fg: '#9F1239', line: '#FDA4AF' }, { bg: '#FEF9C3', fg: '#854D0E', line: '#FDE047' },
+                          ]
                           const chip = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 14, font: '500 11.5px var(--font)', whiteSpace: 'nowrap', lineHeight: 1.5 }
                           return (
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
-                              {groups.map(function ([groupName, skus]) {
+                              {groups.map(function ([groupName, skus], gi) {
+                                const T = PAL[gi % PAL.length]
                                 const enrolledInGroup = skus.filter(function (s) { return enrolledSkuIds.includes(s.id) })
                                 const availableInGroup = skus.filter(function (s) { return !enrolledSkuIds.includes(s.id) })
                                 // "Next level" = the first level AFTER the furthest one the student has reached (curriculum order);
@@ -2945,8 +2953,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                 const nextLevelId = afterReached.length > 0 ? afterReached[0].id : null
                                 if (enrolledInGroup.length === 0 && availableInGroup.length === 0) return null
                                 return (
-                                  <div key={groupName} style={{ border: '1px solid ' + tone(groupName) + '55', borderRadius: 10, overflow: 'hidden', background: tone(groupName) + '0D' }}>
-                                    <div style={{ background: tone(groupName), color: '#fff', font: '700 11px var(--font)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '6px 12px' }}>{groupName}</div>
+                                  <div key={groupName} style={{ border: '1px solid ' + T.line, borderRadius: 10, overflow: 'hidden', background: T.bg + '55' }}>
+                                    <div style={{ background: T.bg, color: T.fg, borderBottom: '1px solid ' + T.line, font: '700 11px var(--font)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '6px 12px' }}>{groupName}</div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px' }}>
                                       {skus.map(function (sku) {
                                         if (enrolledSkuIds.includes(sku.id)) {
@@ -2964,9 +2972,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                         return (
                                           <label key={sku.id} title={isEarlier ? 'Earlier level — not needed' : (isNext ? 'Next level' : '')} style={{
                                             ...chip, cursor: 'pointer', position: 'relative',
-                                            background: checked ? tone(groupName) : 'var(--card)',
+                                            background: checked ? T.fg : 'var(--card)',
                                             color: checked ? '#fff' : (isEarlier ? 'var(--text3)' : 'var(--text)'),
-                                            border: checked ? '1px solid ' + tone(groupName) : (isNext ? '1.5px solid ' + tone(groupName) : (isEarlier ? '1px dashed var(--border)' : '1px solid ' + tone(groupName) + '40')),
+                                            border: checked ? '1px solid ' + T.fg : (isNext ? '1.5px solid ' + T.fg : (isEarlier ? '1px dashed var(--border)' : '1px solid ' + T.line)),
                                           }}>
                                             <input
                                               type="checkbox"
@@ -2982,7 +2990,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                             />
                                             {checked ? '✓ ' : ''}{sku.level_name}
                                             {sku.student_fee ? <span style={{ font: '500 9.5px var(--mono)', opacity: 0.75 }}>₹{fmtAmt(sku.student_fee)}</span> : null}
-                                            {isNext && !checked && <span style={{ font: '700 9px var(--mono)', color: tone(groupName) }}>→ NEXT</span>}
+                                            {isNext && !checked && <span style={{ font: '700 9px var(--mono)', color: T.fg }}>→ NEXT</span>}
                                           </label>
                                         )
                                       })}
