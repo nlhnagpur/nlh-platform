@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import MoveBatchDialog from '../components/MoveBatchDialog'
+import CoursePicker from '../components/CoursePicker'
 import StudentTimeline from '../components/StudentTimeline'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
@@ -2928,77 +2929,22 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                           if (groups.length === 0) {
                             return <p className="hint" style={{ color: 'var(--red)' }}>No additional courses available for this centre.</p>
                           }
-                          // Compact: one card per programme, every level a chip, all programmes visible together.
-                          // Pastel, as on the dashboard: programmes take the colours in turn, so neighbours never match
-                          const PAL = [
-                            { bg: '#EDE9FE', fg: '#5B21B6', line: '#C4B5FD' }, { bg: '#DCFCE7', fg: '#166534', line: '#86EFAC' },
-                            { bg: '#FEF3C7', fg: '#92400E', line: '#FCD34D' }, { bg: '#FCE7F3', fg: '#9D174D', line: '#F9A8D4' },
-                            { bg: '#DBEAFE', fg: '#1E40AF', line: '#93C5FD' }, { bg: '#CCFBF1', fg: '#115E59', line: '#5EEAD4' },
-                            { bg: '#FFEDD5', fg: '#9A3412', line: '#FDBA74' }, { bg: '#ECFCCB', fg: '#3F6212', line: '#BEF264' },
-                            { bg: '#FAE8FF', fg: '#86198F', line: '#F0ABFC' }, { bg: '#E0F2FE', fg: '#075985', line: '#7DD3FC' },
-                            { bg: '#FFE4E6', fg: '#9F1239', line: '#FDA4AF' }, { bg: '#FEF9C3', fg: '#854D0E', line: '#FDE047' },
-                          ]
-                          const chip = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 14, font: '500 11.5px var(--font)', whiteSpace: 'nowrap', lineHeight: 1.5 }
+                          const enrolledMap = {}
+                          localEnrollments.forEach(function (e) {
+                            enrolledMap[e.sku_id] = e.completed_at ? 'Completed ' + fmtDate(String(e.completed_at).slice(0, 10)) : (e.status === 'dropped' ? 'Discontinued' : 'Enrolled')
+                          })
                           return (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
-                              {groups.map(function ([groupName, skus], gi) {
-                                const T = PAL[gi % PAL.length]
-                                const enrolledInGroup = skus.filter(function (s) { return enrolledSkuIds.includes(s.id) })
-                                const availableInGroup = skus.filter(function (s) { return !enrolledSkuIds.includes(s.id) })
-                                // "Next level" = the first level AFTER the furthest one the student has reached (curriculum order);
-                                // a level before it is an earlier level — normally not needed, so it is not recommended.
-                                const idxOf = function (id) { return skus.findIndex(function (x) { return x.id === id }) }
-                                const reachedIdx = enrolledInGroup.reduce(function (m, e) { return Math.max(m, idxOf(e.id)) }, -1)
-                                const afterReached = availableInGroup.filter(function (x) { return idxOf(x.id) > reachedIdx })
-                                const nextLevelId = afterReached.length > 0 ? afterReached[0].id : null
-                                if (enrolledInGroup.length === 0 && availableInGroup.length === 0) return null
-                                return (
-                                  <div key={groupName} style={{ border: '1px solid ' + T.line, borderRadius: 10, overflow: 'hidden', background: T.bg + '55' }}>
-                                    <div style={{ background: T.bg, color: T.fg, borderBottom: '1px solid ' + T.line, font: '700 11px var(--font)', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '6px 12px' }}>{groupName}</div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '10px 12px' }}>
-                                      {skus.map(function (sku) {
-                                        if (enrolledSkuIds.includes(sku.id)) {
-                                          const en = localEnrollments.find(function (e) { return e.sku_id === sku.id })
-                                          const status = en && en.completed_at ? 'Completed ' + fmtDate(String(en.completed_at).slice(0, 10)) : (en && en.status === 'dropped' ? 'Discontinued' : 'Enrolled')
-                                          return (
-                                            <span key={sku.id} title={status} style={{ ...chip, background: '#dcfce7', border: '1px solid #bbf7d0', color: '#166534' }}>
-                                              ✓ {sku.level_name}<span style={{ font: '500 9.5px var(--mono)', opacity: 0.8 }}>{status}</span>
-                                            </span>
-                                          )
-                                        }
-                                        const checked = selectedNewSkus.some(function (x) { return x.id === sku.id })
-                                        const isNext = sku.id === nextLevelId && enrolledInGroup.length > 0
-                                        const isEarlier = enrolledInGroup.length > 0 && idxOf(sku.id) < reachedIdx
-                                        return (
-                                          <label key={sku.id} title={isEarlier ? 'Earlier level — not needed' : (isNext ? 'Next level' : '')} style={{
-                                            ...chip, cursor: 'pointer', position: 'relative',
-                                            background: checked ? T.fg : 'var(--card)',
-                                            color: checked ? '#fff' : (isEarlier ? 'var(--text3)' : 'var(--text)'),
-                                            border: checked ? '1px solid ' + T.fg : (isNext ? '1.5px solid ' + T.fg : (isEarlier ? '1px dashed var(--border)' : '1px solid ' + T.line)),
-                                          }}>
-                                            <input
-                                              type="checkbox"
-                                              checked={checked}
-                                              onChange={function () {
-                                                setAddCoupon(null)  // fee changed — re-apply against new total
-                                                if (!checked) { loadAddBatchData(sku.id); loadAddKit(sku) }
-                                                setSelectedNewSkus(function (prev) {
-                                                  return checked ? prev.filter(function (x) { return x.id !== sku.id }) : [...prev, sku]
-                                                })
-                                              }}
-                                              style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
-                                            />
-                                            {checked ? '✓ ' : ''}{sku.level_name}
-                                            {sku.student_fee ? <span style={{ font: '500 9.5px var(--mono)', opacity: 0.75 }}>₹{fmtAmt(sku.student_fee)}</span> : null}
-                                            {isNext && !checked && <span style={{ font: '700 9px var(--mono)', color: T.fg }}>→ NEXT</span>}
-                                          </label>
-                                        )
-                                      })}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
+                            <CoursePicker
+                              groups={groups.map(function ([name, skus]) { return { name: name, skus: skus } })}
+                              selected={selectedNewSkus}
+                              enrolled={enrolledMap}
+                              onToggle={function (sku) {
+                                const checked = selectedNewSkus.some(function (x) { return x.id === sku.id })
+                                setAddCoupon(null)  // fee changed — re-apply against new total
+                                if (!checked) { loadAddBatchData(sku.id); loadAddKit(sku) }
+                                setSelectedNewSkus(function (prev) { return checked ? prev.filter(function (x) { return x.id !== sku.id }) : [...prev, sku] })
+                              }}
+                            />
                           )
                         })()}
 
@@ -4223,27 +4169,8 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
             ) : groups.length === 0 ? (
               <p className="hint" style={{ color:'var(--red)' }}>No courses registered for this centre yet.</p>
             ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:8 }}>
-                {groups.map(group => (
-                  <div key={group.name}>
-                    <div style={{ font:'600 11px var(--mono)', color:'var(--text3)', textTransform:'uppercase',
-                      letterSpacing:'0.5px', marginBottom:4 }}>
-                      {group.name}
-                    </div>
-                    <div className="checkbox-grid">
-                      {group.skus.map(sku => {
-                        const checked = selectedSkus.some(s => s.id === sku.id)
-                        return (
-                          <label key={sku.id} className="checkbox-item">
-                            <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
-                            {sku.level_name}
-                            {sku.student_fee ? <span className="hint"> ₹{fmtAmt(sku.student_fee)}</span> : null}
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
+              <div style={{ marginTop: 8 }}>
+                <CoursePicker groups={groups} selected={selectedSkus} onToggle={toggleSku} />
               </div>
             )}
           </div>
