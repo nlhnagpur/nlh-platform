@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import MoveBatchDialog from '../components/MoveBatchDialog'
 import CoursePicker from '../components/CoursePicker'
+import ChangeStartDateDialog from '../components/ChangeStartDateDialog'
 import StudentTimeline from '../components/StudentTimeline'
 import { useAuth } from '../context/AuthContext'
 import { fmtAmt, fmtDate, showToast } from '../utils'
@@ -272,6 +273,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
   const [showAddEnrollment, setShowAddEnrollment] = useState(!!startAddCourse)
   // opened from "already on file" in the enrol form: load the courses tab and show the Add Course panel straight away
   useEffect(function () { if (startAddCourse) loadCoursesTab() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  const [startDateFor, setStartDateFor] = useState(null)   // the enrolment whose start date is being corrected (HO)
   const [moveBatchFor, setMoveBatchFor] = useState(null)   // { student, current } — the guided Move to another batch dialog
   const [allCentreSkus,     setAllCentreSkus]     = useState([])   // ALL SKUs the centre offers (enrolled + available)
   const [availableSkus,     setAvailableSkus]     = useState([])   // SKUs the centre offers, minus already enrolled
@@ -2687,6 +2689,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                 title: 'Finish this level and carry on with the next one — records the completion',
                                 onClick: function () { openNextLevel(en) },
                               },
+                              admin && {
+                                key: 'startdate', label: '📅 Correct start date',
+                                title: 'The course started on a different date — fixes the enrolment, batch placement and invoice date together',
+                                onClick: function () { setStartDateFor(en) },
+                              },
                               canEdit && {
                                 key: 'level', label: '⇄ Change course / level',
                                 onClick: function () { openChangeLevel(en) },
@@ -2911,6 +2918,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                         <div style={{ font: '600 12px var(--font)', color: 'var(--purple)', marginBottom: startAddCourse ? 4 : 12 }}>
                           Add Course Enrollment
                         </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 12px', padding: '8px 12px', borderRadius: 8, background: 'var(--purple-bg)', border: '1px solid var(--purple)', font: '600 12px var(--font)', color: 'var(--text)', flexWrap: 'wrap' }}>
+                          📅 Course starts on
+                          <input type="date" value={addEnrollDate} onChange={function (e) { setAddEnrollDate(e.target.value) }} style={{ fontSize: 13 }} />
+                          <span style={{ font: '500 11px var(--font)', color: 'var(--text3)' }}>{addEnrollDate ? new Date(addEnrollDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long' }) + ' · batch joining, cycle and invoice use this date' : 'choose the date'}</span>
+                        </label>
                         {startAddCourse && (
                           <div style={{ font: '500 11px var(--font)', color: 'var(--text2)', marginBottom: 12 }}>
                             Existing student — details are already on file. Tick the courses to add; courses already done are tagged <b>Completed</b>.{admin ? ' Pick a batch for each course below so nobody is left unplaced.' : ''}
@@ -2964,10 +2976,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                     Bill to <b style={{ color: 'var(--text)' }}>{student.full_name}</b>{student.parent_name ? ' · c/o ' + student.parent_name : ''} · Invoice no. is assigned on save
                                   </div>
                                 </div>
-                                <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>Invoice / start date
-                                  <input type="date" value={addEnrollDate} onChange={function (e) { setAddEnrollDate(e.target.value) }}
-                                    style={{ display: 'block', marginTop: 4, fontSize: 13 }} />
-                                </label>
+                                <div style={{ font: '600 11px var(--font)', color: 'var(--text2)', textAlign: 'right' }}>Invoice / start date
+                                  <div style={{ font: '700 13px var(--font)', color: 'var(--text)', marginTop: 4 }}>{fmtDate(addEnrollDate)}</div>
+                                  <div style={{ font: '500 10px var(--font)', color: 'var(--text3)' }}>change it at the top of this panel</div>
+                                </div>
                               </div>
 
                               {/* Line items */}
@@ -3144,7 +3156,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                             disabled={!selectedNewSkus.length || addingEnrollment}
                             onClick={addEnrollments}
                           >
-                            {addingEnrollment ? 'Adding…' : 'Enroll in ' + selectedNewSkus.length + ' Course' + (selectedNewSkus.length !== 1 ? 's' : '')}
+                            {addingEnrollment ? 'Adding…' : 'Enroll in ' + selectedNewSkus.length + ' Course' + (selectedNewSkus.length !== 1 ? 's' : '') + ' from ' + fmtDate(addEnrollDate)}
                           </button>
                         </div>
                       </div>
@@ -3408,6 +3420,24 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
               </div>
             </div>
           </div>
+        )}
+
+        {startDateFor && (
+          <ChangeStartDateDialog
+            student={{ id: student.id, name: student.full_name }}
+            enrollment={{
+              id: startDateFor.id, enrolled_at: startDateFor.enrolled_at, cycle_started_at: startDateFor.cycle_started_at, completed_at: startDateFor.completed_at,
+              monthly: startDateFor.skus?.courses?.billing_type === 'monthly',
+              label: (startDateFor.skus?.courses?.group_name || 'Course') + (startDateFor.skus?.level_name ? ' ' + startDateFor.skus.level_name : ''),
+            }}
+            onClose={function () { setStartDateFor(null) }}
+            onDone={function (patch) {
+              const id = startDateFor.id
+              setStartDateFor(null)
+              setLocalEnrollments(function (prev) { return prev.map(function (e) { return e.id === id ? { ...e, ...patch } : e }) })
+              loadCoursesTab()
+            }}
+          />
         )}
 
         {/* Change course / level modal */}
