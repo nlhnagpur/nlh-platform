@@ -273,6 +273,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
   const [showAddEnrollment, setShowAddEnrollment] = useState(!!startAddCourse)
   // opened from "already on file" in the enrol form: load the courses tab and show the Add Course panel straight away
   useEffect(function () { if (startAddCourse) loadCoursesTab() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  const [receiptOpen, setReceiptOpen] = useState(false)   // New Receipt opened from a balance amount
   const [startDateFor, setStartDateFor] = useState(null)   // the enrolment whose start date is being corrected (HO)
   const [moveBatchFor, setMoveBatchFor] = useState(null)   // { student, current } — the guided Move to another batch dialog
   const [allCentreSkus,     setAllCentreSkus]     = useState([])   // ALL SKUs the centre offers (enrolled + available)
@@ -1728,7 +1729,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
             return (
               <div key={i} style={{ padding: '9px 14px', borderRight: i < 3 ? '1px solid var(--border)' : 'none' }}>
                 <div style={{ font: '500 9px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>{st.label}</div>
-                <div style={{ font: '700 14px var(--font)', color: st.color }}>{st.val}</div>
+                {st.label === 'Balance' && balance > 0 && canManageFees
+                  ? <div role="button" title="Record a receipt" onClick={function () { setReceiptOpen(true) }} style={{ font: '700 14px var(--font)', color: st.color, cursor: 'pointer', textDecoration: 'underline dotted' }}>{st.val} <span style={{ font: '600 10px var(--font)' }}>→ receipt</span></div>
+                  : <div style={{ font: '700 14px var(--font)', color: st.color }}>{st.val}</div>}
               </div>
             )
           })}
@@ -1993,7 +1996,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ font: '500 12px var(--font)', color: 'var(--text)' }}>
                               {fmtDate(inv.invoice_date)} · ₹{fmtAmt(inv.total)}
-                              <span style={{ color: bal > 0 ? 'var(--red)' : 'var(--green)', marginLeft: 6 }}>{bal > 0 ? '₹' + fmtAmt(bal) + ' due' : 'paid ✓'}</span>
+                              <span title={bal > 0 && canManageFees ? 'Record a receipt' : undefined} onClick={bal > 0 && canManageFees ? function () { setReceiptOpen(true) } : undefined}
+                                style={{ color: bal > 0 ? 'var(--red)' : 'var(--green)', marginLeft: 6, cursor: bal > 0 && canManageFees ? 'pointer' : 'default', textDecoration: bal > 0 && canManageFees ? 'underline dotted' : 'none' }}>{bal > 0 ? '₹' + fmtAmt(bal) + ' due' : 'paid ✓'}</span>
                             </div>
                             <div style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>
                               {(inv.items || []).filter(function (i) { return i.kind === 'course' }).map(function (i) { return i.name }).join(', ')}
@@ -2064,6 +2068,19 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
               </div>
             </div>
           </div>
+        )}
+
+        {receiptOpen && canManageFees && (
+          <StudentReceiptModal
+            students={[{ ...student, fee_total: form.fee_total, fee_paid: form.fee_paid, other_charges: form.other_charges, enrollments: localEnrollments }]}
+            initialStudent={{ ...student, fee_total: form.fee_total, fee_paid: form.fee_paid, other_charges: form.other_charges, enrollments: localEnrollments }}
+            onClose={function () { setReceiptOpen(false) }}
+            onRecorded={function (row) {
+              const next = [row].concat(payments)
+              setPayments(next)
+              applyPaid(next)
+            }}
+          />
         )}
 
         {/* ── COURSES & BATCHES TAB ── */}
@@ -2573,8 +2590,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                         {cov.waived > 0 ? '₹' + fmtAmt(cov.waived) + ' waived' : 'Settled'}
                                       </span>
                                     ) : cov.due > 0 ? (
-                                      <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
-                                        ₹{fmtAmt(cov.due)} due
+                                      <span title={canManageFees ? 'Record a receipt' : undefined} onClick={canManageFees ? function () { setReceiptOpen(true) } : undefined}
+                                        style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px', cursor: canManageFees ? 'pointer' : 'default' }}>
+                                        ₹{fmtAmt(cov.due)} due{canManageFees ? ' →' : ''}
                                       </span>
                                     ) : (
                                       <span style={{ font: '600 11px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 8px' }}>
@@ -2878,8 +2896,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                           ₹{fmtAmt(coverage.other.fee)}
                         </span>
                         {coverage.other.due > 0 ? (
-                          <span style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px' }}>
-                            ₹{fmtAmt(coverage.other.due)} due
+                          <span title={canManageFees ? 'Record a receipt' : undefined} onClick={canManageFees ? function () { setReceiptOpen(true) } : undefined}
+                            style={{ font: '600 11px var(--font)', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 20, padding: '1px 8px', cursor: canManageFees ? 'pointer' : 'default' }}>
+                            ₹{fmtAmt(coverage.other.due)} due{canManageFees ? ' →' : ''}
                           </span>
                         ) : (
                           <span style={{ font: '600 11px var(--font)', color: 'var(--green)', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 20, padding: '1px 8px' }}>
@@ -4641,7 +4660,7 @@ async function studentReceiptPng(student, p, list) {
 // New receipt — or, with `editPayment`, the same screen to correct an existing
 // one: the student is fixed, the balance and course-wise dues are worked out
 // from this student's OTHER receipts, and Save updates the receipt in place.
-function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpdated }) {
+function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpdated, initialStudent }) {
   const editing = !!editPayment
   const [query,     setQuery]     = useState('')
   const [student,   setStudent]   = useState(function () {
@@ -4696,6 +4715,9 @@ function StudentReceiptModal({ students, onClose, onRecorded, editPayment, onUpd
     const due = Math.max(0, (Number(s.fee_total) || 0) - got)
     setForm(function (f) { return { ...f, amount: due > 0 ? String(due) : '' } })
   }
+
+  // opened from a balance amount: go straight to this student's receipt (amount pre-filled with what is due)
+  useEffect(function () { if (initialStudent && !editing) pickStudent(initialStudent) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const feeTotal = student ? Number(student.fee_total) || 0 : 0
   const paidSoFar = (payments || []).reduce(function (sum, p) { return sum + (p.amount || 0) }, 0)
@@ -5518,6 +5540,7 @@ export default function StudentsPage() {
   const [attStudent, setAttStudent] = useState(null)   // student whose monthly sheet is open from the Attendance tab
   const [regEdit, setRegEdit] = useState(null)           // { kind: 'payment'|'invoice', row } — register Edit dialog
   const [showReceipt, setShowReceipt] = useState(false)
+  const [receiptFor, setReceiptFor] = useState(null)   // a student whose balance amount was clicked
   // Same rule as the profile: any admin, or a franchisee for their own tree (RLS-scoped).
   const canRecordFees = admin || ['uf', 'cf', 'smf'].includes(currentRole)
   const [showCertBulk, setShowCertBulk] = useState(false)
@@ -6182,7 +6205,9 @@ export default function StudentsPage() {
                       <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt">₹{fmtAmt(s.fee_total)}</div></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}><div className="amt" style={{ color: 'var(--green)' }}>₹{fmtAmt(s.fee_paid)}</div></td>
                       <td className="hide-mobile" style={{ textAlign: 'right' }}>
-                        <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>₹{fmtAmt(balance)}</div>
+                        <div className="amt" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)', ...(balance > 0 && canRecordFees ? { cursor: 'pointer', textDecoration: 'underline dotted' } : {}) }}
+                          title={balance > 0 && canRecordFees ? 'Record a receipt' : undefined}
+                          onClick={balance > 0 && canRecordFees ? function (e) { e.stopPropagation(); setReceiptFor(s) } : undefined}>₹{fmtAmt(balance)}</div>
                         <div style={{ marginTop: 4 }}><StatusBadge status={s.payment_status} /></div>
                       </td>
                       <td>
@@ -6228,10 +6253,11 @@ export default function StudentsPage() {
         <AttendanceSheet mode="student" student={attStudent} onClose={function () { setAttStudent(null) }} />
       )}
 
-      {showReceipt && (
+      {(showReceipt || receiptFor) && (
         <StudentReceiptModal
           students={students}
-          onClose={function () { setShowReceipt(false) }}
+          initialStudent={receiptFor || undefined}
+          onClose={function () { setShowReceipt(false); setReceiptFor(null) }}
           onRecorded={handleReceiptRecorded}
         />
       )}
