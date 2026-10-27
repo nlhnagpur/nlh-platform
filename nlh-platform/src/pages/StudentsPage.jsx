@@ -2898,8 +2898,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                   <div style={{ marginTop: 4 }}>
                     {!showAddEnrollment ? (
                       <button
-                        className="btn-s"
-                        style={{ fontSize: 12, width: '100%' }}
+                        className={availableSkus.length === 0 ? 'btn-s' : 'btn-p'}
+                        style={{ fontSize: 12, padding: '6px 14px' }}
                         onClick={function () { setShowAddEnrollment(true) }}
                         disabled={availableSkus.length === 0}
                       >
@@ -2935,8 +2935,11 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                 const enrolledInGroup = skus.filter(function (s) { return enrolledSkuIds.includes(s.id) })
                                 // Available (unenrolled) SKUs in this group, in curriculum order
                                 const availableInGroup = skus.filter(function (s) { return !enrolledSkuIds.includes(s.id) })
-                                // The first available SKU is the "next level" recommendation
-                                const nextLevelId = availableInGroup.length > 0 ? availableInGroup[0].id : null
+                                // "Next level" = the first level AFTER the furthest one the student has reached (curriculum order);
+                                // a level before it is an earlier level — normally not needed, so it is not recommended.
+                                const reachedIdx = enrolledInGroup.reduce(function (m, e) { return Math.max(m, skus.findIndex(function (x) { return x.id === e.id })) }, -1)
+                                const afterReached = availableInGroup.filter(function (x) { return skus.findIndex(function (y) { return y.id === x.id }) > reachedIdx })
+                                const nextLevelId = afterReached.length > 0 ? afterReached[0].id : null
                                 if (enrolledInGroup.length === 0 && availableInGroup.length === 0) return null
                                 return (
                                   <div key={groupName}>
@@ -2968,6 +2971,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                       {availableInGroup.map(function (sku) {
                                         const checked = selectedNewSkus.some(function (s) { return s.id === sku.id })
                                         const isNext = sku.id === nextLevelId && enrolledInGroup.length > 0
+                                        const isEarlier = enrolledInGroup.length > 0 && skus.findIndex(function (y) { return y.id === sku.id }) < reachedIdx
                                         return (
                                           <label key={sku.id} style={{
                                             display: 'flex', alignItems: 'center', gap: 8,
@@ -2990,6 +2994,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                               style={{ accentColor: 'var(--purple)' }}
                                             />
                                             <span style={{ font: '500 12px var(--font)', color: 'var(--text)', flex: 1 }}>{sku.level_name}</span>
+                                            {isEarlier && <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px' }}>earlier level — not needed</span>}
                                             {isNext && <span style={{ font: '700 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', border: '1px solid var(--purple)', borderRadius: 4, padding: '1px 6px', whiteSpace: 'nowrap' }}>→ Next Level</span>}
                                             {sku.student_fee ? <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>₹{fmtAmt(sku.student_fee)}</span> : null}
                                           </label>
