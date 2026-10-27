@@ -2928,56 +2928,43 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                           if (groups.length === 0) {
                             return <p className="hint" style={{ color: 'var(--red)' }}>No additional courses available for this centre.</p>
                           }
+                          // Compact: one card per programme, every level a chip, all programmes visible together.
+                          const chip = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 14, font: '500 11.5px var(--font)', whiteSpace: 'nowrap', lineHeight: 1.5 }
                           return (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
                               {groups.map(function ([groupName, skus]) {
-                                // Enrolled SKUs in this group
                                 const enrolledInGroup = skus.filter(function (s) { return enrolledSkuIds.includes(s.id) })
-                                // Available (unenrolled) SKUs in this group, in curriculum order
                                 const availableInGroup = skus.filter(function (s) { return !enrolledSkuIds.includes(s.id) })
                                 // "Next level" = the first level AFTER the furthest one the student has reached (curriculum order);
                                 // a level before it is an earlier level — normally not needed, so it is not recommended.
-                                const reachedIdx = enrolledInGroup.reduce(function (m, e) { return Math.max(m, skus.findIndex(function (x) { return x.id === e.id })) }, -1)
-                                const afterReached = availableInGroup.filter(function (x) { return skus.findIndex(function (y) { return y.id === x.id }) > reachedIdx })
+                                const idxOf = function (id) { return skus.findIndex(function (x) { return x.id === id }) }
+                                const reachedIdx = enrolledInGroup.reduce(function (m, e) { return Math.max(m, idxOf(e.id)) }, -1)
+                                const afterReached = availableInGroup.filter(function (x) { return idxOf(x.id) > reachedIdx })
                                 const nextLevelId = afterReached.length > 0 ? afterReached[0].id : null
                                 if (enrolledInGroup.length === 0 && availableInGroup.length === 0) return null
                                 return (
-                                  <div key={groupName}>
-                                    <div style={{ font: '600 11px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-                                      {groupName}
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                      {/* Already enrolled levels — greyed out */}
-                                      {enrolledInGroup.map(function (sku) {
-                                        return (
-                                          <div key={sku.id} style={{
-                                            display: 'flex', alignItems: 'center', gap: 8,
-                                            padding: '5px 10px', borderRadius: 6,
-                                            background: 'var(--bg2)', border: '1px solid var(--border)',
-                                            opacity: 0.7,
-                                          }}>
-                                            <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 13 }}>✓</span>
-                                            <span style={{ font: '500 12px var(--font)', color: 'var(--text2)', flex: 1 }}>{sku.level_name}</span>
-                                            <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px' }}>{(function () {
-                                              const en = localEnrollments.find(function (e) { return e.sku_id === sku.id })
-                                              if (en && en.completed_at) return 'Completed ' + fmtDate(String(en.completed_at).slice(0, 10))
-                                              if (en && en.status === 'dropped') return 'Discontinued'
-                                              return 'Enrolled'
-                                            })()}</span>
-                                          </div>
-                                        )
-                                      })}
-                                      {/* Available levels — selectable, first one highlighted as Next Level */}
-                                      {availableInGroup.map(function (sku) {
-                                        const checked = selectedNewSkus.some(function (s) { return s.id === sku.id })
+                                  <div key={groupName} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', background: 'var(--card)' }}>
+                                    <div style={{ font: '700 10px var(--mono)', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>{groupName}</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                      {skus.map(function (sku) {
+                                        if (enrolledSkuIds.includes(sku.id)) {
+                                          const en = localEnrollments.find(function (e) { return e.sku_id === sku.id })
+                                          const status = en && en.completed_at ? 'Completed ' + fmtDate(String(en.completed_at).slice(0, 10)) : (en && en.status === 'dropped' ? 'Discontinued' : 'Enrolled')
+                                          return (
+                                            <span key={sku.id} title={status} style={{ ...chip, background: '#dcfce7', border: '1px solid #bbf7d0', color: '#166534' }}>
+                                              ✓ {sku.level_name}<span style={{ font: '500 9.5px var(--mono)', opacity: 0.8 }}>{status}</span>
+                                            </span>
+                                          )
+                                        }
+                                        const checked = selectedNewSkus.some(function (x) { return x.id === sku.id })
                                         const isNext = sku.id === nextLevelId && enrolledInGroup.length > 0
-                                        const isEarlier = enrolledInGroup.length > 0 && skus.findIndex(function (y) { return y.id === sku.id }) < reachedIdx
+                                        const isEarlier = enrolledInGroup.length > 0 && idxOf(sku.id) < reachedIdx
                                         return (
-                                          <label key={sku.id} style={{
-                                            display: 'flex', alignItems: 'center', gap: 8,
-                                            padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
-                                            background: isNext ? 'var(--purple-bg)' : (checked ? 'var(--purple-bg)' : 'var(--card)'),
-                                            border: isNext ? '1.5px solid var(--purple)' : (checked ? '1.5px solid var(--purple)' : '1px solid var(--border)'),
+                                          <label key={sku.id} title={isEarlier ? 'Earlier level — not needed' : (isNext ? 'Next level' : '')} style={{
+                                            ...chip, cursor: 'pointer', position: 'relative',
+                                            background: checked ? 'var(--purple)' : 'var(--bg)',
+                                            color: checked ? '#fff' : (isEarlier ? 'var(--text3)' : 'var(--text)'),
+                                            border: checked ? '1px solid var(--purple)' : (isNext ? '1.5px solid var(--purple)' : (isEarlier ? '1px dashed var(--border)' : '1px solid var(--border)')),
                                           }}>
                                             <input
                                               type="checkbox"
@@ -2986,17 +2973,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                                 setAddCoupon(null)  // fee changed — re-apply against new total
                                                 if (!checked) { loadAddBatchData(sku.id); loadAddKit(sku) }
                                                 setSelectedNewSkus(function (prev) {
-                                                  return checked
-                                                    ? prev.filter(function (s) { return s.id !== sku.id })
-                                                    : [...prev, sku]
+                                                  return checked ? prev.filter(function (x) { return x.id !== sku.id }) : [...prev, sku]
                                                 })
                                               }}
-                                              style={{ accentColor: 'var(--purple)' }}
+                                              style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
                                             />
-                                            <span style={{ font: '500 12px var(--font)', color: 'var(--text)', flex: 1 }}>{sku.level_name}</span>
-                                            {isEarlier && <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px' }}>earlier level — not needed</span>}
-                                            {isNext && <span style={{ font: '700 10px var(--mono)', color: 'var(--purple)', background: 'var(--purple-bg)', border: '1px solid var(--purple)', borderRadius: 4, padding: '1px 6px', whiteSpace: 'nowrap' }}>→ Next Level</span>}
-                                            {sku.student_fee ? <span style={{ font: '500 10px var(--mono)', color: 'var(--text3)' }}>₹{fmtAmt(sku.student_fee)}</span> : null}
+                                            {checked ? '✓ ' : ''}{sku.level_name}
+                                            {sku.student_fee ? <span style={{ font: '500 9.5px var(--mono)', opacity: 0.75 }}>₹{fmtAmt(sku.student_fee)}</span> : null}
+                                            {isNext && !checked && <span style={{ font: '700 9px var(--mono)', color: 'var(--purple)' }}>→ NEXT</span>}
                                           </label>
                                         )
                                       })}
