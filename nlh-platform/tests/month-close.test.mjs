@@ -42,3 +42,22 @@ test('staff guide prints every section on one sheet', () => {
   STAFF_GUIDE.events.forEach(function (e) { assert.ok(html.includes(e[0].replace(/&/g, '&amp;'))) })
   assert.ok(html.includes('Every month end') && html.includes('What a warning means') && html.includes('Rules to remember'))
 })
+
+test('month close: unit franchises without a signed agreement', () => {
+  const centres = [
+    { id: 'a', business_name: 'Signed UF', tier: 'UF', status: 'active' }, { id: 'b', business_name: 'Old Sent UF', tier: 'UF', status: 'active' },
+    { id: 'c', business_name: 'New Sent UF', tier: 'UF', status: 'active' }, { id: 'd', business_name: 'No Agreement UF', tier: 'UF', status: 'active' },
+    { id: 'e', business_name: 'A CF', tier: 'CF', status: 'active' }, { id: 'f', business_name: 'Closed UF', tier: 'UF', status: 'inactive' },
+  ]
+  const agreements = [
+    { franchisee_id: 'a', agreement_no: 'AGR-1', status: 'signed', generated_at: '2026-08-18', signed_at: '2026-08-19' },
+    { franchisee_id: 'b', agreement_no: 'AGR-2', status: 'sent', generated_at: '2026-08-18' },
+    { franchisee_id: 'c', agreement_no: 'AGR-3', status: 'sent', generated_at: '2026-10-20' },
+  ]
+  const list = closeItems({ month: '2026-10', today: '2026-10-28', centres, agreements, cis: [], runs: [] }).filter(function (i) { return i.group === 'Franchise agreements' })
+  assert.deepEqual(list.map(function (i) { return i.title }).sort(), ['New Sent UF', 'No Agreement UF', 'Old Sent UF'])   // signed, CF and closed centres are not listed
+  assert.equal(list.find(function (i) { return i.title === 'Old Sent UF' }).severity, 'warn')
+  assert.equal(list.find(function (i) { return i.title === 'New Sent UF' }).severity, 'info')
+  assert.equal(list.find(function (i) { return i.title === 'No Agreement UF' }).severity, 'warn')
+  assert.ok(list.find(function (i) { return i.title === 'Old Sent UF' }).detail.includes('71 days'))
+})

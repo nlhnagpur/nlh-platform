@@ -11,8 +11,8 @@ const SEV = {
   warn:  { label: 'Check', color: '#92400E', bg: '#FEF3C7' },
   info:  { label: 'Note', color: '#475569', bg: '#E2E8F0' },
 }
-const PAGE_LABEL = { batches: 'Batches', students: 'Students', instructors: 'Instructors', orders: 'Orders' }
-const GROUPS = ['Batches & students', 'CI payroll', 'Orders', 'Certificates']
+const PAGE_LABEL = { batches: 'Batches', students: 'Students', instructors: 'Instructors', orders: 'Orders', franchisees: 'Franchisees' }
+const GROUPS = ['Batches & students', 'CI payroll', 'Orders', 'Franchise agreements', 'Certificates']
 
 function thisMonth() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') }
 function shiftMonth(m, n) { const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') }
@@ -41,13 +41,19 @@ export default function TodayPage({ onNavigate }) {
       })
       const rRes = await sb.from('ci_payroll_runs').select('instructor_id, month, status, total').eq('month', month)
       if (rRes.error) throw rRes.error
+      const [centreRes, agrRes] = await Promise.all([
+        sb.from('franchisees').select('id, business_name, tier, status').eq('tier', 'UF'),
+        sb.from('franchisee_agreements').select('franchisee_id, agreement_no, status, generated_at, signed_at'),
+      ])
+      if (centreRes.error) throw centreRes.error
+      if (agrRes.error) throw agrRes.error
       const [o1, o2, c1] = await Promise.all([
         sb.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         sb.from('orders').select('id', { count: 'exact', head: true }).not('payment_submitted_at', 'is', null).is('payment_verified_at', null).neq('status', 'closed').neq('status', 'cancelled'),
         sb.from('enrollments').select('id', { count: 'exact', head: true }).not('completed_at', 'is', null).gt('fee_amount', 0).is('cert_wa_sent_at', null).is('cert_emailed_at', null).is('cert_issued_at', null),
       ])
       if (cancelled) return
-      setItems(closeItems({ month: month, today: todayIso(), health: health, cis: cis, runs: rRes.data || [], ordersToInvoice: o1.count || 0, ordersToVerify: o2.count || 0, certs: c1.count || 0 }))
+      setItems(closeItems({ month: month, today: todayIso(), health: health, cis: cis, runs: rRes.data || [], centres: centreRes.data || [], agreements: agrRes.data || [], ordersToInvoice: o1.count || 0, ordersToVerify: o2.count || 0, certs: c1.count || 0 }))
     })().catch(function (e) { if (!cancelled) { setError(e.message || 'Could not load the list'); setItems([]) } })
     return function () { cancelled = true }
   }, [month, reload])

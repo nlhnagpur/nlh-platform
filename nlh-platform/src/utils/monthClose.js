@@ -5,6 +5,7 @@
 //   cis:     [{ id, full_name, status, left_at }] CIs who have an appointment
 //   runs:    [{ instructor_id, month, status, total }] saved payroll runs for the month
 //   certs, ordersToInvoice, ordersToVerify: counts
+//   centres: [{ id, business_name, tier, status }]   agreements: [{ franchisee_id, agreement_no, status, generated_at, signed_at }]
 // Each item: { group, severity: 'error' | 'warn' | 'info', title, detail, action, page }
 const money = function (n) { return '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN') }
 
@@ -45,6 +46,23 @@ export function closeItems(input) {
     detail: 'A franchisee has submitted payment proof.', action: 'Orders → open the order → Verify payment.' })
   if (input.certs > 0) out.push({ group: 'Certificates', severity: 'info', page: 'students', title: input.certs + ' certificate' + (input.certs !== 1 ? 's' : '') + ' not issued',
     detail: 'Courses are completed but no certificate has been issued, emailed or sent.', action: 'Students → the student → Courses & Batches → certificate.' })
+
+  // Franchise agreements: every active unit franchise needs a signed agreement. Not generated, or sent and still
+  // unsigned for more than 14 days, is a "Check"; a recently sent one is a note.
+  ;(input.centres || []).filter(function (c) { return c.tier === 'UF' && (!c.status || c.status === 'active') }).forEach(function (c) {
+    const mine = (input.agreements || []).filter(function (a) { return a.franchisee_id === c.id })
+    if (mine.some(function (a) { return a.status === 'signed' || a.signed_at })) return
+    if (!mine.length) {
+      out.push({ group: 'Franchise agreements', severity: 'warn', page: 'franchisees', title: c.business_name,
+        detail: 'No agreement has been generated.', action: 'Franchisees → the centre → Agreement: generate it and send it for signature.' })
+      return
+    }
+    const latest = mine.slice().sort(function (a, b) { return String(b.generated_at || '').localeCompare(String(a.generated_at || '')) })[0]
+    const days = latest.generated_at && input.today ? Math.round((new Date(String(input.today).slice(0, 10) + 'T00:00:00') - new Date(String(latest.generated_at).slice(0, 10) + 'T00:00:00')) / 86400000) : null
+    out.push({ group: 'Franchise agreements', severity: days != null && days > 14 ? 'warn' : 'info', page: 'franchisees', title: c.business_name,
+      detail: (latest.agreement_no || 'Agreement') + ' sent for signature' + (days != null ? ' ' + days + ' day' + (days !== 1 ? 's' : '') + ' ago' : '') + ' — not signed yet.',
+      action: 'Franchisees → the centre → Agreement: remind the franchisee to sign, or resend it.' })
+  })
 
   const order = { error: 0, warn: 1, info: 2 }
   return out.sort(function (a, b) { return order[a.severity] - order[b.severity] })

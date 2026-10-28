@@ -30,6 +30,7 @@ export const STAFF_GUIDE = {
     ['Enrolled, no batch', 'A child is enrolled but nobody is teaching them. Add them to a batch, or discontinue the course.'],
     ['Class by another CI, not a substitute', 'Batches → History: mark it Substitute, or correct the CI on the class.'],
     ['Payroll already saved or posted', 'A date you changed affects a month already saved. Open that month\'s payroll and re-check it.'],
+    ['Agreement not signed', 'A unit franchise has no signed agreement. Franchisees → the centre → Agreement: generate and send it, or remind them to sign.'],
     ['Cycle in progress', 'A child\'s 25-class cycle is not finished. It is paid in the month it starts; nothing to fix.'],
   ],
   rules: [
