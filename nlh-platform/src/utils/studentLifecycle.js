@@ -108,8 +108,10 @@ export function countCycleDays(startIso, names) {
 // was held counts whether the student came or not — attendance is shown beside it (S sessions, P present, A absent,
 // U not marked) but does not change the count.
 //   complete    the 22nd class has been held — the next month is due (renew)
-//   dueOn       the day the month is / was complete (the 22nd class; projected from the schedule while it runs)
-//   nextStart   the day the next month starts (see monthCycle: the 1st of next month, or the day after if it spilled over)
+//   completedOn the day of the 22nd class (projected from the schedule while the month runs)
+//   dueOn       the renewal date: the same date next month when the 22nd class comes before it (extra classes until then are
+//               free), otherwise the day of the 22nd class (the next class is the 1st of the new month)
+//   nextStart   the day the next month starts: that renewal date, or the day after the 22nd class
 export function computeCycle(en, sessions, attendance, scheduleDays, today, noClass) {
   const start = cycleAnchor(en)
   if (!start) return null
@@ -134,8 +136,8 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today, noCl
   const sA = counted.filter(function (s) { return att.get(s.id) === false }).length
 
   // when the 22nd class falls: the day it was held, or projected from the class days still to come
-  let dueOn = done ? done.completedOn : ''
-  if (!dueOn) {
+  let d22 = done ? done.completedOn : ''
+  if (!d22) {
     let need = MONTH_SESSIONS - inMonth.length
     const weekly = sched.size === 7 ? new Set([1, 2, 3, 4, 5, 6]) : sched   // no schedule recorded: Mon–Sat
     let d = held.length && held[held.length - 1] >= todayStr ? held[held.length - 1] : todayStr
@@ -143,11 +145,13 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today, noCl
       d = nextDay(d)
       if (weekly.has(dowOf(d)) && !holidayDates.has(d) && !nc.has(d)) need--
     }
-    dueOn = need > 0 ? '' : d
+    d22 = need > 0 ? '' : d
   }
-  const nextStart = dueOn ? nextMonthStart(start, dueOn) : addOneMonth(start)
+  const windowEnd = addOneMonth(start)
+  const dueOn = d22 && d22 >= windowEnd ? d22 : windowEnd
+  const nextStart = d22 ? nextMonthStart(start, d22) : windowEnd
   return {
-    start: start, due: dueOn || addOneMonth(start), end: dueOn || prevDay(addOneMonth(start)), dueOn: dueOn, nextStart: nextStart, complete: !!done,
+    start: start, due: dueOn, end: d22 && d22 < windowEnd ? d22 : (d22 || prevDay(windowEnd)), dueOn: dueOn, completedOn: d22, windowEnd: windowEnd, nextStart: nextStart, complete: !!done,
     target: MONTH_SESSIONS, done: Math.min(MONTH_SESSIONS, inMonth.length), held: inMonth.length,
     attendedWeekday: sP, attendedSat: 0, absent: sA, unmarked: counted.length - sP - sA, makeUp: 0,
     // S sessions held for this student, P present, A absent, U not marked (S = P + A + U), N days with no class for them.

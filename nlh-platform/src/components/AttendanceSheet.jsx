@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import { fmtDate, showToast } from '../utils'
-import { fetchAllRows, cycleDows } from '../utils/studentLifecycle'
+import { fetchAllRows, cycleDows, isFinishedLevelRecord } from '../utils/studentLifecycle'
 import ModalHeader from './ModalHeader'
+import { monthLayout } from '../utils/monthCycle'
 
 // Monthly attendance sheet, in two flavours:
 //   mode="student"    one student: every course/class they were due to attend in
@@ -107,25 +108,41 @@ async function loadStudentSheet(student, ym) {
     .select('enrollment_id, batch_id, assigned_at, removed_at, batches(name, schedule_days)').in('enrollment_id', enrIds)
   if (error) throw error
   const batchIds = Array.from(new Set((bsRows || []).map(function (r) { return r.batch_id }).filter(Boolean)))
+  // A renewal month can start before this calendar month, so the classes are read from the earliest month start.
+  const histStart = enrs.filter(function (e) { return e.cycle_started_at }).reduce(function (m, e) {
+    const a = String(e.enrolled_at || e.cycle_started_at).slice(0, 10)
+    return a < m ? a : m
+  }, b.start)
   const sessions = batchIds.length ? await fetchAllRows(function (from, to) {
     return sb.from('batch_sessions').select('id, batch_id, session_date, is_holiday, is_substitute, instructors(full_name)')
-      .in('batch_id', batchIds).gte('session_date', b.start).lte('session_date', b.end).order('id').range(from, to)
+      .in('batch_id', batchIds).gte('session_date', histStart).lte('session_date', b.end).order('id').range(from, to)
   }) : []
   const att = await fetchAttendance(sessions.map(function (s) { return s.id }), enrIds)
-  const noClass = await fetchNoClass(enrIds, b.start, b.end)
+  const noClass = await fetchNoClass(enrIds, histStart, b.end)
 
   const attended = []
-  const rows = enrs.map(function (en) {
-    const cells = {}
+  const shortD = function (iso) { return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) }
+  const dayOf = function (v) { return v ? String(v).slice(0, 10) : '' }
+  const groupOf = function (en) { return (en.skus && en.skus.courses && en.skus.courses.group_name) || '' }
+
+  // ── 1. each enrolment's own classes ──
+  const built = {}
+  enrs.forEach(function (en) {
+    const cells = {}      // calendar-month cells, by day
+    const held = {}       // every class day of the course so far (date -> counts as a class), for the renewal months
+    const doneOn = dayOf(en.completed_at)     // a finished level takes no classes after the day it was completed
     ;(bsRows || []).filter(function (m) { return m.enrollment_id === en.id }).forEach(function (m) {
-      sessions.filter(function (s) { return s.batch_id === m.batch_id && memberOn(m, s.session_date) }).forEach(function (s) {
+      sessions.filter(function (s) { return s.batch_id === m.batch_id && memberOn(m, s.session_date) && (!doneOn || s.session_date <= doneOn) }).forEach(function (s) {
         let code
         if (s.is_holiday) code = 'H'
         else if (noClass.has(en.id + ':' + s.session_date)) code = 'N'
         else { const a = att.get(s.id + ':' + en.id); code = a === true ? 'P' : a === false ? 'A' : 'U' }
+        const off = offDay(s.session_date, en, m.batches && m.batches.schedule_days)
+        if (code !== 'H' && code !== 'N' && !off) held[s.session_date] = true
+        if (s.session_date < b.start || s.session_date > b.end) return
         const day = dayNum(s.session_date)
         if (!cells[day] || cells[day].code === 'H') {
-          cells[day] = { code: code, date: s.session_date, off: offDay(s.session_date, en, m.batches && m.batches.schedule_days), batch: m.batches && m.batches.name, ci: s.instructors && s.instructors.full_name, sub: s.is_substitute }
+          cells[day] = { code: code, date: s.session_date, off: off, batch: m.batches && m.batches.name, ci: s.instructors && s.instructors.full_name, sub: !!s.is_substitute }
         }
       })
     })
@@ -134,19 +151,64 @@ async function loadStudentSheet(student, ym) {
       noClass.forEach(function (key) {
         if (!key.startsWith(en.id + ':')) return
         const date = key.slice(en.id.length + 1)
-        if (date < b.start || date > b.end || !memberOn(m, date)) return
+        if (date < b.start || date > b.end || !memberOn(m, date) || (doneOn && date > doneOn)) return
         const day = dayNum(date)
         if (!cells[day] || cells[day].code === 'U' || cells[day].code === 'A' || cells[day].code === 'P') {
           cells[day] = { code: 'N', date: date, off: false, batch: m.batches && m.batches.name }
         }
       })
     })
-    const list = Object.values(cells)
-    list.filter(function (c) { return c.code === 'P' }).forEach(function (c) {
+    built[en.id] = { en: en, cells: cells, held: held }
+  })
+
+  // ── 2. a level finished in place: its classes go to its own line, the rest to the level that is running ──
+  // When a child is moved up a level the attendance stays on the running enrolment and the finished level is a record with
+  // no classes of its own. Classes up to that level's completion date belong to it; later months show only the running level.
+  enrs.filter(function (en) { return !en.completed_at && en.status !== 'dropped' }).forEach(function (live) {
+    const records = enrs.filter(function (rec) {
+      return rec.id !== live.id && groupOf(rec) === groupOf(live) && isFinishedLevelRecord(rec) && !Object.keys(built[rec.id].cells).length
+    }).sort(function (x, y) { return dayOf(x.completed_at).localeCompare(dayOf(y.completed_at)) })
+    records.forEach(function (rec) {
+      const cut = dayOf(rec.completed_at)
+      Object.keys(built[live.id].cells).forEach(function (day) {
+        const c = built[live.id].cells[day]
+        if (c.date <= cut) { built[rec.id].cells[day] = c; delete built[live.id].cells[day] }
+      })
+    })
+  })
+
+  // ── 3. the lines ──
+  const rows = []
+  enrs.forEach(function (en) {
+    const cells = built[en.id].cells
+    const held = built[en.id].held
+    Object.values(cells).filter(function (c) { return c.code === 'P' }).forEach(function (c) {
       attended.push({ date: c.date, course: courseLabel(en.skus), batch: c.batch, ci: c.ci, sub: c.sub })
     })
-    return { id: en.id, label: courseLabel(en.skus), cells: cells, totals: tally(list) }
-  }).filter(function (r) { return Object.keys(r.cells).length > 0 })
+    if (!Object.keys(cells).length) return
+
+    // A monthly course is shown one line per renewal month (22 classes counted; extras up to the renewal date are free),
+    // so a new month is easy to tell from the one before it.
+    if (en.cycle_started_at && !en.completed_at) {
+      const anchor = dayOf(en.cycle_started_at)
+      const first = dayOf(en.enrolled_at || en.cycle_started_at)
+      const segs = monthLayout(Object.keys(held).sort(), first < anchor ? first : anchor, anchor)
+      segs.forEach(function (seg) {
+        const end = seg.end || '9999-12-31'
+        const segCells = {}
+        Object.values(cells).forEach(function (c) {
+          if (c.date >= seg.start && c.date < end) segCells[dayNum(c.date)] = Object.assign({}, c, { free: seg.free.indexOf(c.date) >= 0 })
+        })
+        const list = Object.values(segCells)
+        if (!list.length) return
+        const nFree = list.filter(function (c) { return c.free }).length
+        const span = shortD(seg.start) + (seg.completedOn ? ' – 22nd class ' + shortD(seg.completedOn) : seg.open ? ' – running, ' + seg.counted.length + ' of 22' : ' – cut off')
+        rows.push({ id: en.id + ':' + seg.start, label: courseLabel(en.skus) + ' · month from ' + span + (nFree ? ' · +' + nFree + ' free' : ''), cells: segCells, totals: tally(list.filter(function (c) { return !c.free })), monthStart: seg.start })
+      })
+      return
+    }
+    rows.push({ id: en.id, label: courseLabel(en.skus) + (en.completed_at ? ' · completed ' + shortD(dayOf(en.completed_at)) : ''), cells: cells, totals: tally(Object.values(cells)) })
+  })
   attended.sort(function (a, c) { return a.date < c.date ? -1 : 1 })
   return { rows: rows, attended: attended }
 }
@@ -209,9 +271,10 @@ function Cell({ c }) {
   const t = TONE[c.code]
   const tip = c.code === 'H' ? 'Holiday' : { P: 'Present', A: 'Absent', N: 'No class for the student', U: 'Not marked' }[c.code]
   const isSun = !!c.off
+  const free = !!c.free
   return (
     <td title={tip + (c.date ? ' · ' + fmtDate(c.date) : '') + (c.ci ? ' · ' + c.ci + (c.sub ? ' (substitute)' : '') : '') + (isSun && c.code !== 'H' ? ' · Sunday is not a class day for this student — not counted in S/P/A/N' : '')}
-      style={{ width: 24, minWidth: 24, textAlign: 'center', font: '700 11px var(--mono)', color: t.color, background: t.bg, border: '1px solid #e5e7eb', opacity: isSun && c.code !== 'H' ? 0.45 : 1 }}>
+      style={{ width: 24, minWidth: 24, textAlign: 'center', font: '700 11px var(--mono)', color: t.color, background: t.bg, border: '1px solid #e5e7eb', opacity: isSun && c.code !== 'H' ? 0.45 : (free ? 0.6 : 1), outline: free ? '1px dashed #6b7280' : undefined, outlineOffset: -2 }}>
       {c.code === 'U' ? '' : c.code}
     </td>
   )
@@ -345,7 +408,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
           </span>
         </div>
         <div style={{ padding: '0 20px 6px', font: '500 11px var(--font)', color: 'var(--text3)' }}>
-          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.NC.color }}>N</b> no class for the student that day · <b>H</b> holiday · <span style={{ background: TONE.U.bg, padding: '0 6px', borderRadius: 3 }}>&nbsp;</span> / <b style={{ color: TONE.U.color }}>?</b> class held, attendance not marked · blank no class scheduled · <b>S</b> sessions held (S = P + A + ?). Sunday classes are shown faded and not counted in S / P / A / N, unless Sunday is one of the student's class days.
+          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.NC.color }}>N</b> no class for the student that day · <b>H</b> holiday · <span style={{ background: TONE.U.bg, padding: '0 6px', borderRadius: 3 }}>&nbsp;</span> / <b style={{ color: TONE.U.color }}>?</b> class held, attendance not marked · blank no class scheduled · <b>S</b> sessions held (S = P + A + ?). Sunday classes are shown faded and not counted in S / P / A / N, unless Sunday is one of the student's class days. Monthly courses show one line per renewal month (22 classes counted); a dashed cell is a free class — after the 22nd, before the renewal date.
         </div>
         <div style={{ padding: '8px 20px 18px', overflow: 'auto', flex: 1 }}>
           {loading && <div className="loading"><span className="spinner" />Loading attendance…</div>}

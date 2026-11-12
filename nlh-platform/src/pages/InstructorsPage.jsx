@@ -6,7 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
-import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox, levelSharePay, levelStartDate } from '../utils/ciPayroll'
+import { appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox, levelSharePay, levelStartDate } from '../utils/ciPayroll'
 import { fetchAllRows, todayIso } from '../utils/studentLifecycle'
 import { monthPayItems } from '../utils/monthCycle'
 import CiPayrollRun from '../components/CiPayrollRun'
@@ -44,7 +44,7 @@ function avatar(name) {
 const REMUN_LABELS = {
   per_student:       'Per Student (on completion)',
   per_student_month: 'Per Student / Month (22 classes)',
-  per_student_cycle: 'Per Student / Cycle (25 classes)',
+  per_student_cycle: 'Per Student / Month (22 classes)',
   per_session:       'Per Session (1 hr)',
   monthly:           'Monthly Fixed',
 }
@@ -52,7 +52,7 @@ const REMUN_LABELS = {
 const REMUN_SUFFIX = {
   per_student:       '/ student',
   per_student_month: '/ student / month',
-  per_student_cycle: '/ student / cycle',
+  per_student_cycle: '/ student / month',
   per_session:       '/ session',
   monthly:           '/ month',
 }
@@ -379,81 +379,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       }
 
       // ── Per student, per cycle: classes this CI taught each student, in cycles of 25 ──
-      var cycleOut = { rows: [], inProgress: [], total: 0, datesBySid: {} }
-      // Months already saved before this one say how far each student has been paid:
-      // the next cycle starts the day after the last date a saved line covered.
-      var paidThrough = {}
-      // Appointments are read regardless of status, and batches from the classes the CI
-      // actually taught — so pay survives the CI being relieved and the batch reassigned.
-      var { data: cycleAppts } = await sb.from('instructor_courses')
-        .select('id, sku_id, remuneration_rate, appointed_at')
-        .eq('instructor_id', instructor.id).eq('remuneration_mode', 'per_student_cycle')
-      if (cycleAppts && cycleAppts.length) {
-        var attRows = await fetchAllRows(function (from, to) {
-          return sb.from('session_attendance')
-            .select('enrollment_id, batch_sessions!inner(session_date, batch_id, instructor_id, is_substitute, is_holiday, batches(sku_id, instructor_id, is_active, skus(courses(group_name))))')
-            .eq('attended', true)
-            .eq('batch_sessions.instructor_id', instructor.id)
-            .eq('batch_sessions.is_substitute', false)
-            .eq('batch_sessions.is_holiday', false)
-            .range(from, to)
-        })
-        var { data: priorRuns } = await sb.from('ci_payroll_runs').select('lines').eq('instructor_id', instructor.id).lt('month', payrollMonth)
-        ;(priorRuns || []).forEach(function (pr) {
-          ;(pr.lines || []).forEach(function (l) {
-            if (l.meta && l.meta.sid && l.meta.to && (!paidThrough[l.meta.sid] || l.meta.to > paidThrough[l.meta.sid])) paidThrough[l.meta.sid] = l.meta.to
-          })
-        })
-        var enrIds = Array.from(new Set((attRows || []).map(function (x) { return x.enrollment_id })))
-        var enrById = {}
-        var rosterByKey = {}
-        if (enrIds.length) {
-          var { data: enrRows } = await sb.from('enrollments')
-            .select('id, sku_id, sessions_per_cycle, completed_at, status, students(full_name), skus(courses(group_name))').in('id', enrIds)
-          ;(enrRows || []).forEach(function (e) { enrById[e.id] = e })
-          var { data: bsRows2 } = await sb.from('batch_students').select('batch_id, enrollment_id, removed_at').in('enrollment_id', enrIds)
-          ;(bsRows2 || []).forEach(function (x) { rosterByKey[x.batch_id + '|' + x.enrollment_id] = x })
-        }
-        var ciGone = !!instructor.left_at || (instructor.status && instructor.status !== 'active')
-        cycleAppts.forEach(function (a) {
-          var byKey = {}
-          ;(attRows || []).forEach(function (x) {
-            var sess = x.batch_sessions
-            var bt = sess && sess.batches
-            if (!bt) return
-            var en = enrById[x.enrollment_id] || {}
-            // A batch often has no level of its own, so the student's level decides which
-            // appointment applies; with a single per-cycle appointment it covers them all.
-            var skuOf = bt.sku_id || en.sku_id
-            if (cycleAppts.length > 1 && skuOf !== a.sku_id) return
-            var key = x.enrollment_id          // one entry per student, whichever of the CI's batches they were in
-            var roster = rosterByKey[sess.batch_id + '|' + x.enrollment_id] || {}
-            var gone = !!(ciGone || bt.instructor_id !== instructor.id || bt.is_active === false || roster.removed_at || en.completed_at || en.status === 'dropped')
-            if (!byKey[key]) {
-              byKey[key] = {
-                id: key,
-                paidThrough: paidThrough[key] || '',
-                name: (en.students && en.students.full_name) || '—',
-                course: (en.skus && en.skus.courses && en.skus.courses.group_name) || (bt.skus && bt.skus.courses && bt.skus.courses.group_name) || '',
-                dates: [],
-                // the CI's cycle is always 25 classes; the student's own cycle length (set at each
-                // renewal, e.g. 20 for one month) is a fee matter and applies only to their current cycle
-                perCycle: CI_CYCLE_SESSIONS,
-                // done with this CI: the CI is relieved, the batch now has another CI or is
-                // closed, or the student left / finished
-                left: gone,
-              }
-            } else if (gone) byKey[key].left = true
-            byKey[key].dates.push(sess.session_date)
-          })
-          Object.keys(byKey).forEach(function (k) { cycleOut.datesBySid[k] = byKey[k].dates })
-          var res = ciCyclePayroll(Object.keys(byKey).map(function (k) { return byKey[k] }), payrollMonth, a.remuneration_rate, a.appointed_at)
-          cycleOut.rows = cycleOut.rows.concat(res.rows)
-          cycleOut.inProgress = cycleOut.inProgress.concat(res.inProgress)
-          cycleOut.total += res.total
-        })
-      }
-      setPayrollCycle(cycleOut)
+      // The 25-class cycle basis is retired: every monthly basis is the 22-class month (utils/monthCycle.js), calculated below.
+      setPayrollCycle({ rows: [], inProgress: [], total: 0, datesBySid: {} })
 
       // ── The saved payroll for this month (edited amounts, paid status) ──
       var { data: runRow } = await sb.from('ci_payroll_runs').select('*')
@@ -661,7 +588,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   function startEditAppt(appt) {
     setEditApptId(appt.id)
     setEditApptForm({
-      remuneration_mode: appt.remuneration_mode,
+      remuneration_mode: appt.remuneration_mode === 'per_student_cycle' ? 'per_student_month' : appt.remuneration_mode,
       remuneration_rate: appt.remuneration_rate,
       appointed_at:      appt.appointed_at || '',
       trained_by_nlh:    appt.trained_by_nlh,
@@ -1140,7 +1067,6 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                         <option value="per_session">Per Session (₹ / hr)</option>
                                         <option value="per_student">Per Student (₹ on completion)</option>
                                         <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
-                        <option value="per_student_cycle">Per Student / Cycle of 25 classes (₹)</option>
                                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                                       </select>
                                     </label>
@@ -1292,7 +1218,6 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       <select value={newAppt.remuneration_mode} onChange={nfd('remuneration_mode')}>
                         <option value="per_student">Per Student (₹ on completion)</option>
                         <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
-                        <option value="per_student_cycle">Per Student / Cycle of 25 classes (₹)</option>
                         <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
@@ -1304,7 +1229,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                           newAppt.remuneration_mode === 'per_session' ? 'e.g. 150' :
                           newAppt.remuneration_mode === 'monthly'     ? 'e.g. 5000' :
                           newAppt.remuneration_mode === 'per_student_month' ? 'e.g. 300' :
-                          newAppt.remuneration_mode === 'per_student_cycle' ? 'e.g. 1000' : 'e.g. 750'
+                          newAppt.remuneration_mode === 'per_student_month' ? 'e.g. 1000' : 'e.g. 750'
                         } />
                     </label>
                     <label>Appointed From
@@ -1717,7 +1642,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     inProgressLevels.push({ batchId: batchId, batchName: data.batch?.name || '—', course: courseName(cid), rate: ap.remuneration_rate || 0, members: st.liveMembers })
                   }
                   if (ap.remuneration_mode === 'per_student' && st.completions === 0) return
-                  if (ap.remuneration_mode === 'per_student_month') { monthCourses[cid] = ap; return }   // paid per 22-class month, see below
+                  if (ap.remuneration_mode === 'per_student_month' || ap.remuneration_mode === 'per_student_cycle') { monthCourses[cid] = ap; return }   // paid per 22-class month, see below
                   push(mkRow(ap, courseName(cid), '', st.completions, st.active, ap.remuneration_mode === 'per_student' ? st.doneMembers : st.activeMembers))
                 })
                 // Paid per session and the roster doesn't identify a course (e.g. an empty batch):
@@ -1823,7 +1748,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       meta: { kind: 'month', course: en.course, sid: 'child:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate },
                     })
                   })
-                  if (res.open) monthOpenList.push({ name: en.student, count: res.open.count })
+                  if (res.open) monthOpenList.push({ name: en.student, count: res.open.count, ciCount: res.open.ciCount, accrued: levelSharePay(rate, res.open.ciCount, 22) })
                 })
               })
               // a CI who has left: levels still running are paid for the classes they took, in the month of their last class with the child
@@ -2411,7 +2336,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                 block.remuneration_mode === 'per_session'       ? '₹ per session' :
                 block.remuneration_mode === 'monthly'           ? '₹ per month' :
                 block.remuneration_mode === 'per_student_month' ? '₹ per student / month' :
-                block.remuneration_mode === 'per_student_cycle' ? '₹ per student / cycle' : '₹ per student'
+                block.remuneration_mode === 'per_student_cycle' ? '₹ per student / month' : '₹ per student'
 
               return (
                 <div key={idx} style={{
@@ -2449,7 +2374,6 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                         <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="per_student">Per Student (₹ on completion)</option>
                         <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
-                        <option value="per_student_cycle">Per Student / Cycle of 25 classes (₹)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
                     </label>

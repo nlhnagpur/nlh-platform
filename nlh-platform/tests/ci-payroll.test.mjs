@@ -278,7 +278,7 @@ test('substitute classes are priced roughly from the covering CI’s own appoint
   const ap = (mode, rate) => ({ remuneration_mode: mode, remuneration_rate: rate })
   assert.equal(substituteApprox(ap('per_session', 300), { students: 3, held: 22 }), 300)
   assert.equal(Math.round(substituteApprox(ap('per_student_month', 1250), { students: 3, held: 22 })), 170)    // ₹1,250 × 3 ÷ 22
-  assert.equal(substituteApprox(ap('per_student_cycle', 1000), { students: 2, held: 22 }), 80)                 // ₹1,000 × 2 ÷ 25
+  assert.equal(Math.round(substituteApprox(ap('per_student_cycle', 1000), { students: 2, held: 22 })), 91)       // the same 22-class month: ₹1,000 × 2 ÷ 22
   assert.equal(substituteApprox(ap('per_student', 1250), { students: 3, held: 22 }), 0)                        // cannot be estimated
   assert.equal(substituteApprox(null, {}), 0)
 })

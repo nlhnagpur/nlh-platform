@@ -37,7 +37,8 @@ export function payrollCheckIssues(input) {
     add('error', 'no_appointment', 'No appointment covers ' + u.course + ' (' + u.batch + ') for ' + input.month + ', so nothing is calculated for those students.')
   })
 
-  if ((input.classesTaken || 0) > 0 && (input.classPay || 0) === 0 && !(input.unmatched || []).length) {
+  // ₹0 is expected while every child's month is still running — it is explained by the "not due yet" note below
+  if ((input.classesTaken || 0) > 0 && (input.classPay || 0) === 0 && !(input.unmatched || []).length && !(input.monthOpen || []).length) {
     add('warn', 'zero_pay', name + ' took ' + input.classesTaken + ' class(es) this month but the calculation pays ₹0 for them.')
   }
 
@@ -60,7 +61,7 @@ export function payrollCheckIssues(input) {
   })
 
   if ((input.monthOpen || []).length) {
-    add('info', 'month_in_progress', 'Not due yet (month running): ' + input.monthOpen.map(function (x) { return x.name + ' ' + x.count + ' of 22' }).join(', ') + '.')
+    add('info', 'month_in_progress', 'Not due yet (month running): ' + input.monthOpen.map(function (x) { return x.name + ' ' + x.count + ' of 22' + (x.ciCount ? ' (' + name + ' has taken ' + x.ciCount + ' → ₹' + Math.round(x.accrued || 0).toLocaleString('en-IN') + ' when it completes)' : '') }).join('; ') + '.')
   }
   if ((input.levelInProgress || 0) > 0) {
     add('info', 'leaving_pro_rata', name + ' has left: ' + input.levelInProgress + ' child' + (input.levelInProgress !== 1 ? 'ren are' : ' is') + ' part-way through a level and ' + (input.levelInProgress !== 1 ? 'are' : 'is') + ' paid pro-rata for the classes taken.')

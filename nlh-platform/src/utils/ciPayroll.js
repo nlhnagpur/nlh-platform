@@ -260,8 +260,8 @@ export function substituteApprox(appt, ctx) {
   const c = ctx || {}
   const rate = Number(appt.remuneration_rate) || 0
   if (appt.remuneration_mode === 'per_session') return rate
-  if (appt.remuneration_mode === 'per_student_month') return c.held > 0 ? rate * (c.students || 0) / c.held : 0
-  if (appt.remuneration_mode === 'per_student_cycle') return rate * (c.students || 0) / CI_CYCLE_SESSIONS
+  // a month is 22 classes: one class is 1/22 of a student's month
+  if (appt.remuneration_mode === 'per_student_month' || appt.remuneration_mode === 'per_student_cycle') return rate * (c.students || 0) / 22
   return 0
 }
 
