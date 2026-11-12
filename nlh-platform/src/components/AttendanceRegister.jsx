@@ -115,6 +115,15 @@ const TONE = {
   O: { color: '#9a3412', bg: '#ffedd5' },
 }
 
+// The teacher's row looks different from the students': solid round marks on an indigo band, so it never reads as a student.
+const TEACHER_TONE = {
+  P: { color: '#fff', bg: '#15803d' },
+  A: { color: '#fff', bg: '#b91c1c' },
+  H: { color: '#fff', bg: '#6b7280' },
+  O: { color: '#fff', bg: '#c2410c' },
+}
+const TEACHER_BAND = '#e0e7ff'
+
 export default function AttendanceRegister({ centreFilter, search, canEdit, students, onOpenSheet }) {
   const [ym, setYm] = useState(thisMonth())
   const [loading, setLoading] = useState(true)
@@ -609,9 +618,9 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                     <tbody>
                       {b.instructor_id && (
                         <>
-                          <tr style={{ background: 'var(--bg2, #f5f4f0)' }}>
-                            <td style={{ padding: '4px 10px', font: '700 12px var(--font)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--bg2, #f5f4f0)', borderBottom: '1px solid var(--border)' }}>
-                              Teacher · {b.instructors ? b.instructors.full_name : ''}
+                          <tr style={{ background: TEACHER_BAND }}>
+                            <td style={{ padding: '4px 10px', font: '700 12px var(--font)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: TEACHER_BAND, color: '#3730a3', borderBottom: '1px solid var(--border)', borderLeft: '4px solid #4338ca' }}>
+                              👩‍🏫 Teacher · {b.instructors ? b.instructors.full_name : ''}
                             </td>
                             {days.map(function (d) {
                               // before the batch was assigned to this CI there is nothing to mark
@@ -621,13 +630,13 @@ export default function AttendanceRegister({ centreFilter, search, canEdit, stud
                               }
                               const hol = dayState(b.id, d).hol
                               const v = hol ? 'H' : tStatus(b, d)
-                              const tone = v ? TONE[v] : null
+                              const tone = v ? TEACHER_TONE[v] : null
                               const disabled = hol || !canEdit || d > today || b.is_active === false
                               return (
                                 <td key={d} style={{ padding: 1, borderBottom: '1px solid var(--border)', borderLeft: '1px solid var(--border)', textAlign: 'center' }}>
                                   <button type="button" disabled={disabled} onClick={function () { stepTeacher(b, d) }}
                                     title={teacherStatusTitle(v, hol)}
-                                    style={{ width: 24, height: 24, borderRadius: 5, border: 'none', font: '700 11px var(--mono)', cursor: disabled ? 'default' : 'pointer', color: tone ? tone.color : 'var(--text3)', background: tone ? tone.bg : 'transparent', opacity: d > today ? .35 : 1 }}>
+                                    style={{ width: 24, height: 24, borderRadius: '50%', border: tone ? 'none' : '1px dashed #a5b4fc', font: '700 11px var(--mono)', cursor: disabled ? 'default' : 'pointer', color: tone ? tone.color : 'var(--text3)', background: tone ? tone.bg : 'transparent', boxShadow: tone ? '0 0 0 2px #e0e7ff' : 'none', opacity: d > today ? .35 : 1 }}>
                                     {v || ''}
                                   </button>
                                 </td>
