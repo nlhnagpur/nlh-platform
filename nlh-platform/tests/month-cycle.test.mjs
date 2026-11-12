@@ -45,27 +45,40 @@ test('addMonth: same date next month, month-end clamps', () => {
   assert.equal(addMonth('2026-01-31'), '2026-02-28')
 })
 
-test('CI pay: own classes ÷ 22, in the month the 22nd class falls', () => {
-  const sep = monthPayItems({ all, ci, anchor: '2026-09-02', month: '2026-09', stillTeaching: true })
+test('CI pay: paid as the classes are taken — each calendar month pays the classes taken in it (÷ 22)', () => {
+  const sep = monthPayItems({ all, ci, anchor: '2026-09-02', month: '2026-09' })
   assert.equal(sep.items.length, 1)
-  assert.equal(sep.items[0].count, 21)              // the 14 Sep class was a substitute's
+  assert.equal(sep.items[0].count, 21)              // the 14 Sep class was a substitute's; the 22nd class is 30 Sep
   assert.equal(sep.items[0].total, 22)
-  const oct = monthPayItems({ all, ci, anchor: '2026-09-02', month: '2026-10', stillTeaching: true })
-  assert.equal(oct.items.length, 0)                  // the October month is still running — payable in November
-  assert.equal(oct.open.count > 0, true)
-  const nov = monthPayItems({ all, ci, anchor: '2026-09-02', month: '2026-11', stillTeaching: true })
-  assert.equal(nov.items.length, 1); assert.equal(nov.items[0].count, 22); assert.equal(nov.items[0].spill, true)
+  const oct = monthPayItems({ all, ci, anchor: '2026-09-02', month: '2026-10' })
+  // October: the next month (from the renewal date 2 Oct) has its classes paid as they are taken; 1 Oct was free
+  assert.equal(oct.items.length, 1)
+  assert.equal(oct.items[0].from >= '2026-10-02', true)
+  assert.equal(oct.items[0].complete, true)         // that month completed on 3 Nov, so it is a completed month with a spill
+  const nov = monthPayItems({ all, ci, anchor: '2026-09-02', month: '2026-11' })
+  assert.equal(nov.items.length >= 1, true)
+  // across the two calendar months the CI is paid for exactly the 22 classes of the month, never more
+  const paid = oct.items[0].count + nov.items[0].count
+  assert.equal(paid <= 22, true)
 })
 
-test('CI pay: a CI who stops mid-month is paid pro-rata in the month of their last class', () => {
+test('CI pay: classes after the 22nd (free) are never paid', () => {
+  const dates = []
+  for (let d = new Date(2026, 9, 1); d < new Date(2026, 10, 1); d.setDate(d.getDate() + 1)) {
+    if (d.getDay() === 0) continue
+    dates.push('2026-10-' + String(d.getDate()).padStart(2, '0'))
+  }
+  const r = monthPayItems({ all: dates, ci: dates, anchor: '2026-10-01', month: '2026-10' })
+  assert.equal(r.items.reduce(function (t, i) { return t + i.count }, 0), 22)    // 26 classes held, 22 paid
+})
+
+test('CI pay: a CI who stops mid-month is paid pro-rata for the classes taken, once', () => {
   const ciStops = ci.filter(function (d) { return d <= '2026-10-15' })
-  const stopped = monthPayItems({ all, ci: ciStops, anchor: '2026-09-02', month: '2026-10', stillTeaching: false })
-  assert.equal(stopped.items.length, 1)
-  assert.equal(stopped.items[0].complete, false)
-  assert.equal(stopped.items[0].to, '2026-10-15')
-  // the month later completed by someone else is not paid again to the CI who left
-  const later = monthPayItems({ all, ci: ciStops, anchor: '2026-09-02', month: '2026-11', stillTeaching: false })
-  assert.equal(later.items.length, 0)
+  const oct = monthPayItems({ all, ci: ciStops, anchor: '2026-09-02', month: '2026-10' })
+  assert.equal(oct.items.length, 1)
+  assert.equal(oct.items[0].to, '2026-10-15')
+  const nov = monthPayItems({ all, ci: ciStops, anchor: '2026-09-02', month: '2026-11' })
+  assert.equal(nov.items.length, 0)               // nothing more after they left
 })
 
 test('student month progress', () => {

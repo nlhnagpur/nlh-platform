@@ -37,8 +37,19 @@ test('every pay basis prints the same way: dates in Particular, programme and ba
   const ctx = { shareDates: { 'child:x': { all: [], ci: ['2026-10-02', '2026-10-05', '2026-10-09'] } } }
   const row = sheetRowFor({ label: 'Ayesha Shaikh (Level 3)', amount: 1181, meta: { kind: 'share', course: 'Phonics', sid: 'child:x', from: '2026-10-01', to: '2026-10-31', count: 3, total: 7, rate: 2000 } }, ctx)
   assert.equal(row.particular, 'Ayesha Shaikh (Level 3) ( Oct-2026, 2,5,9 )')
-  assert.equal(row.description, 'Phonics — 3 of 7 classes taken by the CI')
+  assert.equal(row.description, 'Phonics — 3 sessions')
   const lv = sheetRowFor({ label: 'Sai — level in progress', amount: 500, meta: { kind: 'level', course: 'Phonics', sid: 'child:x', from: '2026-10-01', to: '2026-10-09', count: 3, total: 20, rate: 3000 } }, ctx)
-  assert.equal(lv.description, 'Phonics — 3 of 20 classes of the level taken by the CI')
+  assert.equal(lv.description, 'Phonics — 3 sessions')
   assert.deepEqual(sheetRowFor({ label: 'Conveyance', amount: 120 }, ctx), { particular: 'Conveyance', description: '', amount: 120 })
+})
+
+test('a month line tells the teacher sessions by level, never "of 22"', async () => {
+  const { levelCounts } = await import('../src/utils/ciPayroll.js')
+  const ci = ['2026-10-08', '2026-10-09', '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16']
+  const entries = [{ level: 'Level 2', from: '2026-09-05', to: '2026-10-14' }, { level: 'Level 3', from: '2026-10-15', to: '' }]
+  const levels = levelCounts(ci, entries)
+  assert.deepEqual(levels, [{ name: 'Level 2', count: 5 }, { name: 'Level 3', count: 2 }])
+  const row = sheetRowFor({ label: 'Ayesha Shaikh', amount: 1432, meta: { kind: 'month', course: 'Phonics', sid: 'child:x', from: '2026-10-08', to: '2026-10-16', count: 7, total: 22, rate: 1500, levels } }, { shareDates: { 'child:x': { all: [], ci } } })
+  assert.equal(row.description, 'Phonics — 5 sessions of Level 2, 2 sessions of Level 3')
+  assert.ok(!/22/.test(row.description))
 })

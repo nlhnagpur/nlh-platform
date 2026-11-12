@@ -6,7 +6,7 @@ import { isAdminRole } from '../constants/roles'
 import { filterSkusForFranchisee } from '../utils/courseAccess'
 import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
-import { appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox, levelSharePay, levelStartDate } from '../utils/ciPayroll'
+import { levelCounts, appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox, levelSharePay, levelStartDate } from '../utils/ciPayroll'
 import { fetchAllRows, todayIso } from '../utils/studentLifecycle'
 import { monthPayItems } from '../utils/monthCycle'
 import CiPayrollRun from '../components/CiPayrollRun'
@@ -1741,11 +1741,27 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     return (payrollRoster[b2] || []).some(function (x) { return x.student_id === en.student_id && x.course === en.course && !x.completionOnly && !x.removed_at && !x.completed_at })
                   })
                   var res = monthPayItems({ all: cd.all, ci: cd.ci, anchor: payrollChildAnchors[ck] || '', month: payrollMonth, stillTeaching: stillTeaching })
+                  var levelEntries = []
+                  Object.keys(payrollRoster).forEach(function (b3) {
+                    ;(payrollRoster[b3] || []).forEach(function (x) {
+                      if (x.student_id === en.student_id && x.course === en.course) levelEntries.push({ level: x.level, from: x.level_from || '', to: x.completed_at ? String(x.completed_at).slice(0, 10) : '' })
+                    })
+                  })
+                  // two months of one child in the same payroll month read as one line to the teacher (4 sessions of Level 2,
+                  // 17 sessions of Level 3) when no free class lies between them
+                  var merged = []
                   res.items.forEach(function (it) {
+                    var last = merged[merged.length - 1]
+                    if (last && cd.ci.filter(function (d) { return d > last.to && d < it.from }).length === 0) {
+                      merged[merged.length - 1] = { from: last.from, to: it.to, count: last.count + it.count, total: it.total, complete: last.complete && it.complete, spill: it.spill, completedOn: it.completedOn }
+                    } else merged.push(it)
+                  })
+                  merged.forEach(function (it) {
+                    var itemDates = cd.ci.filter(function (d) { return d >= it.from && d <= it.to })
                     calcLines.push({
                       key: 'mon:' + ck + ':' + it.from, label: en.student, amount: levelSharePay(rate, it.count, it.total),
-                      detail: en.course + ' · ₹' + rate.toLocaleString('en-IN') + ' a month (22 classes) · ' + (it.complete ? 'month completed ' + fmtDate(it.to) : 'stopped after ' + it.count + ' classes — pro-rata'),
-                      meta: { kind: 'month', course: en.course, sid: 'child:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate },
+                      detail: en.course + ' · ₹' + rate.toLocaleString('en-IN') + ' a month (22 classes) · paid as classes are taken; ' + (it.complete ? 'the child\'s month completed ' + fmtDate(it.completedOn) : 'the child\'s month is still running'),
+                      meta: { kind: 'month', course: en.course, sid: 'child:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate, levels: levelCounts(itemDates, levelEntries) },
                     })
                   })
                   if (res.open) monthOpenList.push({ name: en.student, count: res.open.count, ciCount: res.open.ciCount, accrued: levelSharePay(rate, res.open.ciCount, 22) })

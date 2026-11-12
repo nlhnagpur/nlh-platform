@@ -303,24 +303,43 @@ export function sheetRowFor(line, ctx) {
   const inRange = function (arr) {
     return uniqSorted(arr || []).filter(function (d) { return (!m.from || d >= String(m.from).slice(0, 10)) && (!m.to || d <= String(m.to).slice(0, 10)) })
   }
-  const plural = function (n) { return n + ' class' + (n !== 1 ? 'es' : '') }
+  const plural = function (n) { return n + ' session' + (n !== 1 ? 's' : '') }
   if (m.kind === 'fixed') return { particular: label, description: prog + 'fixed monthly', amount: amount }
   if (m.kind === 'session') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
-    return { particular: label + ' ' + datesByMonth(d), description: prog + plural(m.count) + ' taken', amount: amount }
+    return { particular: label + ' ' + datesByMonth(d), description: prog + plural(m.count), amount: amount }
   }
   if (m.kind === 'share') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
-    return { particular: label + ' ' + datesByMonth(d), description: prog + m.count + ' of ' + m.total + ' classes taken by the CI', amount: amount }
+    return { particular: label + ' ' + datesByMonth(d), description: prog + plural(m.count), amount: amount }
   }
   if (m.kind === 'month') {
+    // the CI sees the sessions taken (and the level each belongs to); the 22-class month is for NLH only
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
-    return { particular: label + ' ' + datesByMonth(d), description: prog + m.count + ' of ' + m.total + ' classes of the month taken by the CI', amount: amount }
+    const lv = (m.levels || [])
+    const ok = lv.length && lv.reduce(function (t, x) { return t + x.count }, 0) === d.length
+    const text = ok ? lv.map(function (x) { return x.count + ' session' + (x.count !== 1 ? 's' : '') + (x.name ? ' of ' + x.name : '') }).join(', ') : plural(d.length || m.count)
+    return { particular: label + ' ' + datesByMonth(d), description: prog + text, amount: amount }
   }
   if (m.kind === 'level') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
-    return { particular: label + ' ' + datesByMonth(d), description: prog + m.count + ' of ' + m.total + ' classes of the level taken by the CI', amount: amount }
+    return { particular: label + ' ' + datesByMonth(d), description: prog + plural(m.count), amount: amount }
   }
   const d = inRange((c.datesBySid || {})[m.sid])
   return { particular: label + ' ' + datesByMonth(d), description: (m.course || 'Sessions') + '- Sessions-' + m.perCycle + (m.count < m.perCycle ? ' (' + m.count + ' taught)' : ''), amount: amount }
+}
+
+// The level a child was on each day, from their enrolments in the programme: [{ level, from, to }] (to '' = still running).
+// The enrolment that started latest on or before the day, and had not ended, wins. Used to say "4 sessions of Level 2".
+export function levelCounts(dates, entries) {
+  const out = []
+  ;(dates || []).forEach(function (raw) {
+    const d = String(raw).slice(0, 10)
+    const hit = (entries || []).filter(function (e) { return (!e.from || e.from <= d) && (!e.to || d <= e.to) })
+      .sort(function (a, b) { return String(b.from || '').localeCompare(String(a.from || '')) })[0]
+    const name = hit ? hit.level : ''
+    const row = out.find(function (x) { return x.name === name })
+    if (row) row.count++; else out.push({ name: name, count: 1 })
+  })
+  return out
 }

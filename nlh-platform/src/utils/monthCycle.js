@@ -69,36 +69,28 @@ export function monthBlocks(dates, anchor, size) {
 // What the CI is paid for a child's months, for one payroll month.
 //   all:  every class the child had     ci: the classes this CI took of them (not as a substitute)
 //   anchor: month start                 month: 'YYYY-MM' being paid
-//   stillTeaching: the CI is active and the child is on one of their batches right now
-// The CI's share of a month = the classes THEY took ÷ 22, at their own rate. It is payable
-//   • in the month the 22nd class falls, when the CI taught up to the end of it; or
-//   • in the month of the CI's last class, when they stopped before it was complete (pro-rata).
-// A month still running while the CI carries on is not payable yet — it is listed as in progress.
-// Returns { items: [{ from, to, count, total, complete, spill }], open: { start, count, ciCount } | null }
+// The CI is paid as the classes are taken: in a payroll month, their share is the classes THEY took in that calendar month
+// that count towards a child's 22 (classes after the 22nd are free and not paid), ÷ 22, at their own rate. So a month that
+// spills across two calendar months is paid part in each, a running month is paid for what has been taken so far, and in
+// total the CI never receives more than one month's rate for a child's month.
+// Returns { items: [{ from, to, count, total, complete, spill, completedOn }], open: { start, count, ciCount } | null }
+//   `open` is the child's running month (not yet at 22), for the "month running" note.
 export function monthPayItems(ctx) {
   const c = ctx || {}
   const ci = uniqSorted(c.ci)
   const res = monthBlocks(c.all, c.anchor)
   const items = []
-  const lastDate = ci[ci.length - 1] || ''
-  res.blocks.forEach(function (b) {
-    const mine = b.dates.filter(function (d) { return ci.includes(d) })
+  const groups = res.blocks.map(function (b) { return { dates: b.dates, block: b } })
+  if (res.open) groups.push({ dates: res.open.dates, block: null })
+  groups.forEach(function (g) {
+    const mine = g.dates.filter(function (d) { return ci.includes(d) && d.slice(0, 7) === c.month })
     if (!mine.length) return
-    const lastMine = mine[mine.length - 1]
-    const stoppedInside = lastMine < b.completedOn && !c.stillTeaching && lastMine === lastDate
-    const payMonth = stoppedInside ? lastMine.slice(0, 7) : b.payMonth
-    if (payMonth !== c.month) return
-    items.push({ from: b.start, to: stoppedInside ? lastMine : b.completedOn, count: mine.length, total: MONTH_SESSIONS, complete: !stoppedInside, spill: b.spill })
+    items.push({ from: mine[0], to: mine[mine.length - 1], count: mine.length, total: MONTH_SESSIONS, complete: !!g.block, spill: g.block ? g.block.spill : false, completedOn: g.block ? g.block.completedOn : '' })
   })
   let open = null
   if (res.open) {
     const mine = res.open.dates.filter(function (d) { return ci.includes(d) })
-    if (mine.length) {
-      const lastMine = mine[mine.length - 1]
-      if (!c.stillTeaching) {
-        if (lastMine.slice(0, 7) === c.month) items.push({ from: res.open.start, to: lastMine, count: mine.length, total: MONTH_SESSIONS, complete: false, spill: false })
-      } else open = { start: res.open.start, count: res.open.count, ciCount: mine.length }
-    }
+    if (mine.length) open = { start: res.open.start, count: res.open.count, ciCount: mine.length }
   }
   return { items: items, open: open }
 }

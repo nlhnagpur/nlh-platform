@@ -7,7 +7,7 @@ export const PAYROLL_ACTIONS = {
   basis_change: 'The latest appointment in force applies to the whole month. If part of the month should be paid on the earlier basis, edit the amounts or add a line below, and note why.',
   recalculated: 'Attendance, batches or appointments changed since this payroll was saved. Check the lines against the new calculation (Reset to calculated shows it), then save again — or leave as is if your figure is right.',
   substitute_classes: 'The amounts for substitute classes are approximate, worked out from this CI’s own appointment for the programme (zero where it cannot be estimated). Agree the figure and type it over.',
-  month_in_progress: 'A month is 22 classes. These children are part-way through one; it is paid in the month their 22nd class falls, so it is not on this month\'s pay yet.',
+  month_in_progress: 'A month is 22 classes. These children are part-way through one: the classes taken so far are paid on this sheet, and the rest are paid as they are taken.',
   leaving_pro_rata: 'These children are part-way through a level. The leaving CI is paid for the classes they took (the share of the course completed under them); the takeover CI is paid the rest at completion. Adjust the amounts if you agreed something different.',
   cycle_in_progress: 'Nothing to do now. A cycle is paid when it completes (25 classes), or pro-rata if the student leaves. It will appear as a line in the month it started.',
   posted_differs: 'This month is already posted to the accounts, so nothing changes automatically. If the new calculation is right, reopen the month (until it is paid) or post the difference as an adjustment next month.',
@@ -37,8 +37,7 @@ export function payrollCheckIssues(input) {
     add('error', 'no_appointment', 'No appointment covers ' + u.course + ' (' + u.batch + ') for ' + input.month + ', so nothing is calculated for those students.')
   })
 
-  // ₹0 is expected while every child's month is still running — it is explained by the "not due yet" note below
-  if ((input.classesTaken || 0) > 0 && (input.classPay || 0) === 0 && !(input.unmatched || []).length && !(input.monthOpen || []).length) {
+  if ((input.classesTaken || 0) > 0 && (input.classPay || 0) === 0 && !(input.unmatched || []).length) {
     add('warn', 'zero_pay', name + ' took ' + input.classesTaken + ' class(es) this month but the calculation pays ₹0 for them.')
   }
 
@@ -61,7 +60,7 @@ export function payrollCheckIssues(input) {
   })
 
   if ((input.monthOpen || []).length) {
-    add('info', 'month_in_progress', 'Not due yet (month running): ' + input.monthOpen.map(function (x) { return x.name + ' ' + x.count + ' of 22' + (x.ciCount ? ' (' + name + ' has taken ' + x.ciCount + ' → ₹' + Math.round(x.accrued || 0).toLocaleString('en-IN') + ' when it completes)' : '') }).join('; ') + '.')
+    add('info', 'month_in_progress', 'Month running: ' + input.monthOpen.map(function (x) { return x.name + ' ' + x.count + ' of 22' }).join(', ') + '.')
   }
   if ((input.levelInProgress || 0) > 0) {
     add('info', 'leaving_pro_rata', name + ' has left: ' + input.levelInProgress + ' child' + (input.levelInProgress !== 1 ? 'ren are' : ' is') + ' part-way through a level and ' + (input.levelInProgress !== 1 ? 'are' : 'is') + ' paid pro-rata for the classes taken.')
