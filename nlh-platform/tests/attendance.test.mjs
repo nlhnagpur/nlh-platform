@@ -37,16 +37,41 @@ test('countCycleDays: Mon-Fri over Oct 1 -> Nov 1 2026', () => {
   assert.equal(countCycleDays('2026-10-01', ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']), 22)
 })
 
-test('computeCycle: target excludes declared holidays; unmarked is not absent', () => {
+test('computeCycle: a month is 22 classes held; holidays are not classes; S = P + A + U', () => {
   const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
   const ss = sessions('2026-10-01', '2026-10-31', ['2026-10-02'])
   const att = new Map()
   ss.filter(s => !s.is_holiday && s.session_date <= '2026-10-09').forEach((s, i) => att.set(s.id, i % 2 === 0))
   const c = computeCycle(en, ss, att, '', '2026-10-09')
-  assert.equal(c.target, 21)              // 22 weekdays - 1 holiday
-  assert.equal(c.due, '2026-11-01')
-  assert.equal(c.end, '2026-10-31')
-  assert.equal(c.spa.S, c.spa.P + c.spa.A + c.spa.U)      // S = P + A + U invariant
+  assert.equal(c.target, 22)
+  assert.equal(c.held, 6)                // 1,5,6,7,8,9 Oct — 2 Oct is a holiday
+  assert.equal(c.complete, false)
+  assert.equal(c.spa.S, c.spa.P + c.spa.A + c.spa.U)
+})
+
+test('computeCycle: complete on the 22nd class; the next month starts on the 1st when it finished in its own month', () => {
+  const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
+  const c = computeCycle(en, sessions('2026-10-01', '2026-10-31'), new Map(), '', '2026-10-31')
+  assert.equal(c.complete, true)
+  assert.equal(c.dueOn, '2026-10-30')    // the 22nd weekday of October
+  assert.equal(c.held, 22)
+  assert.equal(c.nextStart, '2026-11-01')
+})
+
+test('computeCycle: a month that spills over completes on its 22nd class and the next starts the day after', () => {
+  const en = { cycle_started_at: '2026-10-15', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
+  const c = computeCycle(en, sessions('2026-10-15', '2026-11-30'), new Map(), '', '2026-11-30')
+  assert.equal(c.complete, true)
+  assert.ok(c.dueOn.startsWith('2026-11'))
+  const d = new Date(c.dueOn + 'T00:00:00'); d.setDate(d.getDate() + 1)
+  assert.equal(c.nextStart, d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))
+})
+
+test('computeCycle: a running month projects when its 22nd class will fall', () => {
+  const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
+  const c = computeCycle(en, sessions('2026-10-01', '2026-10-09'), new Map(), '', '2026-10-09')
+  assert.equal(c.complete, false)
+  assert.equal(c.dueOn, '2026-10-30')    // 22 weekdays from 1 Oct
 })
 
 test('computeCycle: session with no attendance row counts as U (not marked), never as A', () => {
@@ -58,24 +83,11 @@ test('computeCycle: session with no attendance row counts as U (not marked), nev
   assert.equal(c.spa.A, 0)
 })
 
-test('computeCycle: personal no-class days come off the target', () => {
+test('computeCycle: personal no-class days are not classes for the student', () => {
   const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
-  const base = computeCycle(en, sessions('2026-10-01', '2026-10-31'), new Map(), '', '2026-10-31')
-  const withN = computeCycle(en, sessions('2026-10-01', '2026-10-31'), new Map(), '', '2026-10-31', new Set(['2026-10-05']))
-  assert.equal(withN.target, base.target - 1)
-})
-
-test('computeCycle: Saturday revision only makes up missed weekday classes', () => {
-  const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
-  const ss = sessions('2026-10-01', '2026-10-09')
-  ss.push({ id: 'sat', session_date: '2026-10-03', is_holiday: false })
-  const att = new Map()
-  ss.filter(s => s.id !== 'sat').forEach(s => att.set(s.id, true))
-  att.set(ss[0].id, false)               // one absence
-  att.set('sat', true)                   // Saturday revision attended
-  const c = computeCycle(en, ss, att, '', '2026-10-09')
-  assert.equal(c.makeUp, 1)
-  assert.equal(c.satRevision, true)
+  const base = computeCycle(en, sessions('2026-10-01', '2026-10-09'), new Map(), '', '2026-10-09')
+  const withN = computeCycle(en, sessions('2026-10-01', '2026-10-09'), new Map(), '', '2026-10-09', new Set(['2026-10-05']))
+  assert.equal(withN.held, base.held - 1)
 })
 
 test('cycleAnchor: falls back to enrolled_at, then null', () => {

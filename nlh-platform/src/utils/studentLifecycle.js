@@ -7,6 +7,8 @@
 // When Saturday is NOT one of the student's class days, Saturday classes are
 // revision, included in the fee: they don't raise the target, and count only
 // to make up classes the student missed.
+import { monthBlocks, nextMonthStart, MONTH_SESSIONS } from './monthCycle.js'
+
 const RENEW_SOON_DAYS = 5
 
 function isoDay(d) {
@@ -96,61 +98,62 @@ export function countCycleDays(startIso, names) {
   return n
 }
 
-// Progress through one monthly cycle.
-//   sessions    batch_sessions rows { id, session_date, is_holiday } for the student's batch
+// Progress through one monthly cycle — a month is MONTH_SESSIONS (22) classes (utils/monthCycle.js).
+//   sessions    batch_sessions rows { id, session_date, is_holiday } for the student's batches (every batch they were on)
 //   attendance  Map(session_id -> attended boolean) for this student's enrolment.
 //               A session with no entry is "not marked" — attendance was never
 //               recorded — which is not the same thing as "absent".
-// target  = the student's class days in [start, due) minus declared holidays
-// done    = regular classes attended + Saturday revision classes attended, the
-//           revision ones only up to the number of regular classes the student
-//           was marked ABSENT for (capped at target). Not-marked classes aren't
-//           counted either way — they're surfaced so attendance gets filled in.
-//           Saturday is a regular class, not revision, for a student who has
-//           Saturday as a class day; likewise Sunday only counts for a student
-//           who has Sunday as a class day.
+// The month starts on the stored cycle start (set at enrolment and at each renewal) and is complete on the 22nd class
+// held for the student: Mon–Fri or Mon–Sat, declared holidays and the student's own off days left out. A class that
+// was held counts whether the student came or not — attendance is shown beside it (S sessions, P present, A absent,
+// U not marked) but does not change the count.
+//   complete    the 22nd class has been held — the next month is due (renew)
+//   dueOn       the day the month is / was complete (the 22nd class; projected from the schedule while it runs)
+//   nextStart   the day the next month starts (see monthCycle: the 1st of next month, or the day after if it spilled over)
 export function computeCycle(en, sessions, attendance, scheduleDays, today, noClass) {
   const start = cycleAnchor(en)
   if (!start) return null
-  const due = addOneMonth(start)
   const todayStr = today || todayIso()
   const sched = cycleDows(en.cycle_days, scheduleDays)
   const att = attendance || new Map()
-  // Dates this student has no class (a personal off day): not a class for them,
-  // so out of their target, sessions held and absences.
   const nc = noClass || new Set()
-  const inWindow = (sessions || []).filter(function (s) { return s.session_date >= start && s.session_date < due })
-  const holidayDates = new Set(inWindow.filter(function (s) { return s.is_holiday }).map(function (s) { return s.session_date }))
-
-  let target = 0
-  for (let d = start; d < due; d = nextDay(d)) {
-    if (sched.has(dowOf(d)) && !holidayDates.has(d) && !nc.has(d)) target++
-  }
-
-  const ran = inWindow.filter(function (s) { return !s.is_holiday && s.session_date <= todayStr && !nc.has(s.session_date) })
-  const weekday = ran.filter(function (s) { const w = dowOf(s.session_date); return (w >= 1 && w <= 5) || sched.has(w) })
-  const saturday = ran.filter(function (s) { return dowOf(s.session_date) === 6 && !sched.has(6) })
-  const attendedWeekday = weekday.filter(function (s) { return att.get(s.id) === true }).length
-  const absent = weekday.filter(function (s) { return att.get(s.id) === false }).length
-  const unmarked = weekday.filter(function (s) { return !att.has(s.id) }).length
-  const attendedSat = saturday.filter(function (s) { return att.get(s.id) === true }).length
-  const makeUp = Math.min(absent, attendedSat)
-  // Plain tally of every class that ran in the cycle so far (Saturday revision
-  // included; Sunday classes only for a student who has Sunday as a class
-  // day): S sessions, P present, A absent, U not marked. S = P + A + U.
-  const counted = ran.filter(function (s) { return dowOf(s.session_date) !== 0 || sched.has(0) })
+  const all = sessions || []
+  const holidayDates = new Set(all.filter(function (s) { return s.is_holiday }).map(function (s) { return String(s.session_date).slice(0, 10) }))
+  const ran = all.filter(function (s) {
+    const d = String(s.session_date).slice(0, 10)
+    return !s.is_holiday && d >= start && d <= todayStr && !nc.has(d) && (dowOf(d) !== 0 || sched.has(0))
+  })
+  const byDate = {}
+  ran.forEach(function (s) { const d = String(s.session_date).slice(0, 10); if (!byDate[d] || (!att.has(byDate[d].id) && att.has(s.id))) byDate[d] = s })
+  const held = Object.keys(byDate).sort()
+  const r = monthBlocks(held, start)
+  const done = r.blocks.length ? r.blocks[0] : null
+  const inMonth = done ? done.dates : (r.open ? r.open.dates : [])
+  const counted = inMonth.map(function (d) { return byDate[d] })
   const sP = counted.filter(function (s) { return att.get(s.id) === true }).length
   const sA = counted.filter(function (s) { return att.get(s.id) === false }).length
+
+  // when the 22nd class falls: the day it was held, or projected from the class days still to come
+  let dueOn = done ? done.completedOn : ''
+  if (!dueOn) {
+    let need = MONTH_SESSIONS - inMonth.length
+    const weekly = sched.size === 7 ? new Set([1, 2, 3, 4, 5, 6]) : sched   // no schedule recorded: Mon–Sat
+    let d = held.length && held[held.length - 1] >= todayStr ? held[held.length - 1] : todayStr
+    for (let i = 0; i < 150 && need > 0; i++) {
+      d = nextDay(d)
+      if (weekly.has(dowOf(d)) && !holidayDates.has(d) && !nc.has(d)) need--
+    }
+    dueOn = need > 0 ? '' : d
+  }
+  const nextStart = dueOn ? nextMonthStart(start, dueOn) : addOneMonth(start)
   return {
-    start: start, due: due, end: prevDay(due), target: target,
-    done: Math.min(target, attendedWeekday + makeUp),
-    held: weekday.length, attendedWeekday: attendedWeekday, attendedSat: attendedSat,
-    absent: absent, unmarked: unmarked, makeUp: makeUp,
-    // S sessions held for this student, P present, A absent, U not marked
-    // (S = P + A + U), N days with no class for them.
-    spa: { S: counted.length, P: sP, A: sA, U: counted.length - sP - sA, N: Array.from(nc).filter(function (d) { return d >= start && d < due && d <= todayStr }).length },
+    start: start, due: dueOn || addOneMonth(start), end: dueOn || prevDay(addOneMonth(start)), dueOn: dueOn, nextStart: nextStart, complete: !!done,
+    target: MONTH_SESSIONS, done: Math.min(MONTH_SESSIONS, inMonth.length), held: inMonth.length,
+    attendedWeekday: sP, attendedSat: 0, absent: sA, unmarked: counted.length - sP - sA, makeUp: 0,
+    // S sessions held for this student, P present, A absent, U not marked (S = P + A + U), N days with no class for them.
+    spa: { S: counted.length, P: sP, A: sA, U: counted.length - sP - sA, N: Array.from(nc).filter(function (d) { return d >= start && d <= todayStr }).length },
     days: CYCLE_DAY_NAMES.filter(function (n) { return sched.has(DOW_KEYS[n]) }),
-    satRevision: !sched.has(6),
+    satRevision: false,
   }
 }
 
@@ -274,9 +277,10 @@ export function levelSessionCounts(enrolments, datesByEnr) {
 
 // Whether a monthly enrolment is mid-cycle (renewed and not yet due again) —
 // the case where a level change should normally keep the cycle.
-export function cycleInProgress(en, today) {
+export function cycleInProgress(en, today, cycle) {
   const t = String(today || todayIso()).slice(0, 10)
   if (!isMonthlyActive(en)) return false
+  if (cycle) return !cycle.complete
   const anchor = cycleAnchor(en)
   if (!anchor) return false
   const due = addOneMonth(anchor)
@@ -288,12 +292,15 @@ export function isMonthlyActive(en) {
 }
 
 // { due, daysLeft, state: 'overdue' | 'soon' | 'ok' } for a monthly enrolment.
-export function renewalInfo(en, today) {
+// With the computed cycle (computeCycle) the renewal is due when the month's 22nd class is held; without it
+// (a screen that has not loaded classes) it falls back to the same date next month.
+export function renewalInfo(en, today, cycle) {
   const anchor = cycleAnchor(en)
   if (!anchor) return null
-  const due = addOneMonth(anchor)
+  const due = cycle && cycle.dueOn ? cycle.dueOn : addOneMonth(anchor)
+  const nextStart = cycle && cycle.nextStart ? cycle.nextStart : due
   const daysLeft = daysBetween(today || todayIso(), due)
-  return { due: due, daysLeft: daysLeft, state: daysLeft < 0 ? 'overdue' : daysLeft <= RENEW_SOON_DAYS ? 'soon' : 'ok' }
+  return { due: due, nextStart: nextStart, daysLeft: daysLeft, state: daysLeft < 0 ? 'overdue' : daysLeft <= RENEW_SOON_DAYS ? 'soon' : 'ok' }
 }
 
 export function enrolmentBucket(en) {
@@ -308,7 +315,7 @@ export function certPending(en) {
 
 // Why a student needs attention. attMap = { [enrolment_id]: attended count }.
 // Returns [{ key, label, tone: 'red' | 'amber' }].
-export function attentionReasons(student, attMap) {
+export function attentionReasons(student, attMap, cycleMap) {
   const out = []
   const ens = student.enrollments || []
   const today = todayIso()
@@ -316,7 +323,7 @@ export function attentionReasons(student, attMap) {
   const overdue = [], soon = []
   ens.forEach(function (en) {
     if (!isMonthlyActive(en)) return
-    const r = renewalInfo(en, today)
+    const r = renewalInfo(en, today, (cycleMap || {})[en.id])
     if (!r) return
     if (r.state === 'overdue') overdue.push(r)
     else if (r.state === 'soon') soon.push(r)

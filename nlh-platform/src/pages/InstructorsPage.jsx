@@ -8,6 +8,7 @@ import ModalHeader from '../components/ModalHeader'
 import AttendanceSheet from '../components/AttendanceSheet'
 import { ciCyclePayroll, CI_CYCLE_SESSIONS, appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox, levelSharePay, levelStartDate } from '../utils/ciPayroll'
 import { fetchAllRows, todayIso } from '../utils/studentLifecycle'
+import { monthPayItems } from '../utils/monthCycle'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
 import CiLeavesDialog from '../components/CiLeavesDialog'
@@ -42,7 +43,7 @@ function avatar(name) {
 
 const REMUN_LABELS = {
   per_student:       'Per Student (on completion)',
-  per_student_month: 'Per Student / Month',
+  per_student_month: 'Per Student / Month (22 classes)',
   per_student_cycle: 'Per Student / Cycle (25 classes)',
   per_session:       'Per Session (1 hr)',
   monthly:           'Monthly Fixed',
@@ -85,6 +86,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
+  const [payrollChildAnchors, setPayrollChildAnchors] = useState({})   // child|programme → the day their first 22-class month starts
   const [payrollChildDates, setPayrollChildDates] = useState({})   // child|programme → { all, ci } class dates across ALL their batches
   const [payrollSubs, setPayrollSubs] = useState([])               // classes this CI took as a substitute, with the batch's programme and size
   const [payrollBatchDates, setPayrollBatchDates] = useState({})   // batchId → { all: dates of every class held, ci: dates this CI took }
@@ -225,6 +227,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       var activeStudentMap = {}   // batchId → students on the batch at any point this month (for per_student_month)
       var batchDatesMap = {}      // batchId → dates of classes held / taken by this CI, to re-count when a student's dates are edited
       var childDatesMap = {}      // child|programme → class dates across every batch the child was on
+      var childAnchorMap = {}     // child|programme → the day their first month starts (enrolment / cycle start)
       var subList = []            // substitute classes this CI took this month
       var rosterMap = {}          // batchId → each student's level and dates, for batches that carry no level of their own
 
@@ -295,6 +298,15 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             var k = childKey(e.student_id, e.skus && e.skus.courses && e.skus.courses.group_name)
             ;(doneByChild[k] = doneByChild[k] || []).push(String(e.completed_at).slice(0, 10))
           })
+          // a child's 22-class months run from the day their first enrolment in the programme started
+          var { data: enrAll } = await sb.from('enrollments')
+            .select('student_id, enrolled_at, cycle_started_at, skus(courses(group_name))').in('student_id', studentIds)
+          ;(enrAll || []).forEach(function (e) {
+            var k = childKey(e.student_id, e.skus && e.skus.courses && e.skus.courses.group_name)
+            var a = String(e.cycle_started_at || e.enrolled_at || '').slice(0, 10)
+            if (a && (!childAnchorMap[k] || a < childAnchorMap[k])) childAnchorMap[k] = a
+          })
+          Object.keys(childAnchorMap).forEach(function (k) { if (childAnchorMap[k] < rangeStart) rangeStart = childAnchorMap[k] })
           Object.keys(rosterMap).forEach(function (bid) {
             rosterMap[bid].forEach(function (en) {
               if (!en.student_id || !en.course) return
@@ -473,6 +485,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       setPayrollRoster(rosterMap)
       setPayrollBatchDates(batchDatesMap)
       setPayrollChildDates(childDatesMap)
+      setPayrollChildAnchors(childAnchorMap)
       setPayrollSubs(subList)
       setPayrollOverride(ovRow || null)
       setOverrideEdit(false)
@@ -1126,7 +1139,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                         onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_mode: e.target.value } }) }}>
                                         <option value="per_session">Per Session (₹ / hr)</option>
                                         <option value="per_student">Per Student (₹ on completion)</option>
-                                        <option value="per_student_month">Per Student / Month (₹)</option>
+                                        <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
                         <option value="per_student_cycle">Per Student / Cycle of 25 classes (₹)</option>
                                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                                       </select>
@@ -1278,7 +1291,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     <label>Remuneration Mode *
                       <select value={newAppt.remuneration_mode} onChange={nfd('remuneration_mode')}>
                         <option value="per_student">Per Student (₹ on completion)</option>
-                        <option value="per_student_month">Per Student / Month (₹)</option>
+                        <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
                         <option value="per_student_cycle">Per Student / Cycle of 25 classes (₹)</option>
                         <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
@@ -1647,6 +1660,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var perSessionRows      = []
               var perStudentRows      = []
               var perStudentMonthRows = []
+              var monthCourses        = {}   // programme → appointment, for programmes paid per student per 22-class month
               var monthlyRows         = []
 
               var unmatched = []   // levels on a batch with no appointment covering them this month
@@ -1703,7 +1717,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     inProgressLevels.push({ batchId: batchId, batchName: data.batch?.name || '—', course: courseName(cid), rate: ap.remuneration_rate || 0, members: st.liveMembers })
                   }
                   if (ap.remuneration_mode === 'per_student' && st.completions === 0) return
-                  if (ap.remuneration_mode === 'per_student_month' && st.active === 0) return
+                  if (ap.remuneration_mode === 'per_student_month') { monthCourses[cid] = ap; return }   // paid per 22-class month, see below
                   push(mkRow(ap, courseName(cid), '', st.completions, st.active, ap.remuneration_mode === 'per_student' ? st.doneMembers : st.activeMembers))
                 })
                 // Paid per session and the roster doesn't identify a course (e.g. an empty batch):
@@ -1783,7 +1797,35 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 })
               }
               studentLines(perStudentRows, 'pst:', 'done')
-              studentLines(perStudentMonthRows, 'psm:', 'month')
+              // Per student / month: a month is 22 classes. The CI is paid, at their own rate, for the classes THEY took in each
+              // of the child's months, in the month the 22nd class falls (or, if they stop part-way, in the month of their last
+              // class, pro-rata). A month still running is listed as "not due yet".
+              var monthOpenList = []
+              var seenMonthChild = {}
+              Object.keys(payrollRoster).forEach(function (bid) {
+                ;(payrollRoster[bid] || []).forEach(function (en) {
+                  if (!en.student_id || !en.course || !monthCourses[en.course]) return
+                  var ck = childKey(en.student_id, en.course)
+                  if (seenMonthChild[ck]) return
+                  seenMonthChild[ck] = true
+                  var cd = payrollChildDates[ck]
+                  if (!cd) return
+                  var ap = monthCourses[en.course]
+                  var rate = ap.remuneration_rate || 0
+                  var stillTeaching = !ciGoneNow && Object.keys(payrollRoster).some(function (b2) {
+                    return (payrollRoster[b2] || []).some(function (x) { return x.student_id === en.student_id && x.course === en.course && !x.completionOnly && !x.removed_at && !x.completed_at })
+                  })
+                  var res = monthPayItems({ all: cd.all, ci: cd.ci, anchor: payrollChildAnchors[ck] || '', month: payrollMonth, stillTeaching: stillTeaching })
+                  res.items.forEach(function (it) {
+                    calcLines.push({
+                      key: 'mon:' + ck + ':' + it.from, label: en.student, amount: levelSharePay(rate, it.count, it.total),
+                      detail: en.course + ' · ₹' + rate.toLocaleString('en-IN') + ' a month (22 classes) · ' + (it.complete ? 'month completed ' + fmtDate(it.to) : 'stopped after ' + it.count + ' classes — pro-rata'),
+                      meta: { kind: 'month', course: en.course, sid: 'child:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate },
+                    })
+                  })
+                  if (res.open) monthOpenList.push({ name: en.student, count: res.open.count })
+                })
+              })
               // a CI who has left: levels still running are paid for the classes they took, in the month of their last class with the child
               var levelPartCount = 0
               inProgressLevels.forEach(function (lv) {
@@ -1838,13 +1880,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
               var fixedKeys = { office: 1, conv: 1, inc: 1, misc: 1 }
               var calcTotal = calcLines.reduce(function (t, l) { return t + (Number(l.amount) || 0) }, 0)
               var classPay = calcLines.filter(function (l) { return !fixedKeys[l.key] }).reduce(function (t, l) { return t + (Number(l.amount) || 0) }, 0)
-              var usedCourses = Array.from(new Set(perSessionRows.concat(perStudentRows, perStudentMonthRows).map(function (x) { return x.course }).filter(Boolean)))
+              var usedCourses = Array.from(new Set(perSessionRows.concat(perStudentRows, perStudentMonthRows).map(function (x) { return x.course }).filter(Boolean).concat(Object.keys(monthCourses))))
               var checkIssues = payrollCheckIssues({
                 month: payrollMonth, ciName: instructor.full_name, classesTaken: payrollSessions.length, classPay: classPay,
-                unmatched: unmatched, appts: payrollAppts, usedCourses: usedCourses, inProgress: payrollCycle.inProgress, subs: subSummary, levelInProgress: levelPartCount, run: payrollRun, calcTotal: calcTotal,
+                unmatched: unmatched, appts: payrollAppts, usedCourses: usedCourses, inProgress: payrollCycle.inProgress, subs: subSummary, levelInProgress: levelPartCount, monthOpen: monthOpenList, run: payrollRun, calcTotal: calcTotal,
               })
 
-              if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0 && perStudentMonthRows.length === 0 && payrollCycle.rows.length === 0 && payrollCycle.inProgress.length === 0 && payrollSubs.length === 0 && conveyance === 0 && officeSalary === 0 && incentive === 0 && misc === 0) {
+              if (perSessionRows.length === 0 && monthlyRows.length === 0 && perStudentRows.length === 0 && perStudentMonthRows.length === 0 && Object.keys(monthCourses).length === 0 && payrollCycle.rows.length === 0 && payrollCycle.inProgress.length === 0 && payrollSubs.length === 0 && conveyance === 0 && officeSalary === 0 && incentive === 0 && misc === 0) {
                 return (
                   <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text3)', fontSize: 13 }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>💰</div>
@@ -2406,7 +2448,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                         onChange={function (e) { updateBlock(idx, 'remuneration_mode', e.target.value) }}>
                         <option value="per_session">Per Session (₹ / hour)</option>
                         <option value="per_student">Per Student (₹ on completion)</option>
-                        <option value="per_student_month">Per Student / Month (₹)</option>
+                        <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
                         <option value="per_student_cycle">Per Student / Cycle of 25 classes (₹)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>

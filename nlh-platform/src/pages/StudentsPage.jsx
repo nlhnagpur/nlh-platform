@@ -973,10 +973,10 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
     // Courses that are due / overdue start ticked; if none are, all are.
     const rows = {}
     localEnrollments.filter(isMonthlyActive).forEach(function (en) {
-      const ri = renewalInfo(en)
+      const ri = renewalInfo(en, undefined, cycleProgress[en.id])
       rows[en.id] = {
         on: preselectId ? en.id === preselectId : (!!ri && ri.state !== 'ok'),
-        date: ri ? ri.due : todayIso(),
+        date: ri ? ri.nextStart : todayIso(),
         fee: String(en.fee_amount || 0),
         // This student's own days, else the batch's, else all seven.
         days: parseCycleDays(en.cycle_days, batchAssignments[en.id] && batchAssignments[en.id].batches && batchAssignments[en.id].batches.schedule_days),
@@ -1132,8 +1132,8 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
     setChangeDate(todayIso())
     // A monthly course renewed and still mid-cycle has already paid for this
     // month — default to changing only the level, not restarting the cycle.
-    setChangeKeepCycle(cycleInProgress(en))
-    setChangeComplete(cycleInProgress(en) && !en.completed_at)
+    setChangeKeepCycle(cycleInProgress(en, undefined, cycleProgress[en.id]))
+    setChangeComplete(cycleInProgress(en, undefined, cycleProgress[en.id]) && !en.completed_at)
     setChangeCompleteDate(lastAttendedDate[en.id] || todayIso())
     setChangeFee('')
     setChangingEn(en)
@@ -1161,7 +1161,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
     setChangeSaving(true)
     // The new level starts on the chosen date: that is where its monthly cycle
     // (and so its class target and renewal date) begins.
-    const keepCycle = changeKeepCycle && cycleInProgress(changingEn)
+    const keepCycle = changeKeepCycle && cycleInProgress(changingEn, undefined, cycleProgress[changingEn.id])
     const patch = levelChangePatch(newSkuId, { keepCycle: keepCycle, startDate: changeDate })
     // Mid-cycle change: set the monthly fee that applies from the NEXT renewal.
     // Only this enrolment's own fee fields move — never fee_total, invoices or payments.
@@ -2175,7 +2175,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                   })
                 }
                 if (!done && isMonthlyActive(en)) {
-                  const r = renewalInfo(en)
+                  const r = renewalInfo(en, undefined, cycleProgress[en.id])
                   if (r && r.state !== 'ok') {
                     items.push({
                       key: 'renew-' + en.id, tone: r.state === 'overdue' ? 'red' : 'amber',
@@ -2233,7 +2233,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
             {localEnrollments.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
                 {localEnrollments.some(isMonthlyActive) && (function () {
-                  const dueN = localEnrollments.filter(function (e) { if (!isMonthlyActive(e)) return false; const ri = renewalInfo(e); return ri && ri.state !== 'ok' }).length
+                  const dueN = localEnrollments.filter(function (e) { if (!isMonthlyActive(e)) return false; const ri = renewalInfo(e, undefined, cycleProgress[e.id]); return ri && ri.state !== 'ok' }).length
                   return (
                     <button className="btn-s" style={{ fontSize: 12, fontWeight: 600, color: '#1D4ED8', background: '#DBEAFE', borderColor: '#93C5FD' }}
                       onClick={function () { openRenewCycle() }}
@@ -2390,7 +2390,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                   const cycle        = isMonthlyRunning ? (cycleProgress[en.id] || computeCycle(en, [], null, '')) : null
                   const cycleHeld    = cycle ? cycle.done : 0
                   const cycleTarget  = cycle ? cycle.target : 0
-                  const renewal      = isMonthlyRunning ? renewalInfo(en) : null
+                  const renewal      = isMonthlyRunning ? renewalInfo(en, undefined, cycleProgress[en.id]) : null
                   const monthEnding  = !!renewal && renewal.state !== 'ok'
                   const kitItems     = kitDefs[en.sku_id] || []
                   const kitGivenForEnr = kitGiven[en.id] || {}
@@ -2472,9 +2472,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                               <>
                                 {/* Progress + the cycle's own dates, so the target isn't a
                                     mystery number: it's the student's class days inside this range. */}
-                                <span title={'Cycle ' + fmtDate(cycle.start) + ' to ' + fmtDate(cycle.end) + ': ' + cycleTarget + ' classes (' + cycle.days.join(', ') + ') after declared holidays.' + (cycle.satRevision ? ' Saturday revision classes are included in the fee and only count to make up classes the student was marked absent for.' : '')}
+                                <span title={'Month from ' + fmtDate(cycle.start) + ': ' + cycleTarget + ' classes held for the student (Mon–Fri or Mon–Sat, holidays left out). ' + (cycle.complete ? 'Completed on ' + fmtDate(cycle.dueOn) + ' — the next month starts ' + fmtDate(cycle.nextStart) + '.' : (cycle.dueOn ? 'Completes about ' + fmtDate(cycle.dueOn) + '.' : ''))}
                                   style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
-                                  {cycleHeld} / {cycleTarget} this cycle · {shortDay(cycle.start)}–{shortDay(cycle.end)}
+                                  {cycleHeld} / {cycleTarget} this month · {shortDay(cycle.start)}–{shortDay(cycle.end)}
                                 </span>
                                 {/* S sessions held this cycle, P present, A absent, N not
                                     marked (S = P + A + N). Includes Saturday revision. */}
@@ -3340,7 +3340,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                   const r = renewRows[en.id]
                   if (!r) return null
                   const cyc = cycleProgress[en.id]
-                  const ri = renewalInfo(en)
+                  const ri = renewalInfo(en, undefined, cyc)
                   return (
                     <div key={en.id} style={{ border: '1.5px solid ' + (r.on ? 'var(--purple)' : 'var(--border)'), borderRadius: 10, padding: '10px 12px', marginBottom: 8, background: r.on ? 'var(--purple-bg)' : 'var(--bg)' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -3387,7 +3387,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                           <span className="hint" style={{ display: 'block', marginTop: 5 }}>
                             {r.days.length === 0
                               ? 'Pick at least one day.'
-                              : countCycleDays(r.date || todayIso(), r.days) + ' class days to ' + fmtDate(addOneMonth(r.date || todayIso())) + ' (declared holidays come off the target).'}
+                              : 'A month is 22 classes held for the student (Mon–Fri or Mon–Sat, holidays left out). It completes on the 22nd class.'}
                           </span>
                         </div>
                       )}
@@ -3522,13 +3522,13 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                     )}
                   </div>
                 )}
-                {cycleInProgress(changingEn) && (function () {
+                {cycleInProgress(changingEn, undefined, cycleProgress[changingEn.id]) && (function () {
                   const start = cycleAnchor(changingEn)
                   return (
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'var(--purple-bg)', border: '1px solid var(--purple)', font: '600 12px var(--font)', color: 'var(--purple)', cursor: 'pointer' }}>
                       <input type="checkbox" checked={changeKeepCycle} onChange={function (e) { setChangeKeepCycle(e.target.checked) }} style={{ marginTop: 2, accentColor: 'var(--purple)' }} />
                       <span>
-                        Keep the current monthly cycle ({shortDay(start)} – {shortDay(addOneMonth(start))}) — this month's fee is already paid.
+                        Keep the current month ({shortDay(start)} – {shortDay((cycleProgress[changingEn.id] && cycleProgress[changingEn.id].dueOn) || addOneMonth(start))}) — this month's fee is already paid.
                         <span style={{ display: 'block', fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
                           Only the level changes: no new fee; the class count and renewal date stay as they are.
                         </span>
@@ -3536,7 +3536,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                     </label>
                   )
                 })()}
-                {changeKeepCycle && cycleInProgress(changingEn) && changeSkuId && changeSkuId !== changingEn.sku_id && (
+                {changeKeepCycle && cycleInProgress(changingEn, undefined, cycleProgress[changingEn.id]) && changeSkuId && changeSkuId !== changingEn.sku_id && (
                   <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 12 }}>Monthly fee from the next renewal (₹)
                     <input type="number" min="0"
                       value={changeFee !== '' ? changeFee : (changingEn.fee_amount != null ? String(changingEn.fee_amount) : '')}
@@ -3575,14 +3575,14 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                     </div>
                   )
                 })()}
-                {!(changeKeepCycle && cycleInProgress(changingEn)) && (
+                {!(changeKeepCycle && cycleInProgress(changingEn, undefined, cycleProgress[changingEn.id])) && (
                   <label style={{ font: '600 12px var(--font)', color: 'var(--text2)', display: 'block', marginTop: 14 }}>New level starts on
                     <input type="date" value={changeDate} onChange={function (e) { setChangeDate(e.target.value) }} style={{ marginTop: 6, fontSize: 13, width: '100%' }} />
                   </label>
                 )}
                 <p className="hint" style={{ marginTop: 8 }}>
                   Keeps the batch assignment, attendance and certificate history — only the course/level is swapped.
-                  {changeKeepCycle && cycleInProgress(changingEn)
+                  {changeKeepCycle && cycleInProgress(changingEn, undefined, cycleProgress[changingEn.id])
                     ? ' The monthly cycle and its fee are left exactly as they are.'
                     : " A monthly course's new cycle (class target and renewal date) starts from the date above."}
                   {' '}The ticked kit items are issued from stock.
@@ -3590,7 +3590,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
               </div>
               <div className="modal-actions">
                 <button className="btn" onClick={function () { setChangingEn(null) }} disabled={changeSaving}>Cancel</button>
-                <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId || (!changeDate && !(changeKeepCycle && cycleInProgress(changingEn)))}>
+                <button className="btn-p" onClick={saveChangeLevel} disabled={changeSaving || !changeSkuId || (!changeDate && !(changeKeepCycle && cycleInProgress(changingEn, undefined, cycleProgress[changingEn.id])))}>
                   {changeSaving ? 'Saving…' : 'Update'}
                 </button>
               </div>
@@ -5749,7 +5749,7 @@ export default function StudentsPage() {
   // certificate goes out.
   const lifecycle = {}
   students.forEach(function (s) {
-    lifecycle[s.id] = { bucket: studentBucket(s), reasons: attentionReasons(s, attMap) }
+    lifecycle[s.id] = { bucket: studentBucket(s), reasons: attentionReasons(s, attMap, cycleMap) }
   })
 
   const q0 = search.toLowerCase()
@@ -6176,7 +6176,7 @@ export default function StudentsPage() {
                                   const cyc = cycleMap[e.id] || computeCycle(e, [], null, '')
                                   const held = cyc ? cyc.done : 0
                                   const target = cyc ? cyc.target : 0
-                                  const ri = renewalInfo(e)
+                                  const ri = renewalInfo(e, undefined, cyc)
                                   if (ri && ri.state === 'overdue') { txt = 'Overdue ' + (-ri.daysLeft) + 'd · due ' + shortDay(ri.due); color = '#991b1b'; bg = '#fef2f2' }
                                   else if (ri && ri.state === 'soon') { txt = held + '/' + target + ' · renew ' + shortDay(ri.due); color = '#B45309'; bg = '#FEF3C7' }
                                   else if (ri) { txt = held + '/' + target + ' · renews ' + shortDay(ri.due); color = 'var(--text2)'; bg = 'var(--bg2)' }

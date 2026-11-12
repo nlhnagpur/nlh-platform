@@ -198,7 +198,7 @@ export function recountLine(line, from, to, ctx) {
     const ci = countInRange(bd.ci, from, to)
     return { ...line, meta: { ...m, from: from, to: to, count: ci }, amount: ci * (m.rate || 0) }
   }
-  if (m.kind === 'level') {
+  if (m.kind === 'level' || m.kind === 'month') {
     const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
     const ci = countInRange(bd.ci, from, to)
     return { ...line, meta: { ...m, from: from, to: to, count: ci }, amount: levelSharePay(m.rate, ci, m.total) }
@@ -312,6 +312,10 @@ export function sheetRowFor(line, ctx) {
   if (m.kind === 'share') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
     return { particular: label + ' ' + datesByMonth(d), description: prog + m.count + ' of ' + m.total + ' classes taken by the CI', amount: amount }
+  }
+  if (m.kind === 'month') {
+    const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
+    return { particular: label + ' ' + datesByMonth(d), description: prog + m.count + ' of ' + m.total + ' classes of the month taken by the CI', amount: amount }
   }
   if (m.kind === 'level') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
