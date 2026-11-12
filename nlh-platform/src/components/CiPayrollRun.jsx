@@ -5,7 +5,7 @@ import { fmtDate, showToast } from '../utils'
 import { cleanLines, sumLines, linesFromCalc, lineEdited, monthLabel, lastDayOf } from '../utils/ciPayrollRun'
 import { postPayrollAccrual, voidPayrollAccrual } from '../utils/ciAccounting'
 import CiBankPaymentDialog from './CiBankPaymentDialog'
-import { recountLine, nextCycleStart, sheetRowFor } from '../utils/ciPayroll'
+import { recountLine, nextCycleStart, sheetRowsFor } from '../utils/ciPayroll'
 import { printCiPaymentSheet } from './ciPaymentSheet'
 
 function rupees(n) {
@@ -69,7 +69,7 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
 
   function onPrint() {
     const clean = cleanLines(lines)
-    const rows = clean.map(function (l) { return sheetRowFor(l, { datesBySid: datesBySid, shareDates: shareDates }) }).filter(function (r) { return r.amount })
+    const rows = sheetRowsFor(clean, { datesBySid: datesBySid, shareDates: shareDates }).filter(function (r) { return r.amount })
     printCiPaymentSheet({ ciName: instructor.full_name, monthLabel: monthLabel(month), date: (run && run.paid_on) || new Date(), rows: rows })
   }
 
@@ -162,6 +162,7 @@ export default function CiPayrollRun({ instructor, month, calcLines, run, canEdi
                     {l.meta.kind === 'share' ? '· ' + l.meta.count + ' of ' + l.meta.total + ' classes taken by the CI'
                       : l.meta.kind === 'session' ? '· ' + l.meta.count + ' class' + (l.meta.count !== 1 ? 'es' : '') + ' taken'
                       : l.meta.kind === 'fixed' ? '· fixed monthly'
+                      : l.meta.kind === 'month' || l.meta.kind === 'level' ? '· ' + l.meta.count + ' of ' + l.meta.total + ' classes'
                       : '· ' + l.meta.count + ' of ' + l.meta.perCycle + ' classes'}
                   </span>
                 </div>

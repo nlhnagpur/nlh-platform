@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ciPaymentSheetHtml } from '../src/components/ciPaymentSheet.js'
-import { sheetRowFor } from '../src/utils/ciPayroll.js'
+import { sheetRowFor, sheetRowsFor } from '../src/utils/ciPayroll.js'
 
 test('payment sheet: student lines, extra, total and words', () => {
   const dates = ['2026-09-29', '2026-09-30', '2026-10-01']
@@ -52,4 +52,23 @@ test('a month line tells the teacher sessions by level, never "of 22"', async ()
   const row = sheetRowFor({ label: 'Ayesha Shaikh', amount: 1432, meta: { kind: 'month', course: 'Phonics', sid: 'child:x', from: '2026-10-08', to: '2026-10-16', count: 7, total: 22, rate: 1500, levels } }, { shareDates: { 'child:x': { all: [], ci } } })
   assert.equal(row.description, 'Phonics — 5 sessions of Level 2, 2 sessions of Level 3')
   assert.ok(!/22/.test(row.description))
+})
+
+test('the printed sheet joins one child\'s months into one row; the payroll screen keeps them apart', () => {
+  const ci = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12']
+  const ctx = { shareDates: { 'child:p': { all: [], ci } } }
+  const a = { label: 'Parth Chaudhary', amount: 136, meta: { kind: 'month', course: 'Tuitions', sid: 'child:p', from: '2026-11-02', to: '2026-11-04', count: 3, total: 22, rate: 1000, levels: [] } }
+  const b = { label: 'Parth Chaudhary', amount: 182, meta: { kind: 'month', course: 'Tuitions', sid: 'child:p', from: '2026-11-09', to: '2026-11-12', count: 4, total: 22, rate: 1000, levels: [] } }
+  const rows = sheetRowsFor([a, b, { label: 'Conveyance', amount: 500 }], ctx)
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0].amount, 318)
+  assert.equal(rows[0].particular, 'Parth Chaudhary ( Nov-2026, 2,3,4,9,10,11,12 )')
+  assert.equal(rows[0].description, 'Tuitions — 7 sessions')
+  assert.equal(rows[1].particular, 'Conveyance')
+  // levels add up across the joined lines
+  const l2 = { label: 'Ayesha', amount: 273, meta: { kind: 'month', course: 'Phonics', sid: 'child:a', from: '2026-11-02', to: '2026-11-04', count: 3, total: 22, rate: 1500, levels: [{ name: 'Level 2', count: 3 }] } }
+  const l3 = { label: 'Ayesha', amount: 409, meta: { kind: 'month', course: 'Phonics', sid: 'child:a', from: '2026-11-09', to: '2026-11-12', count: 4, total: 22, rate: 1500, levels: [{ name: 'Level 2', count: 1 }, { name: 'Level 3', count: 3 }] } }
+  const r2 = sheetRowsFor([l2, l3], { shareDates: { 'child:a': { all: [], ci } } })
+  assert.equal(r2.length, 1)
+  assert.equal(r2[0].description, 'Phonics — 4 sessions of Level 2, 3 sessions of Level 3')
 })

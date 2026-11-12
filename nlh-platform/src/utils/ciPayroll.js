@@ -290,6 +290,51 @@ export function levelStartDate(completions, focus, courseStarted) {
 
 // ── one printed layout for every kind of line ────────────────────────────────────────
 // Whatever the pay basis, a line prints the same way: PARTICULAR = who/what and the dates of the classes,
+// The sessions a per-month line covers: the CI's class dates inside the line's date range, and — when the child had more
+// than one level in the programme — how many fell in each level (null when that split is not known or the dates were edited).
+function monthParts(line, ctx) {
+  const m = line.meta
+  const sd = ((ctx.shareDates || {})[m.sid] || {}).ci
+  const d = uniqSorted(sd || []).filter(function (x) { return (!m.from || x >= String(m.from).slice(0, 10)) && (!m.to || x <= String(m.to).slice(0, 10)) })
+  const lv = m.levels || []
+  const ok = lv.length > 0 && lv.reduce(function (t, x) { return t + x.count }, 0) === d.length
+  return { dates: d, levels: ok ? lv : null, count: d.length || m.count }
+}
+function levelText(levels, count) {
+  const sess = function (n) { return n + ' session' + (n !== 1 ? 's' : '') }
+  if (!levels || !levels.length) return sess(count)
+  return levels.map(function (x) { return sess(x.count) + (x.name ? ' of ' + x.name : '') }).join(', ')
+}
+
+// The rows of the printed sheet. Lines of the same child's months (one line each on the payroll screen, for NLH) are
+// joined into ONE row for the teacher: the dates and sessions together, the amounts added.
+export function sheetRowsFor(lines, ctx) {
+  const c = ctx || {}
+  const out = []
+  const groups = {}
+  ;(lines || []).forEach(function (l) {
+    const m = l && l.meta
+    if (!m || m.kind !== 'month') { out.push({ row: sheetRowFor(l, c) }); return }
+    const key = m.sid + '|' + (m.course || '')
+    let g = groups[key]
+    if (!g) { g = groups[key] = { label: l.label, prog: m.course ? m.course + ' — ' : '', dates: [], levels: [], plain: false, count: 0, amount: 0 }; out.push({ group: g }) }
+    const p = monthParts(l, c)
+    g.dates = g.dates.concat(p.dates)
+    g.count += p.count
+    g.amount += Math.round(Number(l.amount) || 0)
+    if (!p.levels) g.plain = true
+    else p.levels.forEach(function (x) {
+      const row = g.levels.find(function (y) { return y.name === x.name })
+      if (row) row.count += x.count; else g.levels.push({ name: x.name, count: x.count })
+    })
+  })
+  return out.map(function (o) {
+    if (o.row) return o.row
+    const g = o.group
+    return { particular: g.label + ' ' + datesByMonth(g.dates), description: g.prog + levelText(g.plain ? null : g.levels, uniqSorted(g.dates).length || g.count), amount: g.amount }
+  })
+}
+
 // DESCRIPTION = the programme and what the amount is for. Lines without class dates (extras, deductions)
 // print their label alone.
 //   ctx: { datesBySid, shareDates }
@@ -315,11 +360,8 @@ export function sheetRowFor(line, ctx) {
   }
   if (m.kind === 'month') {
     // the CI sees the sessions taken (and the level each belongs to); the 22-class month is for NLH only
-    const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
-    const lv = (m.levels || [])
-    const ok = lv.length && lv.reduce(function (t, x) { return t + x.count }, 0) === d.length
-    const text = ok ? lv.map(function (x) { return x.count + ' session' + (x.count !== 1 ? 's' : '') + (x.name ? ' of ' + x.name : '') }).join(', ') : plural(d.length || m.count)
-    return { particular: label + ' ' + datesByMonth(d), description: prog + text, amount: amount }
+    const p = monthParts(line, c)
+    return { particular: label + ' ' + datesByMonth(p.dates), description: prog + levelText(p.levels, p.count), amount: amount }
   }
   if (m.kind === 'level') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)

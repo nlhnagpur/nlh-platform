@@ -1761,7 +1761,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     calcLines.push({
                       key: 'mon:' + ck + ':' + it.from, label: en.student, amount: levelSharePay(rate, it.count, it.total),
                       detail: en.course + ' · ₹' + rate.toLocaleString('en-IN') + ' a month (22 classes) · paid as classes are taken; ' + (it.complete ? 'the child\'s month completed ' + fmtDate(it.completedOn) : 'the child\'s month is still running'),
-                      meta: { kind: 'month', course: en.course, sid: 'child:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate, levels: levelCounts(itemDates, levelEntries) },
+                      meta: { kind: 'month', course: en.course, sid: 'child:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate, levels: Array.from(new Set(levelEntries.map(function (x) { return x.level }))).length > 1 ? levelCounts(itemDates, levelEntries) : [] },
                     })
                   })
                   if (res.open) monthOpenList.push({ name: en.student, count: res.open.count, ciCount: res.open.ciCount, accrued: levelSharePay(rate, res.open.ciCount, 22) })
