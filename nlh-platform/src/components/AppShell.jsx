@@ -59,6 +59,7 @@ class PageErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null } }
   static getDerivedStateFromError(error) { return { error } }
   componentDidCatch(error) {
+    console.error('Page error:', error)
     if (isChunkError(error)) {
       const last = Number(sessionStorage.getItem('nlh-chunk-reload') || 0)
       if (Date.now() - last > 10000) {              // at most once / 10s — avoids reload loops
@@ -72,8 +73,17 @@ class PageErrorBoundary extends React.Component {
       return (
         <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text2)' }}>
           <div style={{ fontSize: 34, marginBottom: 10 }}>⚠️</div>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Couldn’t load this page</div>
-          <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 18 }}>A new version may have just been released. Reloading usually fixes it.</div>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{isChunkError(this.state.error) ? 'A new version was just released' : 'Something went wrong on this page'}</div>
+          <div style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 18 }}>
+            {isChunkError(this.state.error)
+              ? 'Reload to get the latest version.'
+              : 'Reloading may fix it. If it keeps happening, please send this line to support:'}
+          </div>
+          {!isChunkError(this.state.error) && (
+            <div style={{ font: '500 11px var(--mono)', color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', margin: '0 auto 16px', maxWidth: 560, wordBreak: 'break-word' }}>
+              {String((this.state.error && this.state.error.message) || this.state.error)}
+            </div>
+          )}
           <button className="btn-p" onClick={function () { window.location.reload() }}>Reload</button>
         </div>
       )
