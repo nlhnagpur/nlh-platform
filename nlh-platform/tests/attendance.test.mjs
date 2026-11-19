@@ -37,7 +37,9 @@ test('countCycleDays: Mon-Fri over Oct 1 -> Nov 1 2026', () => {
   assert.equal(countCycleDays('2026-10-01', ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']), 22)
 })
 
-test('computeCycle: a month is 22 classes held; holidays are not classes; S = P + A + U', () => {
+const everyoneCame = function (ss) { const m = new Map(); ss.forEach(function (x) { m.set(x.id, true) }); return m }
+
+test('computeCycle: a month is 22 sessions ATTENDED; holidays are not classes; S = P + A + U', () => {
   const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
   const ss = sessions('2026-10-01', '2026-10-31', ['2026-10-02'])
   const att = new Map()
@@ -45,33 +47,49 @@ test('computeCycle: a month is 22 classes held; holidays are not classes; S = P 
   const c = computeCycle(en, ss, att, '', '2026-10-09')
   assert.equal(c.target, 22)
   assert.equal(c.held, 6)                // 1,5,6,7,8,9 Oct — 2 Oct is a holiday
+  assert.equal(c.present, 3)             // only the attended ones count towards the 22
   assert.equal(c.complete, false)
   assert.equal(c.spa.S, c.spa.P + c.spa.A + c.spa.U)
 })
 
-test('computeCycle: 22nd class before the renewal date — extras are free, the next month starts on the renewal date', () => {
+test('computeCycle: absences do not count — the month waits for the 22nd attended session (Sai)', () => {
+  const en = { cycle_started_at: '2026-10-09', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
+  const ss = sessions('2026-10-09', '2026-11-19')
+  const att = new Map()
+  ss.forEach((s, i) => att.set(s.id, i % 3 !== 0))          // misses a third of the classes
+  const c = computeCycle(en, ss, att, '', '2026-11-19')
+  assert.equal(c.complete, false)                           // 6 weeks of classes, but fewer than 22 attended
+  assert.equal(c.present < 22, true)
+  assert.equal(c.held > c.present, true)
+  assert.equal(c.dueOn > '2026-11-19', true)                // not overdue: the renewal waits for the 22nd attended session
+})
+
+test('computeCycle: 22nd attended session before the renewal date — extras are free, the next month starts on the renewal date', () => {
   const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
-  const c = computeCycle(en, sessions('2026-10-01', '2026-10-31'), new Map(), '', '2026-10-31')
+  const ss = sessions('2026-10-01', '2026-10-31')
+  const c = computeCycle(en, ss, everyoneCame(ss), '', '2026-10-31')
   assert.equal(c.complete, true)
   assert.equal(c.completedOn, '2026-10-30')     // the 22nd weekday of October
-  assert.equal(c.held, 22)
-  assert.equal(c.dueOn, '2026-11-01')           // renewal falls on the renewal date, not on the 22nd class
+  assert.equal(c.present, 22)
+  assert.equal(c.dueOn, '2026-11-01')           // renewal falls on the renewal date, not on the 22nd session
   assert.equal(c.nextStart, '2026-11-01')
 })
 
-test('computeCycle: 22nd class after the renewal date — due on that class, the next class is the 1st of the new month', () => {
+test('computeCycle: 22nd attended session after the renewal date — due on that session, the next session is the 1st of the new month', () => {
   const en = { cycle_started_at: '2026-10-15', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
   const hol = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23']
-  const c = computeCycle(en, sessions('2026-10-15', '2026-11-30', hol), new Map(), '', '2026-11-30')
+  const ss = sessions('2026-10-15', '2026-11-30', hol)
+  const c = computeCycle(en, ss, everyoneCame(ss), '', '2026-11-30')
   assert.equal(c.complete, true)
   assert.equal(c.completedOn, '2026-11-20')
   assert.equal(c.dueOn, '2026-11-20')
   assert.equal(c.nextStart, '2026-11-21')
 })
 
-test('computeCycle: a running month projects its 22nd class; renewal is due on the renewal date if that comes first', () => {
+test('computeCycle: a running month projects its 22nd attended session; renewal is due on the renewal date if that comes first', () => {
   const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
-  const c = computeCycle(en, sessions('2026-10-01', '2026-10-09'), new Map(), '', '2026-10-09')
+  const ss = sessions('2026-10-01', '2026-10-09')
+  const c = computeCycle(en, ss, everyoneCame(ss), '', '2026-10-09')
   assert.equal(c.complete, false)
   assert.equal(c.completedOn, '2026-10-30')
   assert.equal(c.dueOn, '2026-11-01')
@@ -79,9 +97,11 @@ test('computeCycle: a running month projects its 22nd class; renewal is due on t
 
 test('computeCycle: personal no-class days are not classes for the student', () => {
   const en = { cycle_started_at: '2026-10-01', cycle_days: 'Mon, Tue, Wed, Thu, Fri' }
-  const base = computeCycle(en, sessions('2026-10-01', '2026-10-09'), new Map(), '', '2026-10-09')
-  const withN = computeCycle(en, sessions('2026-10-01', '2026-10-09'), new Map(), '', '2026-10-09', new Set(['2026-10-05']))
+  const ss = sessions('2026-10-01', '2026-10-09')
+  const base = computeCycle(en, ss, everyoneCame(ss), '', '2026-10-09')
+  const withN = computeCycle(en, ss, everyoneCame(ss), '', '2026-10-09', new Set(['2026-10-05']))
   assert.equal(withN.held, base.held - 1)
+  assert.equal(withN.present, base.present - 1)
 })
 
 test('cycleAnchor: falls back to enrolled_at, then null', () => {

@@ -103,10 +103,10 @@ export function countCycleDays(startIso, names) {
 //   attendance  Map(session_id -> attended boolean) for this student's enrolment.
 //               A session with no entry is "not marked" — attendance was never
 //               recorded — which is not the same thing as "absent".
-// The month starts on the stored cycle start (set at enrolment and at each renewal) and is complete on the 22nd class
-// held for the student: Mon–Fri or Mon–Sat, declared holidays and the student's own off days left out. A class that
-// was held counts whether the student came or not — attendance is shown beside it (S sessions, P present, A absent,
-// U not marked) but does not change the count.
+// The month starts on the stored cycle start (set at enrolment and at each renewal) and is complete when the student
+// has ATTENDED 22 sessions — NLH promises 22 active sessions a month. A class the student missed, or whose attendance
+// was never marked, does not count; the month simply runs on until 22 are attended. Declared holidays and the student's
+// own off days are not classes. Attendance is shown beside the count (S held, P present, A absent, U not marked).
 //   complete    the 22nd class has been held — the next month is due (renew)
 //   completedOn the day of the 22nd class (projected from the schedule while the month runs)
 //   dueOn       the renewal date: the same date next month when the 22nd class comes before it (extra classes until then are
@@ -128,10 +128,12 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today, noCl
   const byDate = {}
   ran.forEach(function (s) { const d = String(s.session_date).slice(0, 10); if (!byDate[d] || (!att.has(byDate[d].id) && att.has(s.id))) byDate[d] = s })
   const held = Object.keys(byDate).sort()
-  const r = monthBlocks(held, start)
+  const presentDates = held.filter(function (d) { return att.get(byDate[d].id) === true })
+  const r = monthBlocks(presentDates, start)
   const done = r.blocks.length ? r.blocks[0] : null
-  const inMonth = done ? done.dates : (r.open ? r.open.dates : [])
-  const counted = inMonth.map(function (d) { return byDate[d] })
+  const inMonth = done ? done.dates : (r.open ? r.open.dates : [])         // the attended sessions counted so far
+  const spanEnd = done ? done.completedOn : todayStr
+  const counted = held.filter(function (d) { return d <= spanEnd }).map(function (d) { return byDate[d] })   // every class held in the month
   const sP = counted.filter(function (s) { return att.get(s.id) === true }).length
   const sA = counted.filter(function (s) { return att.get(s.id) === false }).length
 
@@ -152,7 +154,7 @@ export function computeCycle(en, sessions, attendance, scheduleDays, today, noCl
   const nextStart = d22 ? nextMonthStart(start, d22) : windowEnd
   return {
     start: start, due: dueOn, end: d22 && d22 < windowEnd ? d22 : (d22 || prevDay(windowEnd)), dueOn: dueOn, completedOn: d22, windowEnd: windowEnd, nextStart: nextStart, complete: !!done,
-    target: MONTH_SESSIONS, done: Math.min(MONTH_SESSIONS, inMonth.length), held: inMonth.length,
+    target: MONTH_SESSIONS, done: Math.min(MONTH_SESSIONS, inMonth.length), present: inMonth.length, held: counted.length,
     attendedWeekday: sP, attendedSat: 0, absent: sA, unmarked: counted.length - sP - sA, makeUp: 0,
     // S sessions held for this student, P present, A absent, U not marked (S = P + A + U), N days with no class for them.
     spa: { S: counted.length, P: sP, A: sA, U: counted.length - sP - sA, N: Array.from(nc).filter(function (d) { return d >= start && d <= todayStr }).length },

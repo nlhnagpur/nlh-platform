@@ -7,7 +7,7 @@ export const PAYROLL_ACTIONS = {
   basis_change: 'The latest appointment in force applies to the whole month. If part of the month should be paid on the earlier basis, edit the amounts or add a line below, and note why.',
   recalculated: 'Attendance, batches or appointments changed since this payroll was saved. Check the lines against the new calculation (Reset to calculated shows it), then save again — or leave as is if your figure is right.',
   substitute_classes: 'The amounts for substitute classes are approximate, worked out from this CI’s own appointment for the programme (zero where it cannot be estimated). Agree the figure and type it over.',
-  month_in_progress: 'A month is 22 classes. These children are part-way through one: the classes taken so far are paid on this sheet, and the rest are paid as they are taken.',
+  month_in_progress: 'A month is 22 attended sessions. These children are part-way through one: the sessions they attended so far are paid on this sheet, and the rest are paid as they are attended.',
   leaving_pro_rata: 'These children are part-way through a level. The leaving CI is paid for the classes they took (the share of the course completed under them); the takeover CI is paid the rest at completion. Adjust the amounts if you agreed something different.',
   cycle_in_progress: 'Nothing to do now. A cycle is paid when it completes (25 classes), or pro-rata if the student leaves. It will appear as a line in the month it started.',
   posted_differs: 'This month is already posted to the accounts, so nothing changes automatically. If the new calculation is right, reopen the month (until it is paid) or post the difference as an adjustment next month.',

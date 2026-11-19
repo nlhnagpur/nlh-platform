@@ -291,3 +291,17 @@ test('levelSharePay: pro-rata by classes taken, capped at the level', async () =
   assert.equal(levelStartDate(['2026-08-10', '2026-09-30'], '2026-10-20', '2026-06-01'), '2026-10-01')
   assert.equal(levelStartDate([], '2026-10-20', '2026-06-01'), '2026-06-01')
 })
+
+test('childShareDates with presentIds: only the sessions the child attended count', async () => {
+  const { childShareDates } = await import('../src/utils/ciPayroll.js')
+  const mems = [{ batch_id: 'b', assigned_at: '2026-10-01' }]
+  const sessions = [
+    { id: 1, batch_id: 'b', session_date: '2026-10-05', instructor_id: 'ci' },
+    { id: 2, batch_id: 'b', session_date: '2026-10-06', instructor_id: 'ci' },   // absent
+    { id: 3, batch_id: 'b', session_date: '2026-10-07', instructor_id: 'other', is_substitute: true },
+  ]
+  const present = childShareDates(mems, sessions, 'ci', new Set([1, 3]))
+  assert.deepEqual(present.all, ['2026-10-05', '2026-10-07'])
+  assert.deepEqual(present.ci, ['2026-10-05'])                  // the substitute's class is not the CI's
+  assert.deepEqual(childShareDates(mems, sessions, 'ci').all.length, 3)     // without it every class held counts
+})

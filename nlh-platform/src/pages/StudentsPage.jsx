@@ -2472,7 +2472,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                               <>
                                 {/* Progress + the cycle's own dates, so the target isn't a
                                     mystery number: it's the student's class days inside this range. */}
-                                <span title={'Month from ' + fmtDate(cycle.start) + ': ' + cycleTarget + ' classes held for the student (Mon–Fri or Mon–Sat, holidays left out). ' + (cycle.complete ? 'Completed on ' + fmtDate(cycle.dueOn) + ' — the next month starts ' + fmtDate(cycle.nextStart) + '.' : (cycle.dueOn ? 'Completes about ' + fmtDate(cycle.dueOn) + '.' : ''))}
+                                <span title={'Month from ' + fmtDate(cycle.start) + ': ' + cycleTarget + ' attended sessions (Mon–Fri or Mon–Sat; holidays and missed classes do not count). ' + (cycle.complete ? 'Completed on ' + fmtDate(cycle.dueOn) + ' — the next month starts ' + fmtDate(cycle.nextStart) + '.' : (cycle.dueOn ? 'Completes about ' + fmtDate(cycle.dueOn) + '.' : ''))}
                                   style={{ font: '600 10px var(--mono)', color: monthEnding ? '#B45309' : 'var(--text3)', background: monthEnding ? '#FEF3C7' : 'var(--bg2)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>
                                   {cycleHeld} / {cycleTarget} this month · {shortDay(cycle.start)}–{shortDay(cycle.end)}
                                 </span>

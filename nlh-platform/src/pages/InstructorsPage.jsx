@@ -86,6 +86,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
   const [payrollCompletions, setPayrollCompletions] = useState({}) // batchId → count completed this month
   const [payrollTotalSess,   setPayrollTotalSess]   = useState({}) // batchId → total non-holiday sessions (incl. subs)
   const [payrollActiveStudents, setPayrollActiveStudents] = useState({}) // batchId → students on the roster this month
+  const [payrollChildPresent, setPayrollChildPresent] = useState({})   // child|programme → { all, ci } sessions the child ATTENDED (the 22-session month)
   const [payrollChildAnchors, setPayrollChildAnchors] = useState({})   // child|programme → the day their first 22-class month starts
   const [payrollChildDates, setPayrollChildDates] = useState({})   // child|programme → { all, ci } class dates across ALL their batches
   const [payrollSubs, setPayrollSubs] = useState([])               // classes this CI took as a substitute, with the batch's programme and size
@@ -228,6 +229,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       var batchDatesMap = {}      // batchId → dates of classes held / taken by this CI, to re-count when a student's dates are edited
       var childDatesMap = {}      // child|programme → class dates across every batch the child was on
       var childAnchorMap = {}     // child|programme → the day their first month starts (enrolment / cycle start)
+      var childPresentMap = {}    // child|programme → the sessions they attended, across every batch
+      var enrKeyById = {}         // enrolment id → child|programme
       var subList = []            // substitute classes this CI took this month
       var rosterMap = {}          // batchId → each student's level and dates, for batches that carry no level of their own
 
@@ -300,9 +303,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
           })
           // a child's 22-class months run from the day their first enrolment in the programme started
           var { data: enrAll } = await sb.from('enrollments')
-            .select('student_id, enrolled_at, cycle_started_at, skus(courses(group_name))').in('student_id', studentIds)
+            .select('id, student_id, enrolled_at, cycle_started_at, skus(courses(group_name))').in('student_id', studentIds)
           ;(enrAll || []).forEach(function (e) {
             var k = childKey(e.student_id, e.skus && e.skus.courses && e.skus.courses.group_name)
+            enrKeyById[e.id] = k
             var a = String(e.cycle_started_at || e.enrolled_at || '').slice(0, 10)
             if (a && (!childAnchorMap[k] || a < childAnchorMap[k])) childAnchorMap[k] = a
           })
@@ -325,7 +329,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             .in('enrollments.student_id', studentIds)
           var memBatchIds = Array.from(new Set((memAll || []).map(function (m) { return m.batch_id })))
           var childSess = memBatchIds.length ? await fetchAllRows(function (from, to) {
-            return sb.from('batch_sessions').select('batch_id, session_date, instructor_id, is_substitute')
+            return sb.from('batch_sessions').select('id, batch_id, session_date, instructor_id, is_substitute')
               .in('batch_id', memBatchIds).eq('is_holiday', false).gte('session_date', rangeStart).lte('session_date', endDate).order('id').range(from, to)
           }) : []
           var memByChild = {}
@@ -334,7 +338,19 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
             var k = childKey(m.enrollments.student_id, prog)
             ;(memByChild[k] = memByChild[k] || []).push({ batch_id: m.batch_id, assigned_at: m.assigned_at, removed_at: m.removed_at, completed_at: m.enrollments.completed_at })
           })
-          Object.keys(memByChild).forEach(function (k) { childDatesMap[k] = childShareDates(memByChild[k], childSess, instructor.id) })
+          // the sessions each child attended: the month pays only for these
+          var presentIds = {}
+          var enrIdList = Object.keys(enrKeyById)
+          if (enrIdList.length) {
+            var attRows = await fetchAllRows(function (from, to) {
+              return sb.from('session_attendance').select('session_id, enrollment_id').in('enrollment_id', enrIdList).eq('attended', true).order('id').range(from, to)
+            })
+            ;(attRows || []).forEach(function (a) { var k = enrKeyById[a.enrollment_id]; if (k) (presentIds[k] = presentIds[k] || new Set()).add(a.session_id) })
+          }
+          Object.keys(memByChild).forEach(function (k) {
+            childDatesMap[k] = childShareDates(memByChild[k], childSess, instructor.id)
+            childPresentMap[k] = childShareDates(memByChild[k], childSess, instructor.id, presentIds[k] || new Set())
+          })
         }
 
         // Total non-holiday sessions per batch in the month (includes substitutes)
@@ -413,6 +429,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       setPayrollBatchDates(batchDatesMap)
       setPayrollChildDates(childDatesMap)
       setPayrollChildAnchors(childAnchorMap)
+      setPayrollChildPresent(childPresentMap)
       setPayrollSubs(subList)
       setPayrollOverride(ovRow || null)
       setOverrideEdit(false)
@@ -1733,7 +1750,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   var ck = childKey(en.student_id, en.course)
                   if (seenMonthChild[ck]) return
                   seenMonthChild[ck] = true
-                  var cd = payrollChildDates[ck]
+                  var cd = payrollChildPresent[ck]     // the 22-session month counts only the sessions the child attended
                   if (!cd) return
                   var ap = monthCourses[en.course]
                   var rate = ap.remuneration_rate || 0
@@ -1760,8 +1777,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     var itemDates = cd.ci.filter(function (d) { return d >= it.from && d <= it.to })
                     calcLines.push({
                       key: 'mon:' + ck + ':' + it.from, label: en.student, amount: levelSharePay(rate, it.count, it.total),
-                      detail: en.course + ' · ₹' + rate.toLocaleString('en-IN') + ' a month (22 classes) · paid as classes are taken; ' + (it.complete ? 'the child\'s month completed ' + fmtDate(it.completedOn) : 'the child\'s month is still running'),
-                      meta: { kind: 'month', course: en.course, sid: 'child:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate, levels: Array.from(new Set(levelEntries.map(function (x) { return x.level }))).length > 1 ? levelCounts(itemDates, levelEntries) : [] },
+                      detail: en.course + ' · ₹' + rate.toLocaleString('en-IN') + ' a month (22 attended sessions) · paid for the sessions the child attended; ' + (it.complete ? 'the child\'s month completed ' + fmtDate(it.completedOn) : 'the child\'s month is still running'),
+                      meta: { kind: 'month', course: en.course, sid: 'present:' + ck, from: it.from, to: it.to, count: it.count, total: it.total, rate: rate, levels: Array.from(new Set(levelEntries.map(function (x) { return x.level }))).length > 1 ? levelCounts(itemDates, levelEntries) : [] },
                     })
                   })
                   if (res.open) monthOpenList.push({ name: en.student, count: res.open.count, ciCount: res.open.ciCount, accrued: levelSharePay(rate, res.open.ciCount, 22) })
@@ -1874,7 +1891,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                   </div>
 
                   {/* ── Payment for the month: editable amounts, saved, marked paid ── */}
-                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun} datesBySid={payrollCycle.datesBySid} shareDates={Object.assign({}, payrollBatchDates, Object.keys(payrollChildDates).reduce(function (m, k) { m['child:' + k] = payrollChildDates[k]; return m }, {}))}
+                  <CiPayrollRun instructor={instructor} month={payrollMonth} calcLines={calcLines} run={payrollRun} datesBySid={payrollCycle.datesBySid} shareDates={Object.assign({}, payrollBatchDates, Object.keys(payrollChildDates).reduce(function (m, k) { m['child:' + k] = payrollChildDates[k]; return m }, {}), Object.keys(payrollChildPresent).reduce(function (m, k) { m['present:' + k] = payrollChildPresent[k]; return m }, {}))}
                     canEdit={canEditPayroll} onChanged={function (saved) { setPayrollRun(saved) }} />
                 </>
               )

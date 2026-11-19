@@ -138,7 +138,7 @@ async function loadStudentSheet(student, ym) {
         else if (noClass.has(en.id + ':' + s.session_date)) code = 'N'
         else { const a = att.get(s.id + ':' + en.id); code = a === true ? 'P' : a === false ? 'A' : 'U' }
         const off = offDay(s.session_date, en, m.batches && m.batches.schedule_days)
-        if (code !== 'H' && code !== 'N' && !off) held[s.session_date] = true
+        if (code === 'P' && !off) held[s.session_date] = true     // the month is counted by attended sessions
         if (s.session_date < b.start || s.session_date > b.end) return
         const day = dayNum(s.session_date)
         if (!cells[day] || cells[day].code === 'H') {
@@ -197,12 +197,12 @@ async function loadStudentSheet(student, ym) {
         const end = seg.end || '9999-12-31'
         const segCells = {}
         Object.values(cells).forEach(function (c) {
-          if (c.date >= seg.start && c.date < end) segCells[dayNum(c.date)] = Object.assign({}, c, { free: seg.free.indexOf(c.date) >= 0 })
+          if (c.date >= seg.start && c.date < end) segCells[dayNum(c.date)] = Object.assign({}, c, { free: !!(seg.completedOn && c.date > seg.completedOn) })
         })
         const list = Object.values(segCells)
         if (!list.length) return
         const nFree = list.filter(function (c) { return c.free }).length
-        const span = shortD(seg.start) + (seg.completedOn ? ' – 22nd class ' + shortD(seg.completedOn) : seg.open ? ' – running, ' + seg.counted.length + ' of 22' : ' – cut off')
+        const span = shortD(seg.start) + (seg.completedOn ? ' – 22nd present ' + shortD(seg.completedOn) : seg.open ? ' – running, ' + seg.counted.length + ' of 22 present' : ' – cut off')
         rows.push({ id: en.id + ':' + seg.start, label: courseLabel(en.skus) + ' · month from ' + span + (nFree ? ' · +' + nFree + ' free' : ''), cells: segCells, totals: tally(list.filter(function (c) { return !c.free })), monthStart: seg.start })
       })
       return
@@ -408,7 +408,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
           </span>
         </div>
         <div style={{ padding: '0 20px 6px', font: '500 11px var(--font)', color: 'var(--text3)' }}>
-          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.NC.color }}>N</b> no class for the student that day · <b>H</b> holiday · <span style={{ background: TONE.U.bg, padding: '0 6px', borderRadius: 3 }}>&nbsp;</span> / <b style={{ color: TONE.U.color }}>?</b> class held, attendance not marked · blank no class scheduled · <b>S</b> sessions held (S = P + A + ?). Sunday classes are shown faded and not counted in S / P / A / N, unless Sunday is one of the student's class days. Monthly courses show one line per renewal month (22 classes counted); a dashed cell is a free class — after the 22nd, before the renewal date.
+          <b style={{ color: TONE.P.color }}>P</b> present · <b style={{ color: TONE.A.color }}>A</b> absent · <b style={{ color: TONE.NC.color }}>N</b> no class for the student that day · <b>H</b> holiday · <span style={{ background: TONE.U.bg, padding: '0 6px', borderRadius: 3 }}>&nbsp;</span> / <b style={{ color: TONE.U.color }}>?</b> class held, attendance not marked · blank no class scheduled · <b>S</b> sessions held (S = P + A + ?). Sunday classes are shown faded and not counted in S / P / A / N, unless Sunday is one of the student's class days. Monthly courses show one line per renewal month — a month is 22 sessions ATTENDED, so absences extend it; a dashed cell is after the 22nd present session and before the renewal date.
         </div>
         <div style={{ padding: '8px 20px 18px', overflow: 'auto', flex: 1 }}>
           {loading && <div className="loading"><span className="spinner" />Loading attendance…</div>}

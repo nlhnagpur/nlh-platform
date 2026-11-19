@@ -231,7 +231,8 @@ export function childKey(studentId, programme) { return String(studentId || '') 
 //   memberships: [{ batch_id, assigned_at, removed_at, completed_at }]   every batch the child was on for the programme
 //   sessions:    [{ batch_id, session_date, instructor_id, is_substitute }]   classes in the period (holidays already left out)
 // Returns { all: dates the child had a class, ci: dates a class was taken by `ciId` (not as a substitute) }.
-export function childShareDates(memberships, sessions, ciId) {
+// With `presentIds` (a Set of session ids) only the sessions the child ATTENDED count — the basis of the 22-session month.
+export function childShareDates(memberships, sessions, ciId, presentIds) {
   const all = new Set(), ci = new Set()
   const seen = new Set()
   ;(sessions || []).forEach(function (x) {
@@ -243,6 +244,7 @@ export function childShareDates(memberships, sessions, ciId) {
       return d >= from && d <= ends
     })
     if (!on) return
+    if (presentIds && !presentIds.has(x.id)) return     // only sessions the child attended
     const k = x.batch_id + '|' + d
     if (seen.has(k)) return
     seen.add(k)
