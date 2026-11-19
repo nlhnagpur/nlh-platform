@@ -395,7 +395,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 1180, width: '96vw', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
+      <div className="modal" style={{ maxWidth: 1560, width: '98vw', display: 'flex', flexDirection: 'column', maxHeight: '94vh' }}>
         <ModalHeader flush title={'Attendance sheet — ' + subjectName} subtitle={isStudent ? 'Which classes this student was due to attend, and attended' : 'Which classes this CI took, and which students were taught'} onClose={onClose} />
         <div style={{ padding: '4px 20px 12px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn-s" onClick={function () { setYm(shiftMonth(ym, -1)) }}>‹</button>
@@ -422,7 +422,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
                       <table style={{ borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
-                            <th style={{ textAlign: 'left', font: '700 10px var(--mono)', border: '1px solid #e5e7eb', padding: '4px 8px', background: '#f3f4f6', minWidth: 190 }}>COURSE</th>
+                            <th style={{ textAlign: 'left', font: '700 10px var(--mono)', border: '1px solid #e5e7eb', padding: '4px 8px', background: '#f3f4f6', minWidth: 230, maxWidth: 300, position: 'sticky', left: 0, zIndex: 2 }}>COURSE</th>
                             {dayCols.map(thDay)}
                             <TotalsHead />
                           </tr>
@@ -431,7 +431,7 @@ export default function AttendanceSheet({ mode, student, instructor, onClose }) 
                           {data.rows.map(function (r) {
                             return (
                               <tr key={r.id}>
-                                <td style={{ font: '600 12px var(--font)', border: '1px solid #e5e7eb', padding: '4px 8px', whiteSpace: 'nowrap' }}>{r.label}</td>
+                                <td style={{ font: '600 12px var(--font)', border: '1px solid #e5e7eb', padding: '4px 8px', whiteSpace: 'normal', minWidth: 230, maxWidth: 300, background: '#fff', position: 'sticky', left: 0, zIndex: 1 }}>{r.label}</td>
                                 {dayCols.map(function (d) { return <Cell key={d} c={r.cells[d]} /> })}
                                 <TotalsCells t={r.totals} />
                               </tr>
