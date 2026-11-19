@@ -3970,8 +3970,9 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
         await sb.from('batch_students').insert({ batch_id: batchId, enrollment_id: enrollment.id, assigned_at: startAt })
       }
 
-      // Admin session restore hack for auth account creation
-      if (form.phone) {
+      // A student portal login is created for head-office students only; franchisee centres do not use it, so nothing is
+      // attempted (and no message shown) when a franchisee registers a student.
+      if (form.phone && admin) {
         const loginEmail = `student.${st.id}@nlhnagpur.info`
         try {
           const { data: { session: admSess } } = await sb.auth.getSession()
