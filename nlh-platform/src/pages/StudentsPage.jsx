@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { sb } from '../supabase'
 import MoveBatchDialog from '../components/MoveBatchDialog'
 import CoursePicker from '../components/CoursePicker'
+import BatchTimeFields from '../components/BatchTimeFields'
 import ChangeStartDateDialog from '../components/ChangeStartDateDialog'
 import StudentTimeline from '../components/StudentTimeline'
 import { useAuth } from '../context/AuthContext'
@@ -852,7 +853,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
       instructor_id: nbf.instructor_id, franchisee_id: student.franchisee_id, sku_id: enrollment.sku_id,
       name: nbf.name.trim(), is_individual: nbf.is_individual,
       schedule_days: nbf.days.length ? nbf.days.join(', ') : null,
-      schedule_time: nbf.time || null, is_active: true, sessions_done: 0,
+      schedule_time: nbf.time || null, schedule_end_time: nbf.end_time || null, is_active: true, sessions_done: 0,
       start_date: new Date().toISOString().slice(0, 10), instructor_assigned_at: new Date().toISOString().slice(0, 10),
     }).select('id').single()
     if (error) { setPanelSaving(false); showToast('Batch create failed: ' + error.message, 'err'); return }
@@ -1407,7 +1408,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
           instructor_id: nbf.ci, franchisee_id: student.franchisee_id, name: nbf.name.trim(),
           is_individual: nbf.is_individual || false,
           schedule_days: (nbf.days || []).length ? nbf.days.join(', ') : null,
-          schedule_time: nbf.time || null, is_active: true, sessions_done: 0,
+          schedule_time: nbf.time || null, schedule_end_time: nbf.end_time || null, is_active: true, sessions_done: 0,
           instructor_assigned_at: new Date().toISOString().slice(0, 10),
         }).select('id').single()
         if (bErr) { showToast('Batch create failed for ' + sku.level_name + ': ' + bErr.message, 'warn'); continue }
@@ -2841,9 +2842,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                         })}
                                       </div>
                                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <input type="time" value={newBatchForm.time}
-                                          onChange={function (e) { setNewBatchForm(function (f) { return { ...f, time: e.target.value } }) }}
-                                          style={{ fontSize: 12 }} />
+                                        <BatchTimeFields time={newBatchForm.time} endTime={newBatchForm.end_time} onChange={function (p) { setNewBatchForm(function (f) { return { ...f, ...p } }) }} />
                                         <label style={{ display: 'flex', alignItems: 'center', gap: 5, font: '500 11px var(--font)' }}>
                                           <input type="checkbox" checked={newBatchForm.is_individual}
                                             onChange={function (e) { setNewBatchForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
@@ -3124,9 +3123,9 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                                                     </div>
                                                   </div>
                                                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                                                    <label style={{ font: '500 11px var(--font)', flex: 1 }}>Time
-                                                      <input type="time" value={nbf.time} onChange={function (e) { updateNbf({ time: e.target.value }) }} style={{ marginTop: 4, fontSize: 12 }} />
-                                                    </label>
+                                                    <div style={{ flex: 1 }}>
+                                                      <BatchTimeFields time={nbf.time} endTime={nbf.end_time} onChange={updateNbf} />
+                                                    </div>
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: 5, font: '500 11px var(--font)', paddingBottom: 5 }}>
                                                       <input type="checkbox" checked={nbf.is_individual} onChange={function (e) { updateNbf({ is_individual: e.target.checked }) }} />
                                                       Individual
@@ -3959,6 +3958,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
             is_individual:  nbf.is_individual || false,
             schedule_days:  (nbf.days || []).length ? nbf.days.join(', ') : null,
             schedule_time:  nbf.time || null,
+            schedule_end_time: nbf.end_time || null,
             is_active:      true,
             sessions_done:  0,
             instructor_assigned_at: new Date().toISOString().slice(0, 10),
@@ -4385,14 +4385,9 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
                                 </div>
   
                                 <div style={{ display:'flex', gap:10, alignItems:'flex-end' }}>
-                                  <label style={{ font:'500 11px var(--font)', flex:1 }}>
-                                    Time
-                                    <input
-                                      type="time" value={nbf.time}
-                                      onChange={function (e) { updateNbf({ time: e.target.value }) }}
-                                      style={{ marginTop:4, fontSize:12 }}
-                                    />
-                                  </label>
+                                  <div style={{ flex: 1 }}>
+                                    <BatchTimeFields time={nbf.time} endTime={nbf.end_time} onChange={updateNbf} />
+                                  </div>
                                   <label style={{ display:'flex', alignItems:'center', gap:5,
                                     font:'500 11px var(--font)', paddingBottom:5 }}>
                                     <input

@@ -196,7 +196,7 @@ export function recountLine(line, from, to, ctx) {
   if (m.kind === 'session') {
     const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
     const ci = countInRange(bd.ci, from, to)
-    return { ...line, meta: { ...m, from: from, to: to, count: ci }, amount: ci * (m.rate || 0) }
+    return { ...line, meta: { ...m, from: from, to: to, count: ci }, amount: Math.round(ci * (m.hours || 1) * (m.rate || 0)) }
   }
   if (m.kind === 'level' || m.kind === 'month') {
     const bd = (c.shareDates || {})[m.sid] || { all: [], ci: [] }
@@ -354,7 +354,7 @@ export function sheetRowFor(line, ctx) {
   if (m.kind === 'fixed') return { particular: label, description: prog + 'fixed monthly', amount: amount }
   if (m.kind === 'session') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)
-    return { particular: label + ' ' + datesByMonth(d), description: prog + plural(m.count), amount: amount }
+    return { particular: label + ' ' + datesByMonth(d), description: prog + plural(m.count) + (m.hours && m.hours !== 1 ? ' of ' + m.hours + ' hrs' : ''), amount: amount }
   }
   if (m.kind === 'share') {
     const d = inRange(((c.shareDates || {})[m.sid] || {}).ci)

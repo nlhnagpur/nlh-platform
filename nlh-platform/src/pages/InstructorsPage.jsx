@@ -9,6 +9,8 @@ import AttendanceSheet from '../components/AttendanceSheet'
 import { levelCounts, appointmentForCourse, batchCourseStats, splitAmount, countInRange, payToDate, childKey, childShareDates, amountForShare, substituteApprox, levelSharePay, levelStartDate } from '../utils/ciPayroll'
 import { fetchAllRows, todayIso } from '../utils/studentLifecycle'
 import { monthPayItems } from '../utils/monthCycle'
+import BatchTimeFields from '../components/BatchTimeFields'
+import { batchHours, hoursLabel, timeRange } from '../utils/batchTime'
 import CiPayrollRun from '../components/CiPayrollRun'
 import CiAttendanceMonth from '../components/CiAttendanceMonth'
 import CiLeavesDialog from '../components/CiLeavesDialog'
@@ -19,13 +21,6 @@ import { payrollCheckIssues } from '../utils/payrollCheck'
 // ── helpers ────────────────────────────────────────────────────────────────────
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-function timeRange(t) {
-  if (!t) return ''
-  const [h, m] = t.split(':').map(Number)
-  const end = ((h + 1) % 24).toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0')
-  return t.slice(0, 5) + ' – ' + end
-}
 
 function StatusBadge({ status }) {
   const map = { active: 'ba', inactive: 'bd', resigned: 'bd', terminated: 'br' }
@@ -45,7 +40,7 @@ const REMUN_LABELS = {
   per_student:       'Per Student (on completion)',
   per_student_month: 'Per Student / Month (22 classes)',
   per_student_cycle: 'Per Student / Month (22 classes)',
-  per_session:       'Per Session (1 hr)',
+  per_session:       'Per Hour of class',
   monthly:           'Monthly Fixed',
 }
 
@@ -53,7 +48,7 @@ const REMUN_SUFFIX = {
   per_student:       '/ student',
   per_student_month: '/ student / month',
   per_student_cycle: '/ student / month',
-  per_session:       '/ session',
+  per_session:       '/ hour',
   monthly:           '/ month',
 }
 
@@ -70,7 +65,7 @@ function groupSkus(allSkus) {
   return Object.entries(map).map(function ([name, skus]) { return { name, skus } })
 }
 
-const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
+const BLANK_BATCH = { name: '', days: [], time: '', end_time: '', start_date: '', is_individual: false, notes: '' }
 
 function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSaved, inline }) {
   const { currentRole: myRole } = useAuth()
@@ -185,7 +180,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
     }
     if (t === 'batches') {
       const { data: batchRows } = await sb.from('batches')
-        .select(`id, instructor_id, name, is_individual, schedule_days, schedule_time,
+        .select(`id, instructor_id, name, is_individual, schedule_days, schedule_time, schedule_end_time,
                  is_active, start_date, sessions_done, notes, created_at,
                  batch_students(id, enrollment_id, assigned_at, removed_at,
                    enrollments(id, student_id, sku_id, students(id, full_name),
@@ -209,7 +204,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       var endDate   = parts[0] + '-' + parts[1] + '-' + String(lastDay).padStart(2, '0')
       var [sessRes, apptRes] = await Promise.all([
         sb.from('batch_sessions')
-          .select('id, session_date, batch_id, batches(id, name, sku_id, skus(level_name, courses(group_name)))')
+          .select('id, session_date, batch_id, batches(id, name, sku_id, schedule_time, schedule_end_time, skus(level_name, courses(group_name)))')
           .eq('instructor_id', instructor.id)
           .eq('is_substitute', false)
           .eq('is_holiday', false)   // a holiday is not a class taken, so it is never paid
@@ -651,12 +646,13 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
       is_individual:  batchForm.is_individual,
       schedule_days:  batchForm.days.length ? batchForm.days.join(', ') : null,
       schedule_time:  batchForm.time || null,
+      schedule_end_time: batchForm.end_time || null,
       start_date:     batchForm.start_date || null,
       instructor_assigned_at: batchForm.start_date || new Date().toISOString().slice(0, 10),
       is_active:      true,
       sessions_done:  0,
       notes:          batchForm.notes.trim() || null,
-    }).select(`id, instructor_id, name, is_individual, schedule_days, schedule_time,
+    }).select(`id, instructor_id, name, is_individual, schedule_days, schedule_time, schedule_end_time,
                is_active, start_date, sessions_done, notes, created_at,
                batch_students(id, enrollment_id, assigned_at, removed_at,
                  enrollments(id, student_id, sku_id, students(id, full_name),
@@ -1081,7 +1077,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                                     <label>Mode
                                       <select value={editApptForm.remuneration_mode}
                                         onChange={function (e) { setEditApptForm(function (f) { return { ...f, remuneration_mode: e.target.value } }) }}>
-                                        <option value="per_session">Per Session (₹ / hr)</option>
+                                        <option value="per_session">Per Hour of class (₹ / hour)</option>
                                         <option value="per_student">Per Student (₹ on completion)</option>
                                         <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
                                         <option value="monthly">Monthly Fixed (₹ / month)</option>
@@ -1235,7 +1231,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                       <select value={newAppt.remuneration_mode} onChange={nfd('remuneration_mode')}>
                         <option value="per_student">Per Student (₹ on completion)</option>
                         <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
-                        <option value="per_session">Per Session (₹ / hour)</option>
+                        <option value="per_session">Per Hour of class (₹ / hour)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>
                       </select>
                     </label>
@@ -1368,7 +1364,7 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
                           {batch.schedule_days || ''}
-                          {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
+                          {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time, batch.schedule_end_time) : ''}
                           {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
                         </div>
                       </div>
@@ -1504,10 +1500,10 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                     <input type="date" value={batchForm.start_date}
                       onChange={function (e) { setBatchForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
                   </label>
-                  <label>Time
-                    <input type="time" value={batchForm.time}
-                      onChange={function (e) { setBatchForm(function (f) { return { ...f, time: e.target.value } }) }} />
-                  </label>
+                  <div>
+                    <div style={{ font: '500 12px var(--font)', marginBottom: 2 }}>Session time</div>
+                    <BatchTimeFields time={batchForm.time} endTime={batchForm.end_time} onChange={function (p) { setBatchForm(function (f) { return { ...f, ...p } }) }} />
+                  </div>
                   <label className="col-span-2">Schedule Days
                     <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
                       {DAYS.map(function (d) {
@@ -1617,14 +1613,15 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var subSessions  = Math.max(0, totalSessions - ciSessions)
                 // Prorate per-student pay by fraction of sessions the CI actually taught
                 var proration    = totalSessions > 0 ? ciSessions / totalSessions : 1
+                var hours = batchHours(data.batch && data.batch.schedule_time, data.batch && data.batch.schedule_end_time)   // a per-session rate is per hour of the class
                 var mkRow = function (appt, course, level, completions, activeStudents, members) {
                   var mode = appt.remuneration_mode, rate = appt.remuneration_rate || 0
                   return {
                     batchId, batchName: data.batch?.name || '—', course, level,
-                    sessionCount: ciSessions, totalSessions, subSessions, proration, mode, rate, members: members || [], names: (members || []).map(function (m) { return m.label }),
+                    sessionCount: ciSessions, hours, totalSessions, subSessions, proration, mode, rate, members: members || [], names: (members || []).map(function (m) { return m.label }),
                     completions: mode === 'per_student' ? completions : 0,
                     activeStudents: mode === 'per_student_month' ? activeStudents : 0,
-                    amount: mode === 'per_session' ? ciSessions * rate
+                    amount: mode === 'per_session' ? Math.round(ciSessions * hours * rate)
                           : mode === 'per_student' ? Math.round(completions * rate * proration)
                           : mode === 'per_student_month' ? Math.round(activeStudents * rate * proration)
                           : 0,
@@ -1697,8 +1694,8 @@ function InstructorDetailModal({ instructor, allSkus, nlhCentreId, onClose, onSa
                 var bd = payrollBatchDates[rw.batchId] || { all: [], ci: [] }
                 calcLines.push({
                   key: 'ps:' + rw.batchId + rw.course, label: rw.batchName + (rw.course && rw.course !== rw.batchName ? ' (' + rw.course + ')' : ''), amount: rw.amount,
-                  detail: '₹' + rw.rate.toLocaleString('en-IN') + ' a class',
-                  meta: { kind: 'session', course: rw.course, sid: rw.batchId, from: monthFirst, to: payTo, count: countInRange(bd.ci, monthFirst, payTo), rate: rw.rate },
+                  detail: '₹' + rw.rate.toLocaleString('en-IN') + ' an hour' + (rw.hours !== 1 ? ' × ' + hoursLabel(rw.hours) + ' a class' : ''),
+                  meta: { kind: 'session', course: rw.course, sid: rw.batchId, from: monthFirst, to: payTo, count: countInRange(bd.ci, monthFirst, payTo), rate: rw.rate, hours: rw.hours },
                 })
               })
               // Per-student modes are paid student by student — one line each (name, the dates it covers, the
@@ -1911,6 +1908,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
     name:          batch.name || '',
     days:          batch.schedule_days ? batch.schedule_days.split(', ').filter(Boolean) : [],
     time:          batch.schedule_time ? batch.schedule_time.slice(0, 5) : '',
+    end_time:      batch.schedule_end_time ? batch.schedule_end_time.slice(0, 5) : '',
     start_date:    batch.start_date || '',
     notes:         batch.notes || '',
     is_individual: batch.is_individual || false,
@@ -1932,6 +1930,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
       is_individual: form.is_individual,
       schedule_days: form.days.join(', '),
       schedule_time: form.time || null,
+      schedule_end_time: form.end_time || null,
       start_date:    form.start_date || null,
       notes:         form.notes.trim() || null,
     }).eq('id', batch.id)
@@ -1971,11 +1970,10 @@ function EditBatchModal({ batch, onClose, onSaved }) {
               <input type="date" value={form.start_date}
                 onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
             </label>
-            <label>Start Time
-              <input type="time" value={form.time}
-                onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
-              {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
-            </label>
+            <div>
+              <div style={{ font: '500 12px var(--font)', marginBottom: 2 }}>Session time</div>
+              <BatchTimeFields time={form.time} endTime={form.end_time} onChange={function (p) { setForm(function (f) { return { ...f, ...p } }) }} />
+            </div>
             <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={form.is_individual}
                 onChange={function (e) { setForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
@@ -2366,7 +2364,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
               const takenNames = usedCourseNames(idx)
               const levels     = block.group_name ? getLevels(block.group_name) : []
               const ratePlaceholder =
-                block.remuneration_mode === 'per_session'       ? '₹ per session' :
+                block.remuneration_mode === 'per_session'       ? '₹ per hour of class' :
                 block.remuneration_mode === 'monthly'           ? '₹ per month' :
                 block.remuneration_mode === 'per_student_month' ? '₹ per student / month' :
                 block.remuneration_mode === 'per_student_cycle' ? '₹ per student / month' : '₹ per student'
@@ -2404,7 +2402,7 @@ function AddInstructorModal({ nlhCentreId, allSkus, onClose, onSaved }) {
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>Remuneration Mode
                       <select value={block.remuneration_mode}
                         onChange={function (e) { updateBlock(idx, 'remuneration_mode', e.target.value) }}>
-                        <option value="per_session">Per Session (₹ / hour)</option>
+                        <option value="per_session">Per Hour of class (₹ / hour)</option>
                         <option value="per_student">Per Student (₹ on completion)</option>
                         <option value="per_student_month">Per Student / Month of 22 classes (₹)</option>
                         <option value="monthly">Monthly Fixed (₹ / month)</option>

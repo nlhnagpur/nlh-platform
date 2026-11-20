@@ -5,6 +5,8 @@ import { fmtDate, showToast } from '../utils'
 import { sendWAReviewRequest } from '../services/whatsapp'
 import ModalHeader from '../components/ModalHeader'
 import BatchHealthCheck from '../components/BatchHealthCheck'
+import BatchTimeFields from '../components/BatchTimeFields'
+import { batchHours, hoursLabel, timeRange } from '../utils/batchTime'
 import CloseBatchDialog from '../components/CloseBatchDialog'
 import MoveBatchDialog from '../components/MoveBatchDialog'
 import { isAdminRole } from '../constants/roles'
@@ -12,14 +14,7 @@ import { isAdminRole } from '../constants/roles'
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 const DAYS       = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const BLANK_BATCH = { name: '', days: [], time: '', start_date: '', is_individual: false, notes: '' }
-
-function timeRange(t) {
-  if (!t) return ''
-  const [h, m] = t.split(':').map(Number)
-  const end = ((h + 1) % 24).toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0')
-  return t.slice(0, 5) + ' – ' + end
-}
+const BLANK_BATCH = { name: '', days: [], time: '', end_time: '', start_date: '', is_individual: false, notes: '' }
 
 // Collapse multiple batch_students rows for the same enrollment to a single row,
 // preferring an active (not-removed) row. Guards against duplicate roster entries
@@ -1035,6 +1030,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
     name:          batch.name || '',
     days:          batch.schedule_days ? batch.schedule_days.split(', ').filter(Boolean) : [],
     time:          batch.schedule_time ? batch.schedule_time.slice(0, 5) : '',
+    end_time:      batch.schedule_end_time ? batch.schedule_end_time.slice(0, 5) : '',
     start_date:    batch.start_date || '',
     notes:         batch.notes || '',
     is_individual: batch.is_individual || false,
@@ -1056,6 +1052,7 @@ function EditBatchModal({ batch, onClose, onSaved }) {
       is_individual: form.is_individual,
       schedule_days: form.days.join(', '),
       schedule_time: form.time || null,
+      schedule_end_time: form.end_time || null,
       start_date:    form.start_date || null,
       notes:         form.notes.trim() || null,
     }).eq('id', batch.id)
@@ -1095,11 +1092,10 @@ function EditBatchModal({ batch, onClose, onSaved }) {
               <input type="date" value={form.start_date}
                 onChange={function (e) { setForm(function (f) { return { ...f, start_date: e.target.value } }) }} />
             </label>
-            <label>Start Time
-              <input type="time" value={form.time}
-                onChange={function (e) { setForm(function (f) { return { ...f, time: e.target.value } }) }} />
-              {form.time && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Session: {timeRange(form.time)} (1 hr)</div>}
-            </label>
+            <div>
+              <div style={{ font: '500 12px var(--font)', marginBottom: 2 }}>Session time</div>
+              <BatchTimeFields time={form.time} endTime={form.end_time} onChange={function (p) { setForm(function (f) { return { ...f, ...p } }) }} />
+            </div>
             <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={form.is_individual}
                 onChange={function (e) { setForm(function (f) { return { ...f, is_individual: e.target.checked } }) }} />
@@ -1153,6 +1149,7 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
       is_individual:  form.is_individual,
       schedule_days:  form.days.join(', '),
       schedule_time:  form.time || null,
+      schedule_end_time: form.end_time || null,
       start_date:     form.start_date || null,
       instructor_assigned_at: form.start_date || new Date().toISOString().slice(0, 10),
       notes:          form.notes.trim() || null,
@@ -1200,9 +1197,10 @@ function AddBatchModal({ instructorId, onClose, onSaved }) {
             <label>Start Date
               <input type="date" value={form.start_date} onChange={fd('start_date')} />
             </label>
-            <label>Time
-              <input type="time" value={form.time} onChange={fd('time')} />
-            </label>
+            <div>
+              <div style={{ font: '500 12px var(--font)', marginBottom: 2 }}>Session time</div>
+              <BatchTimeFields time={form.time} endTime={form.end_time} onChange={function (p) { setForm(function (f) { return { ...f, ...p } }) }} />
+            </div>
 
             <label className="col-span-2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={form.is_individual}
@@ -1501,7 +1499,7 @@ export default function BatchesPage() {
     const [{ data: batchRows }, { data: ins }, { data: skuRows }] = await Promise.all([
       sb.from('batches')
         .select(`
-          id, sku_id, instructor_id, franchisee_id, name, is_individual, schedule_days, schedule_time,
+          id, sku_id, instructor_id, franchisee_id, name, is_individual, schedule_days, schedule_time, schedule_end_time,
           is_active, start_date, sessions_done, notes, created_at,
           instructors(id, full_name),
           batch_students(id, enrollment_id, assigned_at, removed_at,
@@ -1855,7 +1853,7 @@ export default function BatchesPage() {
                       {/* Schedule */}
                       <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                         {batch.schedule_days || ''}
-                        {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time) : ''}
+                        {batch.schedule_time ? ' · ' + timeRange(batch.schedule_time, batch.schedule_end_time) : ''}
                         {batch.start_date    ? ' · Started ' + fmtDate(batch.start_date) : ''}
                         {batch.notes         ? ' · ' + batch.notes : ''}
                       </div>
