@@ -1459,7 +1459,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
       // flagged so the Accounts tab and receipts can call it that.
       const grp = sku.courses?.group_name
       const isNext = !!grp && localEnrollments.some(function (e) { return e.skus?.courses?.group_name === grp })
-      invLines.push({ kind: 'course', sku_id: sku.id, enrollment_id: enr?.id || null, name: cname, qty: 1, rate: feeFor(sku), amount: feeFor(sku), ...(isNext ? { cycle: 'next_level' } : {}) })
+      invLines.push({ kind: 'course', sku_id: sku.id, enrollment_id: enr?.id || null, period_start: (addEnrollDate || '').slice(0, 10) || undefined, name: cname, qty: 1, rate: feeFor(sku), amount: feeFor(sku), ...(isNext ? { cycle: 'next_level' } : {}) })
       const ex = addKitExcluded[sku.id] || {}
       ;(addKitData[sku.id] || []).filter(function (k) { return !ex[k.item_id] }).forEach(function (k) {
         invLines.push({ kind: 'kit', sku_id: sku.id, item_id: k.item_id, name: k.name, qty: k.quantity, rate: 0, amount: 0 })
@@ -3931,7 +3931,7 @@ function AddStudentModal({ onClose, onSaved, onOpenExisting, sibling }) {
           const sku = selectedSkus.find(function (s) { return s.id === e.sku_id })
           const cname = (sku?.courses?.group_name ? sku.courses.group_name + ' — ' : '') + (sku?.level_name || '')
           const fee = sku ? feeOf(sku) : 0
-          lines.push({ kind: 'course', sku_id: e.sku_id, enrollment_id: e.id, name: cname, qty: 1, rate: fee, amount: fee })
+          lines.push({ kind: 'course', sku_id: e.sku_id, enrollment_id: e.id, period_start: (form.registered_at || new Date().toISOString().slice(0, 10)), name: cname, qty: 1, rate: fee, amount: fee })
           const ex = kitExcluded[e.sku_id] || {}
           ;(kitData[e.sku_id] || []).filter(function (k) { return !ex[k.item_id] }).forEach(function (k) {
             const qn = Number(k.quantity || 1)
@@ -5280,6 +5280,7 @@ function InvoiceEditModal({ invoice, onClose, onSaved }) {
         // the statement shows it as an adjustment, not a second copy of the invoice
         item.original_amount = 0
         item.edited_at = at
+        item.period_start = item.period_start || invDay
       } else {
         const prevAmt = prevLines.find(function (x) { return (x.enrollment_id || null) === (c.enrollment_id || null) && x.sku_id === (c.orig_sku || c.sku_id) }) || prevLines[ci]
         if (prevAmt && nv !== Number(prevAmt.amount)) {
