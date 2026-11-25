@@ -801,13 +801,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
   // own enrolled_at (see the enrollment record itself).
   async function assignToBatch(batchId, enrollmentId) {
     setPanelSaving(true)
-    const assignedAt = new Date().toISOString()
+    const existing = batchAssignments[enrollmentId]
+    // A FIRST placement starts the day the course started (so the classes since then can be marked); only switching
+    // from another batch starts today — a dated move is the "Move to another batch" action.
+    const enr = localEnrollments.find(function (e) { return e.id === enrollmentId })
+    const assignedAt = !existing && enr && enr.enrolled_at ? String(enr.enrolled_at).slice(0, 10) + 'T00:00:00+00:00' : new Date().toISOString()
     const selectFields = 'id, enrollment_id, assigned_at, batch_id, batches(id, name, schedule_days, schedule_time, instructor_id, instructors(full_name))'
 
     // Remove from any existing (different) batch first — this is the
     // "switch batch" path, same action whether it's the first assignment
     // or a change.
-    const existing = batchAssignments[enrollmentId]
     if (existing && existing.batch_id !== batchId) {
       await sb.from('batch_students').update({ removed_at: new Date().toISOString() }).eq('id', existing.id)
     }
