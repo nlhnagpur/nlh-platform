@@ -349,7 +349,7 @@ export function printStudentInvoice(student, ctx) {
     const kitHtml = kits.length
       ? `<div class="kit"><span class="k1">Kit:</span>${kits.map(function (k) { return `<span class="k2">${esc(k.name)}${k.qty > 1 ? ' ×' + k.qty : ''}</span>` }).join('')}</div>`
       : ''
-    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(c.name)}</div>${c.cycle === 'renewal' && c.period_label ? `<div class="kit"><span class="k1">Monthly fee:</span><span class="k2">${esc(c.period_label)}</span></div>` : c.cycle === 'next_level' ? '<div class="kit"><span class="k1">Next level</span></div>' : ''}${kitHtml}</div><div class="amt r">₹${fmtAmt(netAmount(c, i))}</div></div>`
+    return `<div class="ir"><div class="num">${String(i + 1).padStart(2, '0')}</div><div><div class="nm">${esc(c.name)}</div>${c.hours && c.hourly_rate ? `<div class="kit"><span class="k1">Billed:</span><span class="k2">${esc(String(c.hours))} hr${Number(c.hours) !== 1 ? 's' : ''} × ₹${fmtAmt(c.hourly_rate)}</span></div>` : ''}${c.cycle === 'renewal' && c.period_label ? `<div class="kit"><span class="k1">Monthly fee:</span><span class="k2">${esc(c.period_label)}</span></div>` : c.cycle === 'next_level' ? '<div class="kit"><span class="k1">Next level</span></div>' : ''}${kitHtml}</div><div class="amt r">₹${fmtAmt(netAmount(c, i))}</div></div>`
   }).join('') : `<div class="ir"><div></div><div class="nm" style="color:#9C9A92">No courses on this invoice.</div><div></div></div>`
 
   const trows =

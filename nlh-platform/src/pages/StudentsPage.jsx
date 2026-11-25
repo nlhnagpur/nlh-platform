@@ -1030,6 +1030,7 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
         name: (en.skus?.courses?.group_name ? en.skus.courses.group_name + ' — ' : '') + (en.skus?.level_name || ''),
         period_start: r.date, period_label: rd.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
         qty: 1, rate: fee, amount: fee,
+        ...(Number(r.hours) > 0 && Number(r.hourly_rate) > 0 ? { hours: Number(r.hours), hourly_rate: Number(r.hourly_rate) } : {}),
       })
     })
     const total = items.reduce(function (sum, i) { return sum + i.amount }, 0)
@@ -3369,8 +3370,16 @@ export function StudentDetailModal({ student, onClose, onSaved, inline, onAddSib
                               <input type="date" value={r.date} onChange={function (e) { setRenewRow(en.id, { date: e.target.value }) }}
                                 style={{ display: 'block', marginTop: 4, fontSize: 12 }} />
                             </label>
+                            <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>Hours
+                              <input type="number" min={0} step="0.5" value={r.hours || ''} placeholder="—" onChange={function (e) { const h = e.target.value; setRenewRow(en.id, { hours: h, ...(h && r.hourly_rate ? { fee: String(Math.round(Number(h) * Number(r.hourly_rate))) } : {}) }) }}
+                                style={{ display: 'block', marginTop: 4, fontSize: 12, width: 70 }} />
+                            </label>
+                            <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>× Rate / hour (₹)
+                              <input type="number" min={0} value={r.hourly_rate || ''} placeholder="—" onChange={function (e) { const v = e.target.value; setRenewRow(en.id, { hourly_rate: v, ...(v && r.hours ? { fee: String(Math.round(Number(r.hours) * Number(v))) } : {}) }) }}
+                                style={{ display: 'block', marginTop: 4, fontSize: 12, width: 90 }} />
+                            </label>
                             <label style={{ font: '600 11px var(--font)', color: 'var(--text2)' }}>Fee for the month (₹)
-                              <input type="number" min={0} value={r.fee} onChange={function (e) { setRenewRow(en.id, { fee: e.target.value }) }}
+                              <input type="number" min={0} value={r.fee} onChange={function (e) { setRenewRow(en.id, { fee: e.target.value, hours: '', hourly_rate: '' }) }}
                                 style={{ display: 'block', marginTop: 4, fontSize: 12, width: 110 }} />
                             </label>
                           </div>
@@ -5263,6 +5272,8 @@ function InvoiceEditModal({ invoice, onClose, onSaved }) {
       const base = { ...c }
       delete base.amount_s; delete base.orig_sku; delete base.isNew
       const item = { ...base, amount: nv, rate: nv, qty: 1 }
+      // billed by the hour: keep hours × rate on the line (only while they still explain the amount)
+      if (Number(c.hours) > 0 && Number(c.hourly_rate) > 0 && Math.round(Number(c.hours) * Number(c.hourly_rate)) === nv) { item.hours = Number(c.hours); item.hourly_rate = Number(c.hourly_rate) } else { delete item.hours; delete item.hourly_rate }
       const prevLines = allItems.filter(function (x) { return x && x.kind === 'course' })
       if (c.isNew) {
         // billed after the invoice was raised: keep the original (nil) amount so
@@ -5304,7 +5315,7 @@ function InvoiceEditModal({ invoice, onClose, onSaved }) {
 
   return (
     <div className="modal-bg" onClick={function (e) { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 560 }}>
+      <div className="modal" style={{ maxWidth: 700 }}>
         <ModalHeader flush title="Edit invoice" subtitle={invoice.invoice_no || ''} onClose={onClose} />
         <div style={{ padding: '4px 20px 0', maxHeight: '60vh', overflowY: 'auto' }}>
           {courses.map(function (c, ci) {
@@ -5328,6 +5339,14 @@ function InvoiceEditModal({ invoice, onClose, onSaved }) {
                         )
                       })}
                     </select>
+                  </label>
+                  <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', textAlign: 'right' }}>Hours
+                    <input type="number" min={0} step="0.5" value={c.hours || ''} placeholder="—" onChange={function (e) { const h = e.target.value; setCourse(ci, { hours: h, ...(h && c.hourly_rate ? { amount_s: String(Math.round(Number(h) * Number(c.hourly_rate))) } : {}) }) }}
+                      style={{ display: 'block', marginTop: 4, width: 64, fontSize: 13 }} />
+                  </label>
+                  <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', textAlign: 'right' }}>× ₹ / hour
+                    <input type="number" min={0} value={c.hourly_rate || ''} placeholder="—" onChange={function (e) { const v = e.target.value; setCourse(ci, { hourly_rate: v, ...(v && c.hours ? { amount_s: String(Math.round(Number(c.hours) * Number(v))) } : {}) }) }}
+                      style={{ display: 'block', marginTop: 4, width: 84, fontSize: 13 }} />
                   </label>
                   <label style={{ font: '600 11px var(--font)', color: 'var(--text2)', textAlign: 'right' }}>Amount (₹)
                     <input type="number" min={0} value={c.amount_s} onChange={function (e) { setCourse(ci, { amount_s: e.target.value }) }}
